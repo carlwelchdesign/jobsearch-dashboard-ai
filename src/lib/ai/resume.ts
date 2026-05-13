@@ -45,7 +45,9 @@ export async function parseUploadedResume(extractedText: string): Promise<Parsed
 }
 
 export async function tailorResumeForJob({ userProfile, job, bullets, projects, workExperiences = [], githubRepositories = [], education = [], certifications = [] }: TailorResumeInput) {
-  const fallback = buildFallbackTailoredResume({ userProfile, job, bullets, projects, workExperiences, githubRepositories, education, certifications });
+  // Deduplicate projects by name and strip placeholder descriptions before feeding to AI or fallback
+  const cleanProjects = deduplicateByName(projects).filter((p) => !isPlaceholderDescription(p.description));
+  const fallback = buildFallbackTailoredResume({ userProfile, job, bullets, projects: cleanProjects, workExperiences, githubRepositories, education, certifications });
 
   try {
     const tailored = await parseStructuredOutput({
@@ -54,7 +56,13 @@ export async function tailorResumeForJob({ userProfile, job, bullets, projects, 
       system:
         "Create an ATS-friendly tailored resume from only the approved candidate profile and verified bullets supplied. " +
         "Do not invent companies, dates, metrics, tools, credentials, or unsupported claims. " +
-        "If the job asks for something the source profile does not support, include a warning instead of adding the claim.",
+        "If the job asks for something the source profile does not support, add it to the warnings array — do NOT mention it in the resume text itself. " +
+        "The plainTextResume and markdownResume fields must contain ONLY the resume document. " +
+        "Never include warnings, notes, selected project lists, tailoring commentary, or any metadata inside the resume text fields. " +
+        "In the contact line, list values only — no labels like 'Email:', 'Phone:', 'LinkedIn:'. Separate with ' | '. Use only the root GitHub profile URL (e.g. github.com/username) — never individual repository URLs. Include the LinkedIn URL if provided. " +
+        "In the Projects section: write a concrete one-sentence description of what each project does, followed by the full technology stack (language, frameworks, libraries, services) drawn from the project's technologies, topics, and language fields — list every relevant technology, not just the primary language. Never copy placeholder text like 'Portfolio project referenced in uploaded resume.' " +
+        "Do not list the same project twice. If a project appears in both the profile projects list and the GitHub repositories, include it only once using the richer of the two descriptions. " +
+        "Do not include individual GitHub repository URLs in the resume — the candidate's GitHub profile is already in the contact line.",
       input: {
         candidateProfile: userProfile,
         verifiedExperienceBullets: bullets.map((bullet) => ({
@@ -66,7 +74,7 @@ export async function tailorResumeForJob({ userProfile, job, bullets, projects, 
           keywords: bullet.keywords,
           sourceText: bullet.sourceText,
         })),
-        projects: projects.map((project) => ({
+        projects: cleanProjects.map((project) => ({
           id: project.id,
           name: project.name,
           description: project.description,
@@ -94,6 +102,8 @@ export async function tailorResumeForJob({ userProfile, job, bullets, projects, 
     });
 
     if (!tailored || !passesResumeQualityGate(tailored.plainTextResume)) return fallback;
+    tailored.plainTextResume = stripResumeMetadata(tailored.plainTextResume);
+    tailored.markdownResume = stripResumeMetadata(tailored.markdownResume);
 
     const validation = await parseStructuredOutput({
       schema: validateGeneratedResumeSchema,
@@ -185,6 +195,19 @@ export async function generateCoverLetterForJob({
   }
 }
 
+// Normalize any GitHub URL to the profile root — strips /repo and deeper paths
+function githubProfileUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes("github.com")) return url;
+    const username = u.pathname.split("/").filter(Boolean)[0];
+    return username ? `github.com/${username}` : null;
+  } catch {
+    return url;
+  }
+}
+
 function buildFallbackTailoredResume({ userProfile, job, bullets, projects, workExperiences = [], githubRepositories = [], education = [], certifications = [] }: TailorResumeInput) {
   const skills = [
     ...jsonStringArray(userProfile.coreSkills),
@@ -198,8 +221,9 @@ function buildFallbackTailoredResume({ userProfile, job, bullets, projects, work
   const selectedProjects = [...projects]
     .sort((a, b) => scoreTerm(`${b.name} ${b.description ?? ""}`, jobTerms) - scoreTerm(`${a.name} ${a.description ?? ""}`, jobTerms))
     .slice(0, 3);
+  const projectNameKeys = new Set(selectedProjects.map((p) => p.name.toLowerCase().replace(/[-_\s]+/g, "")));
   const selectedRepos = [...githubRepositories]
-    .filter((repo) => !repo.isFork)
+    .filter((repo) => !repo.isFork && !projectNameKeys.has(repo.name.toLowerCase().replace(/[-_\s]+/g, "")))
     .sort((a, b) => scoreTerm(`${b.name} ${b.description ?? ""} ${jsonStringArray(b.topics).join(" ")} ${b.language ?? ""}`, jobTerms) - scoreTerm(`${a.name} ${a.description ?? ""} ${jsonStringArray(a.topics).join(" ")} ${a.language ?? ""}`, jobTerms))
     .slice(0, 4);
   const tailoredSummary = [
@@ -215,10 +239,10 @@ function buildFallbackTailoredResume({ userProfile, job, bullets, projects, work
     userProfile.phone,
     userProfile.location,
     userProfile.linkedinUrl,
-    userProfile.githubUrl,
+    githubProfileUrl(userProfile.githubUrl),
     userProfile.portfolioUrl,
   ]
-    .filter((value) => value && value !== "https://" && !String(value).endsWith("linkedin.com/in/"))
+    .filter((value) => value && value !== "https://")
     .join(" | ");
   const markdownResume = [
     `# ${userProfile.fullName}`,
@@ -234,8 +258,17 @@ function buildFallbackTailoredResume({ userProfile, job, bullets, projects, work
     ...formatExperience(rankedBullets, workExperiences),
     "",
     "## Projects",
-    ...selectedProjects.map((project) => `- ${project.name}: ${project.description ?? ""}`),
-    ...selectedRepos.map((repo) => `- ${repo.name}: ${[repo.description, repo.language, repo.htmlUrl].filter(Boolean).join(" | ")}`),
+    ...selectedProjects.map((project) => {
+      const techs = jsonStringArray(project.technologies);
+      const techStr = techs.length ? ` | ${techs.join(", ")}` : "";
+      return `- ${project.name}: ${project.description ?? ""}${techStr}`;
+    }),
+    ...selectedRepos.map((repo) => {
+      const topics = jsonStringArray(repo.topics);
+      const lang = repo.language ?? "";
+      const stack = [lang, ...topics.filter((t) => t.toLowerCase() !== lang.toLowerCase())].filter(Boolean);
+      return `- ${repo.name}: ${[repo.description, stack.join(", ")].filter(Boolean).join(" | ")}`;
+    }),
     ...(education.length ? ["", "## Education", ...education.map((item) => `- ${item}`)] : []),
     ...(certifications.length ? ["", "## Certifications", ...certifications.map((item) => `- ${item}`)] : []),
   ].join("\n");
@@ -262,6 +295,25 @@ function buildFallbackTailoredResume({ userProfile, job, bullets, projects, work
     validation: null,
     generatedBy: "deterministic_fallback",
   };
+}
+
+// Strip AI metadata that occasionally leaks into the resume text fields.
+// Warnings, selection rationale, tailoring notes, and commentary must never
+// appear in the rendered document.
+function stripResumeMetadata(text: string): string {
+  const metadataMarkers = [
+    /^selected projects:\s*$/i,
+    /^warnings?:\s*$/i,
+    /^notes?:\s*$/i,
+    /^tailoring (note|summary):\s*$/i,
+    /^generation (note|summary):\s*$/i,
+    /^this resume (is|was|has been) tailored/i,
+    /^the (above |following )?resume (is|was) tailored/i,
+    /^i (have |'ve )?(tailored|customized|adapted)/i,
+  ];
+  const lines = text.split("\n");
+  const cutoff = lines.findIndex((line) => metadataMarkers.some((pattern) => pattern.test(line.trim())));
+  return (cutoff === -1 ? lines : lines.slice(0, cutoff)).join("\n").trimEnd();
 }
 
 function passesResumeQualityGate(plainText: string) {
@@ -395,6 +447,21 @@ function buildFallbackCoverLetter({ userProfile, job, bullets }: Pick<GenerateCo
     unsupportedClaimsDetected: [],
     generatedBy: "deterministic_fallback",
   };
+}
+
+function deduplicateByName<T extends { name: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = item.name.toLowerCase().replace(/[-_\s]+/g, "");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function isPlaceholderDescription(description: string | null | undefined): boolean {
+  if (!description) return false;
+  return /portfolio project referenced|referenced in (uploaded )?resume/i.test(description);
 }
 
 function jsonStringArray(value: unknown) {

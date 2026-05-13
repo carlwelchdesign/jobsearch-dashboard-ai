@@ -1,3 +1,4 @@
+import AutorenewOutlinedIcon from "@mui/icons-material/AutorenewOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import Card from "@mui/material/Card";
@@ -74,6 +75,7 @@ export default async function GeneratedResumesPage() {
                       <TableCell><Chip variant="outlined" color="success" label="Downloadable" /></TableCell>
                       <TableCell align="right">
                         <Stack direction="row" spacing={0.5} sx={{ justifyContent: "flex-end" }}>
+                          <ActionButton postTo={`/api/jobs/${resume.jobPosting.id}/generate-resume`} size="small" startIcon={<AutorenewOutlinedIcon />} message="Resume regenerated">Regenerate</ActionButton>
                           <ActionButton href={`/api/resumes/generated/${resume.id}/plain-text`} size="small" startIcon={<VisibilityOutlinedIcon />}>Text</ActionButton>
                           <ActionButton href={`/api/resumes/generated/${resume.id}/pdf`} size="small" startIcon={<DownloadOutlinedIcon />}>PDF</ActionButton>
                         </Stack>
