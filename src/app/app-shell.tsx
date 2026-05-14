@@ -17,25 +17,27 @@ import Chip from "@mui/material/Chip";
 import Container from "@mui/material/Container";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
+import IconButton from "@mui/material/IconButton";
 import List from "@mui/material/List";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
 import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 const drawerWidth = 264;
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: DashboardOutlinedIcon },
-  { href: "/profiles", label: "Profiles", icon: ManageSearchOutlinedIcon },
-  { href: "/jobs", label: "Jobs", icon: WorkOutlineOutlinedIcon },
-  { href: "/applications", label: "Applications", icon: AssignmentTurnedInOutlinedIcon },
-  { href: "/applications/assistant", label: "Apply Sprint", icon: BoltOutlinedIcon },
-  { href: "/resumes", label: "Resumes", icon: FactCheckOutlinedIcon },
-  { href: "/runs", label: "Runs", icon: HistoryOutlinedIcon },
-  { href: "/settings", label: "Settings", icon: SettingsOutlinedIcon },
+  { href: "/dashboard", label: "Command Center", eyebrow: "Home", icon: DashboardOutlinedIcon },
+  { href: "/profiles", label: "1. Profiles", eyebrow: "Set intent", icon: ManageSearchOutlinedIcon },
+  { href: "/jobs", label: "2. Review Jobs", eyebrow: "Approve matches", icon: WorkOutlineOutlinedIcon },
+  { href: "/resumes", label: "3. Materials", eyebrow: "Resume source", icon: FactCheckOutlinedIcon },
+  { href: "/applications", label: "4. Ready Queue", eyebrow: "Track packages", icon: AssignmentTurnedInOutlinedIcon },
+  { href: "/applications/assistant", label: "5. Apply Sprint", eyebrow: "Submit manually", icon: BoltOutlinedIcon },
+  { href: "/runs", label: "Search Runs", eyebrow: "Worker logs", icon: HistoryOutlinedIcon },
+  { href: "/settings", label: "Settings", eyebrow: "Sources", icon: SettingsOutlinedIcon },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -47,7 +49,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         minHeight: "100vh",
         bgcolor: "background.default",
         backgroundImage:
-          "linear-gradient(180deg, rgba(15, 118, 110, 0.06) 0px, rgba(15, 118, 110, 0) 240px), linear-gradient(90deg, rgba(37, 99, 235, 0.045) 0px, rgba(37, 99, 235, 0) 360px)",
+          "linear-gradient(180deg, rgba(104, 85, 52, 0.08) 0px, rgba(104, 85, 52, 0) 260px), linear-gradient(90deg, rgba(15, 118, 110, 0.06) 0px, rgba(15, 118, 110, 0) 360px)",
       }}
     >
       <Drawer
@@ -60,8 +62,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             width: drawerWidth,
             borderRightColor: "divider",
             boxSizing: "border-box",
-            bgcolor: "#fbfcfd",
-            backgroundImage: "linear-gradient(180deg, #ffffff 0%, #f7fafc 100%)",
+            bgcolor: "#fffdf8",
+            backgroundImage: "linear-gradient(180deg, #fffdf8 0%, #f4f0e7 100%)",
           },
         }}
       >
@@ -83,7 +85,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Typography variant="overline" color="primary" sx={{ fontWeight: 900, letterSpacing: 0 }}>
                 Job Search OS
               </Typography>
-              <Typography variant="h3" sx={{ lineHeight: 1.1 }}>Review Console</Typography>
+              <Typography variant="h3" sx={{ lineHeight: 1.1 }}>Apply System</Typography>
             </Stack>
           </Stack>
         </Toolbar>
@@ -122,9 +124,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </ListItemIcon>
                 <ListItemText
                   primary={
-                    <Typography component="span" sx={{ fontSize: 14, fontWeight: 750 }}>
-                      {item.label}
-                    </Typography>
+                    <Stack spacing={0.1}>
+                      <Typography component="span" sx={{ fontSize: 14, fontWeight: 800, lineHeight: 1.25 }}>
+                        {item.label}
+                      </Typography>
+                      <Typography component="span" variant="caption" color={selected ? "primary.dark" : "text.secondary"} sx={{ lineHeight: 1.2 }}>
+                        {item.eyebrow}
+                      </Typography>
+                    </Stack>
                   }
                 />
               </ListItemButton>
@@ -150,13 +157,68 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             borderBottom: 1,
             borderColor: "divider",
             bgcolor: "background.paper",
-            px: 2,
-            py: 2,
+            position: "sticky",
+            top: 0,
+            zIndex: 1100,
+            boxShadow: "0 8px 28px rgba(15, 23, 42, 0.08)",
           }}
         >
-          <Typography variant="h3">Job Search OS</Typography>
+          <Box sx={{ px: 2, py: 1.5 }}>
+            <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
+                <Avatar variant="rounded" sx={{ width: 34, height: 34, bgcolor: "primary.main", color: "primary.contrastText" }}>
+                  <AutoAwesomeOutlinedIcon fontSize="small" />
+                </Avatar>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="h3" sx={{ lineHeight: 1.1 }}>Job Search OS</Typography>
+                  <Typography variant="caption" color="text.secondary">Apply System</Typography>
+                </Box>
+              </Stack>
+              <Chip size="small" color="success" variant="outlined" label="Manual submit" />
+            </Stack>
+          </Box>
+          <Box
+            component="nav"
+            aria-label="Mobile navigation"
+            sx={{
+              display: "flex",
+              gap: 0.5,
+              overflowX: "auto",
+              px: 1,
+              pb: 1,
+              scrollbarWidth: "none",
+              "&::-webkit-scrollbar": { display: "none" },
+            }}
+          >
+            {navItems.map((item) => {
+              const selected = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const Icon = item.icon;
+
+              return (
+                <Tooltip key={item.href} title={`${item.label}: ${item.eyebrow}`}>
+                  <IconButton
+                    component={Link}
+                    href={item.href}
+                    aria-label={item.label}
+                    color={selected ? "primary" : "default"}
+                    sx={{
+                      flex: "0 0 auto",
+                      width: 42,
+                      height: 42,
+                      borderRadius: 2,
+                      border: "1px solid",
+                      borderColor: selected ? "primary.main" : "divider",
+                      bgcolor: selected ? "#e6f5f3" : "transparent",
+                    }}
+                  >
+                    <Icon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              );
+            })}
+          </Box>
         </Box>
-        <Container maxWidth="xl" sx={{ py: { xs: 3, md: 4 }, px: { xs: 2, sm: 3 } }}>
+        <Container maxWidth="xl" sx={{ py: { xs: 2, md: 4 }, px: { xs: 2, sm: 3 } }}>
           {children}
         </Container>
       </Box>

@@ -35,7 +35,7 @@ export function JobDescription({ description }: { description: string }) {
 }
 
 function formatJobDescription(description: string) {
-  const decoded = decodeHtmlEntities(description);
+  const decoded = decodeHtmlEntitiesDeep(description);
   const looksLikeHtml = /<\/?[a-z][\s\S]*>/i.test(decoded);
   const html = looksLikeHtml ? decoded : textToHtml(decoded);
   const sanitized = sanitizeHtml(html);
@@ -43,12 +43,95 @@ function formatJobDescription(description: string) {
 }
 
 function textToHtml(value: string) {
-  return value
+  const blocks = structurePlainText(value)
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())
-    .filter(Boolean)
-    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`)
-    .join("");
+    .filter(Boolean);
+
+  return blocks.map((block) => {
+    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+    if (lines.length === 0) return "";
+    if (lines.every((line) => /^[-*•]\s+/.test(line))) {
+      return `<ul>${lines.map((line) => `<li>${linkifyEscapedText(escapeHtml(line.replace(/^[-*•]\s+/, "")))}</li>`).join("")}</ul>`;
+    }
+
+    if (lines.length === 1 && isPlainTextHeading(lines[0])) {
+      return `<h3>${escapeHtml(stripHeadingColon(lines[0]))}</h3>`;
+    }
+
+    return `<p>${linkifyEscapedText(escapeHtml(lines.join("\n")).replace(/\n/g, "<br>"))}</p>`;
+  }).join("");
+}
+
+function structurePlainText(value: string) {
+  let text = value.replace(/\r/g, "").replace(/[ \t]+/g, " ").trim();
+
+  if (isDensePlainText(text)) {
+    text = text.replace(/\s+-\s+/g, "\n- ");
+    for (const heading of denseTextHeadings) {
+      text = text.replace(new RegExp(`\\s+(${escapeRegExp(heading)})(?=\\s|$)`, "gi"), "\n\n$1\n\n");
+    }
+    text = text.replace(/\s+([👶🩺🏝📈💸🔑🤝🏆🌎])\s+/gu, "\n- $1 ");
+  }
+
+  const lines = text.split("\n").map((line) => line.trim());
+  return lines
+    .flatMap((line, index) => {
+      const nextLine = lines[index + 1]?.trim();
+      return line && nextLine && isPlainTextHeading(line) ? [line, ""] : [line];
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
+function isDensePlainText(value: string) {
+  return value.length > 1200 && (value.match(/\n/g) ?? []).length < 8;
+}
+
+const denseTextHeadings = [
+  "About 1Password",
+  "What we're looking for:",
+  "Bonus points for:",
+  "What you can expect:",
+  "USA-based roles only:",
+  "Canada-based roles only:",
+  "What we offer",
+  "Health and wellbeing",
+  "Growth and future",
+  "Community",
+  "You belong here.",
+  "Our approach to remote work",
+  "How we work with AI",
+  "About DualEntry",
+  "Why This Role Matters Now",
+  "Where you'll create impact",
+  "What sets you up for success",
+  "Nice to have",
+  "Benefits",
+];
+
+function isPlainTextHeading(line: string) {
+  const clean = stripHeadingColon(line);
+  if (clean.length < 3 || clean.length > 80) return false;
+  if (/^https?:\/\//i.test(clean) || /[.!?]$/.test(clean)) return false;
+  if (denseTextHeadings.some((heading) => stripHeadingColon(heading).toLowerCase() === clean.toLowerCase())) return true;
+  return /^(about|what|why|where|how|benefits|requirements|responsibilities|qualifications|nice to have|you belong here)/i.test(clean);
+}
+
+function stripHeadingColon(value: string) {
+  return value.replace(/:\s*$/, "");
+}
+
+function linkifyEscapedText(value: string) {
+  return value.replace(/\bhttps?:\/\/[^\s<]+/g, (rawUrl) => {
+    const trailing = rawUrl.match(/[).,;:]+$/)?.[0] ?? "";
+    const url = trailing ? rawUrl.slice(0, -trailing.length) : rawUrl;
+    return `<a href="${url}" target="_blank" rel="noreferrer">${url}</a>${trailing}`;
+  });
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function sanitizeHtml(value: string) {
@@ -102,6 +185,16 @@ function decodeHtmlEntities(value: string) {
       return named[code.toLowerCase()] ?? entity;
     })
     .replace(/\u00a0/g, " ");
+}
+
+function decodeHtmlEntitiesDeep(value: string) {
+  let current = value;
+  for (let i = 0; i < 4; i++) {
+    const next = decodeHtmlEntities(current);
+    if (next === current) break;
+    current = next;
+  }
+  return current;
 }
 
 function escapeHtml(value: string) {

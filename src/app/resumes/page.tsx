@@ -12,6 +12,7 @@ import Typography from "@mui/material/Typography";
 import Link from "next/link";
 import { AppShell } from "@/app/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
+import { WorkflowGuide } from "@/components/ui/workflow-guide";
 
 const sections = [
   {
@@ -47,8 +48,9 @@ export default function ResumesPage() {
         <PageHeader
           eyebrow="Resume intelligence"
           title="Resume Workspace"
-          description="Build an approved candidate profile from uploaded resume evidence, then use verified data for truthful tailoring."
+          description="Step 3 support: upload evidence, approve parsed profile data, and review the generated resumes used in application packages."
         />
+        <WorkflowGuide active="materials" title="Step 3 of 5: keep resume evidence clean" />
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)", xl: "repeat(4, 1fr)" }, gap: 2 }}>
           {sections.map((section) => {
             const Icon = section.icon;

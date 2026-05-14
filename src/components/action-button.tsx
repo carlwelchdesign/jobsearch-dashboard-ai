@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
 import Snackbar from "@mui/material/Snackbar";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type ActionButtonProps = {
   children: React.ReactNode;
@@ -19,6 +20,8 @@ type ActionButtonProps = {
   size?: "small" | "medium" | "large";
   startIcon?: React.ReactNode;
   endIcon?: React.ReactNode;
+  runInBackground?: boolean;
+  loadingLabel?: string;
 };
 
 export function ActionButton({
@@ -33,11 +36,20 @@ export function ActionButton({
   size = "medium",
   startIcon,
   endIcon,
+  runInBackground = false,
+  loadingLabel = "Working...",
 }: ActionButtonProps) {
   const router = useRouter();
   const [notice, setNotice] = useState("");
   const [severity, setSeverity] = useState<"success" | "error" | "info">("info");
   const [loading, setLoading] = useState(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   if (href) {
     return (
@@ -56,11 +68,40 @@ export function ActionButton({
 
     setLoading(true);
     try {
-      const response = await fetch(postTo, {
+      const request = fetch(postTo, {
         method,
-        headers: body ? { "content-type": "application/json" } : undefined,
+        headers: {
+          ...(body ? { "content-type": "application/json" } : {}),
+          ...(runInBackground ? { "x-run-in-background": "1" } : {}),
+        },
         body: body ? JSON.stringify(body) : undefined,
+        keepalive: runInBackground,
       });
+
+      if (runInBackground) {
+        setSeverity("info");
+        setNotice(message ?? "Generation started. You can leave this page.");
+
+        request
+          .then(async (response) => {
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.error ?? "Action failed.");
+            if (!mounted.current) return;
+            setLoading(false);
+            setSeverity("success");
+            setNotice(payload.message ?? "Generation completed.");
+            router.refresh();
+          })
+          .catch((error) => {
+            if (!mounted.current) return;
+            setLoading(false);
+            setSeverity("error");
+            setNotice(error instanceof Error ? error.message : "Action failed.");
+          });
+        return;
+      }
+
+      const response = await request;
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "Action failed.");
       setSeverity("success");
@@ -70,14 +111,34 @@ export function ActionButton({
       setSeverity("error");
       setNotice(error instanceof Error ? error.message : "Action failed.");
     } finally {
-      setLoading(false);
+      if (!runInBackground) setLoading(false);
     }
   }
 
   return (
     <>
-      <Button variant={variant} color={color} size={size} startIcon={startIcon} endIcon={endIcon} disabled={loading} onClick={runAction}>
-        {loading ? "Working..." : children}
+      <Button
+        variant={loading ? "contained" : variant}
+        color={loading ? "warning" : color}
+        size={size}
+        startIcon={loading ? <CircularProgress color="inherit" size={16} thickness={5} /> : startIcon}
+        endIcon={loading ? undefined : endIcon}
+        disabled={loading}
+        aria-busy={loading}
+        onClick={runAction}
+        sx={{
+          ...(loading
+            ? {
+                "&.Mui-disabled": {
+                  bgcolor: "warning.main",
+                  color: "warning.contrastText",
+                  opacity: 1,
+                },
+              }
+            : {}),
+        }}
+      >
+        {loading ? loadingLabel : children}
       </Button>
       <Snackbar open={Boolean(notice)} autoHideDuration={4500} onClose={() => setNotice("")}>
         <Alert severity={severity} variant="filled" onClose={() => setNotice("")}>

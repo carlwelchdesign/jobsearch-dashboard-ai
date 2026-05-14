@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { companySourceDownrankTerms, companySources, companySourceSearchTags } from "../src/lib/job-search/company-sources";
 
 const prisma = new PrismaClient();
 
@@ -236,6 +237,23 @@ async function main() {
 
   const sources = [
     { name: "Manual Paste", type: "manual", baseUrl: null, enabled: true, config: {} },
+    {
+      name: "Company Source List",
+      type: "company_site",
+      baseUrl: null,
+      enabled: true,
+      config: {
+        qualityTier: "company_source_list",
+        description: "Curated company list for direct careers/ATS feed probing, not a live hiring assertion.",
+        companies: companySources,
+        searchTags: companySourceSearchTags,
+        downrankTerms: companySourceDownrankTerms,
+        priorityMax: 2,
+        maxCompanies: 90,
+        maxJobsPerCompany: 12,
+        maxFetch: 900,
+      },
+    },
     { name: "Greenhouse", type: "greenhouse", baseUrl: "https://boards.greenhouse.io", enabled: true, config: { qualityTier: "direct_ats", companySlugs: targetCompanySlugs, maxCompanies: 40, maxFetch: 600 } },
     { name: "Lever", type: "lever", baseUrl: "https://jobs.lever.co", enabled: true, config: { qualityTier: "direct_ats", companySlugs: targetCompanySlugs, maxCompanies: 40, maxFetch: 500 } },
     { name: "Ashby", type: "ashby", baseUrl: "https://jobs.ashbyhq.com", enabled: true, config: { qualityTier: "direct_ats", companySlugs: targetCompanySlugs, maxCompanies: 40, maxFetch: 500 } },

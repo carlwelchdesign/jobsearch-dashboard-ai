@@ -15,6 +15,7 @@ import { BulkPrepareControl } from "@/components/bulk-prepare-control";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip, formatStatus } from "@/components/ui/status-chip";
+import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { prisma } from "@/lib/prisma";
 import { ApplicationCreateForm } from "./application-create-form";
 import { ApplicationDeleteButton } from "./application-delete-button";
@@ -42,15 +43,16 @@ export default async function ApplicationsPage() {
     <AppShell>
       <Stack spacing={3}>
         <PageHeader
-          eyebrow="Tracker"
+          eyebrow="Ready queue"
           title="Applications"
-          description="Track every approved application from generated materials through follow-up."
+          description="Step 4: work from complete packages. Ready-to-apply items have a resume and cover letter, then move into Apply Sprint for manual submission."
           actions={<ApplicationCreateForm jobs={matches.map((match) => ({
             id: match.jobPostingId,
             matchId: match.id,
             label: `${match.jobPosting.company} · ${match.jobPosting.title}`,
           }))} />}
         />
+        <WorkflowGuide active="applications" title="Step 4 of 5: choose the next complete package" />
         <Card>
           <CardContent>
             <Stack spacing={1.5}>

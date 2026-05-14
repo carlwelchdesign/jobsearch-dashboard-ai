@@ -17,8 +17,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { formatStatus } from "@/components/ui/status-chip";
+import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { RunSearchControl } from "@/components/run-search-control";
 import { jsonArray } from "@/lib/json";
+import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -35,9 +37,10 @@ export default async function DashboardPage() {
         jobSearchProfile: { select: { name: true } },
       },
       orderBy: [{ overallScore: "desc" }, { createdAt: "desc" }],
-      take: 5,
+      take: 50,
     }),
   ]);
+  const visibleNeedsReview = uniqueMatchesByCanonicalJob(needsReview).slice(0, 5);
   const countByStatus = new Map(statusCounts.map((count) => [count.status, count._count.status]));
   const readyToApply = countByStatus.get("ready_to_apply") ?? 0;
 
@@ -45,9 +48,9 @@ export default async function DashboardPage() {
     <AppShell>
       <Stack spacing={3}>
         <PageHeader
-          eyebrow="Personal AI-powered job search"
+          eyebrow="Command center"
           title="Decision Dashboard"
-          description="Review high-fit jobs, approve the ones worth tailoring, and keep every application moving without enabling blind submission."
+          description="Start here: confirm your search profile, run discovery, approve strong matches, generate materials, then work the ready queue in Apply Sprint."
           actions={
             <>
             <ActionButton href="/jobs/manual" variant="outlined" startIcon={<AddCircleOutlineIcon />}>Add manual job</ActionButton>
@@ -55,6 +58,8 @@ export default async function DashboardPage() {
             </>
           }
         />
+
+        <WorkflowGuide title="How a job reaches Apply Sprint" />
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
           <Metric label="Enabled profiles" value={profiles.length.toString()} helper="Active campaigns" />
@@ -69,12 +74,12 @@ export default async function DashboardPage() {
           <Box>
             <Stack spacing={2}>
               <SectionTitle title="Needs Review" />
-              {needsReview.length === 0 ? (
+              {visibleNeedsReview.length === 0 ? (
                 <Card>
                   <EmptyState title="No jobs waiting" body="Run a search or add a manual job to fill the review queue." />
                 </Card>
               ) : (
-                needsReview.map((match) => (
+                visibleNeedsReview.map((match) => (
                   <Card key={match.id} sx={{ transition: "border-color 160ms ease, transform 160ms ease", "&:hover": { borderColor: "primary.main", transform: "translateY(-1px)" } }}>
                     <CardContent>
                       <Stack spacing={2}>
@@ -151,6 +156,10 @@ export default async function DashboardPage() {
                   </Stack>
                 </CardContent>
               </Card>
+
+              <ActionButton href="/jobs?statusView=archived" variant="outlined">
+                View archived jobs
+              </ActionButton>
             </Stack>
           </Box>
         </Box>

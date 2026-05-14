@@ -56,6 +56,10 @@ The manual search run uses enabled external source adapters. Direct ATS sources 
 { "companySlugs": ["linear", "vercel"] }
 ```
 
+The seeded `Company Source List` is a curated target list, not a claim that every company is hiring today. Search runs probe likely company careers/ATS feeds from that list, filter for role families such as React, TypeScript, Next.js, design systems, security/identity, AI tooling, developer platforms, defense tech, geospatial, and enterprise dashboards, then score the resulting roles against enabled profiles.
+
+Scheduled job search runs are configured in `vercel.json` and call `/api/cron/job-search` daily at `14:00 UTC`. Scheduled runs only use enabled profiles where scheduling is enabled. Set `CRON_SECRET` in the deployment environment to require `Authorization: Bearer <CRON_SECRET>` on cron requests.
+
 ## Local Playwright Application Assistant
 
 The app does not submit applications automatically. For jobs marked `ready_to_apply`, you can run a local browser assistant that fills safe known fields, uploads the generated resume and cover letter when matching inputs are visible, then stops before submit.

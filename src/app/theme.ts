@@ -17,14 +17,14 @@ export const theme = createTheme({
       contrastText: "#ffffff",
     },
     background: {
-      default: "#f4f6f8",
+      default: "#f7f4ed",
       paper: "#ffffff",
     },
     text: {
       primary: "#17202c",
       secondary: "#5b6676",
     },
-    divider: "#d9e0e8",
+    divider: "#e2ddd2",
     success: {
       main: "#16803c",
       light: "#dcfce7",
@@ -93,8 +93,8 @@ export const theme = createTheme({
     MuiCard: {
       styleOverrides: {
         root: {
-          border: "1px solid #dbe2ea",
-          boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 30px rgba(15, 23, 42, 0.03)",
+          border: "1px solid #e2ddd2",
+          boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04), 0 18px 50px rgba(15, 23, 42, 0.055)",
         },
       },
     },
@@ -140,7 +140,7 @@ export const theme = createTheme({
           verticalAlign: "top",
         },
         head: {
-          backgroundColor: "#f7f9fb",
+          backgroundColor: "#faf8f1",
           color: "#536173",
           fontSize: 12,
           fontWeight: 800,

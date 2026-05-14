@@ -3,6 +3,9 @@
 // Two typographic presets. All visual decisions (size, spacing, color, weight)
 // live in the preset object. Nothing is hardcoded in the rendering functions.
 //
+//   "atelier"    — premium editorial resume. Generous margins, serif display
+//                  type, warm ink, muted brass rules, and a quiet grid.
+//
 //   "tschichold" — Jan Tschichold / editorial restraint. Hierarchy through
 //                  proportion and spacing, not decoration. No color blocks,
 //                  no accent bars. Designed to disappear into the content.
@@ -10,13 +13,14 @@
 //   "swiss"      — Swiss technical grid. Tighter, more utilitarian. A single
 //                  restrained accent color on section rules only.
 //
-// Default: "tschichold"
+// Default: "atelier"
 
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
 
 type BulletMarker = "dash" | "square";
-export type PdfPreset = "tschichold" | "swiss";
+type FontFace = "regular" | "bold" | "serif" | "serifBold";
+export type PdfPreset = "atelier" | "tschichold" | "swiss";
 
 type DesignPreset = {
   // Page grid
@@ -26,10 +30,14 @@ type DesignPreset = {
   bodyTopPN: number;  // subsequent pages body start y
   bottom: number;
 
+  // Page color
+  pageColorCmd: string;
+
   // Header — name + contact, no background fill
   nameY: number;
   nameSize: number;
   nameTracking: number;
+  nameFont: FontFace;
   contactY: number;
   contactSize: number;
   contactColorCmd: string;
@@ -41,6 +49,7 @@ type DesignPreset = {
   // Section labels
   sectionSize: number;
   sectionTracking: number;
+  sectionFont: FontFace;
   sectionGapBefore: number;
   sectionLeading: number;  // absorbs text + gap + rule + space below
   sectionRuleWeight: number;
@@ -49,6 +58,7 @@ type DesignPreset = {
 
   // Roles
   roleSize: number;
+  roleFont: FontFace;
   roleGapBefore: number;
   roleLeading: number;
   dateSize: number;
@@ -63,6 +73,7 @@ type DesignPreset = {
 
   // Body
   bodySize: number;
+  bodyFont: FontFace;
   bodyLeading: number;
   bodyGapBefore: number;
 
@@ -76,6 +87,62 @@ type DesignPreset = {
   wrapBody: number;
 };
 
+const ATELIER: DesignPreset = {
+  left: 76,
+  right: 536,
+  bodyTopP1: 682,
+  bodyTopPN: 724,
+  bottom: 64,
+
+  pageColorCmd: "0.992 0.988 0.972 rg",
+
+  nameY: 752,
+  nameSize: 24,
+  nameTracking: 0.15,
+  nameFont: "serif",
+  contactY: 728,
+  contactSize: 8.4,
+  contactColorCmd: "0.31 0.30 0.28 rg",
+  dividerY: 715,
+  dividerWeight: 0.55,
+  dividerColorCmd: "0.55 0.43 0.24 RG",
+  urlColorCmd: "0.22 0.21 0.19 rg",
+
+  sectionSize: 8,
+  sectionTracking: 2,
+  sectionFont: "bold",
+  sectionGapBefore: 24,
+  sectionLeading: 19,
+  sectionRuleWeight: 0.45,
+  sectionRuleColorCmd: "0.68 0.55 0.33 RG",
+  sectionRuleOffset: 5,
+
+  roleSize: 10.3,
+  roleFont: "serifBold",
+  roleGapBefore: 12,
+  roleLeading: 14.5,
+  dateSize: 8.8,
+  dateColorCmd: "0.43 0.41 0.38 rg",
+
+  bulletSize: 9.4,
+  bulletLeading: 13.2,
+  bulletGapBefore: 2,
+  bulletIndent: 13,
+  bulletMarker: "dash",
+
+  bodySize: 9.6,
+  bodyFont: "regular",
+  bodyLeading: 14.2,
+  bodyGapBefore: 4,
+
+  spaceLeading: 3,
+
+  wrapSection: 84,
+  wrapRole: 64,
+  wrapBullet: 80,
+  wrapBody: 85,
+};
+
 const TSCHICHOLD: DesignPreset = {
   left: 72,
   right: 540,
@@ -83,9 +150,12 @@ const TSCHICHOLD: DesignPreset = {
   bodyTopPN: 730,
   bottom: 64,
 
+  pageColorCmd: "1 1 1 rg",
+
   nameY: 754,
   nameSize: 19,
   nameTracking: 0,
+  nameFont: "bold",
   contactY: 735,
   contactSize: 8.5,
   contactColorCmd: "0.42 0.42 0.42 rg",
@@ -96,6 +166,7 @@ const TSCHICHOLD: DesignPreset = {
 
   sectionSize: 8.5,
   sectionTracking: 1.8,
+  sectionFont: "bold",
   sectionGapBefore: 26,
   sectionLeading: 20,
   sectionRuleWeight: 0.35,
@@ -103,6 +174,7 @@ const TSCHICHOLD: DesignPreset = {
   sectionRuleOffset: 5,
 
   roleSize: 10,
+  roleFont: "bold",
   roleGapBefore: 12,
   roleLeading: 14,
   dateSize: 9,
@@ -115,6 +187,7 @@ const TSCHICHOLD: DesignPreset = {
   bulletMarker: "dash",
 
   bodySize: 9.5,
+  bodyFont: "regular",
   bodyLeading: 14,
   bodyGapBefore: 3,
 
@@ -133,9 +206,12 @@ const SWISS: DesignPreset = {
   bodyTopPN: 728,
   bottom: 60,
 
+  pageColorCmd: "1 1 1 rg",
+
   nameY: 752,
   nameSize: 17,
   nameTracking: 0.3,
+  nameFont: "bold",
   contactY: 733,
   contactSize: 8,
   contactColorCmd: "0.35 0.35 0.35 rg",
@@ -146,6 +222,7 @@ const SWISS: DesignPreset = {
 
   sectionSize: 8,
   sectionTracking: 1.5,
+  sectionFont: "bold",
   sectionGapBefore: 22,
   sectionLeading: 18,
   sectionRuleWeight: 0.5,
@@ -153,6 +230,7 @@ const SWISS: DesignPreset = {
   sectionRuleOffset: 5,
 
   roleSize: 9.5,
+  roleFont: "bold",
   roleGapBefore: 10,
   roleLeading: 13,
   dateSize: 8.5,
@@ -165,6 +243,7 @@ const SWISS: DesignPreset = {
   bulletMarker: "square",
 
   bodySize: 9,
+  bodyFont: "regular",
   bodyLeading: 13,
   bodyGapBefore: 3,
 
@@ -176,18 +255,18 @@ const SWISS: DesignPreset = {
   wrapBody: 90,
 };
 
-const PRESETS: Record<PdfPreset, DesignPreset> = { tschichold: TSCHICHOLD, swiss: SWISS };
+const PRESETS: Record<PdfPreset, DesignPreset> = { atelier: ATELIER, tschichold: TSCHICHOLD, swiss: SWISS };
 
 // ─── Line types ───────────────────────────────────────────────────────────────
 
-type LineKind = "section" | "role" | "bullet" | "body" | "space";
+type LineKind = "section" | "role" | "project" | "bullet" | "body" | "space";
 
 type PdfLine = {
   text: string;
   rightText?: string;    // right-aligned date on role lines
   kind: LineKind;
   size: number;
-  font: "regular" | "bold";
+  font: FontFace;
   leading: number;
   gapBefore: number;
   xOffset: number;
@@ -201,7 +280,7 @@ type UrlAnnotation = {
 
 type StyleDef = {
   size: number;
-  font: "regular" | "bold";
+  font: FontFace;
   leading: number;
   gapBefore: number;
   xOffset: number;
@@ -210,10 +289,11 @@ type StyleDef = {
 
 function makeStyles(p: DesignPreset): Record<LineKind, StyleDef> {
   return {
-    section: { size: p.sectionSize, font: "bold",    leading: p.sectionLeading, gapBefore: p.sectionGapBefore, xOffset: 0,         width: p.wrapSection },
-    role:    { size: p.roleSize,    font: "bold",    leading: p.roleLeading,    gapBefore: p.roleGapBefore,    xOffset: 0,         width: p.wrapRole    },
+    section: { size: p.sectionSize, font: p.sectionFont, leading: p.sectionLeading, gapBefore: p.sectionGapBefore, xOffset: 0,         width: p.wrapSection },
+    role:    { size: p.roleSize,    font: p.roleFont,    leading: p.roleLeading,    gapBefore: p.roleGapBefore,    xOffset: 0,         width: p.wrapRole    },
+    project: { size: p.roleSize,    font: p.roleFont,    leading: p.roleLeading,    gapBefore: p.roleGapBefore,    xOffset: 0,         width: p.wrapRole    },
     bullet:  { size: p.bulletSize,  font: "regular", leading: p.bulletLeading,  gapBefore: p.bulletGapBefore,  xOffset: p.bulletIndent, width: p.wrapBullet  },
-    body:    { size: p.bodySize,    font: "regular", leading: p.bodyLeading,    gapBefore: p.bodyGapBefore,    xOffset: 0,         width: p.wrapBody    },
+    body:    { size: p.bodySize,    font: p.bodyFont, leading: p.bodyLeading,    gapBefore: p.bodyGapBefore,    xOffset: 0,         width: p.wrapBody    },
     space:   { size: 0,             font: "regular", leading: p.spaceLeading,   gapBefore: 0,                  xOffset: 0,         width: 1             },
   };
 }
@@ -222,7 +302,7 @@ type Preprocessed = { name: string; contactLine: string; bodyText: string };
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
-export function createSimpleTextPdf(text: string, presetName: PdfPreset = "tschichold"): Buffer {
+export function createSimpleTextPdf(text: string, presetName: PdfPreset = "atelier"): Uint8Array<ArrayBuffer> {
   const p = PRESETS[presetName];
   const styles = makeStyles(p);
 
@@ -236,8 +316,12 @@ export function createSimpleTextPdf(text: string, presetName: PdfPreset = "tschi
 
   const fontRegId = 3;
   const fontBoldId = 4;
+  const fontSerifId = 5;
+  const fontSerifBoldId = 6;
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>");
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold >>");
 
   const pageObjectIds: number[] = [];
 
@@ -255,9 +339,10 @@ export function createSimpleTextPdf(text: string, presetName: PdfPreset = "tschi
       ? ` /Annots [${annotIds.map((id) => `${id} 0 R`).join(" ")}]`
       : "";
     objects.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 ${fontRegId} 0 R /F2 ${fontBoldId} 0 R >> >>${annotsEntry} /Contents ${contentObjId} 0 R >>`,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 ${fontRegId} 0 R /F2 ${fontBoldId} 0 R /F3 ${fontSerifId} 0 R /F4 ${fontSerifBoldId} 0 R >> >>${annotsEntry} /Contents ${contentObjId} 0 R >>`,
     );
     const parts: string[] = [];
+    parts.push(renderPageBackground(p));
     if (pg === 0) parts.push(headerContent);
     parts.push(renderBodyPage(pages[pg], pg === 0 ? p.bodyTopP1 : p.bodyTopPN, p));
     const content = parts.join("\n");
@@ -285,7 +370,8 @@ export function createSimpleTextPdf(text: string, presetName: PdfPreset = "tschi
   for (const off of offsets.slice(1)) chunks.push(`${off.toString().padStart(10, "0")} 00000 n \n`);
   chunks.push(`trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
 
-  return Buffer.from(chunks.join(""), "latin1");
+  const buffer = Buffer.from(chunks.join(""), "latin1");
+  return new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
 }
 
 // ─── Pre-processing ───────────────────────────────────────────────────────────
@@ -337,15 +423,35 @@ function normalizeContactPart(part: string): string {
 
 function toPdfLines(bodyText: string, styles: Record<LineKind, StyleDef>): PdfLine[] {
   const output: PdfLine[] = [];
+  let currentSection = "";
 
   for (const rawLine of bodyText.replace(/\r/g, "").split("\n")) {
     const trimmed = rawLine.trim().replace(/^#+\s*/, "");
-    const kind = classifyLine(trimmed);
+    const kind = classifyLine(trimmed, currentSection);
     const style = styles[kind];
 
     if (kind === "space") {
       output.push({ text: "", kind, ...style });
       continue;
+    }
+
+    if (kind === "section") {
+      currentSection = trimmed.toLowerCase();
+    }
+
+    if (currentSection === "projects") {
+      const project = parseBulletProject(trimmed);
+      if (project) {
+        const projectStyle = styles.project;
+        const bodyStyle = styles.body;
+        for (const [i, seg] of wrapLine(project.name, projectStyle.width).entries()) {
+          output.push({ text: seg, kind: "project", ...projectStyle, gapBefore: i === 0 ? projectStyle.gapBefore : 0 });
+        }
+        for (const [i, seg] of wrapLine(project.description, bodyStyle.width).entries()) {
+          output.push({ text: seg, kind: "body", ...bodyStyle, gapBefore: i === 0 ? bodyStyle.gapBefore : 0, continuation: i > 0 });
+        }
+        continue;
+      }
     }
 
     if (kind === "role") {
@@ -365,12 +471,25 @@ function toPdfLines(bodyText: string, styles: Record<LineKind, StyleDef>): PdfLi
   return output;
 }
 
-function classifyLine(line: string): LineKind {
+function classifyLine(line: string, currentSection: string): LineKind {
   if (!line) return "space";
   if (/^(Summary|Skills|Professional Experience|Projects|Education|Certifications|Experience|Cover Letter)$/i.test(line)) return "section";
+  if (currentSection === "projects" && isProjectTitleLine(line)) return "project";
   if (/^- /.test(line)) return "bullet";
   if (/^[A-Z][A-Za-z0-9 .&,/-]+ - .+/.test(line)) return "role";
   return "body";
+}
+
+function isProjectTitleLine(line: string): boolean {
+  if (/^(technologies|technology|tech stack|stack)\s*:/i.test(line)) return false;
+  if (line.length > 72 || /[.!?]$/.test(line)) return false;
+  return /^[a-z0-9][a-z0-9._-]*$/i.test(line) || /^[A-Z][A-Za-z0-9 ._/-]+$/.test(line);
+}
+
+function parseBulletProject(line: string): { name: string; description: string } | null {
+  const match = line.match(/^-\s*([^:]{2,72}):\s*(.+)$/);
+  if (!match) return null;
+  return { name: match[1].trim(), description: match[2].trim() };
 }
 
 function parseRoleLine(text: string): { main: string; date?: string } {
@@ -400,6 +519,10 @@ function paginate(lines: PdfLine[], p: DesignPreset): PdfLine[][] {
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
 
+function renderPageBackground(p: DesignPreset): string {
+  return `q ${p.pageColorCmd} 0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT} re f Q`;
+}
+
 // Header: name left-aligned; personal contact (email, phone) left-aligned;
 // web presence (LinkedIn, GitHub) right-aligned — classic bipartite layout.
 // URL parts carry PDF /Annot Link objects for clickability and a thin underline
@@ -415,7 +538,7 @@ function renderHeader(
   cmds.push("BT");
   if (name) {
     cmds.push("0 0 0 rg");
-    cmds.push(`/F2 ${p.nameSize} Tf`);
+    cmds.push(`/${fontResource(p.nameFont)} ${p.nameSize} Tf`);
     cmds.push(`${p.nameTracking} Tc`);
     cmds.push(`1 0 0 1 ${p.left} ${p.nameY} Tm`);
     cmds.push(`(${escapePdfText(name)}) Tj`);
@@ -475,9 +598,8 @@ function renderHeader(
     );
   }
 
-  const dividerY = contactY - 11;
   cmds.push(
-    `q ${p.dividerColorCmd} ${p.dividerWeight} w ${p.left} ${dividerY} m ${p.right} ${dividerY} l S Q`,
+    `q ${p.dividerColorCmd} ${p.dividerWeight} w ${p.left} ${p.dividerY} m ${p.right} ${p.dividerY} l S Q`,
   );
 
   return { content: cmds.join("\n"), annotations };
@@ -499,8 +621,8 @@ function renderBodyPage(lines: PdfLine[], startY: number, p: DesignPreset): stri
     if (line.kind === "section") {
       beginText();
       cmds.push(`${p.sectionTracking} Tc`);
-      cmds.push(`0 0 0 rg`);
-      cmds.push(`/F2 ${line.size} Tf`);
+      cmds.push("0.08 0.075 0.065 rg");
+      cmds.push(`/${fontResource(line.font)} ${line.size} Tf`);
       cmds.push(`1 0 0 1 ${p.left} ${y} Tm`);
       cmds.push(`(${escapePdfText(line.text.toUpperCase())}) Tj`);
       endText();
@@ -523,7 +645,7 @@ function renderBodyPage(lines: PdfLine[], startY: number, p: DesignPreset): stri
       cmds.push(`/F1 ${line.size} Tf`);
 
       if (p.bulletMarker === "dash" && !line.continuation) {
-        // En-dash marker inline, then text at indent
+        // Dash marker inline, then text at indent
         cmds.push(`1 0 0 1 ${p.left} ${y} Tm`);
         cmds.push(`(-) Tj`);
       }
@@ -539,19 +661,19 @@ function renderBodyPage(lines: PdfLine[], startY: number, p: DesignPreset): stri
 
     if (line.rightText) {
       // Role: company/title left-aligned bold, date right-aligned muted
-      cmds.push(`0 0 0 rg`);
-      cmds.push(`/F2 ${line.size} Tf`);
+      cmds.push("0.08 0.075 0.065 rg");
+      cmds.push(`/${fontResource(line.font)} ${line.size} Tf`);
       cmds.push(`1 0 0 1 ${p.left} ${y} Tm`);
       cmds.push(`(${escapePdfText(line.text)}) Tj`);
 
-      const dateW = line.rightText.length * p.dateSize * 0.50;
+      const dateW = textWidth(line.rightText, p.dateSize);
       cmds.push(p.dateColorCmd);
       cmds.push(`/F1 ${p.dateSize} Tf`);
       cmds.push(`1 0 0 1 ${p.right - dateW} ${y} Tm`);
       cmds.push(`(${escapePdfText(line.rightText)}) Tj`);
     } else {
       cmds.push(`0 0 0 rg`);
-      cmds.push(`/${line.font === "bold" ? "F2" : "F1"} ${line.size} Tf`);
+      cmds.push(`/${fontResource(line.font)} ${line.size} Tf`);
       cmds.push(`1 0 0 1 ${p.left + line.xOffset} ${y} Tm`);
       cmds.push(`(${escapePdfText(line.text)}) Tj`);
     }
@@ -565,18 +687,45 @@ function renderBodyPage(lines: PdfLine[], startY: number, p: DesignPreset): stri
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
+function fontResource(font: FontFace): string {
+  switch (font) {
+    case "bold":
+      return "F2";
+    case "serif":
+      return "F3";
+    case "serifBold":
+      return "F4";
+    default:
+      return "F1";
+  }
+}
+
 function wrapLine(line: string, width: number): string[] {
   if (!line) return [""];
   const words = line.split(/\s+/);
   const result: string[] = [];
   let current = "";
   for (const word of words) {
+    if (word.length > width) {
+      if (current) {
+        result.push(current);
+        current = "";
+      }
+      result.push(...chunkLongWord(word, width));
+      continue;
+    }
     const candidate = current ? `${current} ${word}` : word;
     if (candidate.length > width) { if (current) result.push(current); current = word; }
     else { current = candidate; }
   }
   if (current) result.push(current);
   return result;
+}
+
+function chunkLongWord(word: string, width: number): string[] {
+  const chunks: string[] = [];
+  for (let i = 0; i < word.length; i += width) chunks.push(word.slice(i, i + width));
+  return chunks;
 }
 
 // Approximate Helvetica advance widths — used to right-align the web presence group

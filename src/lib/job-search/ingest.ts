@@ -1,5 +1,5 @@
 import { JobSearchRun, NotificationSettings, Prisma, User } from "@prisma/client";
-import { createJobContentHash } from "@/lib/job-search/dedupe";
+import { createCanonicalJobKey, createJobContentHash } from "@/lib/job-search/dedupe";
 import { getAdapterForSource } from "@/lib/job-search/adapters";
 import { scoreJobForProfile } from "@/lib/job-search/scoring";
 import type { NormalizedJobPosting } from "@/lib/job-search/source-adapter";
@@ -13,7 +13,12 @@ type ProgressEvent = {
 };
 
 export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", runId?: string) {
-  const profiles = await prisma.jobSearchProfile.findMany({ where: { enabled: true } });
+  const profiles = await prisma.jobSearchProfile.findMany({
+    where: {
+      enabled: true,
+      ...(triggeredBy === "cron" ? { scheduleEnabled: true } : {}),
+    },
+  });
   const run = runId
     ? await prisma.jobSearchRun.update({
         where: { id: runId },
@@ -213,7 +218,8 @@ async function upsertDedupedJob(normalized: NormalizedJobPosting, sourceId: stri
         title: normalized.title,
         location: normalized.location,
       },
-    }));
+    })) ??
+    (await findCanonicalDuplicateJob(normalized));
 
   if (existing) {
     const job = await prisma.jobPosting.update({
@@ -267,6 +273,28 @@ async function upsertDedupedJob(normalized: NormalizedJobPosting, sourceId: stri
     },
   });
   return { job, isNew: true };
+}
+
+async function findCanonicalDuplicateJob(normalized: NormalizedJobPosting) {
+  const canonicalKey = createCanonicalJobKey(normalized);
+  const companyToken = firstSearchToken(normalized.company);
+  const titleToken = firstSearchToken(normalized.title);
+  const candidates = await prisma.jobPosting.findMany({
+    where: {
+      OR: [
+        ...(companyToken ? [{ company: { contains: companyToken, mode: "insensitive" as const } }] : []),
+        ...(titleToken ? [{ title: { contains: titleToken, mode: "insensitive" as const } }] : []),
+      ],
+    },
+    orderBy: { lastSeenAt: "desc" },
+    take: 100,
+  });
+
+  return candidates.find((candidate) => createCanonicalJobKey(candidate) === canonicalKey) ?? null;
+}
+
+function firstSearchToken(value: string) {
+  return value.toLowerCase().match(/[a-z0-9]{4,}/)?.[0] ?? null;
 }
 
 async function notifyAfterRun(

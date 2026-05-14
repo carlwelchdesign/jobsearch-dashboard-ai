@@ -5,8 +5,10 @@ import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { BulkPrepareControl } from "@/components/bulk-prepare-control";
 import { PageHeader } from "@/components/ui/page-header";
+import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { RunSearchControl } from "@/components/run-search-control";
 import { jsonArray } from "@/lib/json";
+import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { prisma } from "@/lib/prisma";
 import { JobsTable } from "./jobs-table";
 
@@ -27,8 +29,9 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
       },
     },
     orderBy: [{ status: "asc" }, { overallScore: "desc" }, { createdAt: "desc" }],
-    take: 100,
+    take: 250,
   });
+  const visibleMatches = uniqueMatchesByCanonicalJob(matches).slice(0, 100);
 
   return (
     <AppShell>
@@ -36,7 +39,7 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
         <PageHeader
           eyebrow="Review queue"
           title="Jobs"
-          description="Review matched jobs by profile, score, company, remote type, location, and status."
+          description="Step 2: review matches and make the decision. Approve jobs you want to tailor, reject the noise, or open a job for package generation."
           actions={
             <>
               <ActionButton href="/jobs/manual" variant="outlined" startIcon={<AddIcon />}>Add manual job</ActionButton>
@@ -45,11 +48,13 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
           }
         />
 
+        <WorkflowGuide active="jobs" title="Step 2 of 5: approve the right jobs" />
+
         <BulkPrepareControl defaultMinimumScore={75} defaultLimit={10} />
 
         <JobsTable
           statusView={statusView}
-          matches={matches.map((match) => ({
+          matches={visibleMatches.map((match) => ({
             id: match.id,
             jobId: match.jobPosting.id,
             score: match.overallScore,

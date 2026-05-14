@@ -19,7 +19,13 @@ export function PageHeader({
       spacing={2}
       sx={{ justifyContent: "space-between", alignItems: { sm: "flex-end" } }}
     >
-      <Box>
+      <Box
+        sx={{
+          borderLeft: "4px solid",
+          borderColor: "primary.main",
+          pl: 2,
+        }}
+      >
         <Typography variant="overline" color="primary" sx={{ fontWeight: 900, letterSpacing: 0 }}>
           {eyebrow}
         </Typography>

@@ -4,6 +4,8 @@ import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsAc
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import GitHubIcon from "@mui/icons-material/GitHub";
 import LinkOutlinedIcon from "@mui/icons-material/LinkOutlined";
+import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
+import SourceOutlinedIcon from "@mui/icons-material/SourceOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -32,6 +34,13 @@ type SettingsClientProps = {
     configured: boolean;
     model: string;
   };
+  sourceSettings: {
+    companySourceEnabled: boolean;
+    companyCount: number;
+    priorityMax: number;
+    maxCompanies: number;
+    maxFetch: number;
+  };
   profileSettings: {
     linkedinUrl: string;
     githubUrl: string;
@@ -42,22 +51,39 @@ type SettingsClientProps = {
     githubRepositoryCount: number;
     latestGithubSync: string | null;
   };
+  cronSettings: {
+    enabled: boolean;
+    cronExpression: string;
+    scheduleLabel: string;
+    endpoint: string;
+    cronSecretConfigured: boolean;
+    profiles: Array<{
+      id: string;
+      name: string;
+      enabled: boolean;
+      scheduleEnabled: boolean;
+      cronExpression: string | null;
+    }>;
+  };
 };
 
-export function SettingsClient({ initialSettings, aiSettings, profileSettings }: SettingsClientProps) {
+export function SettingsClient({ initialSettings, aiSettings, sourceSettings, profileSettings, cronSettings }: SettingsClientProps) {
   const [settings, setSettings] = useState(initialSettings);
   const [profile, setProfile] = useState(profileSettings);
+  const [cron, setCron] = useState(cronSettings);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [syncingGithub, setSyncingGithub] = useState(false);
+  const [runningCron, setRunningCron] = useState(false);
+  const [cronDirty, setCronDirty] = useState(false);
 
   async function save() {
     setSaving(true);
     setNotice("");
     setError("");
-    const [profileResponse, response] = await Promise.all([
+    const [profileResponse, response, cronResponse] = await Promise.all([
       fetch("/api/settings/profile", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -71,20 +97,40 @@ export function SettingsClient({ initialSettings, aiSettings, profileSettings }:
         }),
       }),
       fetch("/api/settings/notifications", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(settings),
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(settings),
+      }),
+      fetch("/api/settings/job-search-cron", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          enabled: cron.enabled,
+          cronExpression: cron.cronExpression,
+          profiles: cron.profiles.map((cronProfile) => ({
+            id: cronProfile.id,
+            scheduleEnabled: cronProfile.scheduleEnabled,
+          })),
+        }),
       }),
     ]);
     const body = await response.json();
     const profileBody = await profileResponse.json();
+    const cronBody = await cronResponse.json();
     setSaving(false);
 
-    if (!profileResponse.ok || !response.ok) {
-      setError(profileBody.error ?? body.error ?? "Unable to save settings.");
+    if (!profileResponse.ok || !response.ok || !cronResponse.ok) {
+      setError(profileBody.error ?? body.error ?? cronBody.error ?? "Unable to save settings.");
       return;
     }
 
+    setCron((current) => ({
+      ...current,
+      enabled: cronBody.enabled,
+      cronExpression: cronBody.cronExpression,
+      profiles: cronBody.profiles,
+    }));
+    setCronDirty(false);
     setNotice("Settings saved.");
   }
 
@@ -151,6 +197,49 @@ export function SettingsClient({ initialSettings, aiSettings, profileSettings }:
     setNotice(body.message);
   }
 
+  async function runScheduledSearchNow() {
+    setRunningCron(true);
+    setNotice("");
+    setError("");
+
+    const response = await fetch(cron.endpoint, { method: "GET" });
+    const body = await response.json();
+    setRunningCron(false);
+
+    if (!response.ok) {
+      setError(body.error ?? "Unable to start the scheduled search.");
+      return;
+    }
+
+    setNotice(body.skipped ? body.reason : "Scheduled search queued.");
+  }
+
+  function toggleCronEnabled(enabled: boolean) {
+    setCronDirty(true);
+    setCron((current) => ({
+      ...current,
+      enabled,
+      profiles: current.profiles.map((cronProfile) => ({
+        ...cronProfile,
+        scheduleEnabled: enabled ? cronProfile.enabled : false,
+      })),
+    }));
+  }
+
+  function toggleCronProfile(id: string, scheduleEnabled: boolean) {
+    setCronDirty(true);
+    setCron((current) => {
+      const profiles = current.profiles.map((cronProfile) =>
+        cronProfile.id === id ? { ...cronProfile, scheduleEnabled } : cronProfile,
+      );
+      return {
+        ...current,
+        enabled: profiles.some((cronProfile) => cronProfile.enabled && cronProfile.scheduleEnabled),
+        profiles,
+      };
+    });
+  }
+
   return (
     <Stack spacing={2}>
       <Card>
@@ -172,6 +261,118 @@ export function SettingsClient({ initialSettings, aiSettings, profileSettings }:
               <TextField fullWidth label="Environment variable" value="OPENAI_API_KEY" disabled />
               <TextField fullWidth label="Model" value={aiSettings.model} disabled />
             </Box>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <Stack spacing={2}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <SourceOutlinedIcon color="primary" />
+                <Typography variant="h3">Company source list</Typography>
+              </Stack>
+              <StatusChip status={sourceSettings.companySourceEnabled ? "configured" : "provider_missing"} />
+            </Stack>
+            <Alert severity={sourceSettings.companySourceEnabled ? "success" : "warning"}>
+              {sourceSettings.companySourceEnabled
+                ? "Company career-page discovery is active. Search runs will probe curated company ATS feeds before scoring roles."
+                : "Company career-page discovery is seeded but disabled."}
+            </Alert>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(4, 1fr)" }, gap: 2 }}>
+              <TextField fullWidth label="Seeded companies" value={sourceSettings.companyCount} disabled />
+              <TextField fullWidth label="Priority ceiling" value={sourceSettings.priorityMax} disabled />
+              <TextField fullWidth label="Companies per run" value={sourceSettings.maxCompanies} disabled />
+              <TextField fullWidth label="Max fetched roles" value={sourceSettings.maxFetch} disabled />
+            </Box>
+            <Typography variant="body2" color="text.secondary">
+              This is a source list, not a claim that every company is currently hiring. The app checks careers/ATS feeds and then scores matching roles against your profiles.
+            </Typography>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <Stack spacing={2}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <ScheduleOutlinedIcon color="primary" />
+                <Typography variant="h3">Scheduled job search</Typography>
+              </Stack>
+              <StatusChip status={cron.enabled ? "configured" : "provider_missing"} />
+            </Stack>
+            <Alert severity={cron.enabled ? "success" : "info"}>
+              {cron.enabled
+                ? `Scheduled search is active. Vercel calls ${cron.endpoint} ${cron.scheduleLabel.toLowerCase()}.`
+                : "Scheduled search is paused. The cron endpoint can still be run manually."}
+            </Alert>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)" }, gap: 2 }}>
+              <TextField fullWidth label="Deployment schedule" value={cron.scheduleLabel} disabled />
+              <TextField fullWidth label="Cron expression" value={cron.cronExpression} disabled />
+            </Box>
+            <FormControlLabel
+              control={<Switch checked={cron.enabled} onChange={(event) => toggleCronEnabled(event.target.checked)} />}
+              label="Run scheduled searches"
+            />
+            <Stack
+              spacing={1}
+              sx={{
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 2,
+                p: 1,
+              }}
+            >
+              {cron.profiles.length ? (
+                cron.profiles.map((cronProfile) => (
+                  <Stack
+                    key={cronProfile.id}
+                    direction={{ xs: "column", sm: "row" }}
+                    spacing={1}
+                    sx={{ alignItems: { sm: "center" }, justifyContent: "space-between", px: 1, py: 0.5 }}
+                  >
+                    <Box>
+                      <Typography sx={{ fontWeight: 700 }}>{cronProfile.name}</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {cronProfile.enabled ? "Enabled search profile" : "Disabled search profile"}
+                      </Typography>
+                    </Box>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={cronProfile.enabled && cronProfile.scheduleEnabled}
+                          disabled={!cron.enabled || !cronProfile.enabled}
+                          onChange={(event) => toggleCronProfile(cronProfile.id, event.target.checked)}
+                        />
+                      }
+                      label="Include"
+                    />
+                  </Stack>
+                ))
+              ) : (
+                <Typography color="text.secondary">Create a search profile before enabling scheduled searches.</Typography>
+              )}
+            </Stack>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "center" } }}>
+              <Button
+                variant="outlined"
+                disabled={saving || runningCron || cron.cronSecretConfigured || !cron.enabled || cronDirty}
+                onClick={runScheduledSearchNow}
+              >
+                {runningCron ? "Starting..." : "Run scheduled search now"}
+              </Button>
+              <Typography variant="body2" color="text.secondary">
+                {cronDirty
+                  ? "Save schedule changes before running now."
+                  : cron.cronSecretConfigured
+                  ? "Manual browser runs are disabled because CRON_SECRET is configured."
+                  : cron.enabled
+                  ? "Runs now with the same profile selection used by cron."
+                  : "Turn on scheduled searches before running this cron path."}
+              </Typography>
+            </Stack>
           </Stack>
         </CardContent>
       </Card>

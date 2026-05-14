@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 const requestSchema = z.object({
   matchIds: z.array(z.string()).min(1).max(100),
-  status: z.enum(["approved", "rejected", "saved_for_later", "archived"]),
+  status: z.enum(["needs_review", "approved", "rejected", "saved_for_later", "archived"]),
 });
 
 export async function POST(request: Request) {

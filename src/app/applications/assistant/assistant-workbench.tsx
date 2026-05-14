@@ -3,6 +3,7 @@
 import PlayCircleOutlineOutlinedIcon from "@mui/icons-material/PlayCircleOutlineOutlined";
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
+import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -67,11 +68,17 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
   const [log, setLog] = useState("");
   const [loading, setLoading] = useState(false);
   const [markingApplied, setMarkingApplied] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [question, setQuestion] = useState("");
   const [questionLoading, setQuestionLoading] = useState(false);
   const [questionHelper, setQuestionHelper] = useState<QuestionHelperResponse | null>(null);
   const [notice, setNotice] = useState("");
-  const selected = useMemo(() => applications.find((application) => application.id === selectedId), [applications, selectedId]);
+  const visibleApplications = useMemo(
+    () => applications.filter((application) => !deletedIds.includes(application.id)),
+    [applications, deletedIds],
+  );
+  const selected = useMemo(() => visibleApplications.find((application) => application.id === selectedId), [visibleApplications, selectedId]);
 
   async function launchSelected(next = false) {
     const endpoint = next ? "/api/applications/next-ready/launch-assistant" : `/api/applications/${selectedId}/launch-assistant`;
@@ -116,6 +123,29 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
     }
   }
 
+  async function deleteSelected() {
+    if (!selected) return;
+    if (!window.confirm(`Delete ${selected.company} - ${selected.title} from Apply Sprint? Generated resume and cover letter records will remain available.`)) return;
+
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/applications/${selected.id}`, { method: "DELETE" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? "Unable to delete application.");
+      const remaining = visibleApplications.filter((application) => application.id !== selected.id);
+      setDeletedIds((current) => [...current, selected.id]);
+      setSelectedId(remaining[0]?.id ?? "");
+      setLaunch(null);
+      setLog("");
+      setNotice(payload.message ?? "Application removed from Apply Sprint.");
+      router.refresh();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to delete application.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   async function generateQuestionOptions() {
     setQuestionLoading(true);
     setQuestionHelper(null);
@@ -152,9 +182,9 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
                 label="Ready application"
                 value={selectedId}
                 onChange={(event) => setSelectedId(event.target.value)}
-                disabled={applications.length === 0}
+                disabled={visibleApplications.length === 0}
               >
-                {applications.map((application) => (
+                {visibleApplications.map((application) => (
                   <MenuItem key={application.id} value={application.id}>
                     {application.score ?? "--"} · {application.company} · {application.title}
                     {application.assistantLaunched ? " · launched" : ""}
@@ -201,6 +231,15 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
                   onClick={() => void markApplied()}
                 >
                   {markingApplied ? "Updating..." : "Mark as applied"}
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  startIcon={<DeleteOutlineOutlinedIcon />}
+                  disabled={!selected || deleting || loading}
+                  onClick={() => void deleteSelected()}
+                >
+                  {deleting ? "Deleting..." : "Delete from queue"}
                 </Button>
               </Stack>
               <Alert severity="warning">

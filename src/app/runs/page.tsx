@@ -11,6 +11,7 @@ import { RunSearchControl } from "@/components/run-search-control";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip } from "@/components/ui/status-chip";
+import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -27,9 +28,10 @@ export default async function RunsPage() {
         <PageHeader
           eyebrow="Worker visibility"
           title="Cron Run Logs"
-          description="Audit scheduled and manual searches, fetched jobs, dedupe counts, saved matches, and source errors."
+          description="Search runs feed Step 2. Use this page to confirm discovery finished and saved jobs into the review queue."
           actions={<RunSearchControl compact />}
         />
+        <WorkflowGuide active="jobs" title="Discovery feeds the review queue" />
         <RunSearchControl />
         <TableContainer component={Card}>
           <Table sx={{ minWidth: 820 }}>

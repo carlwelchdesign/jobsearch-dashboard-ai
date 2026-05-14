@@ -38,6 +38,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
     return NextResponse.json({ profile });
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json({ error: "A search profile with that name already exists." }, { status: 409 });
+    }
     return apiError(error, 400);
   }
 }

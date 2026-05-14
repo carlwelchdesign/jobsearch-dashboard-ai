@@ -14,7 +14,7 @@ import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type ProfileActionData = {
   id: string;
@@ -48,6 +48,13 @@ export function ProfileActions({ profile }: { profile: ProfileActionData }) {
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<EditableProfile>(() => toDraft(profile));
 
+  useEffect(() => {
+    if (open) {
+      setDraft(toDraft(profile));
+      setError("");
+    }
+  }, [open, profile]);
+
   async function patch(payload: Record<string, unknown>, success: string) {
     setSaving(true);
     setError("");
@@ -69,12 +76,12 @@ export function ProfileActions({ profile }: { profile: ProfileActionData }) {
 
   async function save() {
     const ok = await patch({
-      name: draft.name,
+      name: draft.name.trim(),
       remotePreference: draft.remotePreference,
-      salaryCurrency: draft.salaryCurrency,
+      salaryCurrency: draft.salaryCurrency ?? "USD",
       salaryMin: draft.salaryMin,
-      minimumMatchScore: draft.minimumMatchScore,
-      maxResultsPerRun: draft.maxResultsPerRun,
+      minimumMatchScore: clampNumber(draft.minimumMatchScore, 0, 100, 75),
+      maxResultsPerRun: clampNumber(draft.maxResultsPerRun, 1, 250, 50),
       titles: splitList(draft.titles),
       countries: splitList(draft.countries),
       keywordsPreferred: splitList(draft.keywordsPreferred),
@@ -145,8 +152,8 @@ export function ProfileActions({ profile }: { profile: ProfileActionData }) {
             </Stack>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
               <TextField fullWidth label="Minimum salary" type="number" value={draft.salaryMin ?? ""} onChange={(event) => setDraft({ ...draft, salaryMin: event.target.value ? Number(event.target.value) : null })} />
-              <TextField fullWidth label="Minimum match score" type="number" value={draft.minimumMatchScore} onChange={(event) => setDraft({ ...draft, minimumMatchScore: Number(event.target.value) })} />
-              <TextField fullWidth label="Max results per run" type="number" value={draft.maxResultsPerRun} onChange={(event) => setDraft({ ...draft, maxResultsPerRun: Number(event.target.value) })} />
+              <TextField fullWidth label="Minimum match score" type="number" value={draft.minimumMatchScore} onChange={(event) => setDraft({ ...draft, minimumMatchScore: numberOrFallback(event.target.value, draft.minimumMatchScore) })} />
+              <TextField fullWidth label="Max results per run" type="number" value={draft.maxResultsPerRun} onChange={(event) => setDraft({ ...draft, maxResultsPerRun: numberOrFallback(event.target.value, draft.maxResultsPerRun) })} />
             </Stack>
             <TextField label="Preferred keywords" helperText="Comma-separated" value={draft.keywordsPreferred} onChange={(event) => setDraft({ ...draft, keywordsPreferred: event.target.value })} />
             <TextField label="Excluded keywords" helperText="Comma-separated" value={draft.keywordsExcluded} onChange={(event) => setDraft({ ...draft, keywordsExcluded: event.target.value })} />
@@ -181,4 +188,14 @@ function toDraft(profile: ProfileActionData): EditableProfile {
 
 function splitList(value: string) {
   return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function numberOrFallback(value: string, fallback: number) {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : fallback;
+}
+
+function clampNumber(value: number, min: number, max: number, fallback: number) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(value)));
 }

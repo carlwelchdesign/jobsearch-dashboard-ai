@@ -59,6 +59,10 @@ export async function tailorResumeForJob({ userProfile, job, bullets, projects, 
         "If the job asks for something the source profile does not support, add it to the warnings array — do NOT mention it in the resume text itself. " +
         "The plainTextResume and markdownResume fields must contain ONLY the resume document. " +
         "Never include warnings, notes, selected project lists, tailoring commentary, or any metadata inside the resume text fields. " +
+        "Compose the resume like a premium editorial document: exact section hierarchy, concise high-signal bullets, clean role/date lines, and no filler. " +
+        "Use these sections in this order when supported by the source data: Summary, Skills, Professional Experience, Projects, Education, Certifications. " +
+        "Professional Experience role lines must follow 'Company - Role | Date range' when dates are available, then 3-5 concise bullets focused on outcomes, scope, tools, and measurable evidence already present in source data. " +
+        "Keep the Summary to 2 polished sentences and the Skills section to a selective comma-separated list rather than a dense keyword dump. " +
         "In the contact line, list values only — no labels like 'Email:', 'Phone:', 'LinkedIn:'. Separate with ' | '. Use only the root GitHub profile URL (e.g. github.com/username) — never individual repository URLs. Include the LinkedIn URL if provided. " +
         "In the Projects section: write a concrete one-sentence description of what each project does, followed by the full technology stack (language, frameworks, libraries, services) drawn from the project's technologies, topics, and language fields — list every relevant technology, not just the primary language. Never copy placeholder text like 'Portfolio project referenced in uploaded resume.' " +
         "Do not list the same project twice. If a project appears in both the profile projects list and the GitHub repositories, include it only once using the richer of the two descriptions. " +
@@ -226,13 +230,15 @@ function buildFallbackTailoredResume({ userProfile, job, bullets, projects, work
     .filter((repo) => !repo.isFork && !projectNameKeys.has(repo.name.toLowerCase().replace(/[-_\s]+/g, "")))
     .sort((a, b) => scoreTerm(`${b.name} ${b.description ?? ""} ${jsonStringArray(b.topics).join(" ")} ${b.language ?? ""}`, jobTerms) - scoreTerm(`${a.name} ${a.description ?? ""} ${jsonStringArray(a.topics).join(" ")} ${a.language ?? ""}`, jobTerms))
     .slice(0, 4);
+  const summaryBase = userProfile.professionalSummary ?? userProfile.masterSummary;
   const tailoredSummary = [
-    userProfile.professionalSummary ?? userProfile.masterSummary,
+    summaryBase,
     rankedSkills.length
-      ? `Targeting ${job.title} at ${job.company} with relevant experience across ${rankedSkills.slice(0, 6).join(", ")}.`
-      : `Targeting ${job.title} at ${job.company}.`,
+      ? `Selected strengths for ${job.company}'s ${job.title} role include ${rankedSkills.slice(0, 5).join(", ")}.`
+      : `Selected for ${job.company}'s ${job.title} role based on verified experience and project evidence.`,
   ]
     .filter(Boolean)
+    .map((part) => part.trim())
     .join(" ");
   const contactLine = [
     userProfile.email,
@@ -252,7 +258,7 @@ function buildFallbackTailoredResume({ userProfile, job, bullets, projects, work
     tailoredSummary,
     "",
     "## Skills",
-    rankedSkills.join(", ") || "React, TypeScript, JavaScript, frontend architecture, product engineering",
+    rankedSkills.slice(0, 24).join(", ") || "React, TypeScript, JavaScript, frontend architecture, product engineering",
     "",
     "## Professional Experience",
     ...formatExperience(rankedBullets, workExperiences),

@@ -12,6 +12,7 @@ import { AppShell } from "@/app/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { formatStatus } from "@/components/ui/status-chip";
+import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { ProfileCreateForm } from "./profile-create-form";
@@ -31,9 +32,11 @@ export default async function ProfilesPage() {
         <PageHeader
           eyebrow="Campaigns"
           title="Search Profiles"
-          description="Each profile controls matching intent, scoring threshold, schedule, and notifications."
+          description="Step 1: define what a good job looks like. Profiles control titles, location, remote preference, salary floor, and match threshold before any search run starts."
           actions={<ProfileCreateForm />}
         />
+
+        <WorkflowGuide active="profiles" title="Step 1 of 5: set the search intent" />
 
         <ProfileSuggestionPanel />
 
