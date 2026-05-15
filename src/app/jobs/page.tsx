@@ -4,6 +4,7 @@ import Stack from "@mui/material/Stack";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { BulkPrepareControl } from "@/components/bulk-prepare-control";
+import { EvaluateJobsControl } from "@/components/evaluate-jobs-control";
 import { PageHeader } from "@/components/ui/page-header";
 import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { RunSearchControl } from "@/components/run-search-control";
@@ -32,6 +33,17 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
     take: 250,
   });
   const visibleMatches = uniqueMatchesByCanonicalJob(matches).slice(0, 100);
+  const evaluations = visibleMatches.length
+    ? await prisma.jobEvaluation.findMany({
+        where: {
+          OR: visibleMatches.map((match) => ({
+            jobPostingId: match.jobPostingId,
+            jobSearchProfileId: match.jobSearchProfileId,
+          })),
+        },
+      })
+    : [];
+  const evaluationByMatch = new Map(evaluations.map((evaluation) => [`${evaluation.jobPostingId}:${evaluation.jobSearchProfileId}`, evaluation]));
 
   return (
     <AppShell>
@@ -43,6 +55,7 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
           actions={
             <>
               <ActionButton href="/jobs/manual" variant="outlined" startIcon={<AddIcon />}>Add manual job</ActionButton>
+              <EvaluateJobsControl />
               <RunSearchControl compact />
             </>
           }
@@ -54,18 +67,24 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
 
         <JobsTable
           statusView={statusView}
-          matches={visibleMatches.map((match) => ({
-            id: match.id,
-            jobId: match.jobPosting.id,
-            score: match.overallScore,
-            title: match.jobPosting.title,
-            company: match.jobPosting.company,
-            location: match.jobPosting.location ?? "Unknown location",
-            status: match.status,
-            profileName: match.jobSearchProfile.name,
-            sourceName: match.jobPosting.source?.name ?? "Manual",
-            strongestMatches: jsonArray(match.strongestMatches),
-          }))}
+          matches={visibleMatches.map((match) => {
+            const evaluation = evaluationByMatch.get(`${match.jobPostingId}:${match.jobSearchProfileId}`);
+            return {
+              action: evaluation?.recommendedAction ?? null,
+              confidenceScore: evaluation?.confidenceScore ?? null,
+              id: match.id,
+              jobId: match.jobPosting.id,
+              opportunityScore: evaluation?.opportunityScore ?? null,
+              score: match.overallScore,
+              title: match.jobPosting.title,
+              company: match.jobPosting.company,
+              location: match.jobPosting.location ?? "Unknown location",
+              status: match.status,
+              profileName: match.jobSearchProfile.name,
+              sourceName: match.jobPosting.source?.name ?? "Manual",
+              strongestMatches: jsonArray(match.strongestMatches),
+            };
+          })}
         />
       </Stack>
     </AppShell>

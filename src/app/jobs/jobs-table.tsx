@@ -30,8 +30,11 @@ import { ScoreChip } from "@/components/ui/score-chip";
 import { StatusChip } from "@/components/ui/status-chip";
 
 export type JobsTableMatch = {
+  action: string | null;
+  confidenceScore: number | null;
   id: string;
   jobId: string;
+  opportunityScore: number | null;
   score: number;
   title: string;
   company: string;
@@ -226,7 +229,8 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
             <TableHead>
               <TableRow>
                 <TableCell padding="checkbox">Select</TableCell>
-                <TableCell>Score</TableCell>
+                <TableCell>Fit</TableCell>
+                <TableCell>Opportunity</TableCell>
                 <TableCell>Role</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Matched profile</TableCell>
@@ -237,7 +241,7 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
             <TableBody>
               {filteredMatches.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7}>
+                  <TableCell colSpan={8}>
                     <EmptyState
                       title={signalQuery ? "No jobs match that signal" : emptyStateCopy[statusView].title}
                       body={signalQuery ? "Try another signal such as react, TypeScript, security, dashboard, or AI." : emptyStateCopy[statusView].body}
@@ -258,6 +262,18 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
                       </TableCell>
                       <TableCell>
                         <ScoreChip score={match.score} />
+                      </TableCell>
+                      <TableCell>
+                        {match.opportunityScore === null ? (
+                          <Typography variant="caption" color="text.secondary">Not scored</Typography>
+                        ) : (
+                          <Stack spacing={0.5}>
+                            <ScoreChip score={match.opportunityScore} />
+                            {match.confidenceScore === null ? null : (
+                              <Typography variant="caption" color="text.secondary">Conf {match.confidenceScore}</Typography>
+                            )}
+                          </Stack>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Typography className="job-title" sx={{ fontWeight: 850 }}>{match.title}</Typography>
@@ -373,6 +389,8 @@ function SwipeJobCard({ match, onAction }: { match: JobsTableMatch; onAction: (m
             <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
               <StatusChip status={match.status} />
               <Chip size="small" variant="outlined" label={match.profileName} />
+              {match.opportunityScore === null ? null : <Chip size="small" variant="outlined" label={`Opportunity ${match.opportunityScore}`} />}
+              {match.action ? <Chip size="small" color="primary" variant="outlined" label={formatAction(match.action)} /> : null}
             </Stack>
 
             <Box>
@@ -428,4 +446,12 @@ function filterBySignals(matches: JobsTableMatch[], query: string) {
     const signalText = match.strongestMatches.join(" ").toLowerCase();
     return terms.every((term) => signalText.includes(term));
   });
+}
+
+function formatAction(action: string) {
+  return action
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }

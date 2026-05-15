@@ -207,6 +207,14 @@ enum AgentRunStatus {
   FAILED
 }
 
+enum JobRecommendedAction {
+  APPLY_NOW
+  MAYBE_APPLY
+  SAVE_FOR_LATER
+  REJECT
+  NEEDS_REVIEW
+}
+
 model User {
   id                   String                 @id @default(cuid())
   email                String                 @unique
@@ -339,6 +347,7 @@ model JobSearchProfile {
   minimumPushScore         Int                 @default(85)
   createdAt                DateTime            @default(now())
   updatedAt                DateTime            @updatedAt
+  evaluations              JobEvaluation[]
   matches                  JobProfileMatch[]
   user                     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -387,6 +396,7 @@ model JobPosting {
   updatedAt      DateTime               @updatedAt
   applications   Application[]
   coverLetters   GeneratedCoverLetter[]
+  evaluations     JobEvaluation[]
   matches        JobProfileMatch[]
   resumes        GeneratedResume[]
   source         JobSource?             @relation(fields: [sourceId], references: [id], onDelete: SetNull)
@@ -425,6 +435,30 @@ model JobProfileMatch {
 
   @@unique([jobPostingId, jobSearchProfileId])
   @@index([status, overallScore])
+}
+
+model JobEvaluation {
+  id                       String               @id @default(cuid())
+  jobPostingId             String
+  jobSearchProfileId       String
+  fitScore                 Int
+  opportunityScore         Int
+  confidenceScore          Int
+  recommendedAction        JobRecommendedAction
+  recommendedResumeProfile String?
+  strengths                Json                 @default("[]")
+  risks                    Json                 @default("[]")
+  missingKeywords          Json                 @default("[]")
+  evidenceRefs             Json                 @default("[]")
+  explanation              String
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+  jobPosting               JobPosting           @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  jobSearchProfile         JobSearchProfile     @relation(fields: [jobSearchProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([jobPostingId, jobSearchProfileId])
+  @@index([recommendedAction, fitScore])
+  @@index([jobSearchProfileId, opportunityScore])
 }
 
 model Application {

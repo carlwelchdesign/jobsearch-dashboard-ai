@@ -1,4 +1,5 @@
 import { JobSearchRun, NotificationSettings, Prisma, User } from "@prisma/client";
+import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
 import { createCanonicalJobKey, createJobContentHash } from "@/lib/job-search/dedupe";
 import { getAdapterForSource } from "@/lib/job-search/adapters";
 import { scoreJobForProfile } from "@/lib/job-search/scoring";
@@ -108,6 +109,13 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
                 status: "needs_review",
                 ...score,
               },
+            });
+            await runJobFitScoringAgent({
+              jobPostingId: job.id,
+              jobSearchProfileId: profile.id,
+              userId: user?.id,
+            }).catch(async (error) => {
+              await appendProgress(run.id, `Evidence scoring failed for ${job.title} at ${job.company}: ${error instanceof Error ? error.message : "Unknown scoring failure"}`, stats);
             });
             stats.jobsAfterFilters += 1;
             if (!existing) {

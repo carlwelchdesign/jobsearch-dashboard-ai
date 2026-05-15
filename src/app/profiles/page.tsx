@@ -18,12 +18,21 @@ import { prisma } from "@/lib/prisma";
 import { ProfileCreateForm } from "./profile-create-form";
 import { ProfileActions } from "./profile-actions";
 import { ProfileSuggestionPanel } from "./profile-suggestion-panel";
+import { ProfileOptimizerPanel } from "./profile-optimizer-panel";
+import type { OptimizerOutput } from "./profile-optimizer-panel";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProfilesPage() {
   const profiles = await prisma.jobSearchProfile.findMany({
     orderBy: [{ enabled: "desc" }, { name: "asc" }],
+  });
+  const latestOptimizerRun = await prisma.agentRun.findFirst({
+    where: {
+      agentType: "SEARCH_PROFILE_MANAGER",
+      status: "COMPLETED",
+    },
+    orderBy: { createdAt: "desc" },
   });
 
   return (
@@ -39,6 +48,7 @@ export default async function ProfilesPage() {
         <WorkflowGuide active="profiles" title="Step 1 of 5: set the search intent" />
 
         <ProfileSuggestionPanel />
+        <ProfileOptimizerPanel latest={isRecord(latestOptimizerRun?.outputJson) ? latestOptimizerRun.outputJson as OptimizerOutput : null} />
 
         <TableContainer component={Card}>
           <Table sx={{ minWidth: 920 }}>
@@ -99,4 +109,8 @@ export default async function ProfilesPage() {
       </Stack>
     </AppShell>
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

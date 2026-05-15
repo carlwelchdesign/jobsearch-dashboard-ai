@@ -37,6 +37,12 @@ export default async function JobDetailPage({ params }: { params: { id: string }
         },
         orderBy: { overallScore: "desc" },
       },
+      evaluations: {
+        include: {
+          jobSearchProfile: { select: { name: true } },
+        },
+        orderBy: { fitScore: "desc" },
+      },
       source: true,
       coverLetters: { orderBy: { createdAt: "desc" }, take: 1 },
       resumes: { orderBy: { createdAt: "desc" }, take: 1 },
@@ -52,6 +58,7 @@ export default async function JobDetailPage({ params }: { params: { id: string }
   if (!job) notFound();
 
   const topMatch = job.matches[0];
+  const topEvaluation = job.evaluations[0];
   const readyApplication = job.applications.find((application) => application.resume && application.coverLetter);
 
   return (
@@ -70,7 +77,11 @@ export default async function JobDetailPage({ params }: { params: { id: string }
             <Stack spacing={2}>
               <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
                 {topMatch ? <ScoreChip score={topMatch.overallScore} label={`${topMatch.overallScore} match`} /> : null}
+                {topEvaluation ? <ScoreChip score={topEvaluation.opportunityScore} label={`${topEvaluation.opportunityScore} opportunity`} /> : null}
+                {topEvaluation ? <ScoreChip score={topEvaluation.confidenceScore} label={`${topEvaluation.confidenceScore} confidence`} /> : null}
                 {topMatch ? <Chip variant="outlined" label={topMatch.jobSearchProfile.name} /> : null}
+                {topEvaluation ? <Chip variant="outlined" label={formatAction(topEvaluation.recommendedAction)} /> : null}
+                {topEvaluation?.recommendedResumeProfile ? <Chip variant="outlined" label={topEvaluation.recommendedResumeProfile} /> : null}
                 {job.source ? <Chip variant="outlined" label={job.source.name} /> : null}
                 {job.applicationUrl ? <Chip variant="outlined" label="Application URL saved" /> : null}
               </Stack>
@@ -163,10 +174,10 @@ export default async function JobDetailPage({ params }: { params: { id: string }
             <CardContent>
               <Stack spacing={2}>
                 <Typography variant="h3">Match explanation</Typography>
-                <Typography color="text.secondary">{topMatch.aiExplanation}</Typography>
-                <SignalSection title="Strongest matches" items={jsonArray(topMatch.strongestMatches)} color="success" />
-                <SignalSection title="Concerns" items={jsonArray(topMatch.concerns)} color="warning" />
-                <SignalSection title="Missing keywords" items={jsonArray(topMatch.missingKeywords)} color="error" />
+                <Typography color="text.secondary">{topEvaluation?.explanation ?? topMatch.aiExplanation}</Typography>
+                <SignalSection title="Strongest matches" items={jsonArray(topEvaluation?.strengths ?? topMatch.strongestMatches)} color="success" />
+                <SignalSection title="Concerns" items={jsonArray(topEvaluation?.risks ?? topMatch.concerns)} color="warning" />
+                <SignalSection title="Missing keywords" items={jsonArray(topEvaluation?.missingKeywords ?? topMatch.missingKeywords)} color="error" />
               </Stack>
             </CardContent>
           </Card>
@@ -232,4 +243,12 @@ function SignalSection({ title, items, color }: { title: string; items: string[]
       </Stack>
     </Box>
   );
+}
+
+function formatAction(action: string) {
+  return action
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
