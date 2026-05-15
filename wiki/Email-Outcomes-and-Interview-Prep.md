@@ -1,0 +1,119 @@
+# Email, Outcomes, and Interview Prep
+
+## Email Sync
+
+The app can ingest job-response emails and connect them to applications.
+
+Supported paths:
+
+- IMAP sync
+- Gmail OAuth foundation
+- Outlook OAuth foundation
+- manual message ingestion
+
+## IMAP
+
+Configure:
+
+```bash
+JOB_EMAIL_IMAP_HOST=imap.example.com
+JOB_EMAIL_IMAP_USER=you@example.com
+JOB_EMAIL_IMAP_PASSWORD=app-password
+EMAIL_SYNC_SECRET=local-secret
+```
+
+Run:
+
+```bash
+curl -X POST http://localhost:3000/api/email/imap-sync \
+  -H "Authorization: Bearer local-secret" \
+  -H "content-type: application/json" \
+  -d '{"limit":25,"sinceDays":14}'
+```
+
+## Gmail and Outlook OAuth
+
+OAuth connections are configured from Settings. Required variables:
+
+```bash
+GMAIL_OAUTH_CLIENT_ID=...
+GMAIL_OAUTH_CLIENT_SECRET=...
+GMAIL_OAUTH_REDIRECT_URI=http://localhost:3000/api/email/oauth/gmail/callback
+```
+
+```bash
+OUTLOOK_OAUTH_CLIENT_ID=...
+OUTLOOK_OAUTH_CLIENT_SECRET=...
+OUTLOOK_OAUTH_REDIRECT_URI=http://localhost:3000/api/email/oauth/outlook/callback
+```
+
+Google test apps must include the user email as an approved tester until verification is complete.
+
+## Email Classification
+
+Synced messages can be classified as:
+
+- rejection
+- recruiter response
+- interview request
+- coding assessment
+- take-home
+- scheduling request
+- offer
+- automated confirmation
+- no action
+- unrelated
+- needs review
+
+Matched messages update application outcomes or create Needs Me items when the agent cannot safely decide.
+
+## Outcomes
+
+Outcomes are tracked through `ApplicationOutcome`.
+
+Examples:
+
+- applied
+- rejected
+- ghosted
+- recruiter screen
+- tech screen
+- onsite
+- final
+- offer
+- closed
+
+Outcome data powers strategy recommendations.
+
+## Outcome Learning
+
+The Outcome Learning agent looks for patterns such as:
+
+- which search profiles produce callbacks
+- which sources produce noisy or low-quality jobs
+- which resume profiles correlate with better outcomes
+- which industries or title clusters are working
+- whether sample size is too low to trust a signal
+
+## Interview Prep
+
+When an email or application status indicates an interview, the app can run interview prep.
+
+Prep uses:
+
+- job description
+- company research
+- application packet
+- match concerns
+- approved candidate evidence
+
+Interview prep output can include:
+
+- likely interview themes
+- likely tests or assessments if known locally
+- focused talking points
+- project evidence to prepare
+- risks and gaps to address
+- prep tasks
+
+The app does not claim external research facts unless they are available from saved context or explicitly researched and stored.
