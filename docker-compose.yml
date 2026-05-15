@@ -17,6 +17,64 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    profiles: ["worker", "full"]
+    image: redis:7-alpine
+    container_name: job-search-os-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    profiles: ["app", "full"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: job-search-os-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/job_search_os?schema=public
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      CRON_SECRET: ${CRON_SECRET:-}
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3000:3000"
+    command: sh -c "npm run prisma:migrate:deploy && npm start"
+
+  worker:
+    profiles: ["worker", "full"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: job-search-os-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/job_search_os?schema=public
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      REDIS_URL: redis://redis:6379
+      EMBEDDINGS_WORKER_INTERVAL_MS: ${EMBEDDINGS_WORKER_INTERVAL_MS:-600000}
+      EMBEDDINGS_WORKER_BATCH_SIZE: ${EMBEDDINGS_WORKER_BATCH_SIZE:-50}
+      EMBEDDINGS_WORKER_BACKFILL_EVIDENCE: ${EMBEDDINGS_WORKER_BACKFILL_EVIDENCE:-false}
+    command: sh -c "npm run prisma:migrate:deploy && npm run worker:embeddings"
+
   mcp:
     profiles: ["mcp"]
     build:

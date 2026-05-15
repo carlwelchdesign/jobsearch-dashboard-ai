@@ -1,6 +1,7 @@
-import type { CandidateEvidence, EvidenceConfidence, Prisma } from "@prisma/client";
+import { Prisma, type CandidateEvidence, type EvidenceConfidence } from "@prisma/client";
 import { confidenceWhere } from "@/lib/evidence/confidence";
 import { cosineSimilarity, createQueryEmbedding, numericVector } from "@/lib/evidence/embeddings";
+import { pgVectorSearchAvailable } from "@/lib/evidence/pgvector";
 import { normalizeTags } from "@/lib/evidence/tags";
 import { prisma } from "@/lib/prisma";
 
@@ -54,15 +55,26 @@ export async function retrieveCandidateEvidence(input: RetrieveCandidateEvidence
     take: Math.max(input.limit ?? 24, 100),
   });
   const queryEmbedding = await createQueryEmbedding(input.query);
+  const pgVectorScores = queryEmbedding
+    ? await pgVectorEvidenceScores({
+        candidateProfileId,
+        confidenceMinimum,
+        usableFor: input.usableFor,
+        excludedEvidenceIds: input.excludedEvidenceIds ?? [],
+        queryVector: queryEmbedding.vector,
+        limit: Math.max(input.limit ?? 24, 100),
+      })
+    : new Map<string, number>();
 
   const scoredEvidence = evidence
     .map((item) => {
       const lexicalScore = scoreEvidenceText(item, input.query, requiredTags);
       const vectorScore = queryEmbedding ? scoreEvidenceVector(item.embeddings[0]?.vector, queryEmbedding.vector) : 0;
       const chunkScore = scoreEvidenceChunks(item.chunks, input.query, queryEmbedding?.vector);
+      const pgVectorScore = pgVectorScores.get(item.id) ?? 0;
       return {
         ...item,
-        relevanceScore: lexicalScore + vectorScore + chunkScore,
+        relevanceScore: lexicalScore + vectorScore + chunkScore + pgVectorScore,
       };
     })
     .filter((item) => item.relevanceScore > 0)
@@ -70,6 +82,68 @@ export async function retrieveCandidateEvidence(input: RetrieveCandidateEvidence
 
   return dedupeRetrievedEvidence(scoredEvidence)
     .slice(0, input.limit ?? 24);
+}
+
+async function pgVectorEvidenceScores({
+  candidateProfileId,
+  confidenceMinimum,
+  usableFor,
+  excludedEvidenceIds,
+  queryVector,
+  limit,
+}: {
+  candidateProfileId: string;
+  confidenceMinimum: EvidenceConfidence;
+  usableFor?: EvidenceUse;
+  excludedEvidenceIds: string[];
+  queryVector: number[];
+  limit: number;
+}) {
+  if (queryVector.length !== 1536) return new Map<string, number>();
+  if (!(await pgVectorSearchAvailable())) return new Map<string, number>();
+  const confidenceValues = confidenceWhere(confidenceMinimum);
+  const usabilityFilter = usableFor === "resume"
+    ? Prisma.sql`AND e."usableInResume" = true`
+    : usableFor === "coverLetter"
+    ? Prisma.sql`AND e."usableInCoverLetter" = true`
+    : usableFor === "recruiterMessage"
+    ? Prisma.sql`AND e."usableInRecruiterMessage" = true`
+    : Prisma.empty;
+  const excludedFilter = excludedEvidenceIds.length
+    ? Prisma.sql`AND e."id" NOT IN (${Prisma.join(excludedEvidenceIds)})`
+    : Prisma.empty;
+  const vectorLiteral = `[${queryVector.join(",")}]`;
+  try {
+    const rows = await prisma.$queryRaw<Array<{ evidenceId: string; score: number }>>`
+      SELECT "evidenceId", MAX(score) AS score
+      FROM (
+        SELECT e."id" AS "evidenceId", GREATEST(0, 1 - (emb."vectorSearch" <=> ${vectorLiteral}::vector)) * 25 AS score
+        FROM "CandidateEvidence" e
+        JOIN "EvidenceEmbedding" emb ON emb."evidenceId" = e."id"
+        WHERE e."candidateProfileId" = ${candidateProfileId}
+          AND e."confidence" IN (${Prisma.join(confidenceValues)})
+          AND emb."vectorSearch" IS NOT NULL
+          ${usabilityFilter}
+          ${excludedFilter}
+        UNION ALL
+        SELECT e."id" AS "evidenceId", GREATEST(0, 1 - (chunk."vectorSearch" <=> ${vectorLiteral}::vector)) * 25 AS score
+        FROM "CandidateEvidence" e
+        JOIN "EvidenceChunk" chunk ON chunk."evidenceId" = e."id"
+        WHERE e."candidateProfileId" = ${candidateProfileId}
+          AND e."confidence" IN (${Prisma.join(confidenceValues)})
+          AND chunk."vectorSearch" IS NOT NULL
+          ${usabilityFilter}
+          ${excludedFilter}
+      ) ranked
+      GROUP BY "evidenceId"
+      ORDER BY score DESC
+      LIMIT ${limit}
+    `;
+    return new Map(rows.map((row) => [row.evidenceId, Number(row.score) || 0]));
+  } catch (error) {
+    warnPgVectorRetrievalUnavailable(error);
+    return new Map<string, number>();
+  }
 }
 
 function scoreEvidenceChunks(chunks: Array<{ content: string; vector: Prisma.JsonValue }>, query?: string, queryVector?: number[]) {
@@ -145,6 +219,14 @@ function normalizeQueryTerms(query?: string) {
     .split(/[\s,]+/)
     .map((term) => term.trim())
     .filter((term) => term.length > 1);
+}
+
+let warnedPgVectorRetrievalUnavailable = false;
+
+function warnPgVectorRetrievalUnavailable(error: unknown) {
+  if (warnedPgVectorRetrievalUnavailable) return;
+  warnedPgVectorRetrievalUnavailable = true;
+  console.warn("pgvector retrieval unavailable; using JSON vector fallback.", error instanceof Error ? error.message : error);
 }
 
 async function firstCandidateProfileId() {

@@ -15,7 +15,9 @@
     "db:reset": "prisma migrate reset",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:seed": "prisma db seed",
+    "worker:embeddings": "tsx scripts/embeddings-worker.ts",
     "mcp:server": "tsx scripts/mcp-server.ts",
     "assistant:install": "python3 -m venv .venv-assistant && .venv-assistant/bin/python -m pip install --upgrade pip && .venv-assistant/bin/python -m pip install -r requirements-local.txt && .venv-assistant/bin/python -m playwright install chromium",
     "assistant:apply": ".venv-assistant/bin/python scripts/playwright_assistant.py"

@@ -31,6 +31,24 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+Run the full local Docker stack instead:
+
+```bash
+docker compose --profile full up --build
+```
+
+That starts Postgres with pgvector, Redis, the Next.js app on `http://localhost:3000`, and an embeddings worker. To run only the containerized app without the worker:
+
+```bash
+docker compose --profile app up --build app
+```
+
+To run only the embeddings worker:
+
+```bash
+docker compose --profile worker up --build worker
+```
+
 ## Optional Providers
 
 The app works without external service keys by using deterministic local fallbacks. Add these when you want provider-backed behavior:
@@ -155,3 +173,21 @@ npm run db:logs
 npm run db:down
 npm run db:reset
 ```
+
+## Evidence Worker
+
+Evidence embeddings can be generated from the dashboard with `Embed evidence`, or by running the worker:
+
+```bash
+npm run worker:embeddings
+```
+
+Worker environment knobs:
+
+```txt
+EMBEDDINGS_WORKER_INTERVAL_MS=600000
+EMBEDDINGS_WORKER_BATCH_SIZE=50
+EMBEDDINGS_WORKER_BACKFILL_EVIDENCE=false
+```
+
+The worker never generates application materials or submits applications. It only syncs evidence chunks and embeddings for retrieval.

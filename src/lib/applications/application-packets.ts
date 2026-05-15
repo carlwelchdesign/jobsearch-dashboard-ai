@@ -71,6 +71,35 @@ export async function syncApplicationPacket(applicationId: string) {
   });
 }
 
+export async function backfillApplicationPackets(limit = 200) {
+  const applications = await prisma.application.findMany({
+    select: { id: true },
+    orderBy: { updatedAt: "desc" },
+    take: Math.min(Math.max(limit, 1), 500),
+  });
+  let synced = 0;
+  const errors: Array<{ applicationId: string; error: string }> = [];
+
+  for (const application of applications) {
+    try {
+      await syncApplicationPacket(application.id);
+      synced += 1;
+    } catch (error) {
+      errors.push({
+        applicationId: application.id,
+        error: error instanceof Error ? error.message : "Unknown packet sync error",
+      });
+    }
+  }
+
+  return {
+    scanned: applications.length,
+    synced,
+    errors,
+    message: `Synced ${synced} application packet${synced === 1 ? "" : "s"} from ${applications.length} application${applications.length === 1 ? "" : "s"}.`,
+  };
+}
+
 export function buildApplicationPacketData({
   application,
   resume,

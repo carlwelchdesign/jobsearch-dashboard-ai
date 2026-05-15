@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildApplicationPacketData } from "@/lib/applications/application-packets";
+import { buildApplicationPacketData, backfillApplicationPackets } from "@/lib/applications/application-packets";
 
 describe("application packet aggregate", () => {
   it("stores generated resume, cover letter, QA, and evidence refs as a draft packet", () => {
@@ -70,5 +70,9 @@ describe("application packet aggregate", () => {
     });
 
     expect(packet.status).toBe("SUBMITTED");
+  });
+
+  it("exports a backfill function for existing applications", () => {
+    expect(typeof backfillApplicationPackets).toBe("function");
   });
 });

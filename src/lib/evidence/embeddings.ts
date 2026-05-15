@@ -2,6 +2,7 @@ import crypto from "crypto";
 import type { CandidateEvidence, Prisma } from "@prisma/client";
 import { createEmbedding, isOpenAiConfigured } from "@/lib/ai/openai";
 import { chunkEmbeddingText, syncEvidenceChunks } from "@/lib/evidence/chunking";
+import { pgVectorSearchAvailable } from "@/lib/evidence/pgvector";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
@@ -60,7 +61,7 @@ export async function backfillEvidenceEmbeddings(input: EvidenceEmbeddingBackfil
       continue;
     }
 
-    await prisma.evidenceEmbedding.upsert({
+    const embedding = await prisma.evidenceEmbedding.upsert({
       where: {
         evidenceId_model_contentHash: {
           evidenceId: item.id,
@@ -80,6 +81,7 @@ export async function backfillEvidenceEmbeddings(input: EvidenceEmbeddingBackfil
         contentHash,
       },
     });
+    await updateEvidenceEmbeddingVectorSearch(embedding.id, result.vector);
     embedded += 1;
   }
 
@@ -140,6 +142,7 @@ export async function backfillEvidenceChunkEmbeddings(input: EvidenceEmbeddingBa
         contentHash,
       },
     });
+    await updateEvidenceChunkVectorSearch(chunk.id, result.vector);
     embedded += 1;
   }
 
@@ -187,6 +190,47 @@ export function numericVector(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is number => typeof item === "number" && Number.isFinite(item)) : [];
 }
 
-function hashContent(value: string) {
+export function pgVectorLiteral(vector: number[]) {
+  const numeric = vector.filter((item) => typeof item === "number" && Number.isFinite(item));
+  return `[${numeric.join(",")}]`;
+}
+
+async function updateEvidenceEmbeddingVectorSearch(id: string, vector: number[]) {
+  if (vector.length !== 1536) return;
+  if (!(await pgVectorSearchAvailable())) return;
+  try {
+    await prisma.$executeRaw`
+      UPDATE "EvidenceEmbedding"
+      SET "vectorSearch" = ${pgVectorLiteral(vector)}::vector
+      WHERE "id" = ${id}
+    `;
+  } catch (error) {
+    warnPgVectorUnavailable(error);
+  }
+}
+
+async function updateEvidenceChunkVectorSearch(id: string, vector: number[]) {
+  if (vector.length !== 1536) return;
+  if (!(await pgVectorSearchAvailable())) return;
+  try {
+    await prisma.$executeRaw`
+      UPDATE "EvidenceChunk"
+      SET "vectorSearch" = ${pgVectorLiteral(vector)}::vector
+      WHERE "id" = ${id}
+    `;
+  } catch (error) {
+    warnPgVectorUnavailable(error);
+  }
+}
+
+export function hashContent(value: string) {
   return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+let warnedPgVectorUnavailable = false;
+
+function warnPgVectorUnavailable(error: unknown) {
+  if (warnedPgVectorUnavailable) return;
+  warnedPgVectorUnavailable = true;
+  console.warn("pgvector search column unavailable; using JSON vector fallback.", error instanceof Error ? error.message : error);
 }

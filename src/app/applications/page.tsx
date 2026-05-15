@@ -20,6 +20,7 @@ import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { prisma } from "@/lib/prisma";
 import { ApplicationCreateForm } from "./application-create-form";
 import { ApplicationDeleteButton } from "./application-delete-button";
+import { BackfillPacketsButton } from "./backfill-packets-button";
 import { MarkAppliedButton } from "./mark-applied-button";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ const columns = ["approved", "ready_to_apply", "applied", "follow_up_due", "scre
 export default async function ApplicationsPage() {
   const [applications, matches] = await Promise.all([
     prisma.application.findMany({
-      include: { jobPosting: true, resume: true, coverLetter: true },
+      include: { jobPosting: true, resume: true, coverLetter: true, applicationPackets: { take: 1 } },
       orderBy: { updatedAt: "desc" },
     }),
     prisma.jobProfileMatch.findMany({
@@ -63,6 +64,7 @@ export default async function ApplicationsPage() {
               </Typography>
               <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ alignItems: { md: "center" } }}>
                 <BulkPrepareControl compact defaultMinimumScore={85} defaultLimit={10} />
+                <BackfillPacketsButton />
                 <ActionButton href="/applications/assistant" variant="outlined" startIcon={<BoltOutlinedIcon />}>
                   Open sprint console
                 </ActionButton>
@@ -99,6 +101,7 @@ export default async function ApplicationsPage() {
                           <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
                             {application.resume ? <Chip size="small" color="success" variant="outlined" label="Resume" /> : null}
                             {application.coverLetter ? <Chip size="small" color="secondary" variant="outlined" label="Cover letter" /> : null}
+                            {application.applicationPackets.length ? <Chip size="small" color="primary" variant="outlined" label="Packet" /> : null}
                           </Stack>
                           <Box sx={{ mt: 1 }}>
                             <ActionButton href={`/applications/${application.id}`} size="small" variant="outlined" startIcon={<FactCheckOutlinedIcon />}>
