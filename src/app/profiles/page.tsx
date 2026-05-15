@@ -20,6 +20,8 @@ import { ProfileActions } from "./profile-actions";
 import { ProfileSuggestionPanel } from "./profile-suggestion-panel";
 import { ProfileOptimizerPanel } from "./profile-optimizer-panel";
 import type { OptimizerOutput } from "./profile-optimizer-panel";
+import { SearchExpansionPanel } from "./search-expansion-panel";
+import type { SearchExpansionPanelOutput } from "./search-expansion-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +42,13 @@ export default async function ProfilesPage() {
     },
     orderBy: { createdAt: "desc" },
   });
+  const latestExpansionRun = await prisma.agentRun.findFirst({
+    where: {
+      agentType: "SEARCH_EXPANSION",
+      status: "COMPLETED",
+    },
+    orderBy: { createdAt: "desc" },
+  });
 
   return (
     <AppShell>
@@ -55,6 +64,7 @@ export default async function ProfilesPage() {
 
         <ProfileSuggestionPanel />
         <ProfileOptimizerPanel latest={isRecord(latestOptimizerRun?.outputJson) ? latestOptimizerRun.outputJson as OptimizerOutput : null} />
+        <SearchExpansionPanel latest={isRecord(latestExpansionRun?.outputJson) ? latestExpansionRun.outputJson as SearchExpansionPanelOutput : null} />
 
         <TableContainer component={Card}>
           <Table sx={{ minWidth: 920 }}>

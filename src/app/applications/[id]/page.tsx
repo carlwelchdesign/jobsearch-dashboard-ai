@@ -6,6 +6,7 @@ import ContactPageOutlinedIcon from "@mui/icons-material/ContactPageOutlined";
 import ConnectWithoutContactOutlinedIcon from "@mui/icons-material/ConnectWithoutContactOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
 import PlayCircleOutlineOutlinedIcon from "@mui/icons-material/PlayCircleOutlineOutlined";
 import PsychologyOutlinedIcon from "@mui/icons-material/PsychologyOutlined";
 import Box from "@mui/material/Box";
@@ -27,6 +28,7 @@ import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { InterviewPrepButton } from "./interview-prep-button";
 import { CompanyResearchButton } from "./company-research-button";
+import { CompensationOpportunityButton } from "./compensation-opportunity-button";
 import { OutcomeForm } from "./outcome-form";
 import { PortfolioMatchButton } from "./portfolio-match-button";
 import { RecruiterOutreachButton } from "./recruiter-outreach-button";
@@ -102,8 +104,21 @@ type CompanyResearchOutput = {
   reasoningSummary?: string;
 };
 
+type CompensationOpportunityOutput = {
+  opportunityScore?: number;
+  compensationAssessment?: string;
+  remoteAssessment?: string;
+  freshnessAssessment?: string;
+  strategicValue?: string[];
+  negotiationPrep?: string[];
+  risks?: string[];
+  recommendedAction?: string;
+  confidence?: number;
+  reasoningSummary?: string;
+};
+
 export default async function ApplicationPacketPage({ params }: { params: { id: string } }) {
-  const [application, latestPrepRun, latestPortfolioRun, latestCompanyResearchRun] = await Promise.all([
+  const [application, latestPrepRun, latestPortfolioRun, latestCompanyResearchRun, latestCompensationRun] = await Promise.all([
     prisma.application.findUnique({
       where: { id: params.id },
       include: {
@@ -156,6 +171,17 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
       },
       orderBy: { createdAt: "desc" },
     }),
+    prisma.agentRun.findFirst({
+      where: {
+        agentType: "COMPENSATION_OPPORTUNITY",
+        status: "COMPLETED",
+        inputJson: {
+          path: ["applicationId"],
+          equals: params.id,
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
 
   if (!application) notFound();
@@ -169,6 +195,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
   const interviewPrep = interviewPrepOutput(latestPrepRun?.outputJson);
   const portfolioMatch = portfolioMatchOutput(latestPortfolioRun?.outputJson);
   const companyResearch = companyResearchOutput(latestCompanyResearchRun?.outputJson);
+  const compensationOpportunity = compensationOpportunityOutput(latestCompensationRun?.outputJson);
   const latestOutreach = await prisma.recruiterOutreach.findFirst({
     where: {
       userId: application.userId,
@@ -224,6 +251,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                   {application.resume ? <ActionButton href={`/api/resumes/generated/${application.resume.id}/pdf`} variant="outlined" startIcon={<DownloadOutlinedIcon />}>Resume PDF</ActionButton> : null}
                   {application.coverLetter ? <ActionButton href={`/api/cover-letters/${application.coverLetter.id}/pdf`} variant="outlined" startIcon={<DownloadOutlinedIcon />}>Letter PDF</ActionButton> : null}
                   <CompanyResearchButton applicationId={application.id} />
+                  <CompensationOpportunityButton applicationId={application.id} />
                   <PortfolioMatchButton applicationId={application.id} />
                   <RecruiterOutreachButton applicationId={application.id} />
                   <InterviewPrepButton applicationId={application.id} />
@@ -340,6 +368,32 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                 </Stack>
               ) : (
                 <EmptyState title="No company brief yet" body="Generate a grounded company/job brief from the saved job description and source metadata." />
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <Stack spacing={2}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <PaidOutlinedIcon />
+                <Typography variant="h3">Compensation opportunity</Typography>
+              </Stack>
+              {compensationOpportunity ? (
+                <Stack spacing={2}>
+                  <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                    {typeof compensationOpportunity.opportunityScore === "number" ? <ScoreChip score={compensationOpportunity.opportunityScore} label={`${compensationOpportunity.opportunityScore} opp`} /> : null}
+                    {compensationOpportunity.recommendedAction ? <Chip variant="outlined" label={formatAction(compensationOpportunity.recommendedAction)} /> : null}
+                    {typeof compensationOpportunity.confidence === "number" ? <Chip variant="outlined" label={`Confidence ${Math.round(compensationOpportunity.confidence * 100)}`} /> : null}
+                  </Stack>
+                  <PrepList title="Assessments" items={[compensationOpportunity.compensationAssessment, compensationOpportunity.remoteAssessment, compensationOpportunity.freshnessAssessment].filter((item): item is string => Boolean(item))} />
+                  <SignalSection title="Strategic value" items={compensationOpportunity.strategicValue ?? []} color="success" />
+                  <PrepList title="Negotiation prep" items={compensationOpportunity.negotiationPrep ?? []} />
+                  <SignalSection title="Comp risks" items={compensationOpportunity.risks ?? []} color="warning" />
+                </Stack>
+              ) : (
+                <EmptyState title="No compensation brief yet" body="Generate a compensation opportunity brief from saved salary, remote, freshness, and profile preference data." />
               )}
             </Stack>
           </CardContent>
@@ -588,6 +642,18 @@ function portfolioMatchOutput(value: unknown): PortfolioMatchOutput | null {
 
 function companyResearchOutput(value: unknown): CompanyResearchOutput | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as CompanyResearchOutput : null;
+}
+
+function compensationOpportunityOutput(value: unknown): CompensationOpportunityOutput | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as CompensationOpportunityOutput : null;
+}
+
+function formatAction(action: string) {
+  return action
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function formatOutcome(outcome: string) {
