@@ -9,6 +9,7 @@ import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import ManageSearchOutlinedIcon from "@mui/icons-material/ManageSearchOutlined";
+import PolicyOutlinedIcon from "@mui/icons-material/PolicyOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
 import Avatar from "@mui/material/Avatar";
@@ -32,6 +33,7 @@ const drawerWidth = 264;
 const navItems = [
   { href: "/dashboard", label: "Command Center", eyebrow: "Home", icon: DashboardOutlinedIcon },
   { href: "/profiles", label: "1. Profiles", eyebrow: "Set intent", icon: ManageSearchOutlinedIcon },
+  { href: "/evidence", label: "Evidence", eyebrow: "Truth layer", icon: PolicyOutlinedIcon },
   { href: "/jobs", label: "2. Review Jobs", eyebrow: "Approve matches", icon: WorkOutlineOutlinedIcon },
   { href: "/resumes", label: "3. Materials", eyebrow: "Resume source", icon: FactCheckOutlinedIcon },
   { href: "/applications", label: "4. Ready Queue", eyebrow: "Track packages", icon: AssignmentTurnedInOutlinedIcon },
