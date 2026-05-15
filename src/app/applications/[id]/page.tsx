@@ -1,5 +1,7 @@
+import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import AssignmentTurnedInOutlinedIcon from "@mui/icons-material/AssignmentTurnedInOutlined";
+import BusinessOutlinedIcon from "@mui/icons-material/BusinessOutlined";
 import ContactPageOutlinedIcon from "@mui/icons-material/ContactPageOutlined";
 import ConnectWithoutContactOutlinedIcon from "@mui/icons-material/ConnectWithoutContactOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
@@ -24,7 +26,9 @@ import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { InterviewPrepButton } from "./interview-prep-button";
+import { CompanyResearchButton } from "./company-research-button";
 import { OutcomeForm } from "./outcome-form";
+import { PortfolioMatchButton } from "./portfolio-match-button";
 import { RecruiterOutreachButton } from "./recruiter-outreach-button";
 import { MarkAppliedButton } from "../mark-applied-button";
 
@@ -71,8 +75,35 @@ type RecruiterQualityReview = {
   styleViolations?: string[];
 };
 
+type PortfolioMatchOutput = {
+  applicationId?: string;
+  projectLinks?: Array<{
+    name: string;
+    url: string | null;
+    source: "profile_project" | "github_repo";
+    fitScore: number;
+    talkingPoint: string;
+    tags: string[];
+  }>;
+  warnings?: string[];
+  confidence?: number;
+  reasoningSummary?: string;
+};
+
+type CompanyResearchOutput = {
+  brief?: string;
+  roleThemes?: string[];
+  likelyTeamNeeds?: string[];
+  positioningAngles?: string[];
+  questionsToAnswer?: string[];
+  risks?: string[];
+  sourceNotes?: string[];
+  confidence?: number;
+  reasoningSummary?: string;
+};
+
 export default async function ApplicationPacketPage({ params }: { params: { id: string } }) {
-  const [application, latestPrepRun] = await Promise.all([
+  const [application, latestPrepRun, latestPortfolioRun, latestCompanyResearchRun] = await Promise.all([
     prisma.application.findUnique({
       where: { id: params.id },
       include: {
@@ -103,6 +134,28 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
       },
       orderBy: { createdAt: "desc" },
     }),
+    prisma.agentRun.findFirst({
+      where: {
+        agentType: "PORTFOLIO_MATCH",
+        status: "COMPLETED",
+        inputJson: {
+          path: ["applicationId"],
+          equals: params.id,
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.agentRun.findFirst({
+      where: {
+        agentType: "COMPANY_RESEARCH",
+        status: "COMPLETED",
+        inputJson: {
+          path: ["applicationId"],
+          equals: params.id,
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
 
   if (!application) notFound();
@@ -114,6 +167,8 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
   const evaluation = application.jobPosting.evaluations[0];
   const evidenceRefs = Array.from(new Set([...(strategy?.evidenceRefs ?? []), ...(qa?.evidenceRefs ?? [])]));
   const interviewPrep = interviewPrepOutput(latestPrepRun?.outputJson);
+  const portfolioMatch = portfolioMatchOutput(latestPortfolioRun?.outputJson);
+  const companyResearch = companyResearchOutput(latestCompanyResearchRun?.outputJson);
   const latestOutreach = await prisma.recruiterOutreach.findFirst({
     where: {
       userId: application.userId,
@@ -168,6 +223,8 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                 <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", justifyContent: { md: "flex-end" } }}>
                   {application.resume ? <ActionButton href={`/api/resumes/generated/${application.resume.id}/pdf`} variant="outlined" startIcon={<DownloadOutlinedIcon />}>Resume PDF</ActionButton> : null}
                   {application.coverLetter ? <ActionButton href={`/api/cover-letters/${application.coverLetter.id}/pdf`} variant="outlined" startIcon={<DownloadOutlinedIcon />}>Letter PDF</ActionButton> : null}
+                  <CompanyResearchButton applicationId={application.id} />
+                  <PortfolioMatchButton applicationId={application.id} />
                   <RecruiterOutreachButton applicationId={application.id} />
                   <InterviewPrepButton applicationId={application.id} />
                   {application.status === "ready_to_apply" && application.resume && application.coverLetter ? (
@@ -263,6 +320,66 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
             </CardContent>
           </Card>
         </Box>
+
+        <Card>
+          <CardContent>
+            <Stack spacing={2}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <BusinessOutlinedIcon />
+                <Typography variant="h3">Company brief</Typography>
+              </Stack>
+              {companyResearch ? (
+                <Stack spacing={2}>
+                  <Typography color="text.secondary">{companyResearch.brief}</Typography>
+                  <SignalSection title="Role themes" items={companyResearch.roleThemes ?? []} color="primary" />
+                  <PrepList title="Likely team needs" items={companyResearch.likelyTeamNeeds ?? []} />
+                  <PrepList title="Positioning angles" items={companyResearch.positioningAngles ?? []} />
+                  <PrepList title="Questions to answer" items={companyResearch.questionsToAnswer ?? []} />
+                  <SignalSection title="Brief risks" items={companyResearch.risks ?? []} color="warning" />
+                  <SignalSection title="Source notes" items={companyResearch.sourceNotes ?? []} color="success" />
+                </Stack>
+              ) : (
+                <EmptyState title="No company brief yet" body="Generate a grounded company/job brief from the saved job description and source metadata." />
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <Stack spacing={2}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <AccountTreeOutlinedIcon />
+                <Typography variant="h3">Portfolio match</Typography>
+              </Stack>
+              {portfolioMatch?.projectLinks?.length ? (
+                <Stack spacing={1.5}>
+                  <Typography variant="body2" color="text.secondary">
+                    {portfolioMatch.reasoningSummary ?? "Matched projects and GitHub repositories against this job."}
+                  </Typography>
+                  {portfolioMatch.projectLinks.map((project) => (
+                    <Box key={`${project.source}-${project.name}`} sx={{ borderTop: 1, borderColor: "divider", pt: 1.5 }}>
+                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
+                        <Box>
+                          <Typography sx={{ fontWeight: 850 }}>{project.name}</Typography>
+                          <Typography variant="body2" color="text.secondary">{project.talkingPoint}</Typography>
+                        </Box>
+                        <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
+                          <ScoreChip score={project.fitScore} />
+                          {project.url ? <ActionButton href={project.url} size="small" endIcon={<OpenInNewIcon />}>Open</ActionButton> : null}
+                        </Stack>
+                      </Stack>
+                      <SignalSection title={project.source === "github_repo" ? "Repository tags" : "Project tags"} items={project.tags ?? []} color="primary" />
+                    </Box>
+                  ))}
+                </Stack>
+              ) : (
+                <EmptyState title="No portfolio match yet" body="Generate a portfolio match to choose which projects or GitHub repositories to mention for this role." />
+              )}
+              <SignalSection title="Portfolio warnings" items={portfolioMatch?.warnings ?? []} color="warning" />
+            </Stack>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardContent>
@@ -463,6 +580,14 @@ function interviewPrepOutput(value: unknown): InterviewPrepOutput | null {
 
 function recruiterQualityReview(value: unknown): RecruiterQualityReview | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as RecruiterQualityReview : null;
+}
+
+function portfolioMatchOutput(value: unknown): PortfolioMatchOutput | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as PortfolioMatchOutput : null;
+}
+
+function companyResearchOutput(value: unknown): CompanyResearchOutput | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as CompanyResearchOutput : null;
 }
 
 function formatOutcome(outcome: string) {
