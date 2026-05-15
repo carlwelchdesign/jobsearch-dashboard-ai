@@ -12,6 +12,9 @@ export type EvidenceDraft = {
   sourceType: CandidateEvidenceSourceType;
   sourceRef?: string | null;
   confidence: EvidenceConfidence;
+  usableInResume?: boolean;
+  usableInCoverLetter?: boolean;
+  usableInRecruiterMessage?: boolean;
   tags?: string[];
   metadata?: Prisma.InputJsonValue;
 };
@@ -104,6 +107,81 @@ export async function syncGithubRepositoryEvidence(userProfileId: string, reposi
   }
 
   return results;
+}
+
+export async function syncApprovedApplicationPacketEvidence(applicationId: string) {
+  const packet = await prisma.applicationPacket.findUnique({
+    where: { applicationId },
+    include: {
+      application: true,
+      jobPosting: true,
+      user: { include: { profile: true } },
+    },
+  });
+
+  if (!packet?.user.profile) return null;
+  if (packet.status !== "APPROVED" && packet.status !== "SUBMITTED") return null;
+
+  return upsertEvidence(buildApprovedApplicationPacketEvidenceDraft(packet.user.profile.id, {
+    id: packet.id,
+    applicationId: packet.applicationId,
+    jobPostingId: packet.jobPostingId,
+    company: packet.jobPosting.company,
+    title: packet.jobPosting.title,
+    tailoredResumeContent: packet.tailoredResumeContent,
+    coverLetterContent: packet.coverLetterContent,
+    recruiterMessage: packet.recruiterMessage,
+    hiringManagerMessage: packet.hiringManagerMessage,
+    evidenceRefs: packet.evidenceRefs,
+    status: packet.status,
+  }));
+}
+
+export function buildApprovedApplicationPacketEvidenceDraft(
+  userProfileId: string,
+  packet: {
+    id: string;
+    applicationId: string;
+    jobPostingId: string;
+    company: string;
+    title: string;
+    tailoredResumeContent?: string | null;
+    coverLetterContent?: string | null;
+    recruiterMessage?: string | null;
+    hiringManagerMessage?: string | null;
+    evidenceRefs?: unknown;
+    status: "APPROVED" | "SUBMITTED";
+  },
+): EvidenceDraft {
+  const content = [
+    `Approved application material for ${packet.company} - ${packet.title}.`,
+    packet.coverLetterContent ? `Cover letter style sample: ${boundedText(packet.coverLetterContent, 900)}` : null,
+    packet.recruiterMessage ? `Recruiter message style sample: ${boundedText(packet.recruiterMessage, 500)}` : null,
+    packet.hiringManagerMessage ? `Hiring manager message style sample: ${boundedText(packet.hiringManagerMessage, 500)}` : null,
+    packet.tailoredResumeContent ? `Resume positioning sample: ${boundedText(packet.tailoredResumeContent, 900)}` : null,
+  ].filter(Boolean).join("\n\n");
+
+  return {
+    candidateProfileId: userProfileId,
+    type: "WRITING_STYLE",
+    title: `Approved application packet: ${packet.company} - ${packet.title}`,
+    content,
+    sourceType: "GENERATED_BUT_APPROVED",
+    sourceRef: packet.id,
+    confidence: "INFERRED",
+    usableInResume: false,
+    usableInCoverLetter: true,
+    usableInRecruiterMessage: true,
+    tags: inferEvidenceTags(packet.company, packet.title, content),
+    metadata: {
+      applicationPacketId: packet.id,
+      applicationId: packet.applicationId,
+      jobPostingId: packet.jobPostingId,
+      generatedMaterialStyleReference: true,
+      sourcePacketStatus: packet.status,
+      evidenceRefs: jsonStringArray(packet.evidenceRefs),
+    } as Prisma.InputJsonValue,
+  };
 }
 
 export function buildGithubRepositoryEvidenceDraft(userProfileId: string, repo: GithubRepositoryEvidenceSource): EvidenceDraft {
@@ -233,9 +311,9 @@ export async function upsertEvidence(draft: EvidenceDraft) {
     sourceType: draft.sourceType,
     sourceRef: draft.sourceRef,
     confidence: draft.confidence,
-    usableInResume: usable,
-    usableInCoverLetter: usable,
-    usableInRecruiterMessage: usable,
+    usableInResume: draft.usableInResume ?? usable,
+    usableInCoverLetter: draft.usableInCoverLetter ?? usable,
+    usableInRecruiterMessage: draft.usableInRecruiterMessage ?? usable,
     tags: tags as Prisma.InputJsonValue,
     metadata: (draft.metadata ?? {}) as Prisma.InputJsonValue,
   };
@@ -257,4 +335,13 @@ export async function upsertEvidence(draft: EvidenceDraft) {
   });
   await syncEvidenceChunks(evidence);
   return evidence;
+}
+
+function boundedText(value: string, maxLength: number) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength).trim()}...` : normalized;
+}
+
+function jsonStringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }

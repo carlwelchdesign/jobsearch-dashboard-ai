@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { classifyConfidence, classifyEvidenceType } from "@/lib/agents/candidate-intelligence";
 import { confidenceMeetsMinimum, truthLevelToEvidenceConfidence } from "@/lib/evidence/confidence";
 import { createEvidenceChunks } from "@/lib/evidence/chunking";
-import { buildGithubRepositoryEvidenceDraft, createResumeEvidenceChunks } from "@/lib/evidence/ingest";
+import { buildApprovedApplicationPacketEvidenceDraft, buildGithubRepositoryEvidenceDraft, createResumeEvidenceChunks } from "@/lib/evidence/ingest";
 import { dedupeRetrievedEvidence, scoreEvidenceText } from "@/lib/evidence/retrieval";
 import { inferEvidenceTags } from "@/lib/evidence/tags";
 
@@ -136,5 +136,33 @@ React TypeScript Next.js Storybook Playwright
     expect(draft.confidence).toBe("INFERRED");
     expect(draft.content).toContain("Repository: https://github.com/carl/webauthn-core");
     expect(draft.tags).toEqual(expect.arrayContaining(["typescript", "webauthn", "security"]));
+  });
+
+  it("stores approved generated packets as writing-style evidence, not resume fact evidence", () => {
+    const draft = buildApprovedApplicationPacketEvidenceDraft("profile_1", {
+      id: "packet_1",
+      applicationId: "app_1",
+      jobPostingId: "job_1",
+      company: "Linear",
+      title: "Senior Frontend Engineer",
+      tailoredResumeContent: "Senior frontend positioning with React and TypeScript.",
+      coverLetterContent: "I have built focused SaaS UI systems with TypeScript and React.",
+      recruiterMessage: "I saw the frontend platform role and wanted to share a concise fit note.",
+      evidenceRefs: ["ev_1", "ev_2"],
+      status: "SUBMITTED",
+    });
+
+    expect(draft.type).toBe("WRITING_STYLE");
+    expect(draft.sourceType).toBe("GENERATED_BUT_APPROVED");
+    expect(draft.confidence).toBe("INFERRED");
+    expect(draft.usableInResume).toBe(false);
+    expect(draft.usableInCoverLetter).toBe(true);
+    expect(draft.usableInRecruiterMessage).toBe(true);
+    expect(draft.metadata).toMatchObject({
+      applicationPacketId: "packet_1",
+      generatedMaterialStyleReference: true,
+      sourcePacketStatus: "SUBMITTED",
+      evidenceRefs: ["ev_1", "ev_2"],
+    });
   });
 });

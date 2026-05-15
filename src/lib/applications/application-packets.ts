@@ -1,4 +1,5 @@
 import type { Application, GeneratedCoverLetter, GeneratedResume, Prisma } from "@prisma/client";
+import { syncApprovedApplicationPacketEvidence } from "@/lib/evidence/ingest";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
@@ -59,7 +60,7 @@ export async function syncApplicationPacket(applicationId: string) {
     projectLinks: projectLinksFromRun(portfolioRun?.outputJson),
   });
 
-  return prisma.applicationPacket.upsert({
+  const packet = await prisma.applicationPacket.upsert({
     where: { applicationId },
     update: packetData,
     create: {
@@ -69,6 +70,8 @@ export async function syncApplicationPacket(applicationId: string) {
       jobPostingId: application.jobPostingId,
     },
   });
+  await syncApprovedApplicationPacketEvidence(applicationId);
+  return packet;
 }
 
 export async function backfillApplicationPackets(limit = 200) {
