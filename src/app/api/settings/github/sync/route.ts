@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
+import { syncGithubRepositoryEvidence } from "@/lib/evidence/ingest";
 import { syncGithubRepositories } from "@/lib/github/context";
 import { prisma } from "@/lib/prisma";
 
@@ -17,9 +18,11 @@ export async function POST() {
     }
 
     const result = await syncGithubRepositories(user.profile.id, user.profile.githubUrl);
+    const evidence = await syncGithubRepositoryEvidence(user.profile.id, result.repositories);
 
     return NextResponse.json({
-      message: `Synced ${result.count} GitHub repositories for ${result.username}.`,
+      evidenceCount: evidence.length,
+      message: `Synced ${result.count} GitHub repositories and ${evidence.length} evidence items for ${result.username}.`,
       ...result,
     });
   } catch (error) {

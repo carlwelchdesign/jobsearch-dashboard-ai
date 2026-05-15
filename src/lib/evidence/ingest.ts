@@ -1,10 +1,10 @@
-import type { CandidateEvidenceSourceType, CandidateEvidenceType, EvidenceConfidence, Prisma } from "@prisma/client";
+import type { CandidateEvidenceSourceType, CandidateEvidenceType, EvidenceConfidence, GithubRepository, Prisma } from "@prisma/client";
 import { syncEvidenceChunks } from "@/lib/evidence/chunking";
 import { defaultUsabilityForConfidence, truthLevelToEvidenceConfidence } from "@/lib/evidence/confidence";
 import { inferEvidenceTags, normalizeTags } from "@/lib/evidence/tags";
 import { prisma } from "@/lib/prisma";
 
-type EvidenceDraft = {
+export type EvidenceDraft = {
   candidateProfileId: string;
   type: CandidateEvidenceType;
   title: string;
@@ -15,6 +15,8 @@ type EvidenceDraft = {
   tags?: string[];
   metadata?: Prisma.InputJsonValue;
 };
+
+type GithubRepositoryEvidenceSource = Pick<GithubRepository, "id" | "name" | "description" | "htmlUrl" | "homepage" | "language" | "topics" | "stars" | "forks" | "isFork" | "isArchived" | "pushedAt">;
 
 export async function backfillCandidateEvidence(candidateProfileId?: string) {
   const profiles = await prisma.userProfile.findMany({
@@ -60,17 +62,7 @@ export async function backfillCandidateEvidence(candidateProfileId?: string) {
     }
 
     for (const repo of profile.githubRepositories) {
-      results.push(await upsertEvidence({
-        candidateProfileId: profile.id,
-        type: "PROJECT",
-        title: repo.name,
-        content: [repo.description, repo.language, normalizeTags(repo.topics).join(", ")].filter(Boolean).join(" "),
-        sourceType: "GITHUB_REPO",
-        sourceRef: repo.id,
-        confidence: "INFERRED",
-        tags: inferEvidenceTags(repo.name, repo.description, repo.language, JSON.stringify(repo.topics)),
-        metadata: { githubRepositoryId: repo.id, htmlUrl: repo.htmlUrl, stars: repo.stars, topics: repo.topics } as Prisma.InputJsonValue,
-      }));
+      results.push(await upsertEvidence(buildGithubRepositoryEvidenceDraft(profile.id, repo)));
     }
 
     for (const upload of profile.resumeUploads) {
@@ -97,6 +89,53 @@ export async function backfillCandidateEvidence(candidateProfileId?: string) {
   }
 
   return results;
+}
+
+export async function syncGithubRepositoryEvidence(userProfileId: string, repositories?: GithubRepositoryEvidenceSource[]) {
+  const repos = repositories ?? await prisma.githubRepository.findMany({
+    where: { userProfileId, isArchived: false },
+    orderBy: [{ isFork: "asc" }, { pushedAt: "desc" }, { stars: "desc" }],
+    take: 80,
+  });
+  const results = [];
+
+  for (const repo of repos.filter((item) => !item.isArchived)) {
+    results.push(await upsertEvidence(buildGithubRepositoryEvidenceDraft(userProfileId, repo)));
+  }
+
+  return results;
+}
+
+export function buildGithubRepositoryEvidenceDraft(userProfileId: string, repo: GithubRepositoryEvidenceSource): EvidenceDraft {
+  const topics = normalizeTags(repo.topics);
+  const content = [
+    repo.description,
+    repo.language ? `Primary language: ${repo.language}` : null,
+    topics.length ? `Topics: ${topics.join(", ")}` : null,
+    repo.homepage ? `Homepage: ${repo.homepage}` : null,
+    `Repository: ${repo.htmlUrl}`,
+  ].filter(Boolean).join(" ");
+
+  return {
+    candidateProfileId: userProfileId,
+    type: "PROJECT",
+    title: repo.name,
+    content: content || repo.name,
+    sourceType: "GITHUB_REPO",
+    sourceRef: repo.id,
+    confidence: "INFERRED",
+    tags: inferEvidenceTags(repo.name, repo.description, repo.language, JSON.stringify(repo.topics), repo.htmlUrl),
+    metadata: {
+      githubRepositoryId: repo.id,
+      htmlUrl: repo.htmlUrl,
+      homepage: repo.homepage,
+      stars: repo.stars,
+      forks: repo.forks,
+      isFork: repo.isFork,
+      pushedAt: repo.pushedAt?.toISOString() ?? null,
+      topics: repo.topics,
+    } as Prisma.InputJsonValue,
+  };
 }
 
 export function createResumeEvidenceChunks(extractedText: string, fileName: string) {

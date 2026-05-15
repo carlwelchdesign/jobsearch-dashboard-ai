@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { classifyConfidence, classifyEvidenceType } from "@/lib/agents/candidate-intelligence";
 import { confidenceMeetsMinimum, truthLevelToEvidenceConfidence } from "@/lib/evidence/confidence";
 import { createEvidenceChunks } from "@/lib/evidence/chunking";
-import { createResumeEvidenceChunks } from "@/lib/evidence/ingest";
+import { buildGithubRepositoryEvidenceDraft, createResumeEvidenceChunks } from "@/lib/evidence/ingest";
 import { dedupeRetrievedEvidence, scoreEvidenceText } from "@/lib/evidence/retrieval";
 import { inferEvidenceTags } from "@/lib/evidence/tags";
 
@@ -112,5 +112,29 @@ React TypeScript Next.js Storybook Playwright
 
   it("infers profile-relevant tags", () => {
     expect(inferEvidenceTags("React TypeScript passkeys dashboard")).toEqual(expect.arrayContaining(["react", "typescript", "webauthn", "data-visualization"]));
+  });
+
+  it("turns GitHub repository metadata into inferred project evidence", () => {
+    const draft = buildGithubRepositoryEvidenceDraft("profile_1", {
+      id: "repo_1",
+      name: "webauthn-core",
+      description: "Reusable server-side WebAuthn orchestration package with passkey adapters.",
+      htmlUrl: "https://github.com/carl/webauthn-core",
+      homepage: null,
+      language: "TypeScript",
+      topics: ["webauthn", "passkeys", "auth"],
+      stars: 4,
+      forks: 1,
+      isFork: false,
+      isArchived: false,
+      pushedAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+
+    expect(draft.type).toBe("PROJECT");
+    expect(draft.sourceType).toBe("GITHUB_REPO");
+    expect(draft.sourceRef).toBe("repo_1");
+    expect(draft.confidence).toBe("INFERRED");
+    expect(draft.content).toContain("Repository: https://github.com/carl/webauthn-core");
+    expect(draft.tags).toEqual(expect.arrayContaining(["typescript", "webauthn", "security"]));
   });
 });
