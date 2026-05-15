@@ -25,6 +25,12 @@ export const dynamic = "force-dynamic";
 
 export default async function ProfilesPage() {
   const profiles = await prisma.jobSearchProfile.findMany({
+    include: {
+      performanceSnapshots: {
+        orderBy: { lastEvaluatedAt: "desc" },
+        take: 1,
+      },
+    },
     orderBy: [{ enabled: "desc" }, { name: "asc" }],
   });
   const latestOptimizerRun = await prisma.agentRun.findFirst({
@@ -58,51 +64,69 @@ export default async function ProfilesPage() {
                 <TableCell>Remote</TableCell>
                 <TableCell>Countries</TableCell>
                 <TableCell>Salary</TableCell>
+                <TableCell align="right">Health</TableCell>
+                <TableCell align="right">Callback</TableCell>
                 <TableCell align="right">Threshold</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {profiles.map((profile) => (
-                <TableRow key={profile.id} hover>
-                  <TableCell>
-                    <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                      <Typography sx={{ fontWeight: 800 }}>{profile.name}</Typography>
-                      {!profile.enabled ? <Chip size="small" label="Disabled" /> : null}
-                    </Stack>
-                    <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
-                      {jsonArray(profile.titles).slice(0, 3).map((title, index) => (
-                        <Chip key={`${profile.id}-${title}-${index}`} size="small" variant="outlined" label={title} />
-                      ))}
-                    </Stack>
-                  </TableCell>
-                  <TableCell><Chip size="small" color="primary" variant="outlined" label={formatStatus(profile.remotePreference)} /></TableCell>
-                  <TableCell>{jsonArray(profile.countries).join(", ") || "Any"}</TableCell>
-                  <TableCell>{profile.salaryMin ? `${profile.salaryCurrency} ${profile.salaryMin.toLocaleString()}` : "Unknown OK"}</TableCell>
-                  <TableCell align="right">
-                    <ScoreChip score={profile.minimumMatchScore} />
-                  </TableCell>
-                  <TableCell align="right">
-                    <ProfileActions
-                      profile={{
-                        id: profile.id,
-                        name: profile.name,
-                        enabled: profile.enabled,
-                        remotePreference: profile.remotePreference,
-                        salaryCurrency: profile.salaryCurrency,
-                        salaryMin: profile.salaryMin,
-                        minimumMatchScore: profile.minimumMatchScore,
-                        maxResultsPerRun: profile.maxResultsPerRun,
-                        titles: jsonArray(profile.titles),
-                        countries: jsonArray(profile.countries),
-                        keywordsPreferred: jsonArray(profile.keywordsPreferred),
-                        keywordsExcluded: jsonArray(profile.keywordsExcluded),
-                        excludedCompanies: jsonArray(profile.excludedCompanies),
-                      }}
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
+              {profiles.map((profile) => {
+                const performance = profile.performanceSnapshots[0];
+                return (
+                  <TableRow key={profile.id} hover>
+                    <TableCell>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                        <Typography sx={{ fontWeight: 800 }}>{profile.name}</Typography>
+                        {!profile.enabled ? <Chip size="small" label="Disabled" /> : null}
+                      </Stack>
+                      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
+                        {jsonArray(profile.titles).slice(0, 3).map((title, index) => (
+                          <Chip key={`${profile.id}-${title}-${index}`} size="small" variant="outlined" label={title} />
+                        ))}
+                      </Stack>
+                    </TableCell>
+                    <TableCell><Chip size="small" color="primary" variant="outlined" label={formatStatus(profile.remotePreference)} /></TableCell>
+                    <TableCell>{jsonArray(profile.countries).join(", ") || "Any"}</TableCell>
+                    <TableCell>{profile.salaryMin ? `${profile.salaryCurrency} ${profile.salaryMin.toLocaleString()}` : "Unknown OK"}</TableCell>
+                    <TableCell align="right">
+                      {performance ? <ScoreChip score={performance.healthScore} /> : <Typography variant="caption" color="text.secondary">Run optimizer</Typography>}
+                    </TableCell>
+                    <TableCell align="right">
+                      {performance ? (
+                        <Stack spacing={0.25} sx={{ alignItems: "flex-end" }}>
+                          <Typography sx={{ fontWeight: 850, fontVariantNumeric: "tabular-nums" }}>{performance.callbackRate}%</Typography>
+                          <Typography variant="caption" color="text.secondary">{performance.applicationsSubmitted} applied</Typography>
+                        </Stack>
+                      ) : (
+                        <Typography variant="caption" color="text.secondary">n/a</Typography>
+                      )}
+                    </TableCell>
+                    <TableCell align="right">
+                      <ScoreChip score={profile.minimumMatchScore} />
+                    </TableCell>
+                    <TableCell align="right">
+                      <ProfileActions
+                        profile={{
+                          id: profile.id,
+                          name: profile.name,
+                          enabled: profile.enabled,
+                          remotePreference: profile.remotePreference,
+                          salaryCurrency: profile.salaryCurrency,
+                          salaryMin: profile.salaryMin,
+                          minimumMatchScore: profile.minimumMatchScore,
+                          maxResultsPerRun: profile.maxResultsPerRun,
+                          titles: jsonArray(profile.titles),
+                          countries: jsonArray(profile.countries),
+                          keywordsPreferred: jsonArray(profile.keywordsPreferred),
+                          keywordsExcluded: jsonArray(profile.keywordsExcluded),
+                          excludedCompanies: jsonArray(profile.excludedCompanies),
+                        }}
+                      />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </TableContainer>

@@ -1,4 +1,4 @@
-import type { JobSearchProfile } from "@prisma/client";
+import type { ApplicationOutcomeType, JobSearchProfile } from "@prisma/client";
 import { runAgent } from "@/lib/agents/run-agent";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
@@ -13,6 +13,7 @@ export type SearchProfileManagerOutput = {
     name: string;
     healthScore: number;
     rationale: string;
+    performance: SearchProfilePerformanceSummary;
   }>;
   recommendedChanges: Array<{
     profileId: string;
@@ -37,11 +38,34 @@ export type SearchProfileManagerOutput = {
   confidence: number;
 };
 
+export type SearchProfilePerformanceSummary = {
+  jobsFound: number;
+  jobsApproved: number;
+  jobsRejected: number;
+  applicationsSubmitted: number;
+  recruiterScreens: number;
+  interviews: number;
+  offers: number;
+  rejectionCount: number;
+  noResponseCount: number;
+  duplicateRate: number;
+  averageFitScore: number;
+  averageOpportunityScore: number;
+  callbackRate: number;
+};
+
 type ProfileWithStats = JobSearchProfile & {
   matches: Array<{
     overallScore: number;
     status: string;
-    applications: Array<{ status: string }>;
+    jobPosting: {
+      duplicateGroupId: string | null;
+      evaluations: Array<{ fitScore: number; opportunityScore: number }>;
+    };
+    applications: Array<{
+      status: string;
+      outcomes: Array<{ outcome: ApplicationOutcomeType }>;
+    }>;
   }>;
 };
 
@@ -55,7 +79,28 @@ export async function runSearchProfileManagerAgent(input: SearchProfileManagerIn
         where: input.userId ? { userId: input.userId } : undefined,
         include: {
           matches: {
-            include: { applications: { select: { status: true } } },
+            include: {
+              applications: {
+                select: {
+                  status: true,
+                  outcomes: {
+                    select: { outcome: true },
+                    orderBy: { occurredAt: "desc" },
+                    take: 1,
+                  },
+                },
+              },
+              jobPosting: {
+                select: {
+                  duplicateGroupId: true,
+                  evaluations: {
+                    select: { fitScore: true, opportunityScore: true },
+                    orderBy: { createdAt: "desc" },
+                    take: 1,
+                  },
+                },
+              },
+            },
             orderBy: { createdAt: "desc" },
             take: 200,
           },
@@ -64,6 +109,7 @@ export async function runSearchProfileManagerAgent(input: SearchProfileManagerIn
       });
 
       const profileHealthScores = profiles.map((profile) => scoreProfileHealth(profile));
+      await persistPerformanceSnapshots(profileHealthScores);
       const overlaps = findOverlappingProfiles(profiles);
       const recommendedChanges = buildRecommendations(profiles, profileHealthScores, overlaps);
       const profilesToPause = recommendedChanges.filter((change) => change.action === "pause").map((change) => change.profileId);
@@ -84,22 +130,85 @@ export async function runSearchProfileManagerAgent(input: SearchProfileManagerIn
 }
 
 function scoreProfileHealth(profile: ProfileWithStats) {
-  const total = profile.matches.length;
-  const approved = profile.matches.filter((match) => ["approved", "ready_to_apply", "applied", "interviewing", "offer"].includes(match.status)).length;
-  const rejected = profile.matches.filter((match) => match.status === "rejected").length;
-  const averageScore = total ? Math.round(profile.matches.reduce((sum, match) => sum + match.overallScore, 0) / total) : 0;
-  const approvalRate = total ? approved / total : 0;
-  const rejectionRate = total ? rejected / total : 0;
+  const performance = calculatePerformanceSummary(profile);
+  const total = performance.jobsFound;
+  const averageScore = performance.averageFitScore;
+  const approvalRate = total ? performance.jobsApproved / total : 0;
+  const rejectionRate = total ? performance.jobsRejected / total : 0;
   const specificity = Math.min(20, (jsonArray(profile.titles).length + jsonArray(profile.keywordsPreferred).length + jsonArray(profile.keywordsRequired).length) * 2);
   const volumeScore = total === 0 ? 35 : total < 5 ? 50 : total <= 80 ? 76 : 58;
-  const healthScore = clamp(Math.round(volumeScore * 0.26 + averageScore * 0.34 + approvalRate * 100 * 0.22 + (100 - rejectionRate * 100) * 0.1 + specificity * 0.08));
+  const outcomeScore = Math.min(100, performance.callbackRate + performance.offers * 15);
+  const healthScore = clamp(Math.round(volumeScore * 0.2 + averageScore * 0.25 + approvalRate * 100 * 0.18 + (100 - rejectionRate * 100) * 0.1 + specificity * 0.07 + outcomeScore * 0.2));
 
   return {
     profileId: profile.id,
     name: profile.name,
     healthScore,
-    rationale: `${total} matches, ${approved} approved, ${rejected} rejected, average score ${averageScore || "n/a"}.`,
+    rationale: `${total} matches, ${performance.jobsApproved} approved, ${performance.jobsRejected} rejected, ${performance.applicationsSubmitted} applied, ${performance.callbackRate}% callback rate, average score ${averageScore || "n/a"}.`,
+    performance,
   };
+}
+
+export function calculatePerformanceSummary(profile: ProfileWithStats): SearchProfilePerformanceSummary {
+  const matches = profile.matches;
+  const jobsFound = matches.length;
+  const jobsApproved = matches.filter((match) => ["approved", "ready_to_apply", "applied", "follow_up_due", "screening", "interviewing", "offer"].includes(match.status)).length;
+  const jobsRejected = matches.filter((match) => match.status === "rejected" || match.status === "rejected_by_company").length;
+  const applications = matches.flatMap((match) => match.applications);
+  const latestOutcomes = applications.map((application) => application.outcomes[0]?.outcome).filter(Boolean);
+  const applicationsSubmitted = applications.filter((application) => isAppliedStatus(application.status) || application.outcomes.some((outcome) => outcome.outcome === "APPLIED")).length;
+  const recruiterScreens = latestOutcomes.filter((outcome) => outcome === "RECRUITER_SCREEN").length;
+  const interviews = latestOutcomes.filter((outcome) => outcome === "TECH_SCREEN" || outcome === "ONSITE" || outcome === "FINAL").length;
+  const offers = latestOutcomes.filter((outcome) => outcome === "OFFER").length;
+  const rejectionCount = latestOutcomes.filter((outcome) => outcome === "REJECTED" || outcome === "CLOSED").length;
+  const noResponseCount = latestOutcomes.filter((outcome) => outcome === "GHOSTED").length;
+  const duplicateCount = matches.filter((match) => Boolean(match.jobPosting.duplicateGroupId)).length;
+  const fitScores = matches.map((match) => match.jobPosting.evaluations[0]?.fitScore ?? match.overallScore).filter((score) => score > 0);
+  const opportunityScores = matches.map((match) => match.jobPosting.evaluations[0]?.opportunityScore ?? 0).filter((score) => score > 0);
+  const positiveOutcomes = recruiterScreens + interviews + offers;
+
+  return {
+    jobsFound,
+    jobsApproved,
+    jobsRejected,
+    applicationsSubmitted,
+    recruiterScreens,
+    interviews,
+    offers,
+    rejectionCount,
+    noResponseCount,
+    duplicateRate: jobsFound ? Math.round((duplicateCount / jobsFound) * 100) : 0,
+    averageFitScore: average(fitScores),
+    averageOpportunityScore: average(opportunityScores),
+    callbackRate: applicationsSubmitted ? Math.round((positiveOutcomes / applicationsSubmitted) * 100) : 0,
+  };
+}
+
+async function persistPerformanceSnapshots(profileHealthScores: SearchProfileManagerOutput["profileHealthScores"]) {
+  if (!profileHealthScores.length) return;
+  await prisma.searchProfilePerformance.createMany({
+    data: profileHealthScores.map((profile) => {
+      const performance = profile.performance;
+      return {
+        searchProfileId: profile.profileId,
+        healthScore: profile.healthScore,
+        lastEvaluatedAt: new Date(),
+        jobsFound: performance.jobsFound,
+        jobsApproved: performance.jobsApproved,
+        jobsRejected: performance.jobsRejected,
+        applicationsSubmitted: performance.applicationsSubmitted,
+        recruiterScreens: performance.recruiterScreens,
+        interviews: performance.interviews,
+        offers: performance.offers,
+        rejectionCount: performance.rejectionCount,
+        noResponseCount: performance.noResponseCount,
+        duplicateRate: performance.duplicateRate,
+        averageFitScore: performance.averageFitScore,
+        averageOpportunityScore: performance.averageOpportunityScore,
+        callbackRate: performance.callbackRate,
+      };
+    }),
+  });
 }
 
 function buildRecommendations(
@@ -193,4 +302,13 @@ function profileTerms(profile: JobSearchProfile) {
 
 function clamp(value: number) {
   return Math.max(0, Math.min(100, value));
+}
+
+function average(values: number[]) {
+  if (values.length === 0) return 0;
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+function isAppliedStatus(status: string) {
+  return ["applied", "follow_up_due", "screening", "interviewing", "offer", "rejected_by_company"].includes(status);
 }

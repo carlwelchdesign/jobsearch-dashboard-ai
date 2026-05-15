@@ -387,10 +387,35 @@ model JobSearchProfile {
   updatedAt                DateTime            @updatedAt
   evaluations              JobEvaluation[]
   matches                  JobProfileMatch[]
+  performanceSnapshots     SearchProfilePerformance[]
   user                     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, name])
   @@index([userId, enabled])
+}
+
+model SearchProfilePerformance {
+  id                      String           @id @default(cuid())
+  searchProfileId         String
+  jobsFound               Int              @default(0)
+  jobsApproved            Int              @default(0)
+  jobsRejected            Int              @default(0)
+  applicationsSubmitted   Int              @default(0)
+  recruiterScreens        Int              @default(0)
+  interviews              Int              @default(0)
+  offers                  Int              @default(0)
+  rejectionCount          Int              @default(0)
+  noResponseCount         Int              @default(0)
+  duplicateRate           Int              @default(0)
+  averageFitScore         Int              @default(0)
+  averageOpportunityScore Int              @default(0)
+  callbackRate            Int              @default(0)
+  healthScore             Int              @default(0)
+  lastEvaluatedAt         DateTime         @default(now())
+  createdAt               DateTime         @default(now())
+  searchProfile           JobSearchProfile @relation(fields: [searchProfileId], references: [id], onDelete: Cascade)
+
+  @@index([searchProfileId, lastEvaluatedAt])
 }
 
 model JobSource {
