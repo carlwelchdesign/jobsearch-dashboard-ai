@@ -82,6 +82,28 @@ With `OPENAI_API_KEY`, resume parsing, job scoring, and resume tailoring use Ope
 
 Set your GitHub profile URL in `/settings` and click `Sync GitHub context` to pull public repository context into the candidate profile. Public repos are used as project context in tailored resumes and cover letters when relevant. Add `GITHUB_TOKEN` only if you need higher GitHub API rate limits.
 
+## Job Response Email Sync
+
+Inbound job-response email can be synced from a local IMAP mailbox:
+
+```bash
+JOB_EMAIL_IMAP_HOST=imap.example.com
+JOB_EMAIL_IMAP_USER=you@example.com
+JOB_EMAIL_IMAP_PASSWORD=app-password
+EMAIL_SYNC_SECRET=local-secret
+```
+
+Then run:
+
+```bash
+curl -X POST http://localhost:3000/api/email/imap-sync \
+  -H "Authorization: Bearer local-secret" \
+  -H "content-type: application/json" \
+  -d '{"limit":25,"sinceDays":14}'
+```
+
+Synced messages are classified as rejection, interview request, assessment, offer, confirmation, or needs review. Matched messages update application outcomes, create `Needs Me` items when action is required, and trigger interview prep for interview/assessment messages.
+
 The manual search run uses enabled external source adapters. Direct ATS sources are prioritized: Greenhouse, Lever, and Ashby. RemoteOK is disabled by default because it creates paid/login application friction, and We Work Remotely is disabled by default because it is an intermediary board rather than a final ATS form. ATS adapters use configured company slugs so the app can search target companies directly, for example:
 
 ```json

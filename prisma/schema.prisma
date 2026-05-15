@@ -248,6 +248,64 @@ enum ApplicationPacketStatus {
   ARCHIVED
 }
 
+enum AgentUserRequestType {
+  UNKNOWN_ANSWER
+  APPLICATION_BLOCKED
+  EMAIL_REVIEW
+  INTERVIEW_PREP
+  APPROVAL_NEEDED
+  GENERAL
+}
+
+enum AgentUserRequestStatus {
+  OPEN
+  ANSWERED
+  DISMISSED
+  RESOLVED
+}
+
+enum AnswerMemorySensitivity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AnswerMemoryReusePolicy {
+  AUTO_USE
+  ASK_FIRST
+  NEVER_REUSE
+}
+
+enum ApplicationAutomationRunStatus {
+  RUNNING
+  BLOCKED
+  NEEDS_USER
+  READY_TO_SUBMIT
+  SUBMITTED
+  FAILED
+}
+
+enum EmailProvider {
+  gmail
+  outlook
+  imap
+  manual
+}
+
+enum EmailMessageClassification {
+  REJECTION
+  RECRUITER_RESPONSE
+  INTERVIEW_REQUEST
+  CODING_ASSESSMENT
+  TAKE_HOME
+  SCHEDULING_REQUEST
+  OFFER
+  AUTOMATED_CONFIRMATION
+  NO_ACTION
+  UNRELATED
+  NEEDS_REVIEW
+}
+
 model User {
   id                   String                 @id @default(cuid())
   email                String                 @unique
@@ -255,10 +313,15 @@ model User {
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   agentRuns            AgentRun[]
+  agentUserRequests    AgentUserRequest[]
+  answerMemories       ApplicationAnswerMemory[]
+  automationSettings   ApplicationAutomationSettings?
+  automationRuns       ApplicationAutomationRun[]
   applicationPackets   ApplicationPacket[]
   applications         Application[]
   contacts             Contact[]
   coverLetters         GeneratedCoverLetter[]
+  emailMessages        EmailMessageRecord[]
   notificationLogs     NotificationLog[]
   notificationSettings NotificationSettings?
   outcomes             ApplicationOutcome[]
@@ -515,7 +578,10 @@ model JobPosting {
   updatedAt          DateTime               @updatedAt
   applications       Application[]
   applicationPackets ApplicationPacket[]
+  agentUserRequests  AgentUserRequest[]
+  automationRuns     ApplicationAutomationRun[]
   coverLetters       GeneratedCoverLetter[]
+  emailMessages      EmailMessageRecord[]
   evaluations        JobEvaluation[]
   matches            JobProfileMatch[]
   outcomes           ApplicationOutcome[]
@@ -598,10 +664,15 @@ model Application {
   notes              String?
   followUpAt         DateTime?
   sourceContactId    String?
+  autoSubmitOverride Boolean?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
+  answerMemories     ApplicationAnswerMemory[]
+  automationRuns     ApplicationAutomationRun[]
   applicationPackets ApplicationPacket[]
+  agentUserRequests  AgentUserRequest[]
   events             ApplicationEvent[]
+  emailMessages      EmailMessageRecord[]
   outcomes           ApplicationOutcome[]
   coverLetter        GeneratedCoverLetter? @relation(fields: [coverLetterId], references: [id])
   jobPosting         JobPosting            @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
@@ -789,9 +860,130 @@ model AgentRun {
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
   user       User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userRequests AgentUserRequest[]
 
   @@index([agentType, createdAt])
   @@index([status, createdAt])
+}
+
+model AgentUserRequest {
+  id            String                 @id @default(cuid())
+  userId        String
+  agentRunId    String?
+  applicationId String?
+  jobPostingId  String?
+  type          AgentUserRequestType
+  status        AgentUserRequestStatus @default(OPEN)
+  question      String
+  contextJson   Json                   @default("{}")
+  answer        String?
+  resolvedAt    DateTime?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  agentRun      AgentRun?              @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  application   Application?           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  answerMemories ApplicationAnswerMemory[]
+  jobPosting    JobPosting?            @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([applicationId, status])
+  @@index([jobPostingId, status])
+  @@index([agentRunId])
+}
+
+model ApplicationAnswerMemory {
+  id                  String                  @id @default(cuid())
+  userId              String
+  questionCanonical   String
+  questionText        String
+  answer              String
+  sensitivity         AnswerMemorySensitivity @default(MEDIUM)
+  reusePolicy         AnswerMemoryReusePolicy @default(ASK_FIRST)
+  sourceApplicationId String?
+  sourceRequestId     String?
+  useCount            Int                     @default(0)
+  lastUsedAt          DateTime?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  sourceApplication   Application?            @relation(fields: [sourceApplicationId], references: [id], onDelete: SetNull)
+  sourceRequest       AgentUserRequest?       @relation(fields: [sourceRequestId], references: [id], onDelete: SetNull)
+  user                User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionCanonical])
+  @@index([userId, reusePolicy])
+  @@index([sourceApplicationId])
+  @@index([sourceRequestId])
+}
+
+model ApplicationAutomationRun {
+  id              String                         @id @default(cuid())
+  userId          String
+  applicationId   String
+  jobPostingId    String
+  status          ApplicationAutomationRunStatus @default(RUNNING)
+  currentUrl      String?
+  logPath         String?
+  pid             Int?
+  blockerType     String?
+  blockerMessage  String?
+  actionsJson     Json                           @default("[]")
+  screenshotsJson Json                           @default("[]")
+  startedAt       DateTime                       @default(now())
+  finishedAt      DateTime?
+  createdAt       DateTime                       @default(now())
+  updatedAt       DateTime                       @updatedAt
+  application     Application                    @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  jobPosting      JobPosting                     @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  user            User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, startedAt])
+  @@index([applicationId, startedAt])
+  @@index([jobPostingId, startedAt])
+}
+
+model ApplicationAutomationSettings {
+  id                         String   @id @default(cuid())
+  userId                     String   @unique
+  autoSubmitEnabled          Boolean  @default(false)
+  requireApprovedPacket      Boolean  @default(true)
+  requireNoOpenUserRequests  Boolean  @default(true)
+  requireFreshAssistantRun   Boolean  @default(true)
+  maxRunAgeMinutes           Int      @default(30)
+  allowDemographicSubmission Boolean  @default(false)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  user                       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model EmailMessageRecord {
+  id                   String                     @id @default(cuid())
+  userId               String
+  provider             EmailProvider
+  providerMessageId    String
+  threadId             String?
+  from                 String
+  to                   Json                       @default("[]")
+  subject              String
+  receivedAt           DateTime
+  snippet              String
+  bodyText             String?
+  classification       EmailMessageClassification @default(NEEDS_REVIEW)
+  confidenceScore      Int                        @default(0)
+  matchedApplicationId String?
+  matchedJobPostingId  String?
+  actionRequired       Boolean                    @default(false)
+  rawMetadataJson      Json                       @default("{}")
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  matchedApplication   Application?               @relation(fields: [matchedApplicationId], references: [id], onDelete: SetNull)
+  matchedJobPosting    JobPosting?                @relation(fields: [matchedJobPostingId], references: [id], onDelete: SetNull)
+  user                 User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, providerMessageId])
+  @@index([userId, classification, receivedAt])
+  @@index([matchedApplicationId, receivedAt])
+  @@index([matchedJobPostingId, receivedAt])
 }
 
 model ApplicationEvent {

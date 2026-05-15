@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { answerApplicationQuestion } from "@/lib/ai/application-question";
 import { apiError } from "@/lib/api";
+import { findReusableAnswerMemories } from "@/lib/application-answer-memory";
 import { appendApplicationPacketAnswer } from "@/lib/applications/application-packets";
 import { prisma } from "@/lib/prisma";
 
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No approved candidate profile exists. Upload and approve a resume first." }, { status: 400 });
     }
 
+    const answerMemory = await findReusableAnswerMemories(profile.userId, question, 3);
     const result = await answerApplicationQuestion({
       question,
       userProfile: profile,
@@ -36,6 +38,7 @@ export async function POST(request: Request) {
       workExperiences: profile.workExperiences,
       projects: profile.projects,
       githubRepositories: profile.githubRepositories,
+      answerMemory,
     });
 
     const savedAnswer = applicationId
@@ -52,6 +55,7 @@ export async function POST(request: Request) {
       ...result,
       savedToPacket: Boolean(savedAnswer),
       packetAnswerCount: savedAnswer?.answerCount ?? null,
+      answerMemory,
       context: {
         bulletsConsidered: profile.experienceBullets.length,
         projectsConsidered: profile.projects.length,

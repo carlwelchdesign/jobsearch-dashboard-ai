@@ -21,6 +21,51 @@ export type EvidenceDraft = {
 
 type GithubRepositoryEvidenceSource = Pick<GithubRepository, "id" | "name" | "description" | "htmlUrl" | "homepage" | "language" | "topics" | "stars" | "forks" | "isFork" | "isArchived" | "pushedAt">;
 
+export const jobSearchOsProject = {
+  name: "Job Search OS",
+  description:
+    "Local-first AI-powered job search operating system coordinating specialized agents for evidence ingestion, job scoring, search strategy, resume and cover letter generation, application packet QA, recruiter outreach, outcome learning, and Dockerized RAG retrieval.",
+  repoUrl: null,
+  url: null,
+  technologies: [
+    "Next.js",
+    "TypeScript",
+    "React",
+    "Prisma",
+    "PostgreSQL",
+    "pgvector",
+    "Redis",
+    "Docker",
+    "OpenAI structured outputs",
+    "Material UI",
+    "Vitest",
+  ],
+  highlights: [
+    "Built a typed agent service layer with persisted AgentRun observability and deterministic fallbacks.",
+    "Implemented candidate evidence ingestion, chunking, embeddings, pgvector retrieval, and confidence-based filtering for truthful generated materials.",
+    "Created explainable fit, opportunity, and confidence scoring for jobs, plus outcome learning and search profile optimization.",
+    "Built application packet generation with resume strategy, cover letter drafts, recruiter messages, QA checks, selected answer export, and local browser assistant support.",
+    "Dockerized the app with Postgres, pgvector, Redis, and an embeddings worker, with tests and page smoke verification.",
+  ],
+  tags: [
+    "ai-product",
+    "ai-agents",
+    "internal-tools",
+    "workflow-automation",
+    "rag",
+    "pgvector",
+    "postgres",
+    "redis",
+    "docker",
+    "nextjs",
+    "typescript",
+    "prisma",
+    "application-automation",
+    "job-search-os",
+    "developer-tools",
+  ],
+} as const;
+
 export async function backfillCandidateEvidence(candidateProfileId?: string) {
   const profiles = await prisma.userProfile.findMany({
     where: candidateProfileId ? { id: candidateProfileId } : undefined,
@@ -34,6 +79,8 @@ export async function backfillCandidateEvidence(candidateProfileId?: string) {
 
   const results = [];
   for (const profile of profiles) {
+    results.push(await syncJobSearchOsProjectEvidence(profile.id));
+
     for (const bullet of profile.experienceBullets) {
       const confidence = truthLevelToEvidenceConfidence(bullet.truthLevel);
       results.push(await upsertEvidence({
@@ -50,6 +97,7 @@ export async function backfillCandidateEvidence(candidateProfileId?: string) {
     }
 
     for (const project of profile.projects) {
+      if (project.name === jobSearchOsProject.name) continue;
       const content = [project.description, ...(Array.isArray(project.highlights) ? project.highlights : [])].filter(Boolean).join(" ");
       results.push(await upsertEvidence({
         candidateProfileId: profile.id,
@@ -92,6 +140,69 @@ export async function backfillCandidateEvidence(candidateProfileId?: string) {
   }
 
   return results;
+}
+
+export async function syncJobSearchOsProjectEvidence(candidateProfileId: string) {
+  const existingProject = await prisma.project.findFirst({
+    where: {
+      userProfileId: candidateProfileId,
+      name: jobSearchOsProject.name,
+    },
+  });
+
+  const projectData = {
+    description: jobSearchOsProject.description,
+    url: jobSearchOsProject.url,
+    repoUrl: jobSearchOsProject.repoUrl,
+    technologies: [...jobSearchOsProject.technologies] as Prisma.InputJsonValue,
+    highlights: [...jobSearchOsProject.highlights] as Prisma.InputJsonValue,
+  };
+
+  const project = existingProject
+    ? await prisma.project.update({
+        where: { id: existingProject.id },
+        data: projectData,
+      })
+    : await prisma.project.create({
+        data: {
+          userProfileId: candidateProfileId,
+          name: jobSearchOsProject.name,
+          ...projectData,
+        },
+      });
+
+  return upsertEvidence(buildJobSearchOsProjectEvidenceDraft(candidateProfileId, project.id));
+}
+
+export function buildJobSearchOsProjectEvidenceDraft(candidateProfileId: string, projectId: string): EvidenceDraft {
+  const content = [
+    jobSearchOsProject.description,
+    `Technologies: ${jobSearchOsProject.technologies.join(", ")}.`,
+    ...jobSearchOsProject.highlights,
+  ].join(" ");
+
+  return {
+    candidateProfileId,
+    type: "PROJECT",
+    title: jobSearchOsProject.name,
+    content,
+    sourceType: "USER_INPUT",
+    sourceRef: projectId,
+    confidence: "VERIFIED",
+    usableInResume: true,
+    usableInCoverLetter: true,
+    usableInRecruiterMessage: true,
+    tags: [...jobSearchOsProject.tags, ...inferEvidenceTags(jobSearchOsProject.name, content)],
+    metadata: {
+      projectId,
+      generatedBy: "job_search_os_seed",
+      preferredWorkSignal: true,
+      userPreference:
+        "The user wants agents to consider this app as experience and prefers roles building agentic workflow tools, internal automation, AI product infrastructure, RAG/evidence systems, and hands-off operational software.",
+      technologies: jobSearchOsProject.technologies,
+      highlights: jobSearchOsProject.highlights,
+    } as Prisma.InputJsonValue,
+  };
 }
 
 export async function syncGithubRepositoryEvidence(userProfileId: string, repositories?: GithubRepositoryEvidenceSource[]) {

@@ -2,11 +2,13 @@ import { spawn, spawnSync } from "child_process";
 import { existsSync, mkdirSync, openSync } from "fs";
 import path from "path";
 import { Prisma } from "@prisma/client";
+import { createApplicationAutomationRun } from "@/lib/applications/automation-runs";
 import { prisma } from "@/lib/prisma";
 
 export type LaunchAssistantResult = {
   ok: true;
   pid: number | undefined;
+  automationRunId: string;
   logPath: string;
   message: string;
   manualSubmitRequired: true;
@@ -79,6 +81,20 @@ export async function launchApplicationAssistant(applicationId: string, origin: 
   );
   child.unref();
 
+  const automationRun = await createApplicationAutomationRun({
+    userId: application.userId,
+    applicationId: application.id,
+    jobPostingId: application.jobPostingId,
+    currentUrl: application.jobPosting.applicationUrl,
+    logPath,
+    pid: child.pid,
+    actionsJson: [{
+      type: "assistant_launched",
+      message: "Local Playwright assistant launched. Manual submit checkpoint required.",
+      profileDir,
+    }],
+  });
+
   await prisma.applicationEvent.create({
     data: {
       applicationId: application.id,
@@ -88,6 +104,7 @@ export async function launchApplicationAssistant(applicationId: string, origin: 
         applicationUrl: application.jobPosting.applicationUrl,
         logPath,
         pid: child.pid,
+        automationRunId: automationRun.id,
       } as Prisma.InputJsonValue,
     },
   });
@@ -95,6 +112,7 @@ export async function launchApplicationAssistant(applicationId: string, origin: 
   return {
     ok: true,
     pid: child.pid,
+    automationRunId: automationRun.id,
     logPath,
     message: `Assistant launched for ${application.jobPosting.company} - ${application.jobPosting.title}. Review the browser, then submit manually.`,
     manualSubmitRequired: true,

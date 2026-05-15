@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Capture job</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">Job Search OS</p>
+        <h1>Capture job</h1>
+      </header>
+      <label>
+        Role
+        <input id="title" type="text">
+      </label>
+      <label>
+        Company
+        <input id="company" type="text">
+      </label>
+      <label>
+        Location
+        <input id="location" type="text">
+      </label>
+      <label>
+        Description
+        <textarea id="description" rows="8"></textarea>
+      </label>
+      <details>
+        <summary>Local settings</summary>
+        <label>
+          Extension token
+          <input id="token" type="password" autocomplete="off">
+        </label>
+      </details>
+      <p id="status" role="status"></p>
+      <button id="capture" type="button">Save to Job Search OS</button>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

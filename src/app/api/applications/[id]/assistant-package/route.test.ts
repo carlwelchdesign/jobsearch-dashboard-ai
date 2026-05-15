@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { evaluateAutoSubmitEligibility } from "@/lib/applications/auto-submit-policy";
 import { prisma } from "@/lib/prisma";
 import { GET } from "./route";
+
+vi.mock("@/lib/applications/auto-submit-policy", () => ({
+  evaluateAutoSubmitEligibility: vi.fn(),
+}));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -10,10 +15,26 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
+const evaluateAutoSubmitEligibilityMock = vi.mocked(evaluateAutoSubmitEligibility);
 const findApplicationMock = vi.mocked(prisma.application.findUnique);
 
 describe("GET /api/applications/[id]/assistant-package", () => {
   beforeEach(() => {
+    evaluateAutoSubmitEligibilityMock.mockReset();
+    evaluateAutoSubmitEligibilityMock.mockResolvedValue({
+      allowed: false,
+      reasons: ["Auto-submit is disabled in settings."],
+      effectiveAutoSubmitEnabled: false,
+      override: null,
+      settings: {
+        autoSubmitEnabled: false,
+        requireApprovedPacket: true,
+        requireNoOpenUserRequests: true,
+        requireFreshAssistantRun: true,
+        maxRunAgeMinutes: 30,
+        allowDemographicSubmission: false,
+      },
+    });
     findApplicationMock.mockReset();
   });
 

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const user = await prisma.user.findFirst({
-    include: { notificationSettings: true, profile: { include: { githubRepositories: true } } },
+    include: { automationSettings: true, notificationSettings: true, profile: { include: { githubRepositories: true } } },
     orderBy: { createdAt: "asc" },
   });
   const searchProfiles = user
@@ -60,6 +60,15 @@ export default async function SettingsPage() {
             configured: Boolean(process.env.OPENAI_API_KEY),
             model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
           }}
+          emailSyncSettings={{
+            configured: Boolean(process.env.JOB_EMAIL_IMAP_HOST && process.env.JOB_EMAIL_IMAP_USER && process.env.JOB_EMAIL_IMAP_PASSWORD),
+            provider: "IMAP",
+            mailbox: process.env.JOB_EMAIL_IMAP_MAILBOX ?? "INBOX",
+            limit: Number(process.env.JOB_EMAIL_IMAP_LIMIT ?? 25),
+            sinceDays: Number(process.env.JOB_EMAIL_IMAP_SINCE_DAYS ?? 14),
+            endpoint: "/api/email/imap-sync",
+            secretConfigured: Boolean(process.env.EMAIL_SYNC_SECRET),
+          }}
           sourceSettings={{
             companySourceEnabled: companySource?.enabled ?? false,
             companyCount: Array.isArray(companySourceConfig?.companies) ? companySourceConfig.companies.length : 0,
@@ -87,6 +96,14 @@ export default async function SettingsPage() {
             endpoint: "/api/cron/job-search",
             cronSecretConfigured: Boolean(process.env.CRON_SECRET),
             profiles: searchProfiles,
+          }}
+          automationSettings={{
+            autoSubmitEnabled: user?.automationSettings?.autoSubmitEnabled ?? false,
+            requireApprovedPacket: user?.automationSettings?.requireApprovedPacket ?? true,
+            requireNoOpenUserRequests: user?.automationSettings?.requireNoOpenUserRequests ?? true,
+            requireFreshAssistantRun: user?.automationSettings?.requireFreshAssistantRun ?? true,
+            maxRunAgeMinutes: user?.automationSettings?.maxRunAgeMinutes ?? 30,
+            allowDemographicSubmission: user?.automationSettings?.allowDemographicSubmission ?? false,
           }}
         />
       </Stack>

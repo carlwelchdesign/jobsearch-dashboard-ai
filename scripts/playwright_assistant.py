@@ -3,7 +3,8 @@
 
 This script opens a prepared job application, fills safe known fields, uploads the
 generated resume/cover letter when matching file inputs are visible, and then
-stops. It never clicks submit, bypasses CAPTCHA, or uses stealth browser modes.
+stops unless the local app explicitly allows auto-submit for this application.
+It never bypasses CAPTCHA or uses stealth browser modes.
 """
 
 from __future__ import annotations
@@ -155,7 +156,11 @@ def main() -> int:
     if selected_answers_text:
         print(f"- Selected application answers: {selected_answers_text}")
     print()
-    print("Safety checkpoint: this assistant will stop before submit.")
+    auto_submit_allowed = bool(package.get("safety", {}).get("autoSubmitAllowed"))
+    if auto_submit_allowed:
+        print("Safety checkpoint: auto-submit is enabled by local app policy for this run.")
+    else:
+        print("Safety checkpoint: this assistant will stop before submit.")
 
     if is_manual_only_url(package["job"]["applicationUrl"]):
         print("This job board requires a normal browser or exposes an intermediary listing before applying.")
@@ -211,8 +216,9 @@ def main() -> int:
             for context in form_contexts
         )
         uploads = sum(upload_materials(context, resume_pdf, cover_letter_pdf) for context in form_contexts)
-        for context in form_contexts:
-            protect_submit_buttons(context)
+        if not auto_submit_allowed:
+            for context in form_contexts:
+                protect_submit_buttons(context)
         inventory_after = detect_fields_in_contexts(form_contexts)
         print_field_inventory("Detected fields after filling", inventory_after)
 
@@ -223,7 +229,15 @@ def main() -> int:
         if filled == 0 and uploads == 0:
             print("No fillable application fields or matching upload controls were found on this page.")
             print("This is often a job listing page, login page, or intermediary board rather than the final application form.")
-        print("Review every field in the browser. Submit manually only if everything is correct.")
+        if auto_submit_allowed:
+            submitted = attempt_auto_submit(page, form_contexts, inventory_after, selected_answers_text)
+            if submitted:
+                print("Auto-submit clicked after safety checks passed.")
+                capture_submit_confirmation(page, workdir)
+            else:
+                print("Auto-submit skipped because a safety check did not pass. Review every field and submit manually only if correct.")
+        else:
+            print("Review every field in the browser. Submit manually only if everything is correct.")
         print("Sensitive demographic, work authorization, salary, and custom questions were intentionally left untouched.")
         if selected_answers_text:
             print(f"Use selected custom-answer drafts from: {selected_answers_text}")
@@ -882,6 +896,131 @@ def protect_submit_buttons(page: Any) -> None:
         }""",
         SUBMIT_PATTERNS.pattern,
     )
+
+
+def attempt_auto_submit(page: Any, contexts: list[Any], inventory: list[dict[str, str]], selected_answers_text: Path | None) -> bool:
+    if selected_answers_text:
+        print("Auto-submit skipped: selected custom answers were prepared for manual review.")
+        return False
+    risky_empty = [
+        field for field in inventory
+        if field.get("status") in {"empty", "unchecked"}
+        and field.get("category") in {"sensitive_unfilled", "unknown"}
+    ]
+    if risky_empty:
+        print(f"Auto-submit skipped: {len(risky_empty)} unknown or sensitive empty field(s) remain.")
+        return False
+    required_empty = sum(required_empty_field_count(context) for context in contexts)
+    if required_empty:
+        print(f"Auto-submit skipped: {required_empty} required empty field(s) remain.")
+        return False
+    if CAPTCHA_PATTERNS.search(page.inner_text("body", timeout=5000)):
+        print("Auto-submit skipped: CAPTCHA or human verification text detected.")
+        return False
+
+    submit = find_submit_control(contexts)
+    if submit is None:
+        print("Auto-submit skipped: no visible submit control was found.")
+        return False
+    descriptor = field_descriptor(submit)
+    print(f"Clicking submit control: {descriptor[:120] or 'unlabeled submit control'}")
+    submit.click(timeout=3000)
+    page.wait_for_timeout(2500)
+    return True
+
+
+def capture_submit_confirmation(page: Any, workdir: Path) -> None:
+    timestamp = int(time.time())
+    screenshot_path = workdir / f"submit-confirmation-{timestamp}.png"
+    text_path = workdir / f"submit-confirmation-{timestamp}.txt"
+    try:
+        page.screenshot(path=str(screenshot_path), full_page=True, timeout=5000)
+        print(f"Submit confirmation screenshot: {screenshot_path}")
+    except Exception as exc:
+        print(f"Submit confirmation screenshot failed: {exc}")
+
+    try:
+        body_text = page.inner_text("body", timeout=5000)
+        normalized = re.sub(r"\s+", " ", body_text).strip()
+        confirmation = normalized[:4000]
+        text_path.write_text(confirmation, encoding="utf-8")
+        print(f"Submit confirmation text: {text_path}")
+        summary = summarize_confirmation_text(confirmation)
+        if summary:
+            print(f"Submit confirmation summary: {summary}")
+    except Exception as exc:
+        print(f"Submit confirmation text failed: {exc}")
+
+
+def summarize_confirmation_text(text: str) -> str:
+    patterns = [
+        r"application (has been )?(submitted|received)",
+        r"thank you for (applying|your application)",
+        r"we (have )?received your application",
+        r"confirmation (number|id)[:\s#-]*[a-z0-9-]+",
+    ]
+    lowered = text.lower()
+    for pattern in patterns:
+        match = re.search(pattern, lowered, re.I)
+        if match:
+            start = max(0, match.start() - 80)
+            end = min(len(text), match.end() + 180)
+            return text[start:end].strip()
+    return text[:240].strip()
+
+
+def required_empty_field_count(page: Any) -> int:
+    count = 0
+    fields = page.locator("input:not([type=hidden]), textarea, select")
+    for index in range(fields.count()):
+        element = fields.nth(index)
+        try:
+            if not element.is_visible(timeout=200) or not element.is_enabled():
+                continue
+            required = element.get_attribute("required") is not None or element.get_attribute("aria-required") == "true"
+            if not required:
+                continue
+            input_type = (element.get_attribute("type") or element.evaluate("node => node.tagName")).lower()
+            if input_type in {"radio", "checkbox"}:
+                if not element.is_checked(timeout=200):
+                    count += 1
+            elif input_type == "file":
+                uploaded_name = element.evaluate("node => node.files && node.files[0] ? node.files[0].name : ''")
+                if not uploaded_name:
+                    count += 1
+            else:
+                value = element.input_value(timeout=200) if element.evaluate("node => node.tagName !== 'SELECT'") else element.evaluate("node => node.options[node.selectedIndex]?.text || ''")
+                if not value:
+                    count += 1
+        except Exception:
+            continue
+    return count
+
+
+def find_submit_control(contexts: list[Any]) -> Any | None:
+    selectors = [
+        "button[type='submit']",
+        "input[type='submit']",
+        "button:has-text('Submit')",
+        "button:has-text('Send application')",
+        "button:has-text('Complete application')",
+        "[role=button]:has-text('Submit')",
+    ]
+    for context in contexts:
+        for selector in selectors:
+            locator = context.locator(selector)
+            for index in range(locator.count()):
+                element = locator.nth(index)
+                try:
+                    descriptor = field_descriptor(element)
+                    if not SUBMIT_PATTERNS.search(descriptor):
+                        continue
+                    if not element.is_visible(timeout=500) or not element.is_enabled():
+                        continue
+                    return element
+                except Exception:
+                    continue
+    return None
 
 
 def field_descriptor(element: Any) -> str:

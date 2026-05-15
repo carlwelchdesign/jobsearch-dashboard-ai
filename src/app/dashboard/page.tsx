@@ -19,6 +19,7 @@ import { ScoreChip } from "@/components/ui/score-chip";
 import { formatStatus } from "@/components/ui/status-chip";
 import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { RunSearchControl } from "@/components/run-search-control";
+import { agentUserRequestHref, agentUserRequestTypeLabel, listOpenAgentUserRequests } from "@/lib/agent-user-requests";
 import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { prisma } from "@/lib/prisma";
@@ -43,7 +44,7 @@ type DailyPlanOutput = {
 };
 
 export default async function DashboardPage() {
-  const [profiles, latestRun, statusCounts, needsReview, latestDailyPlanRun] = await Promise.all([
+  const [profiles, latestRun, statusCounts, needsReview, latestDailyPlanRun, agentUserRequests] = await Promise.all([
     prisma.jobSearchProfile.findMany({ where: { enabled: true }, orderBy: { name: "asc" } }),
     prisma.jobSearchRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.jobProfileMatch.groupBy({ by: ["status"], _count: { status: true } }),
@@ -60,6 +61,7 @@ export default async function DashboardPage() {
       where: { agentType: "DAILY_COMMAND_CENTER", status: "COMPLETED" },
       orderBy: { createdAt: "desc" },
     }),
+    listOpenAgentUserRequests(5),
   ]);
   const visibleNeedsReview = uniqueMatchesByCanonicalJob(needsReview).slice(0, 5);
   const countByStatus = new Map(statusCounts.map((count) => [count.status, count._count.status]));
@@ -82,6 +84,46 @@ export default async function DashboardPage() {
         />
 
         <WorkflowGuide title="How a job reaches Apply Sprint" />
+
+        <Card sx={{ borderColor: agentUserRequests.length ? "warning.main" : "divider" }}>
+          <CardContent>
+            <Stack spacing={2}>
+              <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+                <Box>
+                  <Typography variant="h3">Needs Me</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Agent questions and blockers that need a human answer before the workflow can continue.
+                  </Typography>
+                </Box>
+                <ActionButton href="/needs-me" variant={agentUserRequests.length ? "contained" : "outlined"} color={agentUserRequests.length ? "warning" : "primary"}>
+                  {agentUserRequests.length ? `Review ${agentUserRequests.length}` : "Open queue"}
+                </ActionButton>
+              </Stack>
+              {agentUserRequests.length ? (
+                <Stack spacing={1}>
+                  {agentUserRequests.slice(0, 3).map((request) => {
+                    const job = request.application?.jobPosting ?? request.jobPosting;
+                    return (
+                      <Box key={request.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+                        <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+                          <Box>
+                            <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.5 }}>
+                              <Chip size="small" color="warning" variant="outlined" label={agentUserRequestTypeLabel(request.type)} />
+                              {job ? <Chip size="small" variant="outlined" label={job.company} /> : null}
+                            </Stack>
+                            <Typography sx={{ fontWeight: 850 }}>{request.question}</Typography>
+                            {job ? <Typography variant="caption" color="text.secondary">{job.title}</Typography> : null}
+                          </Box>
+                          <ActionButton href={agentUserRequestHref(request)} size="small" endIcon={<OpenInNewIcon />}>Open</ActionButton>
+                        </Stack>
+                      </Box>
+                    );
+                  })}
+                </Stack>
+              ) : null}
+            </Stack>
+          </CardContent>
+        </Card>
 
         <Card sx={{ borderColor: "primary.light" }}>
           <CardContent>

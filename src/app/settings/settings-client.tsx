@@ -3,6 +3,7 @@
 import Link from "next/link";
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
+import MarkEmailReadOutlinedIcon from "@mui/icons-material/MarkEmailReadOutlined";
 import GitHubIcon from "@mui/icons-material/GitHub";
 import LinkOutlinedIcon from "@mui/icons-material/LinkOutlined";
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
@@ -36,6 +37,15 @@ type SettingsClientProps = {
   aiSettings: {
     configured: boolean;
     model: string;
+  };
+  emailSyncSettings: {
+    configured: boolean;
+    provider: string;
+    mailbox: string;
+    limit: number;
+    sinceDays: number;
+    endpoint: string;
+    secretConfigured: boolean;
   };
   sourceSettings: {
     companySourceEnabled: boolean;
@@ -83,12 +93,21 @@ type SettingsClientProps = {
       cronExpression: string | null;
     }>;
   };
+  automationSettings: {
+    autoSubmitEnabled: boolean;
+    requireApprovedPacket: boolean;
+    requireNoOpenUserRequests: boolean;
+    requireFreshAssistantRun: boolean;
+    maxRunAgeMinutes: number;
+    allowDemographicSubmission: boolean;
+  };
 };
 
-export function SettingsClient({ initialSettings, aiSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings }: SettingsClientProps) {
+export function SettingsClient({ initialSettings, aiSettings, emailSyncSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings, automationSettings }: SettingsClientProps) {
   const [settings, setSettings] = useState(initialSettings);
   const [profile, setProfile] = useState(profileSettings);
   const [cron, setCron] = useState(cronSettings);
+  const [automation, setAutomation] = useState(automationSettings);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -103,7 +122,7 @@ export function SettingsClient({ initialSettings, aiSettings, sourceSettings, pr
     setSaving(true);
     setNotice("");
     setError("");
-    const [profileResponse, response, cronResponse] = await Promise.all([
+    const [profileResponse, response, cronResponse, automationResponse] = await Promise.all([
       fetch("/api/settings/profile", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -133,14 +152,20 @@ export function SettingsClient({ initialSettings, aiSettings, sourceSettings, pr
           })),
         }),
       }),
+      fetch("/api/settings/application-automation", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(automation),
+      }),
     ]);
     const body = await response.json();
     const profileBody = await profileResponse.json();
     const cronBody = await cronResponse.json();
+    const automationBody = await automationResponse.json();
     setSaving(false);
 
-    if (!profileResponse.ok || !response.ok || !cronResponse.ok) {
-      setError(profileBody.error ?? body.error ?? cronBody.error ?? "Unable to save settings.");
+    if (!profileResponse.ok || !response.ok || !cronResponse.ok || !automationResponse.ok) {
+      setError(profileBody.error ?? body.error ?? cronBody.error ?? automationBody.error ?? "Unable to save settings.");
       return;
     }
 
@@ -151,6 +176,14 @@ export function SettingsClient({ initialSettings, aiSettings, sourceSettings, pr
       profiles: cronBody.profiles,
     }));
     setCronDirty(false);
+    setAutomation({
+      autoSubmitEnabled: automationBody.settings.autoSubmitEnabled,
+      requireApprovedPacket: automationBody.settings.requireApprovedPacket,
+      requireNoOpenUserRequests: automationBody.settings.requireNoOpenUserRequests,
+      requireFreshAssistantRun: automationBody.settings.requireFreshAssistantRun,
+      maxRunAgeMinutes: automationBody.settings.maxRunAgeMinutes,
+      allowDemographicSubmission: automationBody.settings.allowDemographicSubmission,
+    });
     setNotice("Settings saved.");
   }
 
@@ -298,6 +331,111 @@ export function SettingsClient({ initialSettings, aiSettings, sourceSettings, pr
               <TextField fullWidth label="Environment variable" value="OPENAI_API_KEY" disabled />
               <TextField fullWidth label="Model" value={aiSettings.model} disabled />
             </Box>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <Stack spacing={2}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <MarkEmailReadOutlinedIcon color="primary" />
+                <Typography variant="h3">Inbound email sync</Typography>
+              </Stack>
+              <StatusChip status={emailSyncSettings.configured ? "configured" : "provider_missing"} />
+            </Stack>
+            <Alert severity={emailSyncSettings.configured ? "success" : "info"}>
+              {emailSyncSettings.configured
+                ? "IMAP email sync is configured. Synced job responses update outcomes and create Needs Me items when action is required."
+                : "IMAP email sync is not configured. Add JOB_EMAIL_IMAP_HOST, JOB_EMAIL_IMAP_USER, and JOB_EMAIL_IMAP_PASSWORD to enable it."}
+            </Alert>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(4, 1fr)" }, gap: 2 }}>
+              <TextField fullWidth label="Provider" value={emailSyncSettings.provider} disabled />
+              <TextField fullWidth label="Mailbox" value={emailSyncSettings.mailbox} disabled />
+              <TextField fullWidth label="Limit" value={emailSyncSettings.limit} disabled />
+              <TextField fullWidth label="Since days" value={emailSyncSettings.sinceDays} disabled />
+            </Box>
+            <Typography variant="body2" color="text.secondary">
+              Endpoint: {emailSyncSettings.endpoint}. {emailSyncSettings.secretConfigured ? "EMAIL_SYNC_SECRET is required for requests." : "No EMAIL_SYNC_SECRET is configured, so local calls do not require a bearer token."}
+            </Typography>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <Stack spacing={2}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                <AutoAwesomeOutlinedIcon color="primary" />
+                <Typography variant="h3">Application automation</Typography>
+              </Stack>
+              <StatusChip status={automation.autoSubmitEnabled ? "configured" : "provider_missing"} />
+            </Stack>
+            <Alert severity={automation.autoSubmitEnabled ? "warning" : "info"}>
+              {automation.autoSubmitEnabled
+                ? "Auto-submit is enabled but still gated by packet approval, open questions, fresh assistant state, and page safety checks."
+                : "Auto-submit is disabled. The assistant can fill forms and stop for review."}
+            </Alert>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={automation.autoSubmitEnabled}
+                  onChange={(event) => setAutomation({ ...automation, autoSubmitEnabled: event.target.checked })}
+                />
+              }
+              label="Allow gated auto-submit"
+            />
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)" }, gap: 2 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={automation.requireApprovedPacket}
+                    onChange={(event) => setAutomation({ ...automation, requireApprovedPacket: event.target.checked })}
+                  />
+                }
+                label="Require approved packet"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={automation.requireNoOpenUserRequests}
+                    onChange={(event) => setAutomation({ ...automation, requireNoOpenUserRequests: event.target.checked })}
+                  />
+                }
+                label="Require no open Needs Me items"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={automation.requireFreshAssistantRun}
+                    onChange={(event) => setAutomation({ ...automation, requireFreshAssistantRun: event.target.checked })}
+                  />
+                }
+                label="Require fresh assistant run"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={automation.allowDemographicSubmission}
+                    onChange={(event) => setAutomation({ ...automation, allowDemographicSubmission: event.target.checked })}
+                  />
+                }
+                label="Allow submit with configured demographic answers"
+              />
+              <TextField
+                fullWidth
+                label="Fresh run window"
+                type="number"
+                value={automation.maxRunAgeMinutes}
+                onChange={(event) => setAutomation({ ...automation, maxRunAgeMinutes: Number(event.target.value) })}
+                helperText="Minutes. Used only when fresh assistant run is required."
+              />
+            </Box>
+            <Typography variant="body2" color="text.secondary">
+              Even when enabled, the local assistant skips submit if it sees CAPTCHA, unresolved required fields, unknown custom answers, or a blocked automation run.
+            </Typography>
           </Stack>
         </CardContent>
       </Card>

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { classifyConfidence, classifyEvidenceType } from "@/lib/agents/candidate-intelligence";
 import { confidenceMeetsMinimum, truthLevelToEvidenceConfidence } from "@/lib/evidence/confidence";
 import { createEvidenceChunks } from "@/lib/evidence/chunking";
-import { buildApprovedApplicationPacketEvidenceDraft, buildGithubRepositoryEvidenceDraft, createResumeEvidenceChunks } from "@/lib/evidence/ingest";
+import { buildApprovedApplicationPacketEvidenceDraft, buildGithubRepositoryEvidenceDraft, buildJobSearchOsProjectEvidenceDraft, createResumeEvidenceChunks } from "@/lib/evidence/ingest";
 import { dedupeRetrievedEvidence, scoreEvidenceText } from "@/lib/evidence/retrieval";
 import { inferEvidenceTags } from "@/lib/evidence/tags";
 
@@ -163,6 +163,32 @@ React TypeScript Next.js Storybook Playwright
       generatedMaterialStyleReference: true,
       sourcePacketStatus: "SUBMITTED",
       evidenceRefs: ["ev_1", "ev_2"],
+    });
+  });
+
+  it("treats Job Search OS as approved project evidence for preferred agentic workflow roles", () => {
+    const draft = buildJobSearchOsProjectEvidenceDraft("profile_1", "project_1");
+
+    expect(draft.title).toBe("Job Search OS");
+    expect(draft.type).toBe("PROJECT");
+    expect(draft.sourceType).toBe("USER_INPUT");
+    expect(draft.sourceRef).toBe("project_1");
+    expect(draft.confidence).toBe("VERIFIED");
+    expect(draft.usableInResume).toBe(true);
+    expect(draft.usableInCoverLetter).toBe(true);
+    expect(draft.usableInRecruiterMessage).toBe(true);
+    expect(draft.content).toContain("Local-first AI-powered job search operating system");
+    expect(draft.tags).toEqual(expect.arrayContaining([
+      "ai-agents",
+      "workflow-automation",
+      "rag",
+      "pgvector",
+      "internal-tools",
+      "developer-tools",
+    ]));
+    expect(draft.metadata).toMatchObject({
+      projectId: "project_1",
+      preferredWorkSignal: true,
     });
   });
 });

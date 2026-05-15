@@ -12,6 +12,7 @@ import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
 import ManageSearchOutlinedIcon from "@mui/icons-material/ManageSearchOutlined";
+import MarkChatUnreadOutlinedIcon from "@mui/icons-material/MarkChatUnreadOutlined";
 import PolicyOutlinedIcon from "@mui/icons-material/PolicyOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import SourceOutlinedIcon from "@mui/icons-material/SourceOutlined";
@@ -36,6 +37,7 @@ const drawerWidth = 264;
 
 const navItems = [
   { href: "/dashboard", label: "Command Center", eyebrow: "Home", icon: DashboardOutlinedIcon },
+  { href: "/needs-me", label: "Needs Me", eyebrow: "Agent blockers", icon: MarkChatUnreadOutlinedIcon },
   { href: "/profiles", label: "1. Profiles", eyebrow: "Set intent", icon: ManageSearchOutlinedIcon },
   { href: "/evidence", label: "Evidence", eyebrow: "Truth layer", icon: PolicyOutlinedIcon },
   { href: "/sources", label: "Sources", eyebrow: "Company list", icon: SourceOutlinedIcon },

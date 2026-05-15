@@ -36,6 +36,7 @@ type LaunchResponse = {
   error?: string;
   message?: string;
   logPath?: string;
+  automationRunId?: string;
   application?: {
     id: string;
     company: string;
@@ -61,6 +62,15 @@ type QuestionHelperResponse = {
     tone: string;
     cautions: string[];
   }>;
+  answerMemory?: Array<{
+    id: string;
+    questionText: string;
+    answer: string;
+    sensitivity: string;
+    reusePolicy: string;
+    matchScore: number;
+    autoUsable: boolean;
+  }>;
 };
 
 export function AssistantWorkbench({ applications }: { applications: ReadyApplication[] }) {
@@ -75,6 +85,7 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
   const [question, setQuestion] = useState("");
   const [questionLoading, setQuestionLoading] = useState(false);
   const [questionHelper, setQuestionHelper] = useState<QuestionHelperResponse | null>(null);
+  const [savingMemoryIndex, setSavingMemoryIndex] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
   const visibleApplications = useMemo(
     () => applications.filter((application) => !deletedIds.includes(application.id)),
@@ -166,6 +177,30 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
       setNotice(error instanceof Error ? error.message : "Unable to generate answer options.");
     } finally {
       setQuestionLoading(false);
+    }
+  }
+
+  async function saveAnswerMemory(index: number, answer: string) {
+    setSavingMemoryIndex(index);
+    try {
+      const response = await fetch("/api/application-answer-memory", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          questionText: question,
+          answer,
+          sensitivity: "MEDIUM",
+          reusePolicy: "ASK_FIRST",
+          sourceApplicationId: selectedId || undefined,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? "Unable to save reusable answer.");
+      setNotice(payload.message ?? "Reusable answer saved.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to save reusable answer.");
+    } finally {
+      setSavingMemoryIndex(null);
     }
   }
 
@@ -271,6 +306,7 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
               {launch ? (
                 <Alert severity="success">
                   {launch.message}
+                  {launch.automationRunId ? <Box component="span" sx={{ display: "block", mt: 0.5 }}>Run: {launch.automationRunId}</Box> : null}
                   {launch.logPath ? <Box component="span" sx={{ display: "block", mt: 0.5 }}>Log: {launch.logPath}</Box> : null}
                 </Alert>
               ) : (
@@ -335,6 +371,19 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
               ) : null}
             </Stack>
             {questionLoading ? <LinearProgress /> : null}
+            {questionHelper?.answerMemory?.length ? (
+              <Alert severity={questionHelper.answerMemory.some((memory) => memory.autoUsable) ? "success" : "info"}>
+                Found {questionHelper.answerMemory.length} saved answer match{questionHelper.answerMemory.length === 1 ? "" : "es"}.
+                {questionHelper.answerMemory.slice(0, 2).map((memory) => (
+                  <Box key={memory.id} sx={{ mt: 1 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 850 }}>
+                      {memory.matchScore}% match · {memory.reusePolicy.replace(/_/g, " ").toLowerCase()} · {memory.sensitivity.toLowerCase()}
+                    </Typography>
+                    <Typography variant="body2">{memory.questionText}</Typography>
+                  </Box>
+                ))}
+              </Alert>
+            ) : null}
             {questionHelper?.options?.length ? (
               <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(3, 1fr)" }, gap: 2 }}>
                 {questionHelper.options.map((option, index) => (
@@ -346,6 +395,14 @@ export function AssistantWorkbench({ applications }: { applications: ReadyApplic
                           <Chip size="small" variant="outlined" label={`Option ${index + 1}`} />
                         </Stack>
                         <Typography sx={{ whiteSpace: "pre-wrap", lineHeight: 1.65 }}>{option.answer}</Typography>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          disabled={savingMemoryIndex === index}
+                          onClick={() => void saveAnswerMemory(index, option.answer)}
+                        >
+                          {savingMemoryIndex === index ? "Saving..." : "Save reusable answer"}
+                        </Button>
                         <Divider />
                         <Box>
                           <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>Evidence</Typography>

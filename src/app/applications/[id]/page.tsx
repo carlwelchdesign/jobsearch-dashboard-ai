@@ -28,6 +28,7 @@ import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { applicationAnswerEntries, packetApprovalChecklist, packetApprovalState } from "@/lib/applications/application-packets";
 import { ApprovePacketButton } from "./approve-packet-button";
+import { AutoSubmitOverrideControl } from "./auto-submit-override-control";
 import { DeletePacketAnswerButton } from "./delete-packet-answer-button";
 import { InterviewPrepButton } from "./interview-prep-button";
 import { CompanyResearchButton } from "./company-research-button";
@@ -290,6 +291,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
               <Alert severity={approvalState?.canApprove ? "success" : "info"}>
                 {approvalState?.canApprove ? "This packet is ready for approval." : approvalState?.reason ?? "Prepare the application package before approval."}
               </Alert>
+              <AutoSubmitOverrideControl applicationId={application.id} autoSubmitOverride={application.autoSubmitOverride} />
               <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
                 {approvalChecklist.map((item) => (
                   <Chip

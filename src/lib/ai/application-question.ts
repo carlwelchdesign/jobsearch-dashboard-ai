@@ -1,6 +1,7 @@
 import type { ExperienceBullet, GithubRepository, Project, UserProfile, WorkExperience } from "@prisma/client";
 import { z } from "zod";
 import { parseStructuredOutput } from "@/lib/ai/openai";
+import type { AnswerMemoryMatch } from "@/lib/application-answer-memory";
 
 export const applicationQuestionAnswerSchema = z.object({
   options: z.array(
@@ -21,6 +22,7 @@ type ApplicationQuestionInput = {
   workExperiences: WorkExperience[];
   projects: Project[];
   githubRepositories: GithubRepository[];
+  answerMemory?: AnswerMemoryMatch[];
 };
 
 export async function answerApplicationQuestion(input: ApplicationQuestionInput) {
@@ -81,6 +83,16 @@ export async function answerApplicationQuestion(input: ApplicationQuestionInput)
           stars: repo.stars,
           pushedAt: repo.pushedAt,
         })),
+        reusableAnswerMemory: input.answerMemory?.map((memory) => ({
+          previousQuestion: memory.questionText,
+          answer: memory.answer,
+          sensitivity: memory.sensitivity,
+          reusePolicy: memory.reusePolicy,
+          matchScore: memory.matchScore,
+          instruction: memory.autoUsable
+            ? "This low-sensitivity answer may be reused if it fits the current question."
+            : "Use as context only. The user should review before reuse.",
+        })),
       },
     });
 
@@ -94,14 +106,22 @@ export async function answerApplicationQuestion(input: ApplicationQuestionInput)
   }
 }
 
-function fallbackAnswers({ question, userProfile, bullets, projects, githubRepositories }: ApplicationQuestionInput) {
+function fallbackAnswers({ question, userProfile, bullets, projects, githubRepositories, answerMemory = [] }: ApplicationQuestionInput) {
   const strongestBullets = bullets.slice(0, 6);
   const repos = githubRepositories.filter((repo) => !repo.isFork).slice(0, 3);
   const project = projects[0];
   const summary = userProfile.professionalSummary ?? userProfile.masterSummary ?? "I focus on building practical, maintainable product experiences for complex workflows.";
+  const memory = answerMemory[0];
 
   return {
     options: [
+      ...(memory ? [{
+        title: memory.autoUsable ? "Saved Answer" : "Saved Answer To Review",
+        answer: memory.answer,
+        evidence: [`Saved answer memory from: ${memory.questionText}`],
+        tone: memory.autoUsable ? "Previously approved and low-sensitivity." : "Previously saved, review before use.",
+        cautions: memory.autoUsable ? [] : ["Review this saved answer before submitting because it may not exactly match the current question."],
+      }] : []),
       {
         title: "Product Engineering Challenge",
         answer: [
@@ -139,6 +159,6 @@ function fallbackAnswers({ question, userProfile, bullets, projects, githubRepos
         tone: "Personal, current, and project-based.",
         cautions: ["Use this option only if the question allows examples from public or independent work."],
       },
-    ],
+    ].slice(0, 3),
   };
 }

@@ -2,6 +2,7 @@ const baseUrl = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
 
 const pages = [
   "/dashboard",
+  "/needs-me",
   "/jobs",
   "/applications",
   "/evidence",

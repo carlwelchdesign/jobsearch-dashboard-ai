@@ -1,5 +1,8 @@
 import { PrismaClient } from "@prisma/client";
+import { upsertApplicationAnswerMemory } from "../src/lib/application-answer-memory";
+import { syncJobSearchOsProjectEvidence } from "../src/lib/evidence/ingest";
 import { configToPrismaJson, defaultCompanySourceConfig } from "../src/lib/job-search/company-source-config";
+import { prisma as appPrisma } from "../src/lib/prisma";
 import { defaultResumeProfiles, resumeProfileJson } from "../src/lib/resume-profiles/defaults";
 
 const prisma = new PrismaClient();
@@ -285,6 +288,15 @@ async function main() {
   }
 
   if (user.profile) {
+    await syncJobSearchOsProjectEvidence(user.profile.id);
+    await upsertApplicationAnswerMemory({
+      userId: user.id,
+      questionText: "How did you find this job posting?",
+      answer: "I found it through a personal job search tool that monitors curated company career pages and direct ATS feeds for roles aligned with my background.",
+      sensitivity: "LOW",
+      reusePolicy: "AUTO_USE",
+    });
+
     const bullets = [
       {
         category: "frontend",
@@ -336,5 +348,5 @@ main()
     process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    await Promise.all([prisma.$disconnect(), appPrisma.$disconnect()]);
   });

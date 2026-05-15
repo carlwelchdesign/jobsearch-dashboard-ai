@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
+import { evaluateAutoSubmitEligibility } from "@/lib/applications/auto-submit-policy";
 import { selectedApplicationAnswers } from "@/lib/applications/application-packets";
 import { prisma } from "@/lib/prisma";
 
@@ -45,13 +46,18 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const fullName = profile?.fullName ?? application.user.name ?? "";
     const [firstName, ...lastNameParts] = fullName.split(/\s+/).filter(Boolean);
     const packet = application.applicationPackets[0];
+    const autoSubmit = await evaluateAutoSubmitEligibility(application.id);
 
     return NextResponse.json({
       safety: {
         localAssistantOnly: true,
-        manualSubmitRequired: true,
+        manualSubmitRequired: !autoSubmit.allowed,
+        autoSubmitAllowed: autoSubmit.allowed,
+        autoSubmitReasons: autoSubmit.reasons,
         prohibitedActions: [
-          "Do not submit the application.",
+          autoSubmit.allowed
+            ? "Submit only if the page still has no CAPTCHA, login block, unresolved required fields, or unexpected confirmation screen."
+            : "Do not submit the application.",
           "Do not bypass CAPTCHA.",
           "Do not use stealth browser settings.",
           "Do not infer sensitive demographic answers. Only use explicit user-configured settings.",
