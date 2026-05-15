@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildApplicationPacketData, backfillApplicationPackets } from "@/lib/applications/application-packets";
+import { backfillApplicationPackets, buildApplicationPacketData, packetApprovalChecklist, packetApprovalState } from "@/lib/applications/application-packets";
 
 describe("application packet aggregate", () => {
   it("stores generated resume, cover letter, QA, and evidence refs as a draft packet", () => {
@@ -70,6 +70,55 @@ describe("application packet aggregate", () => {
     });
 
     expect(packet.status).toBe("SUBMITTED");
+  });
+
+  it("preserves user approval while refreshing packet materials", () => {
+    const packet = buildApplicationPacketData({
+      application: { status: "ready_to_apply", resumeId: "resume_1", coverLetterId: "letter_1" },
+      resume: null,
+      coverLetter: null,
+      existingStatus: "APPROVED",
+    });
+
+    expect(packet.status).toBe("APPROVED");
+  });
+
+  it("allows approval only when generated materials are present and QA does not need review", () => {
+    expect(packetApprovalState({
+      status: "DRAFT",
+      tailoredResumeContent: "Resume",
+      coverLetterContent: "Cover letter",
+      qualityReviewJson: { status: "PASS" },
+    })).toMatchObject({ canApprove: true });
+
+    expect(packetApprovalState({
+      status: "NEEDS_REVIEW",
+      tailoredResumeContent: "Resume",
+      coverLetterContent: "Cover letter",
+      qualityReviewJson: { status: "NEEDS_REVIEW" },
+    })).toMatchObject({ canApprove: false });
+
+    expect(packetApprovalState({
+      status: "DRAFT",
+      tailoredResumeContent: null,
+      coverLetterContent: "Cover letter",
+      qualityReviewJson: { status: "PASS" },
+    })).toMatchObject({ canApprove: false });
+  });
+
+  it("explains packet approval readiness for the UI", () => {
+    const checklist = packetApprovalChecklist({
+      status: "NEEDS_REVIEW",
+      tailoredResumeContent: "Resume",
+      coverLetterContent: null,
+      qualityReviewJson: { status: "NEEDS_REVIEW" },
+    });
+
+    expect(checklist).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Tailored resume", complete: true }),
+      expect.objectContaining({ label: "Cover letter", complete: false }),
+      expect.objectContaining({ label: "QA review", complete: false }),
+    ]));
   });
 
   it("exports a backfill function for existing applications", () => {

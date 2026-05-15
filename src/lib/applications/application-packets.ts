@@ -1,4 +1,4 @@
-import type { Application, GeneratedCoverLetter, GeneratedResume, Prisma } from "@prisma/client";
+import type { Application, ApplicationPacket, ApplicationPacketStatus, GeneratedCoverLetter, GeneratedResume, Prisma } from "@prisma/client";
 import { syncApprovedApplicationPacketEvidence } from "@/lib/evidence/ingest";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
@@ -17,8 +17,12 @@ export async function syncApplicationPacket(applicationId: string) {
   });
   if (!application) throw new Error("Application not found.");
 
-  const [resumeProfile, latestOutreach, companyResearchRun, portfolioRun] = await Promise.all([
+  const [resumeProfile, existingPacket, latestOutreach, companyResearchRun, portfolioRun] = await Promise.all([
     findResumeProfileForApplication(application),
+    prisma.applicationPacket.findUnique({
+      where: { applicationId },
+      select: { status: true },
+    }),
     prisma.recruiterOutreach.findFirst({
       where: {
         userId: application.userId,
@@ -58,6 +62,7 @@ export async function syncApplicationPacket(applicationId: string) {
     recruiterMessage: latestOutreach?.message ?? null,
     companyBrief: companyBriefFromRun(companyResearchRun?.outputJson),
     projectLinks: projectLinksFromRun(portfolioRun?.outputJson),
+    existingStatus: existingPacket?.status ?? null,
   });
 
   const packet = await prisma.applicationPacket.upsert({
@@ -72,6 +77,28 @@ export async function syncApplicationPacket(applicationId: string) {
   });
   await syncApprovedApplicationPacketEvidence(applicationId);
   return packet;
+}
+
+export async function approveApplicationPacket(applicationId: string) {
+  await syncApplicationPacket(applicationId);
+  const packet = await prisma.applicationPacket.findUnique({
+    where: { applicationId },
+  });
+  if (!packet) throw new Error("Application packet not found.");
+
+  const approval = packetApprovalState(packet);
+  if (!approval.canApprove) throw new Error(approval.reason);
+
+  const approved = await prisma.applicationPacket.update({
+    where: { applicationId },
+    data: { status: "APPROVED" },
+  });
+  await syncApprovedApplicationPacketEvidence(applicationId);
+
+  return {
+    packet: approved,
+    message: "Application packet approved. It is now available as approved writing-style evidence.",
+  };
 }
 
 export async function backfillApplicationPackets(limit = 200) {
@@ -111,6 +138,7 @@ export function buildApplicationPacketData({
   recruiterMessage,
   companyBrief,
   projectLinks,
+  existingStatus,
 }: {
   application: Pick<Application, "status" | "resumeId" | "coverLetterId">;
   resume: Pick<GeneratedResume, "id" | "markdown" | "plainText" | "generationNotes"> | null;
@@ -119,6 +147,7 @@ export function buildApplicationPacketData({
   recruiterMessage?: string | null;
   companyBrief?: string | null;
   projectLinks?: unknown[];
+  existingStatus?: ApplicationPacketStatus | null;
 }): PacketMaterialData {
   const resumeNotes = materialNotes(resume?.generationNotes);
   const coverLetterNotes = materialNotes(coverLetter?.generationNotes);
@@ -143,8 +172,65 @@ export function buildApplicationPacketData({
     projectLinks: (projectLinks ?? []) as Prisma.InputJsonValue,
     evidenceRefs: evidenceRefs as Prisma.InputJsonValue,
     qualityReviewJson: (qa ?? {}) as Prisma.InputJsonValue,
-    status: packetStatus(application.status, qa),
+    status: packetStatus(application.status, qa, existingStatus),
   };
+}
+
+export function packetApprovalState(packet: Pick<ApplicationPacket, "status" | "tailoredResumeContent" | "coverLetterContent" | "qualityReviewJson">) {
+  if (packet.status === "APPROVED") return { canApprove: false, reason: "This packet is already approved." };
+  if (packet.status === "SUBMITTED") return { canApprove: false, reason: "This packet has already been submitted." };
+  if (packet.status === "ARCHIVED") return { canApprove: false, reason: "Archived packets cannot be approved." };
+  if (!packet.tailoredResumeContent || !packet.coverLetterContent) {
+    return { canApprove: false, reason: "Generate both a tailored resume and cover letter before approving the packet." };
+  }
+
+  const qa = objectValue(packet.qualityReviewJson);
+  if (packet.status === "NEEDS_REVIEW" || qa?.status === "NEEDS_REVIEW") {
+    return { canApprove: false, reason: "Resolve QA review items before approving this packet." };
+  }
+
+  return { canApprove: true, reason: "Packet can be approved." };
+}
+
+export function packetApprovalChecklist(packet: Pick<ApplicationPacket, "status" | "tailoredResumeContent" | "coverLetterContent" | "qualityReviewJson"> | null | undefined) {
+  if (!packet) {
+    return [
+      { label: "Packet created", complete: false, detail: "Prepare the application package first." },
+      { label: "Tailored resume", complete: false, detail: "No resume content has been saved to a packet yet." },
+      { label: "Cover letter", complete: false, detail: "No cover letter content has been saved to a packet yet." },
+      { label: "QA review", complete: false, detail: "QA has not run for this packet yet." },
+    ];
+  }
+
+  const qa = objectValue(packet.qualityReviewJson);
+  const qaStatus = typeof qa?.status === "string" ? qa.status : null;
+
+  return [
+    {
+      label: "Packet created",
+      complete: true,
+      detail: `Current packet status: ${packet.status}.`,
+    },
+    {
+      label: "Tailored resume",
+      complete: Boolean(packet.tailoredResumeContent),
+      detail: packet.tailoredResumeContent ? "Resume content is attached." : "Generate or sync a tailored resume.",
+    },
+    {
+      label: "Cover letter",
+      complete: Boolean(packet.coverLetterContent),
+      detail: packet.coverLetterContent ? "Cover letter content is attached." : "Generate or sync a cover letter.",
+    },
+    {
+      label: "QA review",
+      complete: packet.status !== "NEEDS_REVIEW" && qaStatus !== "NEEDS_REVIEW",
+      detail: qaStatus === "NEEDS_REVIEW" || packet.status === "NEEDS_REVIEW"
+        ? "Resolve QA warnings before approval."
+        : qaStatus === "PASS"
+        ? "QA passed."
+        : "No blocking QA issues are recorded.",
+    },
+  ];
 }
 
 async function findResumeProfileForApplication(application: {
@@ -165,10 +251,11 @@ async function findResumeProfileForApplication(application: {
   });
 }
 
-function packetStatus(applicationStatus: Application["status"], qa: Record<string, unknown> | null) {
+function packetStatus(applicationStatus: Application["status"], qa: Record<string, unknown> | null, existingStatus?: ApplicationPacketStatus | null) {
   if (applicationStatus === "archived") return "ARCHIVED" as const;
   if (["applied", "follow_up_due", "screening", "interviewing", "offer", "rejected_by_company"].includes(applicationStatus)) return "SUBMITTED" as const;
   if (qa?.status === "NEEDS_REVIEW") return "NEEDS_REVIEW" as const;
+  if (existingStatus === "APPROVED") return "APPROVED" as const;
   return "DRAFT" as const;
 }
 

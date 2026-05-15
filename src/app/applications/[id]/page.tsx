@@ -1,6 +1,5 @@
 import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
-import AssignmentTurnedInOutlinedIcon from "@mui/icons-material/AssignmentTurnedInOutlined";
 import BusinessOutlinedIcon from "@mui/icons-material/BusinessOutlined";
 import ContactPageOutlinedIcon from "@mui/icons-material/ContactPageOutlined";
 import ConnectWithoutContactOutlinedIcon from "@mui/icons-material/ConnectWithoutContactOutlined";
@@ -9,6 +8,7 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
 import PlayCircleOutlineOutlinedIcon from "@mui/icons-material/PlayCircleOutlineOutlined";
 import PsychologyOutlinedIcon from "@mui/icons-material/PsychologyOutlined";
+import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
@@ -26,6 +26,8 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { WorkflowGuide } from "@/components/ui/workflow-guide";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
+import { packetApprovalChecklist, packetApprovalState } from "@/lib/applications/application-packets";
+import { ApprovePacketButton } from "./approve-packet-button";
 import { InterviewPrepButton } from "./interview-prep-button";
 import { CompanyResearchButton } from "./company-research-button";
 import { CompensationOpportunityButton } from "./compensation-opportunity-button";
@@ -198,6 +200,8 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
   const portfolioMatch = portfolioMatchOutput(latestPortfolioRun?.outputJson);
   const companyResearch = companyResearchOutput(latestCompanyResearchRun?.outputJson);
   const compensationOpportunity = compensationOpportunityOutput(latestCompensationRun?.outputJson);
+  const approvalState = packet ? packetApprovalState(packet) : null;
+  const approvalChecklist = packetApprovalChecklist(packet);
   const latestOutreach = await prisma.recruiterOutreach.findFirst({
     where: {
       userId: application.userId,
@@ -258,6 +262,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                   <PortfolioMatchButton applicationId={application.id} />
                   <RecruiterOutreachButton applicationId={application.id} />
                   <InterviewPrepButton applicationId={application.id} />
+                  {approvalState?.canApprove ? <ApprovePacketButton applicationId={application.id} /> : null}
                   {application.status === "ready_to_apply" && application.resume && application.coverLetter ? (
                     <>
                       <ActionButton
@@ -279,6 +284,20 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                   {qaIssues.map((issue) => <Chip key={issue} color="warning" variant="outlined" label={issue} />)}
                 </Stack>
               ) : null}
+              <Alert severity={approvalState?.canApprove ? "success" : "info"}>
+                {approvalState?.canApprove ? "This packet is ready for approval." : approvalState?.reason ?? "Prepare the application package before approval."}
+              </Alert>
+              <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                {approvalChecklist.map((item) => (
+                  <Chip
+                    key={item.label}
+                    color={item.complete ? "success" : "default"}
+                    variant={item.complete ? "filled" : "outlined"}
+                    label={`${item.complete ? "Done" : "Needed"}: ${item.label}`}
+                    title={item.detail}
+                  />
+                ))}
+              </Stack>
             </Stack>
           </CardContent>
         </Card>
