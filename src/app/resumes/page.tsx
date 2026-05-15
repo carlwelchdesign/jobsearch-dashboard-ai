@@ -1,4 +1,5 @@
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
+import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import FileUploadOutlinedIcon from "@mui/icons-material/FileUploadOutlined";
 import GradingOutlinedIcon from "@mui/icons-material/GradingOutlined";
@@ -39,6 +40,12 @@ const sections = [
     icon: ArticleOutlinedIcon,
     description: "Review ATS checks, plain text, and exported resumes tied to jobs.",
   },
+  {
+    title: "Resume Variants",
+    href: "/resumes/variants",
+    icon: AutoAwesomeOutlinedIcon,
+    description: "Manage controlled positioning profiles used by the resume strategy agent.",
+  },
 ];
 
 export default function ResumesPage() {
@@ -51,7 +58,7 @@ export default function ResumesPage() {
           description="Step 3 support: upload evidence, approve parsed profile data, and review the generated resumes used in application packages."
         />
         <WorkflowGuide active="materials" title="Step 3 of 5: keep resume evidence clean" />
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)", xl: "repeat(4, 1fr)" }, gap: 2 }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)", xl: "repeat(5, 1fr)" }, gap: 2 }}>
           {sections.map((section) => {
             const Icon = section.icon;
             return (

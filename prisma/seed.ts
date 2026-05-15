@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { configToPrismaJson, defaultCompanySourceConfig } from "../src/lib/job-search/company-source-config";
+import { defaultResumeProfiles, resumeProfileJson } from "../src/lib/resume-profiles/defaults";
 
 const prisma = new PrismaClient();
 
@@ -256,6 +257,30 @@ async function main() {
       where: { type_name: { type: source.type, name: source.name } },
       update: { baseUrl: source.baseUrl, enabled: source.enabled, config: source.config },
       create: source,
+    });
+  }
+
+  for (const resumeProfile of defaultResumeProfiles) {
+    await prisma.resumeProfile.upsert({
+      where: { userId_name: { userId: user.id, name: resumeProfile.name } },
+      update: {
+        description: resumeProfile.description,
+        targetRoles: resumeProfileJson(resumeProfile.targetRoles),
+        positioningSummary: resumeProfile.positioningSummary,
+        evidenceTags: resumeProfileJson(resumeProfile.evidenceTags),
+        priorityProjects: resumeProfileJson(resumeProfile.priorityProjects),
+        defaultSections: resumeProfileJson(resumeProfile.defaultSections),
+      },
+      create: {
+        userId: user.id,
+        name: resumeProfile.name,
+        description: resumeProfile.description,
+        targetRoles: resumeProfileJson(resumeProfile.targetRoles),
+        positioningSummary: resumeProfile.positioningSummary,
+        evidenceTags: resumeProfileJson(resumeProfile.evidenceTags),
+        priorityProjects: resumeProfileJson(resumeProfile.priorityProjects),
+        defaultSections: resumeProfileJson(resumeProfile.defaultSections),
+      },
     });
   }
 

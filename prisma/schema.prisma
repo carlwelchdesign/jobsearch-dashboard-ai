@@ -235,6 +235,11 @@ enum RecruiterOutreachStatus {
   ARCHIVED
 }
 
+enum ResumeProfileStatus {
+  ACTIVE
+  ARCHIVED
+}
+
 model User {
   id                   String                 @id @default(cuid())
   email                String                 @unique
@@ -250,6 +255,7 @@ model User {
   outcomes             ApplicationOutcome[]
   profile              UserProfile?
   recruiterOutreach    RecruiterOutreach[]
+  resumeProfiles       ResumeProfile[]
   resumeUploads        ResumeUpload[]
   resumes              GeneratedResume[]
   searchProfiles       JobSearchProfile[]
@@ -416,6 +422,25 @@ model SearchProfilePerformance {
   searchProfile           JobSearchProfile @relation(fields: [searchProfileId], references: [id], onDelete: Cascade)
 
   @@index([searchProfileId, lastEvaluatedAt])
+}
+
+model ResumeProfile {
+  id                 String              @id @default(cuid())
+  userId             String
+  name               String
+  description        String
+  targetRoles        Json                @default("[]")
+  positioningSummary String
+  evidenceTags       Json                @default("[]")
+  priorityProjects   Json                @default("[]")
+  defaultSections    Json                @default("[]")
+  status             ResumeProfileStatus @default(ACTIVE)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId, status])
 }
 
 model JobSource {

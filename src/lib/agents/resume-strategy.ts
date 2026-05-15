@@ -28,7 +28,7 @@ export async function runResumeStrategyAgent(input: ResumeStrategyInput) {
     input,
     userId: input.userId,
     execute: async () => {
-      const [job, profile, candidateProfile, evaluation] = await Promise.all([
+      const [job, profile, candidateProfile, evaluation, resumeProfiles] = await Promise.all([
         prisma.jobPosting.findUnique({ where: { id: input.jobPostingId } }),
         prisma.jobSearchProfile.findUnique({ where: { id: input.jobSearchProfileId } }),
         prisma.userProfile.findFirst({ where: input.userId ? { userId: input.userId } : undefined, orderBy: { createdAt: "asc" } }),
@@ -39,6 +39,13 @@ export async function runResumeStrategyAgent(input: ResumeStrategyInput) {
               jobSearchProfileId: input.jobSearchProfileId,
             },
           },
+        }),
+        prisma.resumeProfile.findMany({
+          where: {
+            ...(input.userId ? { userId: input.userId } : {}),
+            status: "ACTIVE",
+          },
+          orderBy: { name: "asc" },
         }),
       ]);
 
@@ -62,6 +69,13 @@ export async function runResumeStrategyAgent(input: ResumeStrategyInput) {
         profile,
         evidence,
         evaluatedResumeProfile: evaluation?.recommendedResumeProfile ?? null,
+        resumeProfiles: resumeProfiles.map((resumeProfile) => ({
+          name: resumeProfile.name,
+          positioningSummary: resumeProfile.positioningSummary,
+          evidenceTags: jsonArray(resumeProfile.evidenceTags),
+          priorityProjects: jsonArray(resumeProfile.priorityProjects),
+          defaultSections: jsonArray(resumeProfile.defaultSections),
+        })),
       });
     },
   });
@@ -72,17 +86,20 @@ export function buildResumeStrategy({
   profile,
   evidence,
   evaluatedResumeProfile,
+  resumeProfiles,
 }: {
   job: Pick<JobPosting, "title" | "company" | "description">;
   profile: Pick<JobSearchProfile, "name" | "titles" | "keywordsRequired" | "keywordsPreferred" | "industries">;
   evidence: Pick<CandidateEvidence, "id" | "title" | "content" | "tags" | "type">[];
   evaluatedResumeProfile?: string | null;
+  resumeProfiles?: Array<{ name: string; positioningSummary: string; evidenceTags: string[]; priorityProjects: string[]; defaultSections: string[] }>;
 }): ResumeStrategyOutput {
   const text = `${job.title} ${job.company} ${job.description} ${profile.name}`.toLowerCase();
   const evidenceRefs = evidence.map((item) => item.id);
   const evidenceTags = Array.from(new Set(evidence.flatMap((item) => jsonArray(item.tags)))).slice(0, 12);
   const emphasisTags = chooseEmphasisTags(text, evidenceTags, profile);
-  const recommendedResumeProfile = evaluatedResumeProfile ?? chooseResumeProfile(text, emphasisTags);
+  const recommendedResumeProfile = chooseControlledResumeProfile(text, emphasisTags, evaluatedResumeProfile, resumeProfiles ?? []);
+  const selectedProfile = resumeProfiles?.find((resumeProfile) => resumeProfile.name === recommendedResumeProfile);
   const priorityProjects = evidence
     .filter((item) => item.type === "PROJECT" || /project|repo|github/i.test(item.title))
     .map((item) => item.title)
@@ -99,15 +116,36 @@ export function buildResumeStrategy({
 
   return {
     recommendedResumeProfile,
-    positioningSummary: buildPositioningSummary(job, recommendedResumeProfile, emphasisTags),
+    positioningSummary: selectedProfile?.positioningSummary ?? buildPositioningSummary(job, recommendedResumeProfile, emphasisTags),
     emphasisTags,
     evidenceRefs,
-    priorityProjects,
+    priorityProjects: selectedProfile?.priorityProjects?.length ? selectedProfile.priorityProjects : priorityProjects,
     omitSignals,
-    suggestedSections,
+    suggestedSections: selectedProfile?.defaultSections?.length ? selectedProfile.defaultSections : suggestedSections,
     rationale: `Use ${recommendedResumeProfile} positioning because the role and profile emphasize ${emphasisTags.slice(0, 5).join(", ") || "general senior product engineering"}.`,
     confidence: evidence.length >= 8 ? 0.86 : evidence.length >= 4 ? 0.74 : 0.56,
   };
+}
+
+export function chooseControlledResumeProfile(
+  text: string,
+  tags: string[],
+  evaluatedResumeProfile: string | null | undefined,
+  resumeProfiles: Array<{ name: string; evidenceTags: string[] }>,
+) {
+  if (evaluatedResumeProfile && resumeProfiles.some((profile) => profile.name === evaluatedResumeProfile)) return evaluatedResumeProfile;
+  const fallback = evaluatedResumeProfile ?? chooseResumeProfile(text, tags);
+  if (!resumeProfiles.length) return fallback;
+
+  const haystack = `${text} ${tags.join(" ")}`.toLowerCase();
+  const ranked = resumeProfiles
+    .map((profile) => ({
+      profile,
+      score: profile.evidenceTags.reduce((score, tag) => score + (haystack.includes(tag.toLowerCase()) ? 2 : 0), profile.name.toLowerCase() === fallback.toLowerCase() ? 8 : 0),
+    }))
+    .sort((left, right) => right.score - left.score);
+
+  return ranked[0]?.score ? ranked[0].profile.name : fallback;
 }
 
 function strategyQuery(job: JobPosting, profile: JobSearchProfile) {

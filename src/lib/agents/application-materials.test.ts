@@ -1,7 +1,7 @@
 import type { CandidateEvidence, JobPosting, JobSearchProfile } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import { reviewApplicationMaterials } from "@/lib/agents/application-qa";
-import { buildResumeStrategy } from "@/lib/agents/resume-strategy";
+import { buildResumeStrategy, chooseControlledResumeProfile } from "@/lib/agents/resume-strategy";
 
 describe("buildResumeStrategy", () => {
   it("chooses security positioning from role and evidence", () => {
@@ -32,6 +32,20 @@ describe("buildResumeStrategy", () => {
     expect(strategy.recommendedResumeProfile).toContain("Security");
     expect(strategy.evidenceRefs).toEqual(["ev1"]);
     expect(strategy.priorityProjects).toContain("WebAuthn Core");
+  });
+
+  it("selects an active controlled resume profile by evidence tags", () => {
+    const profile = chooseControlledResumeProfile(
+      "Build authentication admin workflows with React and TypeScript",
+      ["identity", "webauthn", "react"],
+      null,
+      [
+        { name: "AI Product Engineer", evidenceTags: ["ai-product", "openai"] },
+        { name: "Security SaaS / Identity", evidenceTags: ["identity", "webauthn", "security"] },
+      ],
+    );
+
+    expect(profile).toBe("Security SaaS / Identity");
   });
 });
 
