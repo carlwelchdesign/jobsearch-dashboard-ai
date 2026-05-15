@@ -28,6 +28,7 @@ import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { applicationAnswerEntries, packetApprovalChecklist, packetApprovalState } from "@/lib/applications/application-packets";
 import { ApprovePacketButton } from "./approve-packet-button";
+import { DeletePacketAnswerButton } from "./delete-packet-answer-button";
 import { InterviewPrepButton } from "./interview-prep-button";
 import { CompanyResearchButton } from "./company-research-button";
 import { CompensationOpportunityButton } from "./compensation-opportunity-button";
@@ -341,12 +342,15 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                   {savedAnswers.map((entry, entryIndex) => (
                     <Box key={entry.id ?? `${entry.question}-${entryIndex}`} sx={{ borderTop: entryIndex ? 1 : 0, borderColor: "divider", pt: entryIndex ? 2 : 0 }}>
                       <Stack spacing={1.5}>
-                        <Box>
-                          <Typography sx={{ fontWeight: 850 }}>{entry.question}</Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {entry.generatedBy ?? "generated"}{entry.createdAt ? ` · ${new Date(entry.createdAt).toLocaleString()}` : ""}
-                          </Typography>
-                        </Box>
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { sm: "flex-start" } }}>
+                          <Box>
+                            <Typography sx={{ fontWeight: 850 }}>{entry.question}</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {entry.generatedBy ?? "generated"}{entry.createdAt ? ` · ${new Date(entry.createdAt).toLocaleString()}` : ""}
+                            </Typography>
+                          </Box>
+                          {entry.id ? <DeletePacketAnswerButton applicationId={application.id} answerId={entry.id} /> : null}
+                        </Stack>
                         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "repeat(3, 1fr)" }, gap: 1.5 }}>
                           {entry.options.map((option, optionIndex) => (
                             <Box key={`${entry.question}-${option.title}-${optionIndex}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5 }}>

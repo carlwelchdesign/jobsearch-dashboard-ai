@@ -14,7 +14,7 @@ type ActionButtonProps = {
   postTo?: string;
   body?: unknown;
   message?: string;
-  method?: "POST" | "GET";
+  method?: "POST" | "GET" | "DELETE";
   variant?: "text" | "outlined" | "contained";
   color?: "primary" | "secondary" | "success" | "error" | "warning" | "info";
   size?: "small" | "medium" | "large";

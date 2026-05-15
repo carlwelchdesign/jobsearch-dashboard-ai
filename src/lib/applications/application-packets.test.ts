@@ -30,6 +30,7 @@ describe("application packet aggregate", () => {
       recruiterMessage: "Recruiter note",
       companyBrief: "Company brief",
       projectLinks: [{ name: "progression-lab-ai" }],
+      applicationAnswersJson: [{ id: "answer_1", question: "Why us?", options: [] }],
     });
 
     expect(packet.status).toBe("DRAFT");
@@ -38,6 +39,7 @@ describe("application packet aggregate", () => {
     expect(packet.generatedCoverLetterId).toBe("letter_1");
     expect(packet.tailoredResumeContent).toBe("Plain resume");
     expect(packet.coverLetterContent).toBe("Cover letter");
+    expect(packet.applicationAnswersJson).toEqual([{ id: "answer_1", question: "Why us?", options: [] }]);
     expect(packet.evidenceRefs).toEqual(["ev_1", "ev_2", "ev_3"]);
     expect(packet.qualityReviewJson).toMatchObject({ status: "PASS", score: 92 });
   });

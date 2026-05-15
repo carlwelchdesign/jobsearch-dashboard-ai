@@ -21,7 +21,7 @@ export async function syncApplicationPacket(applicationId: string) {
     findResumeProfileForApplication(application),
     prisma.applicationPacket.findUnique({
       where: { applicationId },
-      select: { status: true },
+      select: { applicationAnswersJson: true, status: true },
     }),
     prisma.recruiterOutreach.findFirst({
       where: {
@@ -62,6 +62,7 @@ export async function syncApplicationPacket(applicationId: string) {
     recruiterMessage: latestOutreach?.message ?? null,
     companyBrief: companyBriefFromRun(companyResearchRun?.outputJson),
     projectLinks: projectLinksFromRun(portfolioRun?.outputJson),
+    applicationAnswersJson: existingPacket?.applicationAnswersJson ?? undefined,
     existingStatus: existingPacket?.status ?? null,
   });
 
@@ -143,6 +144,31 @@ export async function appendApplicationPacketAnswer(input: {
   };
 }
 
+export async function deleteApplicationPacketAnswer(applicationId: string, answerId: string) {
+  const packet = await prisma.applicationPacket.findUnique({
+    where: { applicationId },
+    select: { applicationAnswersJson: true },
+  });
+  if (!packet) throw new Error("Application packet not found.");
+
+  const current = applicationAnswerEntries(packet.applicationAnswersJson);
+  const next = current.filter((entry) => entry.id !== answerId);
+  if (next.length === current.length) throw new Error("Saved application answer not found.");
+
+  await prisma.applicationPacket.update({
+    where: { applicationId },
+    data: {
+      applicationAnswersJson: next as Prisma.InputJsonValue,
+    },
+  });
+
+  return {
+    deleted: true,
+    answerCount: next.length,
+    message: "Saved application answer removed.",
+  };
+}
+
 export async function backfillApplicationPackets(limit = 200) {
   const applications = await prisma.application.findMany({
     select: { id: true },
@@ -180,6 +206,7 @@ export function buildApplicationPacketData({
   recruiterMessage,
   companyBrief,
   projectLinks,
+  applicationAnswersJson,
   existingStatus,
 }: {
   application: Pick<Application, "status" | "resumeId" | "coverLetterId">;
@@ -189,6 +216,7 @@ export function buildApplicationPacketData({
   recruiterMessage?: string | null;
   companyBrief?: string | null;
   projectLinks?: unknown[];
+  applicationAnswersJson?: unknown;
   existingStatus?: ApplicationPacketStatus | null;
 }): PacketMaterialData {
   const resumeNotes = materialNotes(resume?.generationNotes);
@@ -207,7 +235,7 @@ export function buildApplicationPacketData({
     generatedCoverLetterId: coverLetter?.id ?? application.coverLetterId,
     tailoredResumeContent: resume?.plainText ?? resume?.markdown ?? null,
     coverLetterContent: coverLetter?.body ?? null,
-    applicationAnswersJson: {},
+    applicationAnswersJson: applicationAnswerEntries(applicationAnswersJson) as Prisma.InputJsonValue,
     recruiterMessage,
     hiringManagerMessage: null,
     companyBrief,
