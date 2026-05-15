@@ -1,4 +1,5 @@
 import type { ApplicationOutcomeType, JobMatchStatus, Prisma } from "@prisma/client";
+import { syncApplicationPacket } from "@/lib/applications/application-packets";
 import { prisma } from "@/lib/prisma";
 
 export type RecordApplicationOutcomeInput = {
@@ -64,6 +65,7 @@ export async function recordApplicationOutcome(input: RecordApplicationOutcomeIn
 
     return created;
   });
+  await syncApplicationPacket(application.id);
 
   return {
     outcome,

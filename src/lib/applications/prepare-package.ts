@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { generateCoverLetterForJob, tailorResumeForJob } from "@/lib/ai/resume";
+import { syncApplicationPacket } from "@/lib/applications/application-packets";
 import { attachCoverLetterQa, attachResumeQa, createResumeStrategy } from "@/lib/applications/material-agents";
 import { prisma } from "@/lib/prisma";
 import { checkAtsReadability } from "@/lib/resumes/ats";
@@ -174,8 +175,11 @@ export async function prepareApplicationPackage(jobId: string) {
     },
   });
 
+  const packet = await syncApplicationPacket(application.id);
+
   return {
     application,
+    packet,
     resume,
     coverLetter,
     applicationUrl: job.applicationUrl,

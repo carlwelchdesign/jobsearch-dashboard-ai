@@ -10,6 +10,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
       where: { id: params.id },
       include: {
         coverLetter: true,
+        applicationPackets: { orderBy: { updatedAt: "desc" }, take: 1 },
         jobPosting: true,
         resume: true,
         user: { include: { profile: true } },
@@ -58,6 +59,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
         id: application.id,
         status: application.status,
         notes: application.notes,
+        packetId: application.applicationPackets[0]?.id ?? null,
       },
       job: {
         id: application.jobPosting.id,

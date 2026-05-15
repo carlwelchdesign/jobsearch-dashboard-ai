@@ -240,6 +240,14 @@ enum ResumeProfileStatus {
   ARCHIVED
 }
 
+enum ApplicationPacketStatus {
+  DRAFT
+  NEEDS_REVIEW
+  APPROVED
+  SUBMITTED
+  ARCHIVED
+}
+
 model User {
   id                   String                 @id @default(cuid())
   email                String                 @unique
@@ -247,6 +255,7 @@ model User {
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   agentRuns            AgentRun[]
+  applicationPackets   ApplicationPacket[]
   applications         Application[]
   contacts             Contact[]
   coverLetters         GeneratedCoverLetter[]
@@ -262,8 +271,8 @@ model User {
 }
 
 model UserProfile {
-  id                  String             @id @default(cuid())
-  userId              String             @unique
+  id                  String              @id @default(cuid())
+  userId              String              @unique
   fullName            String
   email               String
   phone               String?
@@ -278,40 +287,40 @@ model UserProfile {
   masterSummary       String
   professionalSummary String?
   yearsExperience     Int?
-  primaryRoles        Json               @default("[]")
-  coreSkills          Json               @default("[]")
-  technicalSkills     Json               @default("[]")
-  industries          Json               @default("[]")
-  domainExpertise     Json               @default("[]")
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  primaryRoles        Json                @default("[]")
+  coreSkills          Json                @default("[]")
+  technicalSkills     Json                @default("[]")
+  industries          Json                @default("[]")
+  domainExpertise     Json                @default("[]")
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
   candidateEvidence   CandidateEvidence[]
   experienceBullets   ExperienceBullet[]
   githubRepositories  GithubRepository[]
   projects            Project[]
   resumeUploads       ResumeUpload[]
-  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   workExperiences     WorkExperience[]
 }
 
 model CandidateEvidence {
-  id                         String                      @id @default(cuid())
-  candidateProfileId         String
-  type                       CandidateEvidenceType
-  title                      String
-  content                    String
-  sourceType                 CandidateEvidenceSourceType
-  sourceRef                  String?
-  confidence                 EvidenceConfidence          @default(NEEDS_REVIEW)
-  usableInResume             Boolean                     @default(false)
-  usableInCoverLetter        Boolean                     @default(false)
-  usableInRecruiterMessage   Boolean                     @default(false)
-  tags                       Json                        @default("[]")
-  metadata                   Json                        @default("{}")
-  createdAt                  DateTime                    @default(now())
-  updatedAt                  DateTime                    @updatedAt
-  candidateProfile           UserProfile                 @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
-  embeddings                 EvidenceEmbedding[]
+  id                       String                      @id @default(cuid())
+  candidateProfileId       String
+  type                     CandidateEvidenceType
+  title                    String
+  content                  String
+  sourceType               CandidateEvidenceSourceType
+  sourceRef                String?
+  confidence               EvidenceConfidence          @default(NEEDS_REVIEW)
+  usableInResume           Boolean                     @default(false)
+  usableInCoverLetter      Boolean                     @default(false)
+  usableInRecruiterMessage Boolean                     @default(false)
+  tags                     Json                        @default("[]")
+  metadata                 Json                        @default("{}")
+  createdAt                DateTime                    @default(now())
+  updatedAt                DateTime                    @updatedAt
+  candidateProfile         UserProfile                 @relation(fields: [candidateProfileId], references: [id], onDelete: Cascade)
+  embeddings               EvidenceEmbedding[]
 
   @@index([candidateProfileId, confidence])
   @@index([candidateProfileId, type])
@@ -359,42 +368,42 @@ model GithubRepository {
 }
 
 model JobSearchProfile {
-  id                       String              @id @default(cuid())
+  id                       String                     @id @default(cuid())
   userId                   String
   name                     String
-  enabled                  Boolean             @default(true)
-  searchIntent             SearchIntent        @default(custom)
-  titles                   Json                @default("[]")
-  excludedTitles           Json                @default("[]")
-  jobTypes                 Json                @default("[]")
-  countries                Json                @default("[]")
-  regions                  Json                @default("[]")
-  cities                   Json                @default("[]")
-  remotePreference         RemotePreference    @default(any)
-  relocationPreference     RelocationPreference @default(unknown)
-  salaryCurrency           SalaryCurrency      @default(USD)
+  enabled                  Boolean                    @default(true)
+  searchIntent             SearchIntent               @default(custom)
+  titles                   Json                       @default("[]")
+  excludedTitles           Json                       @default("[]")
+  jobTypes                 Json                       @default("[]")
+  countries                Json                       @default("[]")
+  regions                  Json                       @default("[]")
+  cities                   Json                       @default("[]")
+  remotePreference         RemotePreference           @default(any)
+  relocationPreference     RelocationPreference       @default(unknown)
+  salaryCurrency           SalaryCurrency             @default(USD)
   salaryMin                Int?
   salaryMax                Int?
-  includeUnknownSalary     Boolean             @default(true)
-  industries               Json                @default("[]")
-  preferredCompanies       Json                @default("[]")
-  excludedCompanies        Json                @default("[]")
-  keywordsRequired         Json                @default("[]")
-  keywordsPreferred        Json                @default("[]")
-  keywordsExcluded         Json                @default("[]")
-  minimumMatchScore        Int                 @default(75)
-  maxResultsPerRun         Int                 @default(50)
-  scheduleEnabled          Boolean             @default(true)
+  includeUnknownSalary     Boolean                    @default(true)
+  industries               Json                       @default("[]")
+  preferredCompanies       Json                       @default("[]")
+  excludedCompanies        Json                       @default("[]")
+  keywordsRequired         Json                       @default("[]")
+  keywordsPreferred        Json                       @default("[]")
+  keywordsExcluded         Json                       @default("[]")
+  minimumMatchScore        Int                        @default(75)
+  maxResultsPerRun         Int                        @default(50)
+  scheduleEnabled          Boolean                    @default(true)
   cronExpression           String?
-  emailDigestEnabled       Boolean             @default(true)
-  pushNotificationsEnabled Boolean             @default(false)
-  minimumPushScore         Int                 @default(85)
-  createdAt                DateTime            @default(now())
-  updatedAt                DateTime            @updatedAt
+  emailDigestEnabled       Boolean                    @default(true)
+  pushNotificationsEnabled Boolean                    @default(false)
+  minimumPushScore         Int                        @default(85)
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
   evaluations              JobEvaluation[]
   matches                  JobProfileMatch[]
   performanceSnapshots     SearchProfilePerformance[]
-  user                     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                     User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, name])
   @@index([userId, enabled])
@@ -437,6 +446,7 @@ model ResumeProfile {
   status             ResumeProfileStatus @default(ACTIVE)
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
+  applicationPackets ApplicationPacket[]
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, name])
@@ -444,54 +454,55 @@ model ResumeProfile {
 }
 
 model JobSource {
-  id        String       @id @default(cuid())
+  id        String        @id @default(cuid())
   name      String
   type      JobSourceType
   baseUrl   String?
-  enabled   Boolean      @default(true)
-  config    Json         @default("{}")
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  enabled   Boolean       @default(true)
+  config    Json          @default("{}")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
   jobs      JobPosting[]
 
   @@unique([type, name])
 }
 
 model JobPosting {
-  id             String                 @id @default(cuid())
-  sourceId       String?
-  sourceJobId    String?
-  company        String
-  title          String
-  location       String?
-  country        String?
-  city           String?
-  remoteType     RemoteType             @default(unknown)
-  salaryMin      Int?
-  salaryMax      Int?
-  salaryCurrency SalaryCurrency?
-  description    String
-  requirements   Json                   @default("[]")
-  niceToHaves    Json                   @default("[]")
-  benefits       Json                   @default("[]")
-  applicationUrl String?
-  atsProvider    AtsProvider            @default(unknown)
-  rawData        Json                   @default("{}")
-  contentHash    String                 @unique
-  duplicateGroupId String?
-  staleScore     Int                    @default(0)
-  firstSeenAt    DateTime               @default(now())
-  lastSeenAt     DateTime               @default(now())
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  applications   Application[]
-  coverLetters   GeneratedCoverLetter[]
-  evaluations     JobEvaluation[]
-  matches        JobProfileMatch[]
-  outcomes       ApplicationOutcome[]
-  recruiterOutreach RecruiterOutreach[]
-  resumes        GeneratedResume[]
-  source         JobSource?             @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  id                 String                 @id @default(cuid())
+  sourceId           String?
+  sourceJobId        String?
+  company            String
+  title              String
+  location           String?
+  country            String?
+  city               String?
+  remoteType         RemoteType             @default(unknown)
+  salaryMin          Int?
+  salaryMax          Int?
+  salaryCurrency     SalaryCurrency?
+  description        String
+  requirements       Json                   @default("[]")
+  niceToHaves        Json                   @default("[]")
+  benefits           Json                   @default("[]")
+  applicationUrl     String?
+  atsProvider        AtsProvider            @default(unknown)
+  rawData            Json                   @default("{}")
+  contentHash        String                 @unique
+  duplicateGroupId   String?
+  staleScore         Int                    @default(0)
+  firstSeenAt        DateTime               @default(now())
+  lastSeenAt         DateTime               @default(now())
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  applications       Application[]
+  applicationPackets ApplicationPacket[]
+  coverLetters       GeneratedCoverLetter[]
+  evaluations        JobEvaluation[]
+  matches            JobProfileMatch[]
+  outcomes           ApplicationOutcome[]
+  recruiterOutreach  RecruiterOutreach[]
+  resumes            GeneratedResume[]
+  source             JobSource?             @relation(fields: [sourceId], references: [id], onDelete: SetNull)
 
   @@index([company, title])
   @@index([duplicateGroupId])
@@ -556,72 +567,74 @@ model JobEvaluation {
 }
 
 model Application {
-  id                String            @id @default(cuid())
-  userId            String
-  jobPostingId      String
-  jobProfileMatchId String?
-  status            JobMatchStatus    @default(approved)
-  approvedAt        DateTime?
-  appliedAt         DateTime?
-  resumeId          String?
-  coverLetterId     String?
-  notes             String?
-  followUpAt        DateTime?
-  sourceContactId   String?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  events            ApplicationEvent[]
-  outcomes          ApplicationOutcome[]
-  coverLetter       GeneratedCoverLetter? @relation(fields: [coverLetterId], references: [id])
-  jobPosting        JobPosting        @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
-  jobProfileMatch   JobProfileMatch?  @relation(fields: [jobProfileMatchId], references: [id], onDelete: SetNull)
-  resume            GeneratedResume?  @relation(fields: [resumeId], references: [id])
-  sourceContact     Contact?          @relation(fields: [sourceContactId], references: [id], onDelete: SetNull)
-  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                 String                @id @default(cuid())
+  userId             String
+  jobPostingId       String
+  jobProfileMatchId  String?
+  status             JobMatchStatus        @default(approved)
+  approvedAt         DateTime?
+  appliedAt          DateTime?
+  resumeId           String?
+  coverLetterId      String?
+  notes              String?
+  followUpAt         DateTime?
+  sourceContactId    String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  applicationPackets ApplicationPacket[]
+  events             ApplicationEvent[]
+  outcomes           ApplicationOutcome[]
+  coverLetter        GeneratedCoverLetter? @relation(fields: [coverLetterId], references: [id])
+  jobPosting         JobPosting            @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  jobProfileMatch    JobProfileMatch?      @relation(fields: [jobProfileMatchId], references: [id], onDelete: SetNull)
+  resume             GeneratedResume?      @relation(fields: [resumeId], references: [id])
+  sourceContact      Contact?              @relation(fields: [sourceContactId], references: [id], onDelete: SetNull)
+  user               User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model ExperienceBullet {
-  id                   String          @id @default(cuid())
+  id                   String             @id @default(cuid())
   userProfileId        String
   workExperienceId     String?
   company              String
   role                 String
   category             ExperienceCategory
   text                 String
-  metrics              Json            @default("{}")
-  keywords             Json            @default("[]")
+  metrics              Json               @default("{}")
+  keywords             Json               @default("[]")
   sourceText           String?
-  truthLevel           TruthLevel      @default(verified)
+  truthLevel           TruthLevel         @default(verified)
   sourceResumeUploadId String?
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
-  sourceResumeUpload   ResumeUpload?   @relation(fields: [sourceResumeUploadId], references: [id], onDelete: SetNull)
-  userProfile          UserProfile     @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
-  workExperience       WorkExperience? @relation(fields: [workExperienceId], references: [id], onDelete: SetNull)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  sourceResumeUpload   ResumeUpload?      @relation(fields: [sourceResumeUploadId], references: [id], onDelete: SetNull)
+  userProfile          UserProfile        @relation(fields: [userProfileId], references: [id], onDelete: Cascade)
+  workExperience       WorkExperience?    @relation(fields: [workExperienceId], references: [id], onDelete: SetNull)
 }
 
 model GeneratedResume {
-  id                String            @id @default(cuid())
-  userId            String
-  jobPostingId      String
-  jobProfileMatchId String
-  resumeUploadId    String?
-  markdown          String
-  html              String?
-  pdfUrl            String?
-  plainText         String?
-  version           Int               @default(1)
-  selectedBulletIds Json              @default("[]")
-  keywordAlignment  Json              @default("{}")
-  generationNotes   Json              @default("{}")
-  atsChecks         Json              @default("{}")
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  applications      Application[]
-  jobPosting        JobPosting        @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
-  jobProfileMatch   JobProfileMatch   @relation(fields: [jobProfileMatchId], references: [id], onDelete: Cascade)
-  resumeUpload      ResumeUpload?     @relation(fields: [resumeUploadId], references: [id], onDelete: SetNull)
-  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                 String              @id @default(cuid())
+  userId             String
+  jobPostingId       String
+  jobProfileMatchId  String
+  resumeUploadId     String?
+  markdown           String
+  html               String?
+  pdfUrl             String?
+  plainText          String?
+  version            Int                 @default(1)
+  selectedBulletIds  Json                @default("[]")
+  keywordAlignment   Json                @default("{}")
+  generationNotes    Json                @default("{}")
+  atsChecks          Json                @default("{}")
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  applicationPackets ApplicationPacket[]
+  applications       Application[]
+  jobPosting         JobPosting          @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  jobProfileMatch    JobProfileMatch     @relation(fields: [jobProfileMatchId], references: [id], onDelete: Cascade)
+  resumeUpload       ResumeUpload?       @relation(fields: [resumeUploadId], references: [id], onDelete: SetNull)
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model WorkExperience {
@@ -681,19 +694,53 @@ model ResumeUpload {
 }
 
 model GeneratedCoverLetter {
-  id                String            @id @default(cuid())
-  userId            String
-  jobPostingId      String
-  jobProfileMatchId String
-  body              String
-  version           Int               @default(1)
-  generationNotes   Json              @default("{}")
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  applications      Application[]
-  jobPosting        JobPosting        @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
-  jobProfileMatch   JobProfileMatch   @relation(fields: [jobProfileMatchId], references: [id], onDelete: Cascade)
-  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                 String              @id @default(cuid())
+  userId             String
+  jobPostingId       String
+  jobProfileMatchId  String
+  body               String
+  version            Int                 @default(1)
+  generationNotes    Json                @default("{}")
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  applicationPackets ApplicationPacket[]
+  applications       Application[]
+  jobPosting         JobPosting          @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  jobProfileMatch    JobProfileMatch     @relation(fields: [jobProfileMatchId], references: [id], onDelete: Cascade)
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ApplicationPacket {
+  id                     String                  @id @default(cuid())
+  userId                 String
+  applicationId          String
+  jobPostingId           String
+  resumeProfileId        String?
+  generatedResumeId      String?
+  generatedCoverLetterId String?
+  tailoredResumeContent  String?
+  coverLetterContent     String?
+  applicationAnswersJson Json                    @default("{}")
+  recruiterMessage       String?
+  hiringManagerMessage   String?
+  companyBrief           String?
+  projectLinks           Json                    @default("[]")
+  evidenceRefs           Json                    @default("[]")
+  qualityReviewJson      Json                    @default("{}")
+  status                 ApplicationPacketStatus @default(DRAFT)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  application            Application             @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  generatedCoverLetter   GeneratedCoverLetter?   @relation(fields: [generatedCoverLetterId], references: [id], onDelete: SetNull)
+  generatedResume        GeneratedResume?        @relation(fields: [generatedResumeId], references: [id], onDelete: SetNull)
+  jobPosting             JobPosting              @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  resumeProfile          ResumeProfile?          @relation(fields: [resumeProfileId], references: [id], onDelete: SetNull)
+  user                   User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId])
+  @@index([userId, status])
+  @@index([jobPostingId])
+  @@index([resumeProfileId])
 }
 
 model JobSearchRun {
@@ -756,37 +803,37 @@ model ApplicationOutcome {
 }
 
 model Contact {
-  id           String        @id @default(cuid())
-  userId       String
-  company      String
-  name         String
-  title        String?
-  email        String?
-  linkedinUrl  String?
-  notes        String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  applications Application[]
+  id                String              @id @default(cuid())
+  userId            String
+  company           String
+  name              String
+  title             String?
+  email             String?
+  linkedinUrl       String?
+  notes             String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  applications      Application[]
   recruiterOutreach RecruiterOutreach[]
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model RecruiterOutreach {
-  id             String                  @id @default(cuid())
-  userId         String
-  contactId      String?
-  jobPostingId   String?
-  message        String
-  status         RecruiterOutreachStatus @default(DRAFT)
-  followUpAt     DateTime?
-  evidenceRefs   Json                    @default("[]")
-  qualityReview  Json                    @default("{}")
-  notes          String?
-  createdAt      DateTime                @default(now())
-  updatedAt      DateTime                @updatedAt
-  contact        Contact?                @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  jobPosting     JobPosting?             @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
-  user           User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String                  @id @default(cuid())
+  userId        String
+  contactId     String?
+  jobPostingId  String?
+  message       String
+  status        RecruiterOutreachStatus @default(DRAFT)
+  followUpAt    DateTime?
+  evidenceRefs  Json                    @default("[]")
+  qualityReview Json                    @default("{}")
+  notes         String?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  contact       Contact?                @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  jobPosting    JobPosting?             @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  user          User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status])
   @@index([jobPostingId, createdAt])

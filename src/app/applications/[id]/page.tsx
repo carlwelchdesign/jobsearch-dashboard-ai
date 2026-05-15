@@ -124,6 +124,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
       include: {
         coverLetter: true,
         events: { orderBy: { createdAt: "desc" }, take: 8 },
+        applicationPackets: { orderBy: { updatedAt: "desc" }, take: 1 },
         jobPosting: {
           include: {
             evaluations: { orderBy: { fitScore: "desc" }, take: 1 },
@@ -186,6 +187,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
 
   if (!application) notFound();
 
+  const packet = application.applicationPackets[0];
   const resumeNotes = materialNotes(application.resume?.generationNotes);
   const coverLetterNotes = materialNotes(application.coverLetter?.generationNotes);
   const qa = coverLetterNotes.applicationQa ?? resumeNotes.applicationQa;
@@ -230,11 +232,12 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
 
         <WorkflowGuide active={application.status === "ready_to_apply" ? "sprint" : "applications"} title="Review packet before manual submission" />
 
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(5, 1fr)" }, gap: 2 }}>
           <Metric label="Status" value={<StatusChip status={application.status} />} helper="Application workflow" />
           <Metric label="Match" value={application.jobProfileMatch ? <ScoreChip score={application.jobProfileMatch.overallScore} /> : "n/a"} helper={application.jobProfileMatch?.jobSearchProfile.name ?? "No matched profile"} />
           <Metric label="Opportunity" value={evaluation ? <ScoreChip score={evaluation.opportunityScore} /> : "n/a"} helper={evaluation?.recommendedResumeProfile ?? "Not evaluated"} />
           <Metric label="QA" value={qa ? <ScoreChip score={qa.score ?? 0} label={qa.status === "PASS" ? "Pass" : "Review"} /> : "pending"} helper={qaIssues.length ? `${qaIssues.length} review items` : "No issues saved"} />
+          <Metric label="Packet" value={packet ? <StatusChip status={packet.status} /> : "pending"} helper={packet ? `Updated ${packet.updatedAt.toLocaleString()}` : "Prepare package to persist"} />
         </Box>
 
         <Card>

@@ -30,6 +30,13 @@ export default async function SettingsPage() {
   const companySourceConfig = companySource?.config as { companies?: unknown[]; priorityMax?: number; maxCompanies?: number; maxFetch?: number } | undefined;
   const settings = user?.notificationSettings;
   const cronExpression = searchProfiles.find((profile) => profile.cronExpression)?.cronExpression ?? "0 14 * * *";
+  const latestGithubReviewRun = await prisma.agentRun.findFirst({
+    where: {
+      agentType: "GITHUB_PORTFOLIO_REVIEW",
+      status: "COMPLETED",
+    },
+    orderBy: { createdAt: "desc" },
+  });
 
   return (
     <AppShell>
@@ -72,6 +79,7 @@ export default async function SettingsPage() {
               .map((repo) => repo.updatedAt)
               .sort((a, b) => b.getTime() - a.getTime())[0]?.toLocaleString() ?? null,
           }}
+          latestGithubReview={isRecord(latestGithubReviewRun?.outputJson) ? latestGithubReviewRun.outputJson as SettingsGithubReview : null}
           cronSettings={{
             enabled: searchProfiles.some((profile) => profile.enabled && profile.scheduleEnabled),
             cronExpression,
@@ -84,4 +92,24 @@ export default async function SettingsPage() {
       </Stack>
     </AppShell>
   );
+}
+
+type SettingsGithubReview = {
+  overallReadinessScore?: number;
+  reviewedRepositoryCount?: number;
+  priorityActions?: string[];
+  warnings?: string[];
+  repositoryReviews?: Array<{
+    repositoryId: string;
+    name: string;
+    url: string;
+    readinessScore: number;
+    targetTracks: string[];
+    gaps: string[];
+    recommendedEdits: string[];
+  }>;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

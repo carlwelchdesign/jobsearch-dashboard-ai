@@ -13,11 +13,13 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip } from "@/components/ui/status-chip";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
+import { NetworkingStrategyPanel } from "./networking-strategy-panel";
+import type { NetworkingStrategyPanelOutput } from "./networking-strategy-panel";
 
 export const dynamic = "force-dynamic";
 
 export default async function NetworkingPage() {
-  const [outreach, contacts] = await Promise.all([
+  const [outreach, contacts, latestStrategyRun] = await Promise.all([
     prisma.recruiterOutreach.findMany({
       include: {
         contact: true,
@@ -30,6 +32,13 @@ export default async function NetworkingPage() {
       orderBy: [{ company: "asc" }, { updatedAt: "desc" }],
       take: 80,
     }),
+    prisma.agentRun.findFirst({
+      where: {
+        agentType: "NETWORKING_STRATEGY",
+        status: "COMPLETED",
+      },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
 
   return (
@@ -40,6 +49,8 @@ export default async function NetworkingPage() {
           title="Networking"
           description="Review recruiter contacts and outreach drafts. The system can draft messages, but sending stays manual."
         />
+
+        <NetworkingStrategyPanel latest={isRecord(latestStrategyRun?.outputJson) ? latestStrategyRun.outputJson as NetworkingStrategyPanelOutput : null} />
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "2fr 1fr" }, gap: 2 }}>
           <Card>
@@ -109,4 +120,8 @@ export default async function NetworkingPage() {
       </Stack>
     </AppShell>
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

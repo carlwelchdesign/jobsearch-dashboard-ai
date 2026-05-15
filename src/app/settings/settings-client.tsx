@@ -12,6 +12,7 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
+import Chip from "@mui/material/Chip";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
@@ -19,6 +20,7 @@ import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useState } from "react";
+import { ScoreChip } from "@/components/ui/score-chip";
 import { StatusChip } from "@/components/ui/status-chip";
 
 type SettingsClientProps = {
@@ -52,6 +54,21 @@ type SettingsClientProps = {
     githubRepositoryCount: number;
     latestGithubSync: string | null;
   };
+  latestGithubReview: {
+    overallReadinessScore?: number;
+    reviewedRepositoryCount?: number;
+    priorityActions?: string[];
+    warnings?: string[];
+    repositoryReviews?: Array<{
+      repositoryId: string;
+      name: string;
+      url: string;
+      readinessScore: number;
+      targetTracks: string[];
+      gaps: string[];
+      recommendedEdits: string[];
+    }>;
+  } | null;
   cronSettings: {
     enabled: boolean;
     cronExpression: string;
@@ -68,7 +85,7 @@ type SettingsClientProps = {
   };
 };
 
-export function SettingsClient({ initialSettings, aiSettings, sourceSettings, profileSettings, cronSettings }: SettingsClientProps) {
+export function SettingsClient({ initialSettings, aiSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings }: SettingsClientProps) {
   const [settings, setSettings] = useState(initialSettings);
   const [profile, setProfile] = useState(profileSettings);
   const [cron, setCron] = useState(cronSettings);
@@ -77,6 +94,8 @@ export function SettingsClient({ initialSettings, aiSettings, sourceSettings, pr
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [syncingGithub, setSyncingGithub] = useState(false);
+  const [reviewingGithub, setReviewingGithub] = useState(false);
+  const [githubReview, setGithubReview] = useState(latestGithubReview);
   const [runningCron, setRunningCron] = useState(false);
   const [cronDirty, setCronDirty] = useState(false);
 
@@ -167,6 +186,23 @@ export function SettingsClient({ initialSettings, aiSettings, sourceSettings, pr
       latestGithubSync: new Date().toLocaleString(),
     });
     setNotice(body.message);
+  }
+
+  async function reviewGithub() {
+    setReviewingGithub(true);
+    setNotice("");
+    setError("");
+    const response = await fetch("/api/settings/github/review", { method: "POST" });
+    const body = await response.json();
+    setReviewingGithub(false);
+
+    if (!response.ok) {
+      setError(body.error ?? "Unable to review GitHub portfolio.");
+      return;
+    }
+
+    setGithubReview(body);
+    setNotice("GitHub portfolio review updated.");
   }
 
   async function sendTest() {
@@ -475,10 +511,54 @@ export function SettingsClient({ initialSettings, aiSettings, sourceSettings, pr
               <Button variant="outlined" disabled={saving || syncingGithub} onClick={syncGithub}>
                 {syncingGithub ? "Syncing..." : "Sync GitHub context"}
               </Button>
+              <Button variant="outlined" disabled={saving || reviewingGithub || profile.githubRepositoryCount === 0} onClick={reviewGithub}>
+                {reviewingGithub ? "Reviewing..." : "Review portfolio"}
+              </Button>
               <Typography variant="body2" color="text.secondary">
                 {profile.githubRepositoryCount} repositories synced{profile.latestGithubSync ? ` · latest sync ${profile.latestGithubSync}` : ""}
               </Typography>
             </Stack>
+            {githubReview ? (
+              <Stack spacing={1.5} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5 }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+                  <Box>
+                    <Typography sx={{ fontWeight: 850 }}>Portfolio readiness</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {githubReview.reviewedRepositoryCount ?? 0} repositories reviewed from synced GitHub metadata.
+                    </Typography>
+                  </Box>
+                  <ScoreChip score={githubReview.overallReadinessScore ?? 0} />
+                </Stack>
+                {githubReview.warnings?.length ? <Alert severity="warning">{githubReview.warnings.join(" ")}</Alert> : null}
+                {githubReview.priorityActions?.length ? (
+                  <Stack spacing={0.75}>
+                    {githubReview.priorityActions.slice(0, 4).map((action) => (
+                      <Typography key={action} variant="body2" color="text.secondary">{action}</Typography>
+                    ))}
+                  </Stack>
+                ) : null}
+                {githubReview.repositoryReviews?.length ? (
+                  <Stack spacing={1}>
+                    {githubReview.repositoryReviews.slice(0, 4).map((review) => (
+                      <Box key={review.repositoryId} sx={{ borderTop: 1, borderColor: "divider", pt: 1 }}>
+                        <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+                          <Typography component="a" href={review.url} target="_blank" rel="noreferrer" sx={{ fontWeight: 800, color: "primary.main", textDecoration: "none" }}>
+                            {review.name}
+                          </Typography>
+                          <ScoreChip score={review.readinessScore} />
+                        </Stack>
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 0.75 }}>
+                          {review.targetTracks.slice(0, 3).map((track) => <Chip key={`${review.repositoryId}-${track}`} size="small" variant="outlined" label={track} />)}
+                        </Stack>
+                        {review.recommendedEdits[0] ? (
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>{review.recommendedEdits[0]}</Typography>
+                        ) : null}
+                      </Box>
+                    ))}
+                  </Stack>
+                ) : null}
+              </Stack>
+            ) : null}
           </Stack>
         </CardContent>
       </Card>
