@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import type { JobPosting, Prisma } from "@prisma/client";
 import { runAgent } from "@/lib/agents/run-agent";
-import { createCanonicalJobKey } from "@/lib/job-search/dedupe";
+import { createCanonicalJobKeys } from "@/lib/job-search/dedupe";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
@@ -54,7 +54,8 @@ export async function runDuplicateStaleJobDetectorAgent(input: DuplicateStaleJob
 export function buildDuplicateStaleDetection(jobs: JobForDetection[], now = new Date()): DuplicateStaleJobDetectorOutput {
   const groupsByKey = new Map<string, JobForDetection[]>();
   for (const job of jobs) {
-    const key = createCanonicalJobKey(job);
+    const key = createCanonicalJobKeys(job).at(-1) ?? createCanonicalJobKeys(job)[0] ?? "";
+    if (!key) continue;
     groupsByKey.set(key, [...(groupsByKey.get(key) ?? []), job]);
   }
 
@@ -96,7 +97,7 @@ export function buildDuplicateStaleDetection(jobs: JobForDetection[], now = new 
   return {
     analyzedJobs: jobs.length,
     updatedJobs,
-    duplicateGroups: duplicateGroups.sort((a, b) => b.jobIds.length - a.jobIds.length).slice(0, 40),
+    duplicateGroups: duplicateGroups.sort((a, b) => b.jobIds.length - a.jobIds.length),
     staleJobs: staleJobs.sort((a, b) => b.staleScore - a.staleScore).slice(0, 60),
     confidence: jobs.length >= 50 ? 0.86 : jobs.length >= 10 ? 0.74 : 0.58,
     reasoningSummary: "Grouped jobs by normalized company, title, and location, then scored stale risk from last seen date, first seen age, closed-posting language, and source metadata.",

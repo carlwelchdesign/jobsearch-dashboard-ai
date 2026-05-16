@@ -11,6 +11,7 @@ vi.mock("@/lib/prisma", () => ({
       update: vi.fn(),
     },
     application: {
+      findMany: vi.fn(),
       findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock("@/lib/prisma", () => ({
 
 const findUserMock = vi.mocked(prisma.user.findFirst);
 const updateMatchMock = vi.mocked(prisma.jobProfileMatch.update);
+const findApplicationsMock = vi.mocked(prisma.application.findMany);
 const findApplicationMock = vi.mocked(prisma.application.findFirst);
 const createApplicationMock = vi.mocked(prisma.application.create);
 const updateApplicationMock = vi.mocked(prisma.application.update);
@@ -32,6 +34,7 @@ describe("POST /api/jobs/[id]/approve", () => {
   beforeEach(() => {
     findUserMock.mockReset();
     updateMatchMock.mockReset();
+    findApplicationsMock.mockReset();
     findApplicationMock.mockReset();
     createApplicationMock.mockReset();
     updateApplicationMock.mockReset();
@@ -42,9 +45,9 @@ describe("POST /api/jobs/[id]/approve", () => {
     findUserMock.mockResolvedValue({ id: "user_1" } as Awaited<ReturnType<typeof prisma.user.findFirst>>);
     updateMatchMock.mockResolvedValue({
       id: "match_1",
-      jobPosting: { company: "Acme", title: "Senior Frontend Engineer" },
+      jobPosting: { company: "Acme", title: "Senior Frontend Engineer", location: "Remote", lastSeenAt: new Date("2026-05-01") },
     } as unknown as Awaited<ReturnType<typeof prisma.jobProfileMatch.update>>);
-    findApplicationMock.mockResolvedValue(null);
+    findApplicationsMock.mockResolvedValue([]);
     createApplicationMock.mockResolvedValue({
       id: "app_1",
       userId: "user_1",
@@ -90,13 +93,23 @@ describe("POST /api/jobs/[id]/approve", () => {
     findUserMock.mockResolvedValue({ id: "user_1" } as Awaited<ReturnType<typeof prisma.user.findFirst>>);
     updateMatchMock.mockResolvedValue({
       id: "match_1",
-      jobPosting: { company: "Acme", title: "Senior Frontend Engineer" },
+      jobPosting: { company: "Acme", title: "Senior Frontend Engineer", location: "Remote", lastSeenAt: new Date("2026-05-01") },
     } as unknown as Awaited<ReturnType<typeof prisma.jobProfileMatch.update>>);
-    findApplicationMock.mockResolvedValue({
-      id: "app_1",
-      approvedAt: null,
-      notes: "Existing note.",
-    } as Awaited<ReturnType<typeof prisma.application.findFirst>>);
+    findApplicationsMock.mockResolvedValue([
+      {
+        id: "app_1",
+        userId: "user_1",
+        jobPostingId: "job_1",
+        approvedAt: null,
+        notes: "Existing note.",
+        jobPosting: {
+          company: "Acme",
+          title: "Senior Frontend Engineer",
+          location: "Remote",
+          lastSeenAt: new Date("2026-05-01"),
+        },
+      },
+    ] as Awaited<ReturnType<typeof prisma.application.findMany>>);
     updateApplicationMock.mockResolvedValue({
       id: "app_1",
       jobProfileMatchId: "match_1",

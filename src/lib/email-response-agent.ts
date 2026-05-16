@@ -22,7 +22,7 @@ export type EmailClassificationResult = {
   classification: EmailMessageClassification;
   confidenceScore: number;
   actionRequired: boolean;
-  recommendedOutcome?: "REJECTED" | "RECRUITER_SCREEN" | "TECH_SCREEN" | "OFFER" | null;
+  recommendedOutcome?: "APPLIED" | "REJECTED" | "RECRUITER_SCREEN" | "TECH_SCREEN" | "OFFER" | null;
   userQuestion?: string | null;
   rationale: string;
 };
@@ -30,23 +30,23 @@ export type EmailClassificationResult = {
 export function classifyJobEmail(input: Pick<EmailMessageIngestInput, "subject" | "snippet" | "bodyText">): EmailClassificationResult {
   const text = [input.subject, input.snippet, input.bodyText].filter(Boolean).join("\n").toLowerCase();
 
-  if (/\b(unfortunately|not moving forward|will not be moving forward|decided to pursue other candidates|not selected)\b/.test(text)) {
+  if (isRejectionEmail(text)) {
     return {
       classification: "REJECTION",
-      confidenceScore: 88,
+      confidenceScore: 94,
       actionRequired: false,
       recommendedOutcome: "REJECTED",
-      rationale: "Detected common rejection language.",
+      rationale: "Detected explicit rejection language.",
     };
   }
-  if (/\b(offer|offer letter|compensation package)\b/.test(text)) {
+  if (isOfferEmail(text)) {
     return {
       classification: "OFFER",
-      confidenceScore: 82,
+      confidenceScore: 88,
       actionRequired: true,
       recommendedOutcome: "OFFER",
       userQuestion: "This looks like an offer-related email. Review it before any response is drafted.",
-      rationale: "Detected offer language.",
+      rationale: "Detected explicit offer language.",
     };
   }
   if (/\b(coding assessment|technical assessment|hackerrank|codesignal|coderpad|take[- ]?home|assignment)\b/.test(text)) {
@@ -69,12 +69,13 @@ export function classifyJobEmail(input: Pick<EmailMessageIngestInput, "subject" 
       rationale: "Detected interview or scheduling language.",
     };
   }
-  if (/\b(received your application|application confirmation|thank you for applying|we have received)\b/.test(text)) {
+  if (isApplicationConfirmationEmail(text)) {
     return {
       classification: "AUTOMATED_CONFIRMATION",
-      confidenceScore: 78,
+      confidenceScore: 86,
       actionRequired: false,
-      rationale: "Detected application confirmation language.",
+      recommendedOutcome: "APPLIED",
+      rationale: "Detected application received confirmation language.",
     };
   }
 
@@ -85,6 +86,37 @@ export function classifyJobEmail(input: Pick<EmailMessageIngestInput, "subject" 
     userQuestion: "This job-related email could not be classified confidently. Review it before the app updates records.",
     rationale: "No high-confidence response pattern matched.",
   };
+}
+
+function isRejectionEmail(text: string) {
+  return [
+    /\b(unfortunately|regret to inform)\b/,
+    /\b(not moving forward|not be moving forward|will not move forward|decided not to move forward|decided not to proceed)\b/,
+    /\b(unable to proceed|unable to move forward|won't be proceeding|will not be proceeding)\b/,
+    /\b(decided to pursue other candidates|moving forward with other candidates|selected other candidates|candidate whose qualifications more closely)\b/,
+    /\b(not selected|not a match|not the right fit|better fit for this role|no longer under consideration)\b/,
+    /\b(we encourage you to.*future roles|keep an eye on future roles)\b/,
+  ].some((pattern) => pattern.test(text));
+}
+
+function isOfferEmail(text: string) {
+  return [
+    /\b(pleased|happy|excited|delighted)\s+to\s+(extend|make|present)\s+(you\s+)?(an?\s+)?offer\b/,
+    /\bwe\s+(would like|want)\s+to\s+offer\s+you\b/,
+    /\boffer letter\b/,
+    /\bemployment offer\b/,
+    /\bjob offer\b/,
+    /\bcompensation package\b/,
+  ].some((pattern) => pattern.test(text));
+}
+
+function isApplicationConfirmationEmail(text: string) {
+  return [
+    /\b(received your application|we have received your application|application has been received)\b/,
+    /\b(application confirmation|confirmation of your application)\b/,
+    /\b(thank you|thanks)\s+for\s+(applying|your application)\b/,
+    /\b(application was submitted|application submitted|submission confirmation)\b/,
+  ].some((pattern) => pattern.test(text));
 }
 
 export async function ingestJobEmail(input: EmailMessageIngestInput) {
@@ -265,7 +297,7 @@ async function maybeRunInterviewPrep(input: {
 
 async function matchEmailToApplication(userId: string, input: Pick<EmailMessageIngestInput, "from" | "subject" | "bodyText" | "snippet">) {
   const threadMatch = await matchEmailThread(userId, input);
-  if (threadMatch.applicationId || threadMatch.jobPostingId) return threadMatch;
+  if (threadMatch.applicationId) return threadMatch;
 
   const applications = await prisma.application.findMany({
     where: { userId },
@@ -273,23 +305,44 @@ async function matchEmailToApplication(userId: string, input: Pick<EmailMessageI
     orderBy: { updatedAt: "desc" },
     take: 100,
   });
-  const text = [input.from, input.subject, input.snippet, input.bodyText].filter(Boolean).join(" ").toLowerCase();
-  const normalizedText = normalizeMatchText(text);
-  const match = applications.find((application) => {
-    const company = application.jobPosting.company.toLowerCase();
-    const domain = company.replace(/[^a-z0-9]/g, "");
-    const applicationUrl = application.jobPosting.applicationUrl?.toLowerCase() ?? "";
-    const applicationHost = safeUrlHost(applicationUrl);
-    return text.includes(company) ||
-      (domain.length > 3 && normalizedText.includes(domain)) ||
-      (applicationUrl.length > 10 && text.includes(applicationUrl)) ||
-      (applicationHost.length > 5 && normalizedText.includes(normalizeMatchText(applicationHost)));
-  });
+  const match = applications
+    .map((application) => ({
+      application,
+      score: scoreEmailApplicationMatch(application.jobPosting, input),
+    }))
+    .filter((candidate) => candidate.score >= 2)
+    .sort((left, right) => right.score - left.score)[0]?.application;
 
   return {
     applicationId: match?.id ?? null,
-    jobPostingId: match?.jobPostingId ?? null,
+    jobPostingId: match?.jobPostingId ?? threadMatch.jobPostingId ?? null,
   };
+}
+
+export function scoreEmailApplicationMatch(
+  jobPosting: { company: string; title: string; applicationUrl?: string | null },
+  input: Pick<EmailMessageIngestInput, "from" | "subject" | "bodyText" | "snippet">,
+) {
+  const from = input.from.toLowerCase();
+  const subjectSnippet = [input.subject, input.snippet].filter(Boolean).join(" ").toLowerCase();
+  const body = (input.bodyText ?? "").toLowerCase();
+  const company = jobPosting.company.toLowerCase();
+  const normalizedCompany = normalizeMatchText(company);
+  const applicationHost = safeUrlHost(jobPosting.applicationUrl?.toLowerCase() ?? "");
+  const normalizedHost = normalizeMatchText(applicationHost);
+  const titleTerms = meaningfulTitleTerms(jobPosting.title);
+  const responseContext = /\b(application|applied|applying|candidate|role|position|job|interview|recruit|talent|hiring)\b/.test(body);
+
+  let score = 0;
+  if (normalizedCompany.length > 3 && normalizeMatchText(from).includes(normalizedCompany)) score += 3;
+  if (normalizedHost.length > 5 && normalizeMatchText(from).includes(normalizedHost)) score += 3;
+  if (normalizedCompany.length > 3 && normalizeMatchText(subjectSnippet).includes(normalizedCompany)) score += 2;
+  if (applicationHost && normalizeMatchText(subjectSnippet).includes(normalizedHost)) score += 2;
+  if (normalizedCompany.length > 3 && normalizeMatchText(body).includes(normalizedCompany) && responseContext) score += 1;
+  if (titleTerms.some((term) => normalizeMatchText(subjectSnippet).includes(term))) score += 1;
+  if (titleTerms.some((term) => normalizeMatchText(body).includes(term)) && responseContext) score += 1;
+
+  return score;
 }
 
 async function matchEmailThread(userId: string, input: Pick<EmailMessageIngestInput, "threadId" | "from" | "subject" | "bodyText" | "snippet">) {
@@ -324,3 +377,25 @@ function safeUrlHost(value: string) {
     return "";
   }
 }
+
+function meaningfulTitleTerms(title: string) {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9+#\s]/g, " ")
+    .split(/\s+/)
+    .filter((term) => term.length > 3 && !titleStopWords.has(term))
+    .map(normalizeMatchText);
+}
+
+const titleStopWords = new Set([
+  "senior",
+  "staff",
+  "product",
+  "software",
+  "engineer",
+  "developer",
+  "frontend",
+  "backend",
+  "fullstack",
+  "remote",
+]);

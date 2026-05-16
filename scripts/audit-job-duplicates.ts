@@ -1,4 +1,4 @@
-import { createCanonicalJobKey } from "../src/lib/job-search/dedupe";
+import { createCanonicalJobKeys } from "../src/lib/job-search/dedupe";
 import { prisma } from "../src/lib/prisma";
 
 async function main() {
@@ -17,7 +17,8 @@ async function main() {
 
   const groups = new Map<string, typeof jobs>();
   for (const job of jobs) {
-    const key = createCanonicalJobKey(job);
+    const key = createCanonicalJobKeys(job).at(-1) ?? createCanonicalJobKeys(job)[0] ?? "";
+    if (!key) continue;
     groups.set(key, [...(groups.get(key) ?? []), job]);
   }
 

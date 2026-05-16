@@ -245,7 +245,15 @@ async function buildJobContext(contextPath: string): Promise<JolenePageContext> 
 async function buildApplicationsContext(contextPath: string): Promise<JolenePageContext> {
   const [applications, blockers] = await Promise.all([
     prisma.application.findMany({
-      include: { jobPosting: { select: { title: true, company: true } }, applicationPackets: { select: { status: true }, take: 1 } },
+      include: {
+        jobPosting: { select: { title: true, company: true } },
+        applicationPackets: { select: { status: true }, take: 1 },
+        emailMessages: {
+          where: { classification: "AUTOMATED_CONFIRMATION" },
+          orderBy: { receivedAt: "desc" },
+          take: 1,
+        },
+      },
       orderBy: { updatedAt: "desc" },
       take: 12,
     }),
@@ -267,6 +275,13 @@ async function buildApplicationsContext(contextPath: string): Promise<JolenePage
         packetStatus: application.applicationPackets[0]?.status ?? null,
         approvedAt: application.approvedAt,
         appliedAt: application.appliedAt,
+        receivedConfirmation: application.emailMessages[0]
+          ? {
+              subject: application.emailMessages[0].subject,
+              from: application.emailMessages[0].from,
+              receivedAt: application.emailMessages[0].receivedAt,
+            }
+          : null,
       })),
     },
     suggestedActions: [

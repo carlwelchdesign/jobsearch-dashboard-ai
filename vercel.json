@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/job-search",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/email-sync",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/recruiting-agency",
+      "schedule": "30 15 * * *"
     }
   ]
 }

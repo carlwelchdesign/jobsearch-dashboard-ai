@@ -7,6 +7,7 @@ import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import PlayCircleOutlineOutlinedIcon from "@mui/icons-material/PlayCircleOutlineOutlined";
+import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import BoltOutlinedIcon from "@mui/icons-material/BoltOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import Link from "next/link";
@@ -16,8 +17,9 @@ import { BulkPrepareControl } from "@/components/bulk-prepare-control";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip, formatStatus } from "@/components/ui/status-chip";
+import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
+import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { prisma } from "@/lib/prisma";
-import { ApplicationCreateForm } from "./application-create-form";
 import { ApplicationDeleteButton } from "./application-delete-button";
 import { BackfillPacketsButton } from "./backfill-packets-button";
 import { MarkAppliedButton } from "./mark-applied-button";
@@ -27,22 +29,42 @@ export const dynamic = "force-dynamic";
 const columns = ["approved", "ready_to_apply", "applied", "follow_up_due", "screening", "interviewing", "offer", "archived"];
 
 export default async function ApplicationsPage() {
-  const [applications, matches] = await Promise.all([
+  const [applications, rawAgencyMatches] = await Promise.all([
     prisma.application.findMany({
-      include: { jobPosting: true, resume: true, coverLetter: true, applicationPackets: { take: 1 } },
+      include: {
+        jobPosting: true,
+        resume: true,
+        coverLetter: true,
+        applicationPackets: { take: 1 },
+        emailMessages: {
+          where: { classification: "AUTOMATED_CONFIRMATION" },
+          orderBy: { receivedAt: "desc" },
+          take: 1,
+        },
+      },
       orderBy: { updatedAt: "desc" },
     }),
     prisma.jobProfileMatch.findMany({
-      where: { status: { in: ["approved", "ready_to_apply", "resume_generated", "cover_letter_generated"] } },
+      where: {
+        status: "needs_review",
+        overallScore: { gte: 90 },
+        jobPosting: {
+          applicationUrl: { not: null },
+        },
+      },
       include: { jobPosting: true },
-      orderBy: { updatedAt: "desc" },
-      take: 50,
+      orderBy: [{ overallScore: "desc" }, { updatedAt: "desc" }],
+      take: 250,
     }),
   ]);
+  const trackedJobKeys = applicationJobKeySet(applications);
+  const agencyCandidates = uniqueMatchesByCanonicalJob(
+    rawAgencyMatches.filter((match) => !hasApplicationForJob(match.jobPosting, trackedJobKeys)),
+  );
   const nextAction = applicationsNextAction({
     approvedCount: applications.filter((application) => application.status === "approved").length,
     readyCount: applications.filter((application) => application.status === "ready_to_apply").length,
-    availableMatchCount: matches.length,
+    agencyCandidateCount: agencyCandidates.length,
   });
 
   return (
@@ -51,12 +73,7 @@ export default async function ApplicationsPage() {
         <PageHeader
           eyebrow="Application control"
           title="Applications"
-          description="Track approved roles from packet generation through assistant fill, follow-up reminders, interview prep, outcomes, and company-specific automation policy."
-          actions={<ApplicationCreateForm jobs={matches.map((match) => ({
-            id: match.jobPostingId,
-            matchId: match.id,
-            label: `${match.jobPosting.company} · ${match.jobPosting.title}`,
-          }))} />}
+          description="Your recruiting agency turns high-confidence matches into approved application packets, then keeps ready submissions, follow-ups, interviews, and outcomes organized."
         />
         <Card sx={{ borderColor: nextAction.color === "success" ? "success.main" : "primary.main", bgcolor: nextAction.color === "success" ? "rgba(16, 185, 129, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
           <CardContent>
@@ -72,9 +89,12 @@ export default async function ApplicationsPage() {
               <ActionButton
                 href={nextAction.href}
                 postTo={nextAction.postTo}
+                body={nextAction.body}
+                runInBackground={nextAction.runInBackground}
                 variant="contained"
                 color={nextAction.color}
                 startIcon={nextAction.icon}
+                loadingLabel={nextAction.loadingLabel}
               >
                 {nextAction.label}
               </ActionButton>
@@ -84,12 +104,24 @@ export default async function ApplicationsPage() {
         <Card>
           <CardContent>
             <Stack spacing={1.5}>
-              <Typography variant="h3">Apply Sprint</Typography>
+              <Typography variant="h3">Agency command center</Typography>
               <Typography variant="body2" color="text.secondary">
-                Batch-generate materials, then launch the next highest-scoring ready application. The assistant fills and uploads; you review and submit.
+                Auto-approve 90+ matches, create application trackers, and generate tailored packets. Submission remains assist-only: the agent prepares and fills, you confirm final submit.
               </Typography>
               <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ alignItems: { md: "center" } }}>
-                <BulkPrepareControl compact defaultMinimumScore={85} defaultLimit={10} />
+                <ActionButton
+                  postTo="/api/applications/agency/run"
+                  body={{ minimumScore: 90, limit: 10, triggeredBy: "manual" }}
+                  runInBackground
+                  variant="contained"
+                  color="primary"
+                  startIcon={<AutoAwesomeOutlinedIcon />}
+                  loadingLabel="Agency running..."
+                  message="Recruiting agency started. You can leave this page while it approves and prepares packets."
+                >
+                  Run recruiting agency
+                </ActionButton>
+                <BulkPrepareControl compact defaultMinimumScore={90} defaultLimit={10} />
                 <BackfillPacketsButton />
                 <ActionButton href="/applications/assistant" variant="outlined" startIcon={<BoltOutlinedIcon />}>
                   Open sprint console
@@ -128,6 +160,7 @@ export default async function ApplicationsPage() {
                             {application.resume ? <Chip size="small" color="success" variant="outlined" label="Resume" /> : null}
                             {application.coverLetter ? <Chip size="small" color="secondary" variant="outlined" label="Cover letter" /> : null}
                             {application.applicationPackets.length ? <Chip size="small" color="primary" variant="outlined" label="Packet" /> : null}
+                            {application.emailMessages.length ? <Chip size="small" color="success" label="Received" /> : null}
                           </Stack>
                           <Box sx={{ mt: 1 }}>
                             <ActionButton href={`/applications/${application.id}`} size="small" variant="outlined" startIcon={<FactCheckOutlinedIcon />}>
@@ -187,7 +220,7 @@ export default async function ApplicationsPage() {
         </Box>
         {applications.length === 0 ? (
           <Card>
-            <EmptyState title="No applications tracked" body="Create an application from an approved match when you are ready to work it." />
+            <EmptyState title="No applications tracked" body="Run the recruiting agency to auto-approve strong matches and create application packets." />
           </Card>
         ) : null}
       </Stack>
@@ -195,7 +228,7 @@ export default async function ApplicationsPage() {
   );
 }
 
-function applicationsNextAction({ approvedCount, readyCount, availableMatchCount }: { approvedCount: number; readyCount: number; availableMatchCount: number }) {
+function applicationsNextAction({ approvedCount, readyCount, agencyCandidateCount }: { approvedCount: number; readyCount: number; agencyCandidateCount: number }) {
   if (readyCount > 0) {
     return {
       title: "Work Apply Sprint",
@@ -207,6 +240,20 @@ function applicationsNextAction({ approvedCount, readyCount, availableMatchCount
       count: readyCount,
     };
   }
+  if (agencyCandidateCount > 0) {
+    return {
+      title: "Run the recruiting agency",
+      detail: "Strong 90+ matches are waiting. Let the agency approve them, create trackers, and generate application packets.",
+      label: "Run agency",
+      postTo: "/api/applications/agency/run",
+      body: { minimumScore: 90, limit: 10, triggeredBy: "manual" },
+      runInBackground: true,
+      loadingLabel: "Agency running...",
+      color: "primary" as const,
+      icon: <AutoAwesomeOutlinedIcon />,
+      count: agencyCandidateCount,
+    };
+  }
   if (approvedCount > 0) {
     return {
       title: "Prepare application packets",
@@ -216,17 +263,6 @@ function applicationsNextAction({ approvedCount, readyCount, availableMatchCount
       color: "primary" as const,
       icon: <FactCheckOutlinedIcon />,
       count: approvedCount,
-    };
-  }
-  if (availableMatchCount > 0) {
-    return {
-      title: "Create an application tracker",
-      detail: "Approved matches are available. Create an application item before generating materials.",
-      label: "Create application",
-      href: "/jobs?status=approved",
-      color: "primary" as const,
-      icon: <FactCheckOutlinedIcon />,
-      count: availableMatchCount,
     };
   }
   return {

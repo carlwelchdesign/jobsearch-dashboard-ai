@@ -23,7 +23,6 @@ import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import { JoleneAgentButton } from "@/components/jolene-agent-button";
 
 const drawerWidth = 264;
 
@@ -207,7 +206,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </Container>
       </Box>
-      <JoleneAgentButton />
     </Box>
   );
 }

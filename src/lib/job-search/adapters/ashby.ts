@@ -13,6 +13,8 @@ type AshbyJob = {
   descriptionPlain?: string;
 };
 
+const companyFetchTimeoutMs = 8_000;
+
 export const ashbyAdapter: JobSourceAdapter = {
   name: "Ashby",
   async fetchJobs(_: JobSearchProfile, source: JobSource) {
@@ -21,12 +23,8 @@ export const ashbyAdapter: JobSourceAdapter = {
     const results: RawJobPosting[] = [];
 
     for (const company of companies) {
-      const response = await fetch(`https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(company)}?includeCompensation=true`, {
-        headers: { Accept: "application/json", "User-Agent": "JobSearchOS/1.0" },
-        next: { revalidate: 0 },
-      });
-      if (!response.ok) continue;
-      const payload = (await response.json()) as { jobs?: AshbyJob[] };
+      const payload = await fetchAshbyJobs(company);
+      if (!payload) continue;
       for (const job of payload.jobs ?? []) {
         results.push({
           sourceJobId: job.id,
@@ -59,6 +57,20 @@ export const ashbyAdapter: JobSourceAdapter = {
     };
   },
 };
+
+async function fetchAshbyJobs(company: string) {
+  try {
+    const response = await fetch(`https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(company)}?includeCompensation=true`, {
+      headers: { Accept: "application/json", "User-Agent": "JobSearchOS/1.0" },
+      next: { revalidate: 0 },
+      signal: AbortSignal.timeout(companyFetchTimeoutMs),
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as { jobs?: AshbyJob[] };
+  } catch {
+    return null;
+  }
+}
 
 function readStringArray(value: unknown, key: string) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return [];

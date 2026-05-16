@@ -31,6 +31,25 @@ curl -X POST http://localhost:3000/api/email/imap-sync \
   -d '{"limit":25,"sinceDays":14}'
 ```
 
+## Hourly Email Cron
+
+The deployment cron calls the shared email sync endpoint every hour:
+
+```txt
+/api/cron/email-sync
+```
+
+The endpoint checks:
+
+- connected Gmail OAuth accounts
+- configured IMAP mailbox credentials
+
+Set `EMAIL_SYNC_SECRET` or `CRON_SECRET` to require:
+
+```txt
+Authorization: Bearer <secret>
+```
+
 ## Gmail and Outlook OAuth
 
 OAuth connections are configured from Settings. Required variables:

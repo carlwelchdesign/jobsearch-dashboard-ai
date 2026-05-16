@@ -1,7 +1,7 @@
 import type { AtsProvider, RemoteType } from "@prisma/client";
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
-import { createCanonicalJobKey, createJobContentHash } from "@/lib/job-search/dedupe";
+import { createCanonicalJobKeys, createJobContentHash, hasSameCanonicalJob } from "@/lib/job-search/dedupe";
 import { scoreJobForProfile } from "@/lib/job-search/scoring";
 import { prisma } from "@/lib/prisma";
 
@@ -90,7 +90,7 @@ export async function captureManualJob(input: ManualJobCaptureInput) {
 }
 
 async function findExistingManualJob(normalized: { company: string; title: string; location?: string | null; applicationUrl?: string | null }, contentHash: string) {
-  const canonicalKey = createCanonicalJobKey(normalized);
+  const canonicalKeys = createCanonicalJobKeys(normalized);
   const companyToken = normalized.company.toLowerCase().match(/[a-z0-9]{4,}/)?.[0] ?? null;
   const titleToken = normalized.title.toLowerCase().match(/[a-z0-9]{4,}/)?.[0] ?? null;
 
@@ -110,7 +110,9 @@ async function findExistingManualJob(normalized: { company: string; title: strin
     take: 100,
   });
 
-  return candidates.find((candidate) => createCanonicalJobKey(candidate) === canonicalKey) ?? null;
+  return candidates.find((candidate) => hasSameCanonicalJob(candidate, normalized)) ??
+    candidates.find((candidate) => createCanonicalJobKeys(candidate).some((key) => canonicalKeys.includes(key))) ??
+    null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

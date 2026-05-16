@@ -10,6 +10,7 @@ export type ScoreInput = {
 
 export function scoreJobForProfile(job: ScoreInput, profile: JobSearchProfile) {
   const haystack = [job.title, job.company, job.location ?? "", job.description].join(" ").toLowerCase();
+  const titleHaystack = job.title.toLowerCase();
   const titles = stringArray(profile.titles);
   const required = stringArray(profile.keywordsRequired);
   const preferred = stringArray(profile.keywordsPreferred);
@@ -20,38 +21,50 @@ export function scoreJobForProfile(job: ScoreInput, profile: JobSearchProfile) {
   const companyExcludedMatches = excludedCompanies.filter((company) => includesTerm(job.company, company));
 
   const titleMatches = titles.filter((title) => includesTerm(job.title, title));
+  const adjacentTitleMatches = titles.filter((title) => titleMatches.includes(title) || hasAdjacentTitleMatch(titleHaystack, title));
   const preferredMatches = preferred.filter((keyword) => includesTerm(haystack, keyword));
   const requiredMatches = required.filter((keyword) => includesTerm(haystack, keyword));
   const industryMatches = industries.filter((industry) => includesTerm(haystack, industry));
   const excludedMatches = [...excluded, ...excludedTitles].filter((keyword) => includesTerm(haystack, keyword));
   const isBlockedCompany = companyExcludedMatches.length > 0;
+  const roleFit = calculateRoleFit(titleHaystack, titles);
+  const lowLevelMismatch = hasLowLevelSystemsMismatch(haystack, titles, required, preferred);
+  const requiredCoverage = required.length ? requiredMatches.length / required.length : 1;
+  const missingRequiredPenalty = required.length ? Math.min(18, Math.round((1 - requiredCoverage) * 18)) : 0;
 
-  const titleFit = isBlockedCompany ? 0 : clamp(45 + titleMatches.length * 25 + (isSenior(job.title) ? 20 : 0) - excludedMatches.length * 25);
-  const skillFit = clamp(50 + preferredMatches.length * 8 + requiredMatches.length * 12 - Math.max(0, required.length - requiredMatches.length) * 12);
+  const titleFit = isBlockedCompany ? 0 : clamp(25 + roleFit * 0.55 + adjacentTitleMatches.length * 12 + (isSenior(job.title) ? 10 : 0) - excludedMatches.length * 25);
+  const skillFit = clamp(56 + preferredMatches.length * 5 + requiredMatches.length * 7 + requiredCoverage * 16 - missingRequiredPenalty);
   const seniorityFit = clamp(isSenior(job.title) ? 88 : 58);
   const industryFit = clamp(55 + industryMatches.length * 12);
   const compensationFit = clamp(job.salaryMin || profile.includeUnknownSalary ? 78 : 45);
   const remoteFit = clamp(remoteScore(haystack, profile.remotePreference));
   const relocationFit = clamp(relocationScore(haystack, profile.relocationPreference));
+  const geographyFit = clamp(geographyScore(job.location ?? "", profile));
+  const rolePenalty = roleFit < 35 ? 24 : roleFit < 55 ? 10 : 0;
   const overallScore = isBlockedCompany ? 0 : clamp(
     Math.round(
-      titleFit * 0.2 +
-        skillFit * 0.25 +
+      titleFit * 0.26 +
+        skillFit * 0.22 +
         seniorityFit * 0.15 +
         industryFit * 0.1 +
         compensationFit * 0.1 +
-        remoteFit * 0.15 +
+        remoteFit * 0.1 +
+        geographyFit * 0.08 +
         relocationFit * 0.05 -
-        excludedMatches.length * 20,
+        excludedMatches.length * 20 -
+        rolePenalty -
+        (lowLevelMismatch ? 45 : 0),
     ),
   );
 
-  const strongestMatches = [...titleMatches, ...preferredMatches, ...industryMatches].slice(0, 8);
+  const strongestMatches = [...adjacentTitleMatches, ...requiredMatches, ...preferredMatches, ...industryMatches].slice(0, 8);
   const concerns = [
     ...(companyExcludedMatches.length ? [`Excluded company detected: ${companyExcludedMatches.join(", ")}`] : []),
+    ...(roleFit < 35 ? ["Title does not look like a target software, frontend, full-stack, platform, product, AI, or developer-tools role."] : []),
+    ...(lowLevelMismatch ? ["Low-level C++, embedded, robotics, or autonomy role does not match the target web/frontend/full-stack profile."] : []),
     ...(excludedMatches.length ? [`Excluded terms detected: ${excludedMatches.join(", ")}`] : []),
     ...(job.salaryMin || profile.includeUnknownSalary ? [] : ["Salary is unknown and this profile excludes unknown salary."]),
-    ...(required.length && requiredMatches.length < required.length ? [`Missing required keywords: ${required.filter((keyword) => !requiredMatches.includes(keyword)).join(", ")}`] : []),
+    ...(required.length && requiredCoverage < 0.35 ? [`Missing most target keywords: ${required.filter((keyword) => !requiredMatches.includes(keyword)).join(", ")}`] : []),
   ];
 
   return {
@@ -79,11 +92,77 @@ function stringArray(value: unknown): string[] {
 }
 
 function includesTerm(value: string, term: string) {
-  return value.toLowerCase().includes(term.toLowerCase());
+  const haystack = normalizeTerm(value);
+  const needle = normalizeTerm(term);
+  if (!needle) return false;
+  if (haystack.includes(needle)) return true;
+  const aliases = termAliases(needle);
+  return aliases.some((alias) => haystack.includes(alias));
 }
 
 function isSenior(title: string) {
   return /\b(senior|staff|principal|lead|architect|manager)\b/i.test(title);
+}
+
+function calculateRoleFit(title: string, profileTitles: string[]) {
+  if (isClearlyNonTargetTitle(title)) return 8;
+  if (lowLevelOrHardwarePattern().test(title)) return 18;
+  const profileText = profileTitles.join(" ").toLowerCase();
+  const wantsFrontend = /\b(frontend|front-end|ui|web|react|typescript|design systems?)\b/i.test(profileText);
+  const wantsFullStack = /\b(full.?stack|software engineer|product engineer)\b/i.test(profileText);
+  if (wantsFrontend && /\b(backend|ios|android|mobile|devops|sre|infrastructure)\b/i.test(title) && !/\b(frontend|front-end|full.?stack|web|ui|react)\b/i.test(title)) return 38;
+  if (!wantsFullStack && /\b(backend|infrastructure|devops|sre)\b/i.test(title) && !/\b(frontend|front-end|full.?stack|web|ui|react|product)\b/i.test(title)) return 42;
+  if (profileTitles.some((profileTitle) => includesTerm(title, profileTitle))) return 96;
+  if (/\b(frontend|front-end|ui engineer|web engineer|full.?stack|product engineer|design systems?|frontend platform|react|typescript|next\.?js)\b/i.test(title)) return 88;
+  if (/\b(staff|senior|principal|lead)?\s*(software engineer|developer|platform engineer|devex|developer experience|developer tools?|api platform|systems engineer|application engineer)\b/i.test(title)) return 76;
+  if (/\b(applied ai|ai engineer|forward deployed engineer|solutions architect|technical lead|documentation engineer)\b/i.test(title)) return 64;
+  if (/\b(engineer|developer|architect|platform|infrastructure|devops|sre|security engineer)\b/i.test(title)) return 52;
+  return 20;
+}
+
+function hasLowLevelSystemsMismatch(haystack: string, profileTitles: string[], required: string[], preferred: string[]) {
+  const profileText = [...profileTitles, ...required, ...preferred].join(" ").toLowerCase();
+  const explicitlyTargetsLowLevel = lowLevelOrHardwarePattern().test(profileText);
+  if (explicitlyTargetsLowLevel) return false;
+  return lowLevelOrHardwarePattern().test(haystack);
+}
+
+function hasAdjacentTitleMatch(title: string, profileTitle: string) {
+  const normalized = normalizeTerm(profileTitle);
+  if (normalized.includes("frontend") && /\b(frontend|front-end|ui|web|react|typescript|next\.?js)\b/i.test(title)) return true;
+  if (normalized.includes("full stack") && /\b(full.?stack|software engineer|product engineer|developer)\b/i.test(title)) return true;
+  if (normalized.includes("software engineer") && /\b(software engineer|developer|platform engineer|product engineer|systems engineer)\b/i.test(title)) return true;
+  if (normalized.includes("developer tools") && /\b(devex|developer|platform|api|sdk|tools?)\b/i.test(title)) return true;
+  if (normalized.includes("ai") && /\b(ai|llm|machine learning|ml|applied)\b/i.test(title)) return true;
+  return false;
+}
+
+function isClearlyNonTargetTitle(title: string) {
+  return /\b(intern|new grad|early career|account executive|account manager|sales|recruiter|talent|people partner|customer success|marketing|communications manager|finance|accountant|accounts payable|legal counsel|designer|product manager|program manager|project manager|business development|operations manager|office manager|general manager|market manager|solutions manager|technical account manager|electrical engineering|electrical engineer|mechanical engineer|hardware engineer|systems safety engineer|aerospace engineer|avionics engineer)\b/i.test(title);
+}
+
+function lowLevelOrHardwarePattern() {
+  return /\b(c\+\+|c plus plus|c\s*\/\s*c\+\+|embedded|embedded c|firmware|robotics software|mission autonomy|autonomy software|flight software|air dominance|strike|advanced effects|real-time systems|real time systems|rtos|cuda|electrical engineering|electrical engineer|mechanical engineer|hardware engineer|fpga|avionics|aerospace engineer|controls engineer|guidance navigation|gnc|radar|rf engineer|signal processing|weapons system|weapons systems|vehicle autonomy)\b/i;
+}
+
+function normalizeTerm(value: string) {
+  return value.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9+#.]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function termAliases(term: string) {
+  const aliases: Record<string, string[]> = {
+    "fullstack": ["full stack", "full-stack"],
+    "full stack": ["fullstack", "full-stack"],
+    "next js": ["next.js", "nextjs"],
+    "typescript": ["type script"],
+    "javascript": ["java script"],
+    "api integrations": ["api", "integrations", "api platform"],
+    "storybook": ["component library", "design system"],
+    "saas": ["enterprise software", "b2b"],
+    "identity": ["authentication", "auth", "access management"],
+    "security": ["secure", "compliance", "trust"],
+  };
+  return aliases[term] ?? [];
 }
 
 function remoteScore(haystack: string, preference: JobSearchProfile["remotePreference"]) {
@@ -103,6 +182,38 @@ function relocationScore(haystack: string, preference: JobSearchProfile["relocat
   if (preference === "visa_sponsorship_required") return /visa sponsorship|work permit/i.test(haystack) ? 92 : 38;
   if (preference === "eu_blue_card_possible") return /blue card|eu|germany|europe/i.test(haystack) ? 86 : 48;
   return 65;
+}
+
+function geographyScore(location: string, profile: JobSearchProfile) {
+  const countries = stringArray(profile.countries);
+  const normalizedLocation = normalizeTerm(location);
+  if (countries.length === 0) {
+    if (profile.remotePreference === "remote_global") return /remote|worldwide|global|north america|americas|european union|europe/.test(normalizedLocation) ? 88 : 68;
+    return 72;
+  }
+
+  if (countries.some((country) => locationMatchesCountry(normalizedLocation, country))) return 92;
+  if (profile.remotePreference === "remote_us_only" && /\b(remote|north america|americas|canada)\b/.test(normalizedLocation)) return 72;
+  if (profile.remotePreference === "remote_europe" && /\b(remote|europe|european union|emea|eu)\b/.test(normalizedLocation)) return 84;
+  if (profile.relocationPreference !== "not_interested" && /\b(europe|european union|emea|eu|hybrid|onsite)\b/.test(normalizedLocation)) return 68;
+  return 36;
+}
+
+function locationMatchesCountry(location: string, country: string) {
+  const normalizedCountry = normalizeTerm(country);
+  if (!normalizedCountry) return false;
+  if (location.includes(normalizedCountry)) return true;
+  const aliases: Record<string, string[]> = {
+    "united states": ["united states", "usa", "u s", "us", "remote us", "remote usa", "new york", "san francisco", "seattle", "washington d c", "austin", "boston", "california"],
+    "usa": ["united states", "usa", "u s", "us", "remote us", "remote usa", "new york", "san francisco", "seattle", "washington d c", "austin", "boston", "california"],
+    "germany": ["germany", "berlin", "munich"],
+    "sweden": ["sweden", "stockholm"],
+    "luxembourg": ["luxembourg"],
+    "netherlands": ["netherlands", "amsterdam"],
+    "denmark": ["denmark", "copenhagen"],
+    "ireland": ["ireland", "dublin"],
+  };
+  return (aliases[normalizedCountry] ?? []).some((alias) => location.includes(alias));
 }
 
 function clamp(value: number) {

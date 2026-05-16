@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 import MicOffOutlinedIcon from "@mui/icons-material/MicOffOutlined";
@@ -41,6 +41,10 @@ type JoleneContext = {
   }>;
 };
 
+type JoleneClientAction =
+  | { type: "navigate"; href: string; refresh?: boolean }
+  | { type: "refresh" };
+
 type SpeechRecognitionResultEventLike = {
   resultIndex: number;
   results: ArrayLike<{
@@ -64,6 +68,7 @@ type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
 export function JoleneAgentButton() {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<JoleneMessage[]>([]);
   const [context, setContext] = useState<JoleneContext | null>(null);
@@ -73,7 +78,18 @@ export function JoleneAgentButton() {
   const [error, setError] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [handsFreeEnabled, setHandsFreeEnabled] = useState(false);
+  const [wakeActive, setWakeActive] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const handsFreeEnabledRef = useRef(false);
+  const wakeActiveRef = useRef(false);
+  const loadingRef = useRef(false);
+  const speakingRef = useRef(false);
+  const processedVoiceCommandRef = useRef("");
+  const voiceCommandBufferRef = useRef("");
+  const startHandsFreeRecognitionRef = useRef<() => void>(() => undefined);
+  const recognitionRestartRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const speechSupported = useMemo(() => {
@@ -113,13 +129,44 @@ export function JoleneAgentButton() {
     scrollRef.current?.scrollIntoView({ block: "end" });
   }, [messages, loading]);
 
-  const sendMessage = async () => {
-    const message = input.trim();
-    if (!message || loading) return;
+  useEffect(() => {
+    handsFreeEnabledRef.current = handsFreeEnabled;
+  }, [handsFreeEnabled]);
+
+  useEffect(() => {
+    wakeActiveRef.current = wakeActive;
+  }, [wakeActive]);
+
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRestartRef.current) window.clearTimeout(recognitionRestartRef.current);
+      recognitionRef.current?.stop();
+      if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel();
+    };
+  }, []);
+
+  const stopRecognition = useCallback(() => {
+    if (recognitionRestartRef.current) {
+      window.clearTimeout(recognitionRestartRef.current);
+      recognitionRestartRef.current = null;
+    }
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setListening(false);
+  }, []);
+
+  const sendMessage = useCallback(async (messageOverride?: string, options?: { spoken?: boolean }) => {
+    const message = (messageOverride ?? input).trim();
+    if (!message || loadingRef.current) return;
 
     setInput("");
     setError(null);
     setLoading(true);
+    loadingRef.current = true;
 
     try {
       const response = await fetch("/api/jolene", {
@@ -134,23 +181,120 @@ export function JoleneAgentButton() {
       const newMessages = payload.messages as JoleneMessage[];
       setMessages((current) => [...current, ...newMessages]);
       setContext(payload.context);
+      handleClientAction(payload.clientAction as JoleneClientAction | null | undefined, router);
 
       const assistantReply = newMessages.find((item) => item.role === "ASSISTANT");
-      if (voiceEnabled && assistantReply) speak(assistantReply.content);
+      if ((voiceEnabled || options?.spoken) && assistantReply) {
+        speakingRef.current = true;
+        speak(assistantReply.content, () => {
+          speakingRef.current = false;
+          if (handsFreeEnabledRef.current) startHandsFreeRecognitionRef.current();
+        });
+      } else if (handsFreeEnabledRef.current) {
+        startHandsFreeRecognitionRef.current();
+      }
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "Jolene could not answer.");
       setInput(message);
     } finally {
       setLoading(false);
+      loadingRef.current = false;
+      processedVoiceCommandRef.current = "";
     }
-  };
+  }, [input, pathname, router, voiceEnabled]);
+
+  const startHandsFreeRecognition = useCallback(() => {
+    if (!speechSupported || typeof window === "undefined" || recognitionRef.current || loadingRef.current || speakingRef.current) return;
+
+    const browserWindow = window as typeof window & {
+      SpeechRecognition?: SpeechRecognitionConstructor;
+      webkitSpeechRecognition?: SpeechRecognitionConstructor;
+    };
+    const Recognition = browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition;
+    if (!Recognition) return;
+
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.onresult = (event) => {
+      let transcript = "";
+      let finalTranscript = "";
+      for (let index = 0; index < event.results.length; index += 1) {
+        transcript += `${event.results[index]?.[0]?.transcript ?? ""} `;
+      }
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        if (event.results[index]?.isFinal) finalTranscript += `${event.results[index]?.[0]?.transcript ?? ""} `;
+      }
+
+      const trimmedTranscript = transcript.trim();
+      setVoiceTranscript(wakeActiveRef.current && voiceCommandBufferRef.current ? voiceCommandBufferRef.current : trimmedTranscript);
+
+      const normalizedFinal = normalizeSpeechText(finalTranscript);
+      if (!normalizedFinal) {
+        const interimWake = parseHandsFreeCommand(trimmedTranscript, wakeActiveRef.current);
+        if (interimWake.wakeDetected) {
+          setWakeActive(true);
+          wakeActiveRef.current = true;
+        }
+        return;
+      }
+
+      const buffered = appendHandsFreeSpeech(normalizedFinal, wakeActiveRef.current, voiceCommandBufferRef.current);
+      if (buffered.wakeDetected) {
+        setWakeActive(true);
+        wakeActiveRef.current = true;
+      }
+      voiceCommandBufferRef.current = buffered.buffer;
+      setVoiceTranscript(buffered.buffer || trimmedTranscript);
+
+      if (!buffered.command) return;
+
+      const commandKey = normalizeSpeechText(buffered.command);
+      if (!commandKey || commandKey === processedVoiceCommandRef.current) return;
+
+      processedVoiceCommandRef.current = commandKey;
+      setWakeActive(false);
+      wakeActiveRef.current = false;
+      setVoiceTranscript("");
+      voiceCommandBufferRef.current = "";
+      recognition.stop();
+      void sendMessage(buffered.command, { spoken: true });
+    };
+    recognition.onend = () => {
+      recognitionRef.current = null;
+      setListening(false);
+      if (!handsFreeEnabledRef.current || loadingRef.current || speakingRef.current) return;
+      recognitionRestartRef.current = window.setTimeout(() => {
+        recognitionRestartRef.current = null;
+        startHandsFreeRecognition();
+      }, 250);
+    };
+    recognition.onerror = () => {
+      recognitionRef.current = null;
+      setListening(false);
+      if (handsFreeEnabledRef.current) {
+        setError("Listening mode paused. Check microphone permission, then turn listening mode on again.");
+        setHandsFreeEnabled(false);
+        handsFreeEnabledRef.current = false;
+      } else {
+        setError("Voice input stopped. You can still type your question.");
+      }
+    };
+    recognitionRef.current = recognition;
+    setListening(true);
+    recognition.start();
+  }, [sendMessage, speechSupported]);
+
+  useEffect(() => {
+    startHandsFreeRecognitionRef.current = startHandsFreeRecognition;
+  }, [startHandsFreeRecognition]);
 
   const toggleListening = () => {
     if (!speechSupported || typeof window === "undefined") return;
 
     if (listening) {
-      recognitionRef.current?.stop();
-      setListening(false);
+      stopRecognition();
       return;
     }
 
@@ -180,6 +324,30 @@ export function JoleneAgentButton() {
     recognitionRef.current = recognition;
     setListening(true);
     recognition.start();
+  };
+
+  const toggleHandsFree = () => {
+    if (!speechSupported || typeof window === "undefined") return;
+
+    const next = !handsFreeEnabled;
+    setHandsFreeEnabled(next);
+    handsFreeEnabledRef.current = next;
+    setWakeActive(false);
+    wakeActiveRef.current = false;
+    setVoiceTranscript("");
+    voiceCommandBufferRef.current = "";
+    processedVoiceCommandRef.current = "";
+
+    if (next) {
+      setOpen(true);
+      setVoiceEnabled(true);
+      setError(null);
+      startHandsFreeRecognition();
+    } else {
+      stopRecognition();
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      speakingRef.current = false;
+    }
   };
 
   const toggleVoice = () => {
@@ -247,6 +415,18 @@ export function JoleneAgentButton() {
                 </Box>
               </Stack>
               <Stack direction="row" spacing={0.5}>
+                <Tooltip title={handsFreeEnabled ? "Listening mode on" : "Listen for \"hey Jolene\""}>
+                  <span>
+                    <IconButton
+                      onClick={toggleHandsFree}
+                      disabled={!speechSupported}
+                      color={handsFreeEnabled ? "primary" : "default"}
+                      aria-label={handsFreeEnabled ? "Turn Jolene listening mode off" : "Turn Jolene listening mode on"}
+                    >
+                      {handsFreeEnabled ? <MicOutlinedIcon /> : <MicOffOutlinedIcon />}
+                    </IconButton>
+                  </span>
+                </Tooltip>
                 <Tooltip title={voiceEnabled ? "Spoken replies on" : "Spoken replies off"}>
                   <IconButton onClick={toggleVoice} color={voiceEnabled ? "primary" : "default"} aria-label="Toggle spoken replies">
                     {voiceEnabled ? <VolumeUpOutlinedIcon /> : <VolumeOffOutlinedIcon />}
@@ -260,6 +440,14 @@ export function JoleneAgentButton() {
             <Stack direction="row" spacing={1} sx={{ mt: 1.5, flexWrap: "wrap", rowGap: 1 }}>
               <Chip size="small" label={context?.routeType ? labelForRoute(context.routeType) : "Loading context"} color="primary" variant="outlined" />
               <Chip size="small" label={pathname} variant="outlined" />
+              {handsFreeEnabled ? (
+                <Chip
+                  size="small"
+                  label={wakeActive ? "Awake until over" : "Listening for hey Jolene"}
+                  color={wakeActive ? "success" : "default"}
+                  variant={wakeActive ? "filled" : "outlined"}
+                />
+              ) : null}
             </Stack>
           </Box>
 
@@ -284,6 +472,9 @@ export function JoleneAgentButton() {
               <Stack spacing={1.25} sx={{ py: 2 }}>
                 <Typography variant="body2" color="text.secondary">
                   Ask why something is shown, what to do next, how to tune searches, or which data point is driving a recommendation.
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Turn on listening mode, say &quot;hey Jolene&quot;, then finish with &quot;over&quot; when you want her to act.
                 </Typography>
                 <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", rowGap: 1 }}>
                   {["Why is this shown?", "What should I do next?", "What should we tune?"].map((prompt) => (
@@ -362,6 +553,23 @@ export function JoleneAgentButton() {
                 {error}
               </Typography>
             ) : null}
+            {handsFreeEnabled ? (
+              <Paper variant="outlined" sx={{ p: 1, mb: 1.25, bgcolor: wakeActive ? "#ecfdf5" : "rgba(255, 255, 255, 0.72)" }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+                  <Typography variant="caption" color={wakeActive ? "success.main" : "text.secondary"} sx={{ fontWeight: 800 }}>
+                    {loading ? "Acting" : wakeActive ? "Jolene is awake" : "Listening mode"}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {wakeActive ? "Say over to send" : "Say hey Jolene"}
+                  </Typography>
+                </Stack>
+                {voiceTranscript ? (
+                  <Typography variant="body2" sx={{ mt: 0.5, color: "text.secondary" }}>
+                    {voiceTranscript}
+                  </Typography>
+                ) : null}
+              </Paper>
+            ) : null}
             <Stack direction="row" spacing={1} sx={{ alignItems: "flex-end" }}>
               <Tooltip title={speechSupported ? "Speak to Jolene" : "Voice input is not supported in this browser"}>
                 <span>
@@ -408,13 +616,77 @@ export function JoleneAgentButton() {
   );
 }
 
-function speak(content: string) {
+function handleClientAction(action: JoleneClientAction | null | undefined, router: ReturnType<typeof useRouter>) {
+  if (!action) return;
+  if (action.type === "refresh") {
+    router.refresh();
+    return;
+  }
+  if (action.type === "navigate") {
+    router.push(action.href);
+    if (action.refresh) window.setTimeout(() => router.refresh(), 250);
+  }
+}
+
+function speak(content: string, onDone?: () => void) {
   if (typeof window === "undefined" || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(content);
   utterance.rate = 1;
   utterance.pitch = 1;
+  utterance.onend = () => onDone?.();
+  utterance.onerror = () => onDone?.();
   window.speechSynthesis.speak(utterance);
+}
+
+function parseHandsFreeCommand(transcript: string, alreadyAwake: boolean) {
+  const normalized = normalizeSpeechText(transcript);
+  const wakePhrase = "hey jolene";
+  const wakeIndex = normalized.indexOf(wakePhrase);
+  const wakeDetected = alreadyAwake || wakeIndex >= 0;
+
+  if (!wakeDetected) return { wakeDetected: false, command: "" };
+
+  const commandSource = wakeIndex >= 0
+    ? normalized.slice(wakeIndex + wakePhrase.length).trim()
+    : normalized;
+  const overMatch = commandSource.match(/\bover\b/);
+  if (!overMatch?.index && overMatch?.index !== 0) return { wakeDetected: true, command: "" };
+
+  const command = commandSource.slice(0, overMatch.index).trim();
+  return { wakeDetected: true, command };
+}
+
+function appendHandsFreeSpeech(finalTranscript: string, alreadyAwake: boolean, currentBuffer: string) {
+  const wakePhrase = "hey jolene";
+  const wakeIndex = finalTranscript.indexOf(wakePhrase);
+  const wakeDetected = alreadyAwake || wakeIndex >= 0;
+
+  if (!wakeDetected) return { wakeDetected: false, buffer: currentBuffer, command: "" };
+
+  const speechAfterWake = wakeIndex >= 0
+    ? finalTranscript.slice(wakeIndex + wakePhrase.length).trim()
+    : finalTranscript;
+  const nextBuffer = `${currentBuffer} ${speechAfterWake}`.replace(/\s+/g, " ").trim();
+  const overMatch = nextBuffer.match(/\bover\b/);
+
+  if (!overMatch || (overMatch.index !== 0 && !overMatch.index)) {
+    return { wakeDetected: true, buffer: nextBuffer, command: "" };
+  }
+
+  return {
+    wakeDetected: true,
+    buffer: nextBuffer,
+    command: nextBuffer.slice(0, overMatch.index).trim(),
+  };
+}
+
+function normalizeSpeechText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function labelForRoute(routeType: string) {

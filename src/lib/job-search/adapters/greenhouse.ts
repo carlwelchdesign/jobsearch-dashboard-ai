@@ -10,6 +10,8 @@ type GreenhouseJob = {
   metadata?: Array<{ name?: string; value?: string }>;
 };
 
+const companyFetchTimeoutMs = 8_000;
+
 export const greenhouseAdapter: JobSourceAdapter = {
   name: "Greenhouse",
   async fetchJobs(_: JobSearchProfile, source: JobSource) {
@@ -18,12 +20,8 @@ export const greenhouseAdapter: JobSourceAdapter = {
     const results: RawJobPosting[] = [];
 
     for (const company of companies) {
-      const response = await fetch(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(company)}/jobs?content=true`, {
-        headers: { Accept: "application/json", "User-Agent": "JobSearchOS/1.0" },
-        next: { revalidate: 0 },
-      });
-      if (!response.ok) continue;
-      const payload = (await response.json()) as { jobs?: GreenhouseJob[] };
+      const payload = await fetchGreenhouseJobs(company);
+      if (!payload) continue;
       for (const job of payload.jobs ?? []) {
         results.push({
           sourceJobId: job.id ? String(job.id) : undefined,
@@ -56,6 +54,20 @@ export const greenhouseAdapter: JobSourceAdapter = {
     };
   },
 };
+
+async function fetchGreenhouseJobs(company: string) {
+  try {
+    const response = await fetch(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(company)}/jobs?content=true`, {
+      headers: { Accept: "application/json", "User-Agent": "JobSearchOS/1.0" },
+      next: { revalidate: 0 },
+      signal: AbortSignal.timeout(companyFetchTimeoutMs),
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as { jobs?: GreenhouseJob[] };
+  } catch {
+    return null;
+  }
+}
 
 function readStringArray(value: unknown, key: string) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return [];

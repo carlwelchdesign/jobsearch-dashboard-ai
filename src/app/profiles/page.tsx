@@ -25,6 +25,7 @@ import { ProfileActions } from "./profile-actions";
 import { ProfileSuggestionPanel } from "./profile-suggestion-panel";
 import { ProfileOptimizerPanel } from "./profile-optimizer-panel";
 import type { OptimizerOutput } from "./profile-optimizer-panel";
+import { ProfileRebuildPanel } from "./profile-rebuild-panel";
 import { SearchExpansionPanel } from "./search-expansion-panel";
 import type { SearchExpansionPanelOutput } from "./search-expansion-panel";
 
@@ -90,6 +91,7 @@ export default async function ProfilesPage() {
         </Card>
 
         <ProfileSuggestionPanel />
+        <ProfileRebuildPanel />
         <ProfileOptimizerPanel latest={isRecord(latestOptimizerRun?.outputJson) ? latestOptimizerRun.outputJson as OptimizerOutput : null} />
         <SearchExpansionPanel latest={isRecord(latestExpansionRun?.outputJson) ? latestExpansionRun.outputJson as SearchExpansionPanelOutput : null} />
 

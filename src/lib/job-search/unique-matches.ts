@@ -1,4 +1,4 @@
-import { createCanonicalJobKey } from "@/lib/job-search/dedupe";
+import { createCanonicalJobKeys } from "@/lib/job-search/dedupe";
 
 type MatchWithJob = {
   overallScore: number;
@@ -13,16 +13,21 @@ type MatchWithJob = {
 
 export function uniqueMatchesByCanonicalJob<T extends MatchWithJob>(matches: T[]): T[] {
   const bestByKey = new Map<string, T>();
+  const selected = new Set<T>();
 
   for (const match of matches) {
-    const key = createCanonicalJobKey(match.jobPosting);
-    const current = bestByKey.get(key);
+    const keys = createCanonicalJobKeys(match.jobPosting);
+    const current = keys.map((key) => bestByKey.get(key)).find(Boolean);
     if (!current || compareMatchPriority(match, current) > 0) {
-      bestByKey.set(key, match);
+      for (const key of keys) bestByKey.set(key, match);
     }
   }
 
-  return Array.from(bestByKey.values());
+  return Array.from(bestByKey.values()).filter((match) => {
+    if (selected.has(match)) return false;
+    selected.add(match);
+    return true;
+  });
 }
 
 function compareMatchPriority(left: MatchWithJob, right: MatchWithJob) {

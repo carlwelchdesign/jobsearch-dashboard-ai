@@ -104,6 +104,8 @@ curl -X POST http://localhost:3000/api/email/imap-sync \
 
 Synced messages are classified as rejection, interview request, assessment, offer, confirmation, or needs review. Matched messages update application outcomes, create `Needs Me` items when action is required, and trigger interview prep for interview/assessment messages.
 
+An hourly email sync cron is configured in `vercel.json` and calls `/api/cron/email-sync` at the top of every hour. It checks connected Gmail OAuth accounts and any configured IMAP mailbox. Set `EMAIL_SYNC_SECRET` or `CRON_SECRET` to require `Authorization: Bearer <secret>` on cron requests.
+
 The manual search run uses enabled external source adapters. Direct ATS sources are prioritized: Greenhouse, Lever, and Ashby. RemoteOK is disabled by default because it creates paid/login application friction, and We Work Remotely is disabled by default because it is an intermediary board rather than a final ATS form. ATS adapters use configured company slugs so the app can search target companies directly, for example:
 
 ```json

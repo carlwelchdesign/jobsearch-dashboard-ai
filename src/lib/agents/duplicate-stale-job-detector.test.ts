@@ -35,6 +35,18 @@ describe("duplicate stale job detector", () => {
     expect(output.updatedJobs).toBe(2);
   });
 
+  it("groups duplicates with title and location variants", () => {
+    const now = new Date("2026-05-15T12:00:00.000Z");
+    const output = buildDuplicateStaleDetection([
+      job({ id: "a", title: "Sr. Front-End Software Engineer", location: "Remote - United States", applicationUrl: "https://jobs.example.com/a" }),
+      job({ id: "b", title: "Senior Frontend Engineer", location: "Remote", applicationUrl: "https://jobs.example.com/b" }),
+      job({ id: "c", title: "Senior Backend Engineer", location: "Remote", applicationUrl: "https://jobs.example.com/c" }),
+    ], now);
+
+    expect(output.duplicateGroups).toHaveLength(1);
+    expect(output.duplicateGroups[0]?.jobIds).toEqual(["a", "b"]);
+  });
+
   it("scores stale jobs from last seen age and closed-posting language", () => {
     const now = new Date("2026-05-15T12:00:00.000Z");
     const stale = calculateStaleSignal(job({

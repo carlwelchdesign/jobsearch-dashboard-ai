@@ -227,17 +227,17 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
         </Stack>
 
         <TableContainer sx={{ display: { xs: "none", md: "block" } }}>
-          <Table sx={{ minWidth: 1040 }}>
+          <Table sx={{ minWidth: 1040, tableLayout: "fixed" }}>
             <TableHead>
               <TableRow>
-                <TableCell padding="checkbox">Select</TableCell>
-                <TableCell>Fit</TableCell>
-                <TableCell>Opportunity</TableCell>
+                <TableCell padding="checkbox" sx={{ width: 56, verticalAlign: "middle" }}>Select</TableCell>
+                <TableCell sx={{ width: 80 }}>Fit</TableCell>
+                <TableCell sx={{ width: 104 }}>Opportunity</TableCell>
                 <TableCell>Role</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Matched profile</TableCell>
-                <TableCell>Signals</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell sx={{ width: 128 }}>Status</TableCell>
+                <TableCell sx={{ width: 180 }}>Matched profile</TableCell>
+                <TableCell sx={{ width: 156 }}>Signals</TableCell>
+                <TableCell align="right" sx={{ width: 244 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -254,12 +254,21 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
                 filteredMatches.map((match) => {
                   const selected = selectedSet.has(match.id);
                   return (
-                    <TableRow key={match.id} selected={selected} hover sx={{ "&:hover .job-title": { color: "primary.main" } }}>
-                      <TableCell padding="checkbox">
+                    <TableRow
+                      key={match.id}
+                      selected={selected}
+                      hover
+                      sx={{
+                        "& > td": { verticalAlign: "middle" },
+                        "&:hover .job-title": { color: "primary.main" },
+                      }}
+                    >
+                      <TableCell padding="checkbox" sx={{ verticalAlign: "middle" }}>
                         <Checkbox
                           checked={selected}
                           onChange={(event) => toggleOne(match.id, event.target.checked)}
                           slotProps={{ input: { "aria-label": `Select ${match.company} ${match.title}` } }}
+                          sx={{ p: 0.75 }}
                         />
                       </TableCell>
                       <TableCell>
@@ -292,11 +301,22 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
                         <Typography variant="body2" sx={{ fontWeight: 700 }}>{match.profileName}</Typography>
                         <Typography variant="caption" color="text.secondary">{match.sourceName}</Typography>
                       </TableCell>
-                      <TableCell>
-                        <Stack direction="row" spacing={0.75} sx={{ flexWrap: "wrap" }} useFlexGap>
-                          {match.strongestMatches.slice(0, 3).map((signal, index) => (
-                            <Chip key={`${match.id}-${signal}-${index}`} size="small" variant="outlined" label={signal} />
+                      <TableCell sx={{ verticalAlign: "top" }}>
+                        <Stack direction="row" spacing={0.5} sx={{ flexWrap: "wrap", maxWidth: 156 }} useFlexGap>
+                          {match.strongestMatches.slice(0, 2).map((signal, index) => (
+                            <Chip
+                              key={`${match.id}-${signal}-${index}`}
+                              size="small"
+                              variant="outlined"
+                              label={signal}
+                              sx={{ maxWidth: 132, "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" } }}
+                            />
                           ))}
+                          {match.strongestMatches.length > 2 ? (
+                            <Typography variant="caption" color="text.secondary" sx={{ alignSelf: "center", fontWeight: 800 }}>
+                              +{match.strongestMatches.length - 2}
+                            </Typography>
+                          ) : null}
                         </Stack>
                       </TableCell>
                       <TableCell align="right">

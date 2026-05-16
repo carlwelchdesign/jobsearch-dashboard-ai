@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
+import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,40 @@ export async function POST(request: Request) {
     const user = await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });
 
     if (!user) return NextResponse.json({ error: "No user exists. Run seed first." }, { status: 400 });
+
+    const [jobPosting, existingApplications] = await Promise.all([
+      prisma.jobPosting.findUnique({
+        where: { id: body.jobPostingId },
+        select: {
+          company: true,
+          title: true,
+          location: true,
+          lastSeenAt: true,
+        },
+      }),
+      prisma.application.findMany({
+        where: { userId: user.id },
+        select: {
+          id: true,
+          status: true,
+          jobPosting: {
+            select: {
+              company: true,
+              title: true,
+              location: true,
+              lastSeenAt: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    if (!jobPosting) return NextResponse.json({ error: "Job posting not found." }, { status: 404 });
+
+    const existingApplicationKeys = applicationJobKeySet(existingApplications);
+    if (hasApplicationForJob(jobPosting, existingApplicationKeys)) {
+      return NextResponse.json({ error: "This job is already tracked as an application." }, { status: 409 });
+    }
 
     const application = await prisma.application.create({
       data: {

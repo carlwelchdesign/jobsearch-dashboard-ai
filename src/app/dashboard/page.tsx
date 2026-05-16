@@ -1,4 +1,5 @@
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutlineOutlined";
+import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import Box from "@mui/material/Box";
@@ -20,6 +21,7 @@ import { SearchRunCommandCenter } from "@/components/search-run-command-center";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { formatStatus } from "@/components/ui/status-chip";
 import { agentUserRequestHref, agentUserRequestTypeLabel, listOpenAgentUserRequests } from "@/lib/agent-user-requests";
+import { applicationJobKeySet, hasApplicationForJob, submittedApplicationJobKeySet, submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { prisma } from "@/lib/prisma";
@@ -44,12 +46,23 @@ type DailyPlanOutput = {
 };
 
 export default async function DashboardPage() {
-  const [profiles, latestRun, statusCounts, needsReview, latestDailyPlanRun, agentUserRequests] = await Promise.all([
+  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, submittedApplications, trackedApplicationsForAgency, agencyCandidateMatches, latestDailyPlanRun, agentUserRequests] = await Promise.all([
     prisma.jobSearchProfile.findMany({ where: { enabled: true }, orderBy: { name: "asc" } }),
     prisma.jobSearchRun.findFirst({ orderBy: { startedAt: "desc" } }),
-    prisma.jobProfileMatch.groupBy({ by: ["status"], _count: { status: true } }),
+    prisma.application.groupBy({ by: ["status"], _count: { status: true } }),
+    prisma.application.count({ where: { status: "ready_to_apply", resumeId: { not: null }, coverLetterId: { not: null } } }),
+    prisma.application.count({ where: { status: "approved" } }),
     prisma.jobProfileMatch.findMany({
-      where: { status: "needs_review" },
+      where: {
+        status: "needs_review",
+        jobPosting: {
+          applications: {
+            none: {
+              status: { in: submittedApplicationStatuses },
+            },
+          },
+        },
+      },
       include: {
         jobPosting: true,
         jobSearchProfile: { select: { name: true } },
@@ -57,22 +70,73 @@ export default async function DashboardPage() {
       orderBy: [{ overallScore: "desc" }, { createdAt: "desc" }],
       take: 50,
     }),
+    prisma.application.findMany({
+      where: { status: { in: submittedApplicationStatuses } },
+      select: {
+        status: true,
+        jobPosting: {
+          select: {
+            company: true,
+            title: true,
+            location: true,
+            lastSeenAt: true,
+          },
+        },
+      },
+    }),
+    prisma.application.findMany({
+      select: {
+        status: true,
+        jobPosting: {
+          select: {
+            company: true,
+            title: true,
+            location: true,
+            lastSeenAt: true,
+          },
+        },
+      },
+    }),
+    prisma.jobProfileMatch.findMany({
+      where: {
+        status: "needs_review",
+        overallScore: { gte: 90 },
+        jobPosting: {
+          applicationUrl: { not: null },
+        },
+      },
+      include: { jobPosting: true },
+      orderBy: [{ overallScore: "desc" }, { updatedAt: "desc" }],
+      take: 100,
+    }),
     prisma.agentRun.findFirst({
       where: { agentType: "DAILY_COMMAND_CENTER", status: "COMPLETED" },
       orderBy: { createdAt: "desc" },
     }),
     listOpenAgentUserRequests(5),
   ]);
-  const visibleNeedsReview = uniqueMatchesByCanonicalJob(needsReview).slice(0, 5);
-  const countByStatus = new Map(statusCounts.map((count) => [count.status, count._count.status]));
-  const readyToApply = countByStatus.get("ready_to_apply") ?? 0;
-  const needsReviewCount = countByStatus.get("needs_review") ?? 0;
-  const dailyPlan = dailyPlanOutput(latestDailyPlanRun?.outputJson);
+  const submittedJobKeys = submittedApplicationJobKeySet(submittedApplications);
+  const agencyJobKeys = applicationJobKeySet(trackedApplicationsForAgency);
+  const agencyCandidateCount = uniqueMatchesByCanonicalJob(
+    agencyCandidateMatches.filter((match) => !hasApplicationForJob(match.jobPosting, agencyJobKeys)),
+  ).length;
+  const visibleNeedsReview = uniqueMatchesByCanonicalJob(
+    needsReview.filter((match) => !hasApplicationForJob(match.jobPosting, submittedJobKeys)),
+  ).slice(0, 5);
+  const applicationCountByStatus = new Map(applicationStatusCounts.map((count) => [count.status, count._count.status]));
+  const readyToApply = readyApplicationCount;
+  const needsReviewCount = visibleNeedsReview.length;
+  const dailyPlan = filterDailyPlanForCurrentState(dailyPlanOutput(latestDailyPlanRun?.outputJson), {
+    approvedApplications: approvedApplicationCount,
+    needsReview: needsReviewCount,
+    readyToApply,
+  });
   const nextAction = getNextAction({
     agentUserRequestCount: agentUserRequests.length,
     dailyPlan,
     readyToApply,
     needsReviewCount,
+    agencyCandidateCount,
     latestRunStartedAt: latestRun?.startedAt ?? null,
   });
 
@@ -101,9 +165,23 @@ export default async function DashboardPage() {
                 <Typography variant="h2">{nextAction.title}</Typography>
                 <Typography color="text.secondary" sx={{ mt: 0.5 }}>{nextAction.detail}</Typography>
               </Box>
-              <ActionButton href={nextAction.href} variant="contained" color={nextAction.color} endIcon={<ArrowForwardIcon />}>
-                {nextAction.label}
-              </ActionButton>
+              {nextAction.postTo ? (
+                <ActionButton
+                  postTo={nextAction.postTo}
+                  body={nextAction.body}
+                  variant="contained"
+                  color={nextAction.color}
+                  startIcon={nextAction.icon}
+                  runInBackground={nextAction.runInBackground}
+                  loadingLabel={nextAction.loadingLabel}
+                >
+                  {nextAction.label}
+                </ActionButton>
+              ) : (
+                <ActionButton href={nextAction.href ?? "/dashboard"} variant="contained" color={nextAction.color} endIcon={<ArrowForwardIcon />}>
+                  {nextAction.label}
+                </ActionButton>
+              )}
             </Stack>
           </CardContent>
         </Card>
@@ -112,12 +190,12 @@ export default async function DashboardPage() {
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
           <Metric label="Enabled profiles" value={profiles.length.toString()} helper="Active campaigns" />
-          <Metric label="Needs review" value={(countByStatus.get("needs_review") ?? 0).toString()} helper="Waiting for approval" />
+          <Metric label="Needs review" value={needsReviewCount.toString()} helper="Waiting for approval" />
           <Metric label="Ready to apply" value={readyToApply.toString()} helper="Materials reviewed" />
           <Metric label="Latest run" value={latestRun?.status ?? "None"} helper={latestRun ? latestRun.startedAt.toLocaleString() : "No runs yet"} />
         </Box>
 
-        <BulkPrepareControl defaultMinimumScore={85} defaultLimit={10} />
+        <BulkPrepareControl defaultMinimumScore={90} defaultLimit={10} />
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", xl: "minmax(0, 1.6fr) minmax(320px, 0.9fr)" }, gap: 2, alignItems: "start" }}>
           <Box sx={{ minWidth: 0 }}>
@@ -252,7 +330,7 @@ export default async function DashboardPage() {
                     <ListItem
                       key={status}
                       divider={index < statuses.length - 1}
-                      secondaryAction={<Chip size="small" label={countByStatus.get(status as never) ?? 0} />}
+                      secondaryAction={<Chip size="small" label={status === "needs_review" ? needsReviewCount : applicationCountByStatus.get(status as never) ?? 0} />}
                       sx={{ py: 1.5 }}
                     >
                       <ListItemText
@@ -296,6 +374,32 @@ function dailyPlanOutput(value: unknown): DailyPlanOutput | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as DailyPlanOutput : null;
 }
 
+function filterDailyPlanForCurrentState(
+  plan: DailyPlanOutput | null,
+  {
+    approvedApplications,
+    needsReview,
+    readyToApply,
+  }: {
+    approvedApplications: number;
+    needsReview: number;
+    readyToApply: number;
+  },
+): DailyPlanOutput | null {
+  if (!plan?.actions?.length) return plan;
+  const actions = plan.actions.filter((action) => {
+    if (action.category === "submit_applications") return readyToApply > 0;
+    if (action.category === "review_jobs") return needsReview > 0;
+    if (action.category === "prepare_packets") return approvedApplications > 0;
+    return true;
+  });
+
+  return {
+    ...plan,
+    actions,
+  };
+}
+
 function serializeSearchRun(run: {
   id: string;
   status: string;
@@ -327,12 +431,14 @@ function getNextAction({
   dailyPlan,
   readyToApply,
   needsReviewCount,
+  agencyCandidateCount,
   latestRunStartedAt,
 }: {
   agentUserRequestCount: number;
   dailyPlan: DailyPlanOutput | null;
   readyToApply: number;
   needsReviewCount: number;
+  agencyCandidateCount: number;
   latestRunStartedAt: Date | null;
 }) {
   if (agentUserRequestCount > 0) {
@@ -366,6 +472,21 @@ function getNextAction({
       href: "/applications/assistant",
       label: "Open Apply Sprint",
       count: readyToApply,
+    };
+  }
+
+  if (agencyCandidateCount > 0) {
+    return {
+      color: "primary" as const,
+      title: "Run the recruiting agency",
+      detail: "Strong 90+ matches are waiting. Let the agents approve them, create trackers, and generate packets.",
+      postTo: "/api/applications/agency/run",
+      body: { minimumScore: 90, limit: 10, triggeredBy: "manual" },
+      runInBackground: true,
+      loadingLabel: "Agency running...",
+      icon: <AutoAwesomeOutlinedIcon />,
+      label: "Run agency",
+      count: agencyCandidateCount,
     };
   }
 
@@ -411,11 +532,27 @@ function SectionTitle({ title }: { title: string }) {
 }
 
 function SignalList({ title, items, color }: { title: string; items: string[]; color: "success" | "warning" }) {
+  const visibleItems = items.slice(0, 3);
+  const overflowCount = Math.max(0, items.length - visibleItems.length);
   return (
     <Box>
       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800, textTransform: "uppercase" }}>{title}</Typography>
-      <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
-        {items.length === 0 ? <Chip size="small" variant="outlined" label="None" /> : items.map((item, index) => <Chip key={`${title}-${item}-${index}`} size="small" color={color} variant="outlined" label={item} />)}
+      <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
+        {items.length === 0 ? <Chip size="small" variant="outlined" label="None" /> : visibleItems.map((item, index) => (
+          <Chip
+            key={`${title}-${item}-${index}`}
+            size="small"
+            color={color}
+            variant="outlined"
+            label={item}
+            sx={{ maxWidth: 180, "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" } }}
+          />
+        ))}
+        {overflowCount ? (
+          <Typography variant="caption" color="text.secondary" sx={{ alignSelf: "center", fontWeight: 800 }}>
+            +{overflowCount}
+          </Typography>
+        ) : null}
       </Stack>
     </Box>
   );

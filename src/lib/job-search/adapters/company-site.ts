@@ -24,6 +24,8 @@ type AshbyJob = {
   descriptionPlain?: string;
 };
 
+const providerFetchTimeoutMs = 10_000;
+
 export const companySiteAdapter: JobSourceAdapter = {
   name: "Company Career Pages",
   async fetchJobs(profile: JobSearchProfile, source: JobSource) {
@@ -95,6 +97,7 @@ async function fetchGreenhouse(slug: string, company: CompanySource): Promise<Ra
   const response = await fetch(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(slug)}/jobs?content=true`, {
     headers: { Accept: "application/json", "User-Agent": "JobSearchOS/1.0" },
     next: { revalidate: 0 },
+    signal: AbortSignal.timeout(providerFetchTimeoutMs),
   });
   if (!response.ok) return [];
   const payload = (await response.json()) as { jobs?: GreenhouseJob[] };
@@ -113,6 +116,7 @@ async function fetchLever(slug: string, company: CompanySource): Promise<RawJobP
   const response = await fetch(`https://api.lever.co/v0/postings/${encodeURIComponent(slug)}?mode=json`, {
     headers: { Accept: "application/json", "User-Agent": "JobSearchOS/1.0" },
     next: { revalidate: 0 },
+    signal: AbortSignal.timeout(providerFetchTimeoutMs),
   });
   if (!response.ok) return [];
   const postings = (await response.json()) as LeverPosting[];
@@ -133,6 +137,7 @@ async function fetchAshby(slug: string, company: CompanySource): Promise<RawJobP
   const response = await fetch(`https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(slug)}?includeCompensation=true`, {
     headers: { Accept: "application/json", "User-Agent": "JobSearchOS/1.0" },
     next: { revalidate: 0 },
+    signal: AbortSignal.timeout(providerFetchTimeoutMs),
   });
   if (!response.ok) return [];
   const payload = (await response.json()) as { jobs?: AshbyJob[] };

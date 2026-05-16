@@ -2,6 +2,7 @@ import { JoleneMessageRole, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
+import { executeJoleneAction } from "@/lib/jolene/actions";
 import { buildJolenePageContext } from "@/lib/jolene/context";
 import { generateJoleneReply } from "@/lib/jolene/respond";
 import { prisma } from "@/lib/prisma";
@@ -13,6 +14,8 @@ const messageSchema = z.object({
   contextPath: z.string().trim().min(1).max(500).default("/dashboard"),
 });
 
+const GLOBAL_JOLENE_CONTEXT_PATH = "/__jolene_global";
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -23,7 +26,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "No user exists. Run seed first." }, { status: 400 });
     }
 
-    const conversation = await getOrCreateConversation(user.id, contextPath);
+    const conversation = await getOrCreateConversation(user.id, GLOBAL_JOLENE_CONTEXT_PATH);
     const messages = await prisma.joleneMessage.findMany({
       where: { conversationId: conversation.id },
       orderBy: { createdAt: "asc" },
@@ -34,7 +37,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       conversation: {
         id: conversation.id,
-        contextPath: conversation.contextPath,
+        contextPath,
         title: conversation.title,
       },
       context: {
@@ -59,7 +62,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No user exists. Run seed first." }, { status: 400 });
     }
 
-    const conversation = await getOrCreateConversation(user.id, contextPath);
+    const conversation = await getOrCreateConversation(user.id, GLOBAL_JOLENE_CONTEXT_PATH);
     const context = await buildJolenePageContext(contextPath);
 
     const userMessage = await prisma.joleneMessage.create({
@@ -72,40 +75,49 @@ export async function POST(request: Request) {
       },
     });
 
-    const history = await prisma.joleneMessage.findMany({
-      where: { conversationId: conversation.id },
-      orderBy: { createdAt: "asc" },
-      take: 40,
-    });
+    const actionResult = await executeJoleneAction(body.message);
+    let reply = actionResult.reply;
 
-    const reply = await generateJoleneReply({
-      message: body.message,
-      context,
-      history: history.map((message) => ({ role: message.role, content: message.content })),
-    });
+    if (!actionResult.handled) {
+      const history = await prisma.joleneMessage.findMany({
+        where: { conversationId: conversation.id },
+        orderBy: { createdAt: "asc" },
+        take: 40,
+      });
+
+      reply = await generateJoleneReply({
+        message: body.message,
+        context,
+        history: history.map((message) => ({ role: message.role, content: message.content })),
+      });
+    }
 
     const assistantMessage = await prisma.joleneMessage.create({
       data: {
         conversationId: conversation.id,
         role: JoleneMessageRole.ASSISTANT,
-        content: reply,
+        content: reply ?? "Done.",
         contextJson: toJsonInput({
           routeType: context.routeType,
           contextPath: context.contextPath,
           summary: context.summary,
           data: context.data,
         }),
-        actionJson: toJsonInput({ suggestedActions: context.suggestedActions }),
+        actionJson: toJsonInput({
+          suggestedActions: context.suggestedActions,
+          ...(actionResult.actionJson ?? {}),
+        }),
       },
     });
 
     return NextResponse.json({
       conversation: {
         id: conversation.id,
-        contextPath: conversation.contextPath,
+        contextPath,
         title: conversation.title,
       },
       messages: [serializeMessage(userMessage), serializeMessage(assistantMessage)],
+      clientAction: actionResult.clientAction ?? null,
       context: {
         routeType: context.routeType,
         summary: context.summary,
@@ -162,6 +174,7 @@ function normalizeContextPath(contextPath: string) {
 }
 
 function titleFromPath(contextPath: string) {
+  if (contextPath === GLOBAL_JOLENE_CONTEXT_PATH) return "Jolene";
   if (contextPath === "/" || contextPath === "/dashboard") return "Command Center";
   if (contextPath === "/jobs") return "Jobs";
   if (contextPath.startsWith("/jobs/")) return "Job detail";

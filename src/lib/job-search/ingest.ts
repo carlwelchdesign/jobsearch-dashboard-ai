@@ -1,7 +1,7 @@
 import { JobSearchRun, NotificationSettings, Prisma, User } from "@prisma/client";
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
-import { createCanonicalJobKey, createJobContentHash } from "@/lib/job-search/dedupe";
+import { createCanonicalJobKeys, createJobContentHash, hasSameCanonicalJob } from "@/lib/job-search/dedupe";
 import { getAdapterForSource } from "@/lib/job-search/adapters";
 import { scoreJobForProfile } from "@/lib/job-search/scoring";
 import type { NormalizedJobPosting } from "@/lib/job-search/source-adapter";
@@ -13,6 +13,8 @@ type ProgressEvent = {
   message: string;
   stats?: Record<string, number>;
 };
+
+const sourceFetchTimeoutMs = 90 * 1000;
 
 export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", runId?: string) {
   const profiles = await prisma.jobSearchProfile.findMany({
@@ -68,21 +70,27 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
 
       try {
         await appendProgress(run.id, `Fetching ${source.name} jobs for ${profile.name}.`, stats);
-        const rawJobs = await adapter.fetchJobs(profile, source);
+        const rawJobs = await withTimeout(
+          adapter.fetchJobs(profile, source),
+          sourceFetchTimeoutMs,
+          `${source.name} fetch timed out after ${Math.round(sourceFetchTimeoutMs / 60_000)} minutes.`,
+        );
         stats.jobsFetched += rawJobs.length;
         await updateRunStats(run.id, stats, `Fetched ${rawJobs.length} jobs from ${source.name}.`);
 
-        const jobsToScore = rawJobs.slice(0, Math.min(rawJobs.length, Math.max(profile.maxResultsPerRun * 4, 80), 180));
+        const rankedJobs = (await Promise.all(rawJobs.map(async (rawJob) => {
+          const normalized = await adapter.normalize(rawJob);
+          return { normalized, score: scoreJobForProfile(normalized, profile) };
+        }))).sort((a, b) => b.score.overallScore - a.score.overallScore);
+        const jobsToScore = rankedJobs.slice(0, Math.min(rankedJobs.length, Math.max(profile.maxResultsPerRun * 4, 80), 240));
         await appendProgress(run.id, `Scoring ${jobsToScore.length} ${source.name} jobs for ${profile.name}.`, stats);
 
-        for (const [index, rawJob] of jobsToScore.entries()) {
+        for (const [index, rankedJob] of jobsToScore.entries()) {
           if (savedForProfile >= profile.maxResultsPerRun) break;
 
-          const normalized = await adapter.normalize(rawJob);
+          const { normalized, score } = rankedJob;
           const { job, isNew } = await upsertDedupedJob(normalized, source.id);
           if (isNew) stats.jobsAfterDedupe += 1;
-
-          const score = scoreJobForProfile(normalized, profile);
 
           if (score.overallScore >= profile.minimumMatchScore) {
             const existing = await prisma.jobProfileMatch.findUnique({
@@ -202,6 +210,22 @@ function progressEvent(message: string, stats?: { jobsFetched: number; jobsAfter
   };
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 function sourcePriority(type: string) {
   const priority: Record<string, number> = {
     greenhouse: 1,
@@ -288,7 +312,7 @@ async function upsertDedupedJob(normalized: NormalizedJobPosting, sourceId: stri
 }
 
 async function findCanonicalDuplicateJob(normalized: NormalizedJobPosting) {
-  const canonicalKey = createCanonicalJobKey(normalized);
+  const canonicalKeys = createCanonicalJobKeys(normalized);
   const companyToken = firstSearchToken(normalized.company);
   const titleToken = firstSearchToken(normalized.title);
   const candidates = await prisma.jobPosting.findMany({
@@ -302,7 +326,9 @@ async function findCanonicalDuplicateJob(normalized: NormalizedJobPosting) {
     take: 100,
   });
 
-  return candidates.find((candidate) => createCanonicalJobKey(candidate) === canonicalKey) ?? null;
+  return candidates.find((candidate) => hasSameCanonicalJob(candidate, normalized)) ??
+    candidates.find((candidate) => createCanonicalJobKeys(candidate).some((key) => canonicalKeys.includes(key))) ??
+    null;
 }
 
 function firstSearchToken(value: string) {

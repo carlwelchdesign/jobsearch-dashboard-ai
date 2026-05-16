@@ -13,6 +13,7 @@ import { DetectJobQualityControl } from "@/components/detect-job-quality-control
 import { EvaluateJobsControl } from "@/components/evaluate-jobs-control";
 import { PageHeader } from "@/components/ui/page-header";
 import { RunSearchControl } from "@/components/run-search-control";
+import { hasApplicationForJob, submittedApplicationJobKeySet, submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { prisma } from "@/lib/prisma";
@@ -24,20 +25,40 @@ type StatusView = "active" | "rejected" | "archived" | "all";
 
 export default async function JobsPage({ searchParams }: { searchParams?: { statusView?: string } }) {
   const statusView = normalizeStatusView(searchParams?.statusView);
-  const matches = await prisma.jobProfileMatch.findMany({
-    where: statusWhere(statusView),
-    include: {
-      jobPosting: {
-        include: { source: true },
+  const [matches, submittedApplications] = await Promise.all([
+    prisma.jobProfileMatch.findMany({
+      where: statusWhere(statusView),
+      include: {
+        jobPosting: {
+          include: { source: true },
+        },
+        jobSearchProfile: {
+          select: { name: true },
+        },
       },
-      jobSearchProfile: {
-        select: { name: true },
+      orderBy: [{ status: "asc" }, { overallScore: "desc" }, { createdAt: "desc" }],
+      take: 250,
+    }),
+    prisma.application.findMany({
+      where: { status: { in: submittedApplicationStatuses } },
+      select: {
+        status: true,
+        jobPosting: {
+          select: {
+            company: true,
+            title: true,
+            location: true,
+            lastSeenAt: true,
+          },
+        },
       },
-    },
-    orderBy: [{ status: "asc" }, { overallScore: "desc" }, { createdAt: "desc" }],
-    take: 250,
-  });
-  const visibleMatches = uniqueMatchesByCanonicalJob(matches).slice(0, 100);
+    }),
+  ]);
+  const submittedJobKeys = submittedApplicationJobKeySet(submittedApplications);
+  const reviewableMatches = statusView === "active"
+    ? matches.filter((match) => !hasApplicationForJob(match.jobPosting, submittedJobKeys))
+    : matches;
+  const visibleMatches = uniqueMatchesByCanonicalJob(reviewableMatches).slice(0, 100);
   const evaluations = visibleMatches.length
     ? await prisma.jobEvaluation.findMany({
         where: {
@@ -140,5 +161,14 @@ function statusWhere(statusView: StatusView): Prisma.JobProfileMatchWhereInput {
   if (statusView === "rejected") return { status: { in: ["rejected"] } };
   if (statusView === "archived") return { status: { in: ["archived"] } };
   if (statusView === "all") return {};
-  return { status: { notIn: ["rejected", "archived"] } };
+  return {
+    status: { notIn: ["rejected", "archived"] },
+    jobPosting: {
+      applications: {
+        none: {
+          status: { in: submittedApplicationStatuses },
+        },
+      },
+    },
+  };
 }

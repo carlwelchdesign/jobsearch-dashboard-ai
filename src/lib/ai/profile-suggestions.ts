@@ -33,6 +33,14 @@ type SuggestInput = {
   workExperiences: WorkExperience[];
   projects: Project[];
   githubRepositories: GithubRepository[];
+  applicationHistory?: Array<{
+    company: string;
+    title: string;
+    status: string;
+    outcomes: string[];
+    matchScore: number | null;
+    receivedConfirmation: boolean;
+  }>;
 };
 
 export async function suggestSearchProfiles(input: SuggestInput): Promise<ProfileSuggestion[]> {
@@ -45,6 +53,7 @@ export async function suggestSearchProfiles(input: SuggestInput): Promise<Profil
       system:
         "Suggest job search profiles for a senior software engineer who may be overlooking adjacent opportunities. " +
         "Use only the supplied approved profile, verified work bullets, work history, projects, and GitHub repositories as evidence. " +
+        "Also use application history and outcomes to avoid noisy lanes and emphasize search profiles with signs of employer response. " +
         "Include GitHub repositories as qualification signals when relevant, especially recent public work. " +
         "Do not suggest roles that require credentials, degrees, clear domain experience, or management scope that the evidence does not support. " +
         "Return practical search profiles with target titles, keywords, industries, remote preferences, thresholds, rationale, and evidence.",
@@ -89,6 +98,7 @@ export async function suggestSearchProfiles(input: SuggestInput): Promise<Profil
           stars: repo.stars,
           pushedAt: repo.pushedAt,
         })),
+        applicationHistory: input.applicationHistory ?? [],
       },
     });
 
@@ -100,13 +110,14 @@ export async function suggestSearchProfiles(input: SuggestInput): Promise<Profil
   return fallback;
 }
 
-function fallbackSuggestions({ userProfile, bullets, workExperiences, githubRepositories }: SuggestInput): ProfileSuggestion[] {
+function fallbackSuggestions({ userProfile, bullets, workExperiences, githubRepositories, applicationHistory = [] }: SuggestInput): ProfileSuggestion[] {
   const text = [
     userProfile.professionalSummary,
     userProfile.masterSummary,
     ...bullets.map((bullet) => bullet.text),
     ...workExperiences.map((work) => `${work.company} ${work.title} ${work.summary ?? ""}`),
     ...githubRepositories.map((repo) => `${repo.name} ${repo.description ?? ""} ${jsonStringArray(repo.topics).join(" ")} ${repo.language ?? ""}`),
+    ...applicationHistory.map((application) => `${application.company} ${application.title} ${application.status} ${application.outcomes.join(" ")}`),
   ].join(" ").toLowerCase();
   const repos = githubRepositories.filter((repo) => !repo.isFork).slice(0, 8);
   const repoEvidence = repos.map((repo) => `${repo.name}${repo.description ? `: ${repo.description}` : ""}`).slice(0, 4);

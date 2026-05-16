@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
 import { prisma } from "@/lib/prisma";
 import { apiError } from "@/lib/api";
 
@@ -16,12 +17,13 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const match = await prisma.jobProfileMatch.update({
       where: { id: matchId },
       data: { status: "approved", reviewedAt: new Date() },
-      include: { jobPosting: { select: { company: true, title: true } } },
+      include: { jobPosting: { select: { company: true, title: true, location: true, lastSeenAt: true } } },
     });
     const application = user ? await upsertApprovedApplication({
       userId: user.id,
       jobPostingId: params.id,
       jobProfileMatchId: match.id,
+      jobPosting: match.jobPosting,
     }) : null;
 
     return NextResponse.json({
@@ -42,13 +44,30 @@ async function upsertApprovedApplication(input: {
   userId: string;
   jobPostingId: string;
   jobProfileMatchId: string;
+  jobPosting: {
+    company: string;
+    title: string;
+    location: string | null;
+    lastSeenAt: Date;
+  };
 }) {
-  const existing = await prisma.application.findFirst({
-    where: {
-      userId: input.userId,
-      jobPostingId: input.jobPostingId,
+  const existingApplications = await prisma.application.findMany({
+    where: { userId: input.userId },
+    include: {
+      jobPosting: {
+        select: {
+          company: true,
+          title: true,
+          location: true,
+          lastSeenAt: true,
+        },
+      },
     },
   });
+  const existing = existingApplications.find((application) => application.jobPostingId === input.jobPostingId)
+    ?? (hasApplicationForJob(input.jobPosting, applicationJobKeySet(existingApplications))
+      ? existingApplications.find((application) => hasApplicationForJob(input.jobPosting, applicationJobKeySet([application])))
+      : null);
 
   const application = existing
     ? await prisma.application.update({

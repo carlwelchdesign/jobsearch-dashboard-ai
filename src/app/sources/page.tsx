@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { RunSearchControl } from "@/components/run-search-control";
 import { StatusChip } from "@/components/ui/status-chip";
 import { configToPrismaJson, defaultCompanySourceConfig, normalizeCompanySourceConfig } from "@/lib/job-search/company-source-config";
+import { searchQueryTemplates, sourceCatalog } from "@/lib/job-search/source-catalog";
 import { prisma } from "@/lib/prisma";
 import { CompanySourceSettings } from "./company-source-settings";
 
@@ -45,6 +46,15 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
     priority: item,
     count: config.companies.filter((company) => company.priority === item).length,
   }));
+  const sourceCatalogCounts = {
+    active: sourceCatalog.filter((item) => item.status === "active").length,
+    planned: sourceCatalog.filter((item) => item.status === "planned").length,
+    manual: sourceCatalog.filter((item) => item.status === "manual").length,
+    priorityOne: sourceCatalog.filter((item) => item.priority === 1).length,
+  };
+  const visibleCatalog = sourceCatalog
+    .slice()
+    .sort((left, right) => left.priority - right.priority || statusRank(left.status) - statusRank(right.status) || left.name.localeCompare(right.name));
   const nextAction = sourcesNextAction({
     enabled: source.enabled,
     companyCount: config.companies.length,
@@ -88,6 +98,73 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
           <Metric label="Priority ceiling" value={config.priorityMax.toString()} helper="Lower is more targeted" />
           <Metric label="Max fetched" value={config.maxFetch.toString()} helper={`${config.maxCompanies} companies per run`} />
         </Box>
+
+        <Card>
+          <CardContent>
+            <Stack spacing={2}>
+              <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+                <Box>
+                  <Typography variant="h3">Source roadmap</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Prioritized source registry for board, ATS, marketplace, community, newsletter, and search-query connectors.
+                  </Typography>
+                </Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                  <Chip variant="outlined" label={`${sourceCatalogCounts.active} active`} />
+                  <Chip variant="outlined" label={`${sourceCatalogCounts.planned} planned`} />
+                  <Chip variant="outlined" label={`${sourceCatalogCounts.manual} manual`} />
+                  <Chip color="primary" variant="outlined" label={`${sourceCatalogCounts.priorityOne} P1`} />
+                </Stack>
+              </Stack>
+
+              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1fr 1fr" }, gap: 1.5 }}>
+                {visibleCatalog.slice(0, 24).map((item) => (
+                  <Box key={`${item.category}-${item.name}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5, bgcolor: "background.paper" }}>
+                    <Stack spacing={1}>
+                      <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography sx={{ fontWeight: 900 }}>{item.name}</Typography>
+                          <Typography variant="caption" color="text.secondary">{formatCatalogLabel(item.category)} · {item.connector}</Typography>
+                        </Box>
+                        <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0 }}>
+                          <Chip size="small" color={item.priority === 1 ? "success" : item.priority === 2 ? "primary" : "default"} label={`P${item.priority}`} />
+                          <Chip size="small" variant="outlined" label={item.status} />
+                        </Stack>
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary">{item.notes}</Typography>
+                      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                        {item.regions.slice(0, 4).map((region) => <Chip key={`${item.name}-${region}`} size="small" variant="outlined" label={region} />)}
+                        {item.supportsRemote ? <Chip size="small" color="success" variant="outlined" label="Remote" /> : null}
+                        {item.authRequired ? <Chip size="small" color="warning" variant="outlined" label="Auth" /> : null}
+                        <Chip size="small" variant="outlined" label={`${item.scrapingDifficulty} scrape`} />
+                      </Stack>
+                    </Stack>
+                  </Box>
+                ))}
+              </Box>
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <Stack spacing={2}>
+              <Box>
+                <Typography variant="h3">Search-query backlog</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Targeted open-web queries to convert into a search-query connector after the direct ATS pipeline is stable.
+                </Typography>
+              </Box>
+              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1fr 1fr" }, gap: 1 }}>
+                {searchQueryTemplates.map((query) => (
+                  <Box key={query} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1, bgcolor: "background.paper" }}>
+                    <Typography variant="body2" sx={{ fontFamily: "monospace", overflowWrap: "anywhere" }}>{query}</Typography>
+                  </Box>
+                ))}
+              </Box>
+            </Stack>
+          </CardContent>
+        </Card>
 
         <Card id="source-settings">
           <CardContent>
@@ -215,6 +292,18 @@ function Metric({ label, value, helper }: { label: string; value: React.ReactNod
       </CardContent>
     </Card>
   );
+}
+
+function statusRank(status: string) {
+  if (status === "active") return 0;
+  if (status === "planned") return 1;
+  if (status === "manual") return 2;
+  if (status === "blocked") return 3;
+  return 4;
+}
+
+function formatCatalogLabel(value: string) {
+  return value.replace(/_/g, " ");
 }
 
 const inputStyle = {

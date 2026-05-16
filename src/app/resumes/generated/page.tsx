@@ -184,12 +184,9 @@ export default async function GeneratedResumesPage() {
                       </TableCell>
                       <TableCell>
                         {coverLetter ? (
-                          <Stack spacing={0.75}>
-                            <Chip color="secondary" variant="outlined" label={`v${coverLetter.version} generated`} sx={{ width: "fit-content" }} />
-                            <Stack direction="row" spacing={0.5}>
-                              <ActionButton href={`/api/cover-letters/${coverLetter.id}/plain-text`} size="small" startIcon={<VisibilityOutlinedIcon />}>Text</ActionButton>
-                              <ActionButton href={`/api/cover-letters/${coverLetter.id}/pdf`} size="small" startIcon={<DownloadOutlinedIcon />}>PDF</ActionButton>
-                            </Stack>
+                          <Stack direction="row" spacing={0.5}>
+                            <ActionButton href={`/api/cover-letters/${coverLetter.id}/plain-text`} size="small" startIcon={<VisibilityOutlinedIcon />}>Text</ActionButton>
+                            <ActionButton href={`/api/cover-letters/${coverLetter.id}/pdf`} size="small" startIcon={<DownloadOutlinedIcon />}>PDF</ActionButton>
                           </Stack>
                         ) : (
                           <Stack spacing={0.75}>

@@ -11,7 +11,7 @@ export type DailyCommandCenterOutput = {
   summary: string;
   actions: Array<{
     priority: number;
-    category: "review_jobs" | "prepare_packets" | "submit_applications" | "follow_up" | "fix_evidence" | "optimize_profiles" | "run_search";
+    category: "run_agency" | "review_jobs" | "prepare_packets" | "submit_applications" | "follow_up" | "fix_evidence" | "optimize_profiles" | "run_search";
     title: string;
     detail: string;
     href: string;
@@ -38,7 +38,7 @@ export async function runDailyCommandCenterAgent(input: DailyCommandCenterInput 
     input,
     userId: input.userId,
     execute: async () => {
-      const [needsReview, approved, readyApplications, followUps, evidenceNeedsReview, profileOptimizerRun, latestSearchRun, applyNowEvaluations] = await Promise.all([
+      const [needsReview, approved, readyApplications, followUps, evidenceNeedsReview, profileOptimizerRun, latestSearchRun, applyNowEvaluations, agencyCandidateCount] = await Promise.all([
         prisma.jobProfileMatch.findMany({
           where: { status: "needs_review" },
           include: { jobPosting: true, jobSearchProfile: { select: { name: true } } },
@@ -77,6 +77,16 @@ export async function runDailyCommandCenterAgent(input: DailyCommandCenterInput 
           orderBy: [{ opportunityScore: "desc" }, { fitScore: "desc" }],
           take: 10,
         }),
+        prisma.jobProfileMatch.count({
+          where: {
+            status: "needs_review",
+            overallScore: { gte: 90 },
+            jobPosting: {
+              applicationUrl: { not: null },
+              applications: { none: {} },
+            },
+          },
+        }),
       ]);
 
       return buildDailyCommandCenter({
@@ -88,6 +98,7 @@ export async function runDailyCommandCenterAgent(input: DailyCommandCenterInput 
         profileOptimizerRunCreatedAt: profileOptimizerRun?.createdAt ?? null,
         latestSearchRunStartedAt: latestSearchRun?.startedAt ?? null,
         applyNowEvaluations,
+        agencyCandidateCount,
       });
     },
   });
@@ -102,6 +113,7 @@ export function buildDailyCommandCenter({
   profileOptimizerRunCreatedAt,
   latestSearchRunStartedAt,
   applyNowEvaluations,
+  agencyCandidateCount,
 }: {
   needsReview: MatchWithJob[];
   approved: MatchWithJob[];
@@ -111,6 +123,7 @@ export function buildDailyCommandCenter({
   profileOptimizerRunCreatedAt: Date | null;
   latestSearchRunStartedAt: Date | null;
   applyNowEvaluations: EvaluationWithJob[];
+  agencyCandidateCount: number;
 }): DailyCommandCenterOutput {
   const actions: DailyCommandCenterOutput["actions"] = [];
   const blockers: string[] = [];
@@ -129,10 +142,21 @@ export function buildDailyCommandCenter({
     });
   }
 
+  if (agencyCandidateCount > 0) {
+    actions.push({
+      priority: 2,
+      category: "run_agency",
+      title: `Run agency on ${Math.min(agencyCandidateCount, 10)} strong match${agencyCandidateCount === 1 ? "" : "es"}`,
+      detail: "Auto-approve 90+ matches, create application trackers, and generate packets for Apply Sprint.",
+      href: "/applications",
+      count: agencyCandidateCount,
+    });
+  }
+
   if (strongNeedsReview.length > 0 || topApplyNow.length > 0) {
     const first = topApplyNow[0]?.jobPosting ?? strongNeedsReview[0]?.jobPosting;
     actions.push({
-      priority: 2,
+      priority: agencyCandidateCount > 0 ? 3 : 2,
       category: "review_jobs",
       title: `Review ${Math.max(strongNeedsReview.length, topApplyNow.length)} high-fit job${Math.max(strongNeedsReview.length, topApplyNow.length) === 1 ? "" : "s"}`,
       detail: first ? `Start with ${first.company} - ${first.title}.` : "Review high-fit jobs in the queue.",
