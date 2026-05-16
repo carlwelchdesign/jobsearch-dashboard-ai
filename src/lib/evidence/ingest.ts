@@ -19,7 +19,7 @@ export type EvidenceDraft = {
   metadata?: Prisma.InputJsonValue;
 };
 
-type GithubRepositoryEvidenceSource = Pick<GithubRepository, "id" | "name" | "description" | "htmlUrl" | "homepage" | "language" | "topics" | "stars" | "forks" | "isFork" | "isArchived" | "pushedAt">;
+type GithubRepositoryEvidenceSource = Pick<GithubRepository, "id" | "name" | "description" | "htmlUrl" | "homepage" | "readmeText" | "wikiText" | "language" | "topics" | "stars" | "forks" | "isFork" | "isArchived" | "pushedAt">;
 
 export const jobSearchOsProject = {
   name: "Job Search OS",
@@ -305,6 +305,8 @@ export function buildGithubRepositoryEvidenceDraft(userProfileId: string, repo: 
     repo.language ? `Primary language: ${repo.language}` : null,
     topics.length ? `Topics: ${topics.join(", ")}` : null,
     repo.homepage ? `Homepage: ${repo.homepage}` : null,
+    repo.readmeText ? `README: ${repo.readmeText.slice(0, 2000)}` : null,
+    repo.wikiText ? `Wiki: ${repo.wikiText.slice(0, 2000)}` : null,
     `Repository: ${repo.htmlUrl}`,
   ].filter(Boolean).join(" ");
 
@@ -316,7 +318,7 @@ export function buildGithubRepositoryEvidenceDraft(userProfileId: string, repo: 
     sourceType: "GITHUB_REPO",
     sourceRef: repo.id,
     confidence: "INFERRED",
-    tags: inferEvidenceTags(repo.name, repo.description, repo.language, JSON.stringify(repo.topics), repo.htmlUrl),
+    tags: inferEvidenceTags(repo.name, repo.description, repo.language, JSON.stringify(repo.topics), repo.htmlUrl, repo.readmeText, repo.wikiText),
     metadata: {
       githubRepositoryId: repo.id,
       htmlUrl: repo.htmlUrl,

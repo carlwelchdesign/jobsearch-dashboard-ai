@@ -13,7 +13,7 @@ import { DetectJobQualityControl } from "@/components/detect-job-quality-control
 import { EvaluateJobsControl } from "@/components/evaluate-jobs-control";
 import { PageHeader } from "@/components/ui/page-header";
 import { RunSearchControl } from "@/components/run-search-control";
-import { hasApplicationForJob, submittedApplicationJobKeySet, submittedApplicationStatuses } from "@/lib/applications/job-filters";
+import { hasApplicationForJob, submittedApplicationStatuses, suppressedJobKeySet, suppressedJobMatchStatuses } from "@/lib/applications/job-filters";
 import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { prisma } from "@/lib/prisma";
@@ -25,7 +25,7 @@ type StatusView = "active" | "rejected" | "archived" | "all";
 
 export default async function JobsPage({ searchParams }: { searchParams?: { statusView?: string } }) {
   const statusView = normalizeStatusView(searchParams?.statusView);
-  const [matches, submittedApplications] = await Promise.all([
+  const [matches, submittedApplications, rejectedMatches] = await Promise.all([
     prisma.jobProfileMatch.findMany({
       where: statusWhere(statusView),
       include: {
@@ -53,10 +53,24 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
         },
       },
     }),
+    prisma.jobProfileMatch.findMany({
+      where: { status: { in: suppressedJobMatchStatuses } },
+      select: {
+        status: true,
+        jobPosting: {
+          select: {
+            company: true,
+            title: true,
+            location: true,
+            lastSeenAt: true,
+          },
+        },
+      },
+    }),
   ]);
-  const submittedJobKeys = submittedApplicationJobKeySet(submittedApplications);
+  const suppressedJobKeys = suppressedJobKeySet([...submittedApplications, ...rejectedMatches]);
   const reviewableMatches = statusView === "active"
-    ? matches.filter((match) => !hasApplicationForJob(match.jobPosting, submittedJobKeys))
+    ? matches.filter((match) => !hasApplicationForJob(match.jobPosting, suppressedJobKeys))
     : matches;
   const visibleMatches = uniqueMatchesByCanonicalJob(reviewableMatches).slice(0, 100);
   const evaluations = visibleMatches.length

@@ -514,6 +514,8 @@ model GithubRepository {
   htmlUrl       String
   description   String?
   homepage      String?
+  readmeText     String?
+  wikiText       String?
   language      String?
   topics        Json        @default("[]")
   stars         Int         @default(0)

@@ -121,6 +121,8 @@ React TypeScript Next.js Storybook Playwright
       description: "Reusable server-side WebAuthn orchestration package with passkey adapters.",
       htmlUrl: "https://github.com/carl/webauthn-core",
       homepage: null,
+      readmeText: null,
+      wikiText: null,
       language: "TypeScript",
       topics: ["webauthn", "passkeys", "auth"],
       stars: 4,

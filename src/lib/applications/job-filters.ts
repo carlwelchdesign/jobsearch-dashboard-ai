@@ -23,6 +23,11 @@ export const submittedApplicationStatuses: JobMatchStatus[] = [
   JobMatchStatus.archived,
 ];
 
+export const suppressedJobMatchStatuses: JobMatchStatus[] = [
+  JobMatchStatus.rejected,
+  JobMatchStatus.archived,
+];
+
 export function applicationJobKeySet(applications: ApplicationJobRecord[]) {
   const keys = new Set<string>();
   for (const application of applications) {
@@ -37,10 +42,18 @@ export function submittedApplicationJobKeySet(applications: ApplicationJobRecord
   return applicationJobKeySet(applications.filter((application) => isSubmittedApplicationStatus(application.status)));
 }
 
+export function suppressedJobKeySet(records: ApplicationJobRecord[]) {
+  return applicationJobKeySet(records.filter((record) => isSuppressedJobStatus(record.status)));
+}
+
 export function hasApplicationForJob(job: JobIdentity, applicationKeys: Set<string>) {
   return createCanonicalJobKeys(job).some((key) => applicationKeys.has(key));
 }
 
 export function isSubmittedApplicationStatus(status: JobMatchStatus | string | undefined) {
   return submittedApplicationStatuses.includes(status as JobMatchStatus);
+}
+
+export function isSuppressedJobStatus(status: JobMatchStatus | string | undefined) {
+  return isSubmittedApplicationStatus(status) || suppressedJobMatchStatuses.includes(status as JobMatchStatus);
 }
