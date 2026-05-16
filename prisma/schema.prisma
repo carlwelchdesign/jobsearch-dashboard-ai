@@ -271,6 +271,28 @@ enum AgentUserRequestStatus {
   RESOLVED
 }
 
+enum SkillAdjustmentKind {
+  THRESHOLD
+  WARNING
+  STYLE_RULE
+  GUIDANCE
+  QA_CHECK
+  SCORING_WEIGHT
+  ACTION_POLICY
+}
+
+enum SkillAdjustmentRiskLevel {
+  LOW
+  HIGH
+}
+
+enum SkillAdjustmentStatus {
+  PROPOSED
+  ACTIVE
+  SUPERSEDED
+  REJECTED
+}
+
 enum AnswerMemorySensitivity {
   LOW
   MEDIUM
@@ -361,6 +383,8 @@ model User {
   resumeUploads        ResumeUpload[]
   resumes              GeneratedResume[]
   searchProfiles       JobSearchProfile[]
+  skillAdjustments      SkillAdjustment[]
+  skillFeedback         SkillFeedback[]
 }
 
 model JoleneConversation {
@@ -385,6 +409,7 @@ model JoleneMessage {
   actionJson     Json               @default("{}")
   createdAt      DateTime           @default(now())
   conversation   JoleneConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  skillFeedback  SkillFeedback[]
 
   @@index([conversationId, createdAt])
 }
@@ -643,6 +668,7 @@ model JobPosting {
   outcomes           ApplicationOutcome[]
   recruiterOutreach  RecruiterOutreach[]
   resumes            GeneratedResume[]
+  skillFeedback       SkillFeedback[]
   source             JobSource?             @relation(fields: [sourceId], references: [id], onDelete: SetNull)
 
   @@index([company, title])
@@ -731,6 +757,7 @@ model Application {
   emailMessages      EmailMessageRecord[]
   interviewPrepTasks InterviewPrepTask[]
   outcomes           ApplicationOutcome[]
+  skillFeedback       SkillFeedback[]
   coverLetter        GeneratedCoverLetter? @relation(fields: [coverLetterId], references: [id])
   jobPosting         JobPosting            @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
   jobProfileMatch    JobProfileMatch?      @relation(fields: [jobProfileMatchId], references: [id], onDelete: SetNull)
@@ -918,9 +945,63 @@ model AgentRun {
   updatedAt  DateTime       @updatedAt
   user       User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   userRequests AgentUserRequest[]
+  skillFeedback SkillFeedback[]
 
   @@index([agentType, createdAt])
   @@index([status, createdAt])
+}
+
+model SkillFeedback {
+  id               String            @id @default(cuid())
+  userId           String
+  skillId          String
+  agentRunId       String?
+  applicationId    String?
+  jobPostingId     String?
+  joleneMessageId  String?
+  rawMessage       String
+  problemSummary   String
+  expectedBehavior String?
+  confidence       Float             @default(0.5)
+  contextJson      Json              @default("{}")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  adjustments      SkillAdjustment[]
+  agentRun         AgentRun?         @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  application      Application?      @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  jobPosting       JobPosting?       @relation(fields: [jobPostingId], references: [id], onDelete: SetNull)
+  joleneMessage    JoleneMessage?    @relation(fields: [joleneMessageId], references: [id], onDelete: SetNull)
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([skillId, createdAt])
+  @@index([applicationId, createdAt])
+  @@index([jobPostingId, createdAt])
+}
+
+model SkillAdjustment {
+  id               String                    @id @default(cuid())
+  userId           String
+  skillId          String
+  feedbackId       String?
+  supersedesId     String?
+  kind             SkillAdjustmentKind
+  riskLevel        SkillAdjustmentRiskLevel
+  status           SkillAdjustmentStatus     @default(PROPOSED)
+  patchJson        Json                      @default("{}")
+  rationale        String
+  appliedAt        DateTime?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  feedback         SkillFeedback?            @relation(fields: [feedbackId], references: [id], onDelete: SetNull)
+  supersedes       SkillAdjustment?          @relation("SkillAdjustmentSupersession", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy     SkillAdjustment[]         @relation("SkillAdjustmentSupersession")
+  user             User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([skillId, status, createdAt])
+  @@index([feedbackId])
+  @@index([supersedesId])
 }
 
 model AgentUserRequest {

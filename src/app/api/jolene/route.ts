@@ -6,6 +6,7 @@ import { executeJoleneAction } from "@/lib/jolene/actions";
 import { buildJolenePageContext } from "@/lib/jolene/context";
 import { generateJoleneReply } from "@/lib/jolene/respond";
 import { prisma } from "@/lib/prisma";
+import { captureSkillFeedback, isSkillFeedbackIntent } from "@/lib/skills/learning";
 
 export const dynamic = "force-dynamic";
 
@@ -75,8 +76,45 @@ export async function POST(request: Request) {
       },
     });
 
-    const actionResult = await executeJoleneAction(body.message);
-    let reply = actionResult.reply;
+    let actionResult = {
+      handled: false,
+    } as Awaited<ReturnType<typeof executeJoleneAction>>;
+    let reply: string | undefined;
+
+    if (isSkillFeedbackIntent(body.message)) {
+      const feedback = await captureSkillFeedback({
+        userId: user.id,
+        message: body.message,
+        contextPath,
+        joleneMessageId: userMessage.id,
+        contextData: context.data,
+      });
+      actionResult = {
+        handled: true,
+        reply: [
+          `I recorded that feedback for ${feedback.skillId.replace(/_/g, " ")}.`,
+          feedback.autoApplied
+            ? `${feedback.autoApplied} low-risk learning update${feedback.autoApplied === 1 ? "" : "s"} auto-applied.`
+            : "No low-risk update was auto-applied.",
+          feedback.pending
+            ? `${feedback.pending} higher-risk proposal${feedback.pending === 1 ? "" : "s"} needs review in Settings.`
+            : "No higher-risk proposal is waiting.",
+        ].join(" "),
+        actionJson: {
+          action: "capture_skill_feedback",
+          feedbackId: feedback.feedbackId,
+          skillId: feedback.skillId,
+          autoApplied: feedback.autoApplied,
+          pending: feedback.pending,
+          adjustments: feedback.adjustments,
+        },
+        clientAction: { type: "refresh" },
+      };
+      reply = actionResult.reply;
+    } else {
+      actionResult = await executeJoleneAction(body.message);
+      reply = actionResult.reply;
+    }
 
     if (!actionResult.handled) {
       const history = await prisma.joleneMessage.findMany({

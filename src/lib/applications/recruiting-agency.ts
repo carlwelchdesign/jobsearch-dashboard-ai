@@ -1,8 +1,8 @@
-import { JobMatchStatus, Prisma } from "@prisma/client";
+import { JobMatchStatus } from "@prisma/client";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
-import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { prisma } from "@/lib/prisma";
+import { runSkill } from "@/lib/skills/run-skill";
 
 export type RecruitingAgencyRunInput = {
   minimumScore?: number;
@@ -33,8 +33,6 @@ export type RecruitingAgencyRunResult = {
   message: string;
 };
 
-type AgencyCandidate = Awaited<ReturnType<typeof findAgencyCandidates>>[number];
-
 export async function runRecruitingAgency(input: RecruitingAgencyRunInput = {}): Promise<RecruitingAgencyRunResult> {
   const minimumScore = input.minimumScore ?? 90;
   const limit = Math.min(Math.max(input.limit ?? 10, 1), 25);
@@ -48,12 +46,21 @@ export async function runRecruitingAgency(input: RecruitingAgencyRunInput = {}):
 
   for (const candidate of candidates) {
     try {
-      const application = await approveCandidateForAgency(user.id, candidate);
-      const prepared = await prepareApplicationPackage(candidate.jobPostingId);
+      await runSkill({
+        skillId: "approve_agency_match",
+        input: { userId: user.id, matchId: candidate.id, minimumScore },
+        userId: user.id,
+      });
+      const prepared = await runSkill({
+        skillId: "prepare_application_packet",
+        input: { jobPostingId: candidate.jobPostingId, userId: user.id },
+        userId: user.id,
+      });
+      const output = prepared.output as { application: { id: string } };
       results.push({
         matchId: candidate.id,
         jobId: candidate.jobPostingId,
-        applicationId: prepared.application.id,
+        applicationId: output.application.id,
         company: candidate.jobPosting.company,
         title: candidate.jobPosting.title,
         score: candidate.overallScore,
@@ -127,60 +134,4 @@ async function findAgencyCandidates({ userId, minimumScore, limit }: { userId: s
   return uniqueMatchesByCanonicalJob(
     rawMatches.filter((match) => !hasApplicationForJob(match.jobPosting, applicationKeys)),
   ).slice(0, limit);
-}
-
-async function approveCandidateForAgency(userId: string, candidate: AgencyCandidate) {
-  await prisma.jobProfileMatch.update({
-    where: { id: candidate.id },
-    data: { status: JobMatchStatus.approved, reviewedAt: new Date() },
-  });
-
-  const existing = await prisma.application.findFirst({
-    where: { userId, jobPostingId: candidate.jobPostingId },
-  });
-
-  if (existing) {
-    return prisma.application.update({
-      where: { id: existing.id },
-      data: {
-        jobProfileMatchId: candidate.id,
-        status: existing.status === JobMatchStatus.applied ? existing.status : JobMatchStatus.approved,
-        approvedAt: existing.approvedAt ?? new Date(),
-        notes: mergeAgencyNote(existing.notes),
-      },
-    });
-  }
-
-  const application = await prisma.application.create({
-    data: {
-      userId,
-      jobPostingId: candidate.jobPostingId,
-      jobProfileMatchId: candidate.id,
-      status: JobMatchStatus.approved,
-      approvedAt: new Date(),
-      notes: "Recruiting agency auto-approved this high-confidence match.",
-    },
-  });
-
-  await prisma.applicationEvent.create({
-    data: {
-      applicationId: application.id,
-      type: "status_changed",
-      payload: {
-        source: "recruiting_agency",
-        status: "approved",
-        score: candidate.overallScore,
-        jobProfileMatchId: candidate.id,
-        profile: candidate.jobSearchProfile.name,
-      } as Prisma.InputJsonValue,
-    },
-  });
-
-  return application;
-}
-
-function mergeAgencyNote(existing: string | null) {
-  const note = "Recruiting agency auto-approved this high-confidence match.";
-  if (!existing) return note;
-  return existing.includes(note) ? existing : `${existing}\n${note}`;
 }

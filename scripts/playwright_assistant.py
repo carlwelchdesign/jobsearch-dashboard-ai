@@ -114,16 +114,43 @@ DEMOGRAPHIC_FIELD_PATTERNS = {
     "race": re.compile(r"race|ethnic", re.I),
     "gender": re.compile(r"gender", re.I),
     "veteranStatus": re.compile(r"veteran", re.I),
-    "disability": re.compile(r"disab", re.I),
+    "disability": re.compile(r"disab|ability status", re.I),
 }
+WORK_AUTHORIZATION_ELIGIBILITY_PATTERN = re.compile(
+    r"eligible to work|authorized to work|work authorization|legally authorized|"
+    r"right to work|permission to work",
+    re.I,
+)
+WORK_AUTHORIZATION_SPONSORSHIP_PATTERN = re.compile(
+    r"visa sponsorship|require sponsorship|requires sponsorship|future sponsorship|"
+    r"need sponsorship|immigration sponsorship|employment sponsorship",
+    re.I,
+)
+PHONE_COUNTRY_PATTERN = re.compile(
+    r"phone.*country|country.*phone|country.*code|dial(?:ing)? code|calling code|"
+    r"phone.*prefix|mobile.*country",
+    re.I,
+)
+CANDIDATE_COUNTRY_PATTERN = re.compile(r"^country\b|country\*|\bcountry\b", re.I)
+PHONE_COUNTRY_ANSWER = "United States +1"
+COUNTRY_ANSWER = "United States"
 SUBMIT_PATTERNS = re.compile(r"submit|send application|apply now|complete application|finish", re.I)
 CAPTCHA_PATTERNS = re.compile(r"captcha|recaptcha|hcaptcha|verify you are human", re.I)
 SUBMIT_CONFIRMATION_PATTERNS = re.compile(
     r"application (has been )?(submitted|received)|"
     r"thank you for (applying|your application)|"
     r"we (have )?received your application|"
+    r"your application (is )?(complete|in review)|"
+    r"we.ll be in touch|"
+    r"we will be in touch|"
     r"confirmation (number|id)|"
     r"application complete",
+    re.I,
+)
+VALIDATION_ERROR_PATTERNS = re.compile(
+    r"required field|field is required|please (complete|fill|enter|select)|"
+    r"missing required|must be completed|invalid email|invalid phone|"
+    r"there (was|were) .*error|fix .*error|cannot submit",
     re.I,
 )
 CLOSED_JOB_PATTERNS = re.compile(
@@ -219,6 +246,7 @@ def main() -> int:
         print_field_inventory("Detected fields before filling", inventory_before)
 
         filled = sum(fill_safe_fields(context, package["candidate"]) for context in form_contexts)
+        learned_filled = sum(fill_learned_form_rules(context, package) for context in form_contexts)
         demographic_filled = sum(
             fill_demographic_fields(context, package["candidate"].get("demographicAnswers", {}))
             for context in form_contexts
@@ -232,24 +260,39 @@ def main() -> int:
 
         print()
         print(f"Filled {filled} safe text fields.")
+        print(f"Filled {learned_filled} learned recurring field(s).")
         print(f"Filled {demographic_filled} configured demographic field(s).")
         print(f"Uploaded {uploads} material file(s).")
         if filled == 0 and uploads == 0:
             print("No fillable application fields or matching upload controls were found on this page.")
             print("This is often a job listing page, login page, or intermediary board rather than the final application form.")
+        application_marked_applied = False
         if auto_submit_allowed:
             submitted = attempt_auto_submit(page, form_contexts, inventory_after, selected_answers_text)
             if submitted:
                 print("Auto-submit confirmed after safety checks passed.")
                 capture_submit_confirmation(page, workdir)
+                application_marked_applied = mark_application_applied(args.app_url, args.application_id, "auto-submit confirmation")
             else:
                 print("Auto-submit skipped because a safety check did not pass. Review every field and submit manually only if correct.")
         else:
             print("Review every field in the browser. Submit manually only if everything is correct.")
-        print("Sensitive demographic, work authorization, salary, and custom questions were intentionally left untouched.")
+            print("The assistant will watch for a submission confirmation and mark this application applied when it appears.")
+        print("Sensitive demographic, salary, and custom questions were intentionally left untouched unless explicitly configured.")
         if selected_answers_text:
             print(f"Use selected custom-answer drafts from: {selected_answers_text}")
-        keep_open(args, browser_or_context, package["job"]["applicationUrl"], workdir)
+        install_manual_submit_watchers(browser_or_context)
+        keep_open(
+            args,
+            browser_or_context,
+            package["job"]["applicationUrl"],
+            workdir,
+            mark_applied_state={
+                "application_id": args.application_id,
+                "app_url": args.app_url,
+                "marked": application_marked_applied,
+            },
+        )
 
     return 0
 
@@ -317,6 +360,18 @@ def bring_browser_to_front(page: Any) -> None:
 
 def fetch_json(url: str) -> dict[str, Any]:
     with urllib.request.urlopen(url) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def post_json(url: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = json.dumps(payload or {}).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers={"content-type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -607,6 +662,7 @@ def fill_demographic_fields(page: Any, answers: dict[str, str]) -> int:
             continue
         filled += fill_matching_selects(page, pattern, answer)
         filled += fill_matching_radios(page, pattern, answer)
+        filled += fill_matching_comboboxes(page, pattern, answer)
     return filled
 
 
@@ -651,6 +707,319 @@ def fill_matching_radios(page: Any, pattern: re.Pattern[str], answer: str) -> in
     return filled
 
 
+def fill_learned_form_rules(page: Any, package: dict[str, Any]) -> int:
+    filled = 0
+    if package_targets_us_work_authorization(package):
+        filled += fill_matching_selects(page, WORK_AUTHORIZATION_ELIGIBILITY_PATTERN, "yes")
+        filled += fill_matching_radios(page, WORK_AUTHORIZATION_ELIGIBILITY_PATTERN, "yes")
+        filled += fill_matching_comboboxes(page, WORK_AUTHORIZATION_ELIGIBILITY_PATTERN, "Yes")
+    filled += fill_matching_selects(page, WORK_AUTHORIZATION_SPONSORSHIP_PATTERN, "no")
+    filled += fill_matching_radios(page, WORK_AUTHORIZATION_SPONSORSHIP_PATTERN, "no")
+    filled += fill_matching_comboboxes(page, WORK_AUTHORIZATION_SPONSORSHIP_PATTERN, "No")
+    return filled
+
+
+def fill_candidate_country_comboboxes(page: Any) -> int:
+    filled = 0
+    elements = page.locator("input:not([type=hidden]):not([type=file]), [role=combobox]")
+    for index in range(elements.count()):
+        element = elements.nth(index)
+        try:
+            if not element.is_visible(timeout=300) or not element.is_enabled():
+                continue
+            descriptor = field_descriptor(element)
+            if not is_candidate_country_control(element, descriptor):
+                continue
+            if WORK_AUTHORIZATION_ELIGIBILITY_PATTERN.search(descriptor) or WORK_AUTHORIZATION_SPONSORSHIP_PATTERN.search(descriptor):
+                continue
+            if re.search(r"where the job is posted|location where the job|salary|race|gender|veteran|disab", descriptor, re.I):
+                continue
+            value = current_text_value(element)
+            if value and "select" not in normalize_for_match(value):
+                continue
+            if choose_combobox_option(element, COUNTRY_ANSWER):
+                print("Selected learned country answer: United States")
+                filled += 1
+        except Exception:
+            continue
+    return filled
+
+
+def package_targets_us_work_authorization(package: dict[str, Any]) -> bool:
+    job = package.get("job", {}) if isinstance(package.get("job", {}), dict) else {}
+    if us_job(job):
+        return True
+    location = normalize_for_match(str(job.get("location") or ""))
+    country = normalize_for_match(str(job.get("country") or ""))
+    if country or any(token in location for token in ["canada", "ontario", "toronto", "british columbia", "quebec"]):
+        return False
+    remote_type = normalize_for_match(str(job.get("remoteType") or ""))
+    candidate = package.get("candidate", {}) if isinstance(package.get("candidate", {}), dict) else {}
+    candidate_location = str(candidate.get("location") or "")
+    return "remote" in remote_type and candidate_location_is_us(candidate_location)
+
+
+def us_job(job: dict[str, Any]) -> bool:
+    country = normalize_for_match(str(job.get("country") or ""))
+    location = normalize_for_match(str(job.get("location") or ""))
+    haystack = f"{country} {location}"
+    if country in {"us", "usa", "united states", "united states of america"}:
+        return True
+    return bool(re.search(r"\b(united states|united states of america|usa|u s|us)\b", haystack))
+
+
+def candidate_location_is_us(location: str) -> bool:
+    normalized = normalize_for_match(location)
+    if re.search(r"\b(united states|united states of america|usa|u s|us)\b", normalized):
+        return True
+    return bool(re.search(
+        r"\b(al|ak|az|ar|ca|co|ct|dc|de|fl|ga|hi|ia|id|il|in|ks|ky|la|ma|md|me|mi|mn|mo|ms|mt|nc|nd|ne|nh|nj|nm|nv|ny|oh|ok|or|pa|ri|sc|sd|tn|tx|ut|va|vt|wa|wi|wv|wy)\b",
+        normalized,
+    ))
+
+
+def fill_phone_country_selects(page: Any) -> int:
+    filled = 0
+    selects = page.locator("select")
+    for index in range(selects.count()):
+        element = selects.nth(index)
+        try:
+            descriptor = field_descriptor(element)
+            if not element.is_visible() or not element.is_enabled():
+                continue
+            if not PHONE_COUNTRY_PATTERN.search(descriptor) and not select_has_phone_country_options(element):
+                continue
+            if select_current_text(element):
+                current = normalize_for_match(select_current_text(element))
+                if "united states" in current or current in {"us", "usa", "1"} or "+1" in current:
+                    continue
+            option_value = matching_option_value(element, PHONE_COUNTRY_ANSWER)
+            if not option_value:
+                print(f"Learned phone country answer did not match options for: {descriptor[:120]}")
+                continue
+            element.select_option(value=option_value, timeout=1500)
+            mark_filled(element)
+            filled += 1
+            print("Selected learned phone country answer: United States +1")
+        except Exception:
+            continue
+    return filled
+
+
+def fill_matching_comboboxes(page: Any, pattern: re.Pattern[str], answer: str) -> int:
+    filled = 0
+    elements = page.locator("input:not([type=hidden]):not([type=file]), [role=combobox]")
+    for index in range(elements.count()):
+        element = elements.nth(index)
+        try:
+            if not element.is_visible(timeout=300) or not element.is_enabled():
+                continue
+            descriptor = field_descriptor(element)
+            if not pattern.search(descriptor):
+                continue
+            if not is_combobox_like(element, descriptor):
+                continue
+            if current_text_value(element):
+                continue
+            if choose_combobox_option(element, answer):
+                print(f"Selected learned answer '{answer}' for: {descriptor[:120]}")
+                filled += 1
+        except Exception:
+            continue
+    filled += fill_greenhouse_paired_comboboxes(page, pattern, answer)
+    return filled
+
+
+def fill_phone_country_comboboxes(page: Any) -> int:
+    filled = 0
+    elements = page.locator("input:not([type=hidden]):not([type=file]), [role=combobox]")
+    for index in range(elements.count()):
+        element = elements.nth(index)
+        try:
+            if not element.is_visible(timeout=300) or not element.is_enabled():
+                continue
+            descriptor = field_descriptor(element)
+            if not PHONE_COUNTRY_PATTERN.search(descriptor):
+                continue
+            if not is_combobox_like(element, descriptor):
+                continue
+            value = current_text_value(element)
+            if value and ("united states" in normalize_for_match(value) or "+1" in value):
+                continue
+            if choose_combobox_option(element, PHONE_COUNTRY_ANSWER) or choose_combobox_option(element, "United States"):
+                print("Selected learned phone country answer: United States +1")
+                filled += 1
+        except Exception:
+            continue
+    return filled
+
+
+def fill_greenhouse_paired_comboboxes(page: Any, pattern: re.Pattern[str], answer: str) -> int:
+    filled = 0
+    labels = page.locator("input:not([type=hidden]):not([type=file])")
+    for index in range(labels.count()):
+        label = labels.nth(index)
+        try:
+            if not label.is_visible(timeout=300):
+                continue
+            descriptor = field_descriptor(label)
+            if not pattern.search(descriptor):
+                continue
+            target = greenhouse_paired_combobox(label)
+            if target is None:
+                continue
+            if current_text_value(target) and "select" not in normalize_for_match(current_text_value(target)):
+                continue
+            if choose_combobox_option(target, answer):
+                print(f"Selected learned answer '{answer}' for Greenhouse question: {descriptor[:120]}")
+                filled += 1
+        except Exception:
+            continue
+    return filled
+
+
+def greenhouse_paired_combobox(label: Any) -> Any | None:
+    try:
+        handles = label.evaluate_handle(
+            """node => {
+              const roots = [];
+              let current = node.parentElement;
+              for (let index = 0; current && index < 5; index += 1, current = current.parentElement) {
+                roots.push(current);
+              }
+              for (const root of roots) {
+                const candidates = Array.from(root.querySelectorAll('input:not([type="hidden"]):not([type="file"]), [role="combobox"]'));
+                const nodeIndex = candidates.indexOf(node);
+                const after = candidates.slice(Math.max(0, nodeIndex + 1));
+                const target = after.find((candidate) => {
+                  const role = candidate.getAttribute('role') || '';
+                  const placeholder = candidate.getAttribute('placeholder') || '';
+                  const aria = candidate.getAttribute('aria-autocomplete') || candidate.getAttribute('aria-haspopup') || '';
+                  const value = candidate.value || candidate.innerText || '';
+                  const text = `${role} ${placeholder} ${aria} ${value}`.toLowerCase();
+                  return text.includes('combobox') || text.includes('listbox') || text.includes('select');
+                });
+                if (target) return target;
+              }
+              return null;
+            }"""
+        )
+        element = handles.as_element()
+        return element
+    except Exception:
+        return None
+
+
+def is_candidate_country_control(element: Any, descriptor: str) -> bool:
+    normalized = normalize_for_match(descriptor)
+    if WORK_AUTHORIZATION_ELIGIBILITY_PATTERN.search(descriptor) or WORK_AUTHORIZATION_SPONSORSHIP_PATTERN.search(descriptor):
+        return False
+    if normalized in {"country", "country country"} or re.fullmatch(r"country country country|country select", normalized):
+        return True
+    try:
+        element_id = str(element.get_attribute("id") or "").lower()
+        name = str(element.get_attribute("name") or "").lower()
+        placeholder = str(element.get_attribute("placeholder") or "").lower()
+    except Exception:
+        return False
+    return (
+        element_id == "country"
+        or name == "country"
+        or placeholder == "country"
+        or placeholder == "select country"
+    )
+
+
+def is_combobox_like(element: Any, descriptor: str) -> bool:
+    try:
+        role = str(element.get_attribute("role") or "").lower()
+        aria_autocomplete = str(element.get_attribute("aria-autocomplete") or "").lower()
+        aria_haspopup = str(element.get_attribute("aria-haspopup") or "").lower()
+        placeholder = str(element.get_attribute("placeholder") or "").lower()
+        input_type = str(element.get_attribute("type") or "").lower()
+    except Exception:
+        return False
+    normalized = normalize_for_match(descriptor)
+    return (
+        role == "combobox"
+        or aria_autocomplete in {"list", "both"}
+        or aria_haspopup == "listbox"
+        or placeholder in {"select", "select...", "select country"}
+        or input_type == "search" and "select" in normalized
+    )
+
+
+def choose_combobox_option(element: Any, answer: str) -> bool:
+    try:
+        element.click(timeout=1000)
+        element.fill(answer, timeout=1500)
+        element.press("Enter", timeout=1000)
+        element.press("Tab", timeout=1000)
+        mark_filled(element)
+        return True
+    except Exception:
+        try:
+            element.click(timeout=1000)
+            element.type(answer, delay=20, timeout=1500)
+            element.press("Enter", timeout=1000)
+            mark_filled(element)
+            return True
+        except Exception:
+            return False
+
+
+def current_text_value(element: Any) -> str:
+    try:
+        tag = element.evaluate("node => node.tagName")
+        if tag in {"INPUT", "TEXTAREA", "SELECT"}:
+            return str(element.input_value(timeout=300) or "").strip()
+    except Exception:
+        pass
+    try:
+        return str(element.inner_text(timeout=300) or "").strip()
+    except Exception:
+        return ""
+
+
+def phone_country_widget_nearby(element: Any) -> bool:
+    try:
+        descriptor = element.evaluate(
+            """node => {
+              const text = [];
+              let current = node;
+              for (let index = 0; current && index < 5; index += 1, current = current.parentElement) {
+                text.push(current.innerText || "");
+                text.push(current.getAttribute("class") || "");
+                text.push(current.getAttribute("id") || "");
+              }
+              return text.join(" ");
+            }"""
+        )
+    except Exception:
+        return False
+    normalized = normalize_for_match(str(descriptor))
+    return (
+        ("iti" in normalized or "intl" in normalized or "country" in normalized)
+        and ("phone" in normalized or "tel" in normalized or "dial" in normalized)
+    )
+
+
+def select_has_phone_country_options(select: Any) -> bool:
+    try:
+        options_text = select.evaluate("node => Array.from(node.options).map(option => option.textContent || option.value || '').join(' ')")
+    except Exception:
+        return False
+    normalized = normalize_for_match(str(options_text))
+    return ("united states" in normalized or "usa" in normalized) and (" 1 " in f" {normalized} " or "+1" in str(options_text))
+
+
+def select_current_text(select: Any) -> str:
+    try:
+        return str(select.evaluate("node => node.options[node.selectedIndex]?.text || ''") or "")
+    except Exception:
+        return ""
+
+
 def matching_option_value(select: Any, answer: str) -> str | None:
     options = select.evaluate(
         """node => Array.from(node.options).map(option => ({
@@ -671,6 +1040,11 @@ def answer_matches_descriptor(answer: str, descriptor: str) -> bool:
     descriptor_tokens = normalize_for_match(descriptor)
     if answer_tokens and answer_tokens in descriptor_tokens:
         return True
+    if answer_tokens == normalize_for_match(PHONE_COUNTRY_ANSWER):
+        return (
+            "united states" in descriptor_tokens
+            or re.search(r"\b(us|usa)\b", descriptor_tokens) is not None
+        ) and (" 1 " in f" {descriptor_tokens} " or "+1" in descriptor)
     aliases = {
         "prefer not to answer": ["decline", "do not wish", "prefer not", "not disclose", "i don't wish", "i do not wish"],
         "i do not wish to answer": ["decline", "do not wish", "prefer not", "not disclose"],
@@ -1100,7 +1474,13 @@ def match_safe_key(field_text: str) -> str | None:
     return None
 
 
-def keep_open(args: argparse.Namespace, browser: Any, original_url: str, workdir: Path) -> None:
+def keep_open(
+    args: argparse.Namespace,
+    browser: Any,
+    original_url: str,
+    workdir: Path,
+    mark_applied_state: dict[str, Any] | None = None,
+) -> None:
     if args.headless:
         browser.close()
         return
@@ -1112,6 +1492,7 @@ def keep_open(args: argparse.Namespace, browser: Any, original_url: str, workdir
                 browser.close()
                 open_manual_handoff(original_url, workdir)
                 return
+            maybe_mark_manual_submit(browser, workdir, mark_applied_state)
             time.sleep(1)
         browser.close()
         return
@@ -1122,9 +1503,161 @@ def keep_open(args: argparse.Namespace, browser: Any, original_url: str, workdir
                 browser.close()
                 open_manual_handoff(original_url, workdir)
                 return
+            maybe_mark_manual_submit(browser, workdir, mark_applied_state)
             time.sleep(1)
     except KeyboardInterrupt:
         browser.close()
+
+
+def maybe_mark_manual_submit(browser: Any, workdir: Path, mark_applied_state: dict[str, Any] | None) -> None:
+    if not mark_applied_state or mark_applied_state.get("marked"):
+        return
+
+    install_manual_submit_watchers(browser)
+    confirmation_page = first_submit_confirmation_page(browser)
+    if not confirmation_page:
+        submit_intent = latest_manual_submit_intent(browser)
+        if not submit_intent:
+            return
+        elapsed_seconds = max(0, (time.time() * 1000 - float(submit_intent.get("at") or 0)) / 1000)
+        if elapsed_seconds < 4:
+            return
+        if any(validation_error_detected(page) for page in browser_pages(browser)):
+            return
+        print(f"Manual submit button click detected: {str(submit_intent.get('descriptor') or 'submit control')[:160]}")
+        marked = mark_application_applied(
+            str(mark_applied_state["app_url"]),
+            str(mark_applied_state["application_id"]),
+            "manual submit button click",
+        )
+        mark_applied_state["marked"] = marked
+        return
+
+    print("Manual submit confirmation detected.")
+    capture_submit_confirmation(confirmation_page, workdir)
+    marked = mark_application_applied(
+        str(mark_applied_state["app_url"]),
+        str(mark_applied_state["application_id"]),
+        "manual submit confirmation",
+    )
+    mark_applied_state["marked"] = marked
+
+
+def first_submit_confirmation_page(browser: Any) -> Any | None:
+    for page in browser_pages(browser):
+        try:
+            if submit_confirmation_detected(page):
+                return page
+        except Exception:
+            continue
+    return None
+
+
+def install_manual_submit_watchers(browser: Any) -> None:
+    for page in browser_pages(browser):
+        for context in application_contexts(page):
+            try:
+                context.evaluate(
+                    """() => {
+                      if (window.__joleneSubmitWatcherInstalled) return;
+                      window.__joleneSubmitWatcherInstalled = true;
+                      window.__joleneSubmitIntent = window.__joleneSubmitIntent || null;
+                      const submitPattern = /submit|send application|apply now|complete application|finish/i;
+                      const descriptor = (node) => {
+                        if (!node) return "";
+                        const label = node.labels && node.labels.length
+                          ? Array.from(node.labels).map((item) => item.innerText || "").join(" ")
+                          : "";
+                        return [
+                          label,
+                          node.innerText,
+                          node.value,
+                          node.getAttribute && node.getAttribute("name"),
+                          node.getAttribute && node.getAttribute("id"),
+                          node.getAttribute && node.getAttribute("aria-label"),
+                          node.getAttribute && node.getAttribute("title"),
+                          node.getAttribute && node.getAttribute("type")
+                        ].filter(Boolean).join(" ").replace(/\\s+/g, " ").trim();
+                      };
+                      const record = (source, node) => {
+                        const intent = {
+                          at: Date.now(),
+                          source,
+                          descriptor: descriptor(node),
+                          url: window.location.href
+                        };
+                        window.__joleneSubmitIntent = intent;
+                        try {
+                          window.localStorage.setItem("__joleneSubmitIntent", JSON.stringify(intent));
+                        } catch (error) {}
+                      };
+                      document.addEventListener("click", (event) => {
+                        const node = event.target && event.target.closest
+                          ? event.target.closest("button,input[type='submit'],[role='button'],a")
+                          : null;
+                        if (!node) return;
+                        const text = descriptor(node);
+                        if (submitPattern.test(text)) record("click", node);
+                      }, true);
+                      document.addEventListener("submit", (event) => {
+                        record("form_submit", event.target);
+                      }, true);
+                    }"""
+                )
+            except Exception:
+                continue
+
+
+def latest_manual_submit_intent(browser: Any) -> dict[str, Any] | None:
+    latest: dict[str, Any] | None = None
+    for page in browser_pages(browser):
+        for context in application_contexts(page):
+            try:
+                value = context.evaluate(
+                    """() => {
+                      if (window.__joleneSubmitIntent) return window.__joleneSubmitIntent;
+                      try {
+                        const raw = window.localStorage.getItem("__joleneSubmitIntent");
+                        return raw ? JSON.parse(raw) : null;
+                      } catch (error) {
+                        return null;
+                      }
+                    }"""
+                )
+            except Exception:
+                continue
+            if not isinstance(value, dict):
+                continue
+            if latest is None or float(value.get("at") or 0) > float(latest.get("at") or 0):
+                latest = value
+    return latest
+
+
+def validation_error_detected(page: Any) -> bool:
+    try:
+        body_text = page.inner_text("body", timeout=500)
+    except Exception:
+        return False
+    if not VALIDATION_ERROR_PATTERNS.search(body_text):
+        return False
+    if submit_confirmation_detected(page):
+        return False
+    return True
+
+
+def mark_application_applied(app_url: str, application_id: str, source: str) -> bool:
+    endpoint = f"{app_url.rstrip('/')}/api/applications/{application_id}/mark-applied"
+    try:
+        result = post_json(endpoint, {"source": source})
+        message = result.get("message") or "Application marked applied."
+        print(f"Tracker updated: {message}")
+        return True
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        print(f"Unable to mark application applied: HTTP {exc.code} {details}", file=sys.stderr)
+    except Exception as exc:
+        print(f"Unable to mark application applied: {exc}", file=sys.stderr)
+    return False
 
 
 def google_block_detected(browser: Any) -> bool:

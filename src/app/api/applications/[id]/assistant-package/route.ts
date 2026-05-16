@@ -73,6 +73,9 @@ export async function GET(request: Request, { params }: { params: { id: string }
         id: application.jobPosting.id,
         company: application.jobPosting.company,
         title: application.jobPosting.title,
+        location: application.jobPosting.location,
+        country: application.jobPosting.country,
+        remoteType: application.jobPosting.remoteType,
         applicationUrl: application.jobPosting.applicationUrl,
       },
       candidate: {

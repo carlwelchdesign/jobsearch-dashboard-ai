@@ -23,7 +23,11 @@ vi.mock("@/lib/prisma", () => ({
     },
     jobProfileMatch: {
       findMany: vi.fn(),
+      findUnique: vi.fn(),
       update: vi.fn(),
+    },
+    skillAdjustment: {
+      findMany: vi.fn(),
     },
   },
 }));
@@ -35,7 +39,9 @@ const createApplicationMock = vi.mocked(prisma.application.create);
 const updateApplicationMock = vi.mocked(prisma.application.update);
 const createEventMock = vi.mocked(prisma.applicationEvent.create);
 const findMatchesMock = vi.mocked(prisma.jobProfileMatch.findMany);
+const findMatchMock = vi.mocked(prisma.jobProfileMatch.findUnique);
 const updateMatchMock = vi.mocked(prisma.jobProfileMatch.update);
+const findSkillAdjustmentsMock = vi.mocked(prisma.skillAdjustment.findMany);
 const preparePackageMock = vi.mocked(prepareApplicationPackage);
 
 describe("runRecruitingAgency", () => {
@@ -47,17 +53,20 @@ describe("runRecruitingAgency", () => {
     updateApplicationMock.mockReset();
     createEventMock.mockReset();
     findMatchesMock.mockReset();
+    findMatchMock.mockReset();
     updateMatchMock.mockReset();
+    findSkillAdjustmentsMock.mockReset();
     preparePackageMock.mockReset();
+    findSkillAdjustmentsMock.mockResolvedValue([]);
   });
 
   it("auto-approves strong untracked matches and prepares application packages", async () => {
     findUserMock.mockResolvedValue({ id: "user_1" } as Awaited<ReturnType<typeof prisma.user.findFirst>>);
     findApplicationsMock.mockResolvedValue([]);
     findApplicationMock.mockResolvedValue(null);
-    findMatchesMock.mockResolvedValue([
-      match({ id: "match_1", jobPostingId: "job_1", score: 94, company: "Acme", title: "Senior Frontend Engineer" }),
-    ] as Awaited<ReturnType<typeof prisma.jobProfileMatch.findMany>>);
+    const agencyMatch = match({ id: "match_1", jobPostingId: "job_1", score: 94, company: "Acme", title: "Senior Frontend Engineer" });
+    findMatchesMock.mockResolvedValue([agencyMatch] as Awaited<ReturnType<typeof prisma.jobProfileMatch.findMany>>);
+    findMatchMock.mockResolvedValue(agencyMatch as Awaited<ReturnType<typeof prisma.jobProfileMatch.findUnique>>);
     updateMatchMock.mockResolvedValue({ id: "match_1" } as Awaited<ReturnType<typeof prisma.jobProfileMatch.update>>);
     createApplicationMock.mockResolvedValue({ id: "app_1" } as Awaited<ReturnType<typeof prisma.application.create>>);
     createEventMock.mockResolvedValue({ id: "event_1" } as Awaited<ReturnType<typeof prisma.applicationEvent.create>>);
@@ -117,12 +126,10 @@ describe("runRecruitingAgency", () => {
   it("leaves approved applications visible when package preparation fails", async () => {
     findUserMock.mockResolvedValue({ id: "user_1" } as Awaited<ReturnType<typeof prisma.user.findFirst>>);
     findApplicationsMock.mockResolvedValue([]);
-    findApplicationMock
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: "app_1" } as Awaited<ReturnType<typeof prisma.application.findFirst>>);
-    findMatchesMock.mockResolvedValue([
-      match({ id: "match_1", jobPostingId: "job_1", score: 92, company: "Acme", title: "Senior Frontend Engineer" }),
-    ] as Awaited<ReturnType<typeof prisma.jobProfileMatch.findMany>>);
+    const agencyMatch = match({ id: "match_1", jobPostingId: "job_1", score: 92, company: "Acme", title: "Senior Frontend Engineer" });
+    findApplicationMock.mockResolvedValue({ id: "app_1" } as Awaited<ReturnType<typeof prisma.application.findFirst>>);
+    findMatchesMock.mockResolvedValue([agencyMatch] as Awaited<ReturnType<typeof prisma.jobProfileMatch.findMany>>);
+    findMatchMock.mockResolvedValue(agencyMatch as Awaited<ReturnType<typeof prisma.jobProfileMatch.findUnique>>);
     updateMatchMock.mockResolvedValue({ id: "match_1" } as Awaited<ReturnType<typeof prisma.jobProfileMatch.update>>);
     createApplicationMock.mockResolvedValue({ id: "app_1" } as Awaited<ReturnType<typeof prisma.application.create>>);
     createEventMock.mockResolvedValue({ id: "event_1" } as Awaited<ReturnType<typeof prisma.applicationEvent.create>>);

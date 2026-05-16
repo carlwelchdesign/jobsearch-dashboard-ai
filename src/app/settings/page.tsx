@@ -77,6 +77,21 @@ export default async function SettingsPage() {
         orderBy: { provider: "asc" },
       })
     : [];
+  const [skillFeedback, skillAdjustments] = user
+    ? await Promise.all([
+        prisma.skillFeedback.findMany({
+          where: { userId: user.id },
+          include: { adjustments: true },
+          orderBy: { createdAt: "desc" },
+          take: 8,
+        }),
+        prisma.skillAdjustment.findMany({
+          where: { userId: user.id },
+          orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+          take: 12,
+        }),
+      ])
+    : [[], []];
   const nextAction = getSettingsNextAction({
     hasUser: Boolean(user),
     aiConfigured: Boolean(process.env.OPENAI_API_KEY),
@@ -130,6 +145,58 @@ export default async function SettingsPage() {
               <ActionButton href={nextAction.href} variant="contained" color={nextAction.color} startIcon={nextAction.icon}>
                 {nextAction.label}
               </ActionButton>
+            </Stack>
+          </CardContent>
+        </Card>
+        <Card id="settings-skill-learning">
+          <CardContent>
+            <Stack spacing={2}>
+              <Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color="primary" label="Skill learning" />
+                  <Chip size="small" variant="outlined" label={`${skillAdjustments.filter((item) => item.status === "ACTIVE").length} active`} />
+                  <Chip size="small" variant="outlined" label={`${skillAdjustments.filter((item) => item.status === "PROPOSED").length} pending`} />
+                </Stack>
+                <Typography variant="h3">Learning audit log</Typography>
+                <Typography color="text.secondary" sx={{ mt: 0.75 }}>
+                  Jolene records explicit mistake reports here. Low-risk threshold, warning, style, guidance, and QA updates can auto-apply; higher-risk changes stay proposed.
+                </Typography>
+              </Box>
+              {skillAdjustments.length ? (
+                <Stack spacing={1.25}>
+                  {skillAdjustments.map((adjustment) => (
+                    <Box key={adjustment.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+                      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
+                        <Chip size="small" label={adjustment.skillId.replace(/_/g, " ")} />
+                        <Chip size="small" variant="outlined" label={adjustment.kind.toLowerCase().replace(/_/g, " ")} />
+                        <Chip size="small" color={adjustment.status === "ACTIVE" ? "success" : adjustment.status === "PROPOSED" ? "warning" : "default"} label={adjustment.status.toLowerCase()} />
+                        <Chip size="small" variant="outlined" label={adjustment.riskLevel.toLowerCase()} />
+                      </Stack>
+                      <Typography variant="body2">{adjustment.rationale}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {adjustment.appliedAt ? `Applied ${adjustment.appliedAt.toLocaleString()}` : `Created ${adjustment.createdAt.toLocaleString()}`}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">No skill learning updates have been recorded yet.</Typography>
+              )}
+              {skillFeedback.length ? (
+                <Box>
+                  <Typography variant="h4" sx={{ mb: 1 }}>Recent mistake reports</Typography>
+                  <Stack spacing={1}>
+                    {skillFeedback.map((feedback) => (
+                      <Box key={feedback.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1 }}>
+                        <Typography variant="body2">{feedback.problemSummary}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {feedback.skillId.replace(/_/g, " ")} · {feedback.createdAt.toLocaleString()} · {feedback.adjustments.length} adjustment{feedback.adjustments.length === 1 ? "" : "s"}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                </Box>
+              ) : null}
             </Stack>
           </CardContent>
         </Card>
