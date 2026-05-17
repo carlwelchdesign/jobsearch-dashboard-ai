@@ -15,6 +15,7 @@ import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { PageHeader } from "@/components/ui/page-header";
 import { getLearningImpact } from "@/lib/observability/learning-impact";
+import { getOutcomeCalibration } from "@/lib/observability/outcome-calibration";
 import { getLearningRollbackAudit } from "@/lib/observability/rollback-audit";
 import { prisma } from "@/lib/prisma";
 import { FieldMemoryDisableButton } from "./field-memory-disable-button";
@@ -122,6 +123,7 @@ export default async function SettingsPage() {
       ])
     : [0, 0, { _avg: { score: null } }, [], []] as const;
   const [qualityExampleCount, qualityFailedCount, qualityScore, qualityProposals, qualityByTarget] = quality;
+  const outcomeCalibration = user ? await getOutcomeCalibration(user.id) : null;
   const learningImpact = user ? await getLearningImpact(user.id) : [];
   const rollbackAudit = user ? await getLearningRollbackAudit(user.id) : [];
   const nextAction = getSettingsNextAction({
@@ -255,6 +257,79 @@ export default async function SettingsPage() {
                 </Stack>
               ) : (
                 <Typography variant="body2" color="text.secondary">No quality improvement proposals have been generated yet.</Typography>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+        <Card id="settings-outcome-calibration">
+          <CardContent>
+            <Stack spacing={2}>
+              <Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color="primary" label="Outcome calibration" />
+                  <Chip size="small" variant="outlined" label={`${outcomeCalibration?.summary.applied ?? 0} applied`} />
+                  <Chip size="small" color={(outcomeCalibration?.summary.callbackRate ?? 0) > 0 ? "success" : "default"} variant="outlined" label={outcomeCalibration?.summary.callbackRate === null || outcomeCalibration?.summary.callbackRate === undefined ? "no callback data" : `${outcomeCalibration.summary.callbackRate}% callback`} />
+                  <Chip size="small" color={(outcomeCalibration?.signals.length ?? 0) ? "warning" : "success"} variant="outlined" label={`${outcomeCalibration?.signals.length ?? 0} signal${outcomeCalibration?.signals.length === 1 ? "" : "s"}`} />
+                </Stack>
+                <Typography variant="h3">Outcome calibration</Typography>
+                <Typography color="text.secondary" sx={{ mt: 0.75 }}>
+                  Job search, matching, agency approval, and assistant behavior are scored against real outcomes: applications, callbacks, rejections, duplicate noise, resurfacing, and failed runs.
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                <ActionButton
+                  postTo="/api/observability/outcomes/recompute"
+                  variant="outlined"
+                  color="info"
+                  size="small"
+                  message="Outcome calibration recomputed."
+                >
+                  Recompute outcome signals
+                </ActionButton>
+              </Stack>
+              {outcomeCalibration ? (
+                <>
+                  <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                    <Chip size="small" variant="outlined" label={`${outcomeCalibration.summary.applications} applications`} />
+                    <Chip size="small" variant="outlined" label={`${outcomeCalibration.summary.positiveOutcomes} positive`} />
+                    <Chip size="small" variant="outlined" label={`${outcomeCalibration.summary.negativeOutcomes} negative`} />
+                    <Chip size="small" color={outcomeCalibration.summary.resurfacedSuppressedJobs ? "warning" : "success"} variant="outlined" label={`${outcomeCalibration.summary.resurfacedSuppressedJobs} resurfaced`} />
+                    <Chip size="small" color={outcomeCalibration.summary.duplicateActiveGroups ? "warning" : "success"} variant="outlined" label={`${outcomeCalibration.summary.duplicateActiveGroups} duplicate groups`} />
+                    <Chip size="small" color={outcomeCalibration.summary.rejectedHighScoreMatches ? "warning" : "success"} variant="outlined" label={`${outcomeCalibration.summary.rejectedHighScoreMatches} rejected high-score`} />
+                    <Chip size="small" color={outcomeCalibration.summary.assistantFailures ? "warning" : "success"} variant="outlined" label={`${outcomeCalibration.summary.assistantFailures} assistant failures`} />
+                  </Stack>
+                  <Stack spacing={1.25}>
+                    {outcomeCalibration.workflows.map((workflow) => (
+                      <Box key={workflow.target} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
+                          <Chip size="small" label={workflow.target.toLowerCase().replace(/_/g, " ")} />
+                          <Chip size="small" color={outcomeStatusColor(workflow.status)} label={workflow.status.replace(/_/g, " ")} />
+                          <Chip size="small" variant="outlined" label={workflow.score === null ? "not scored" : `${workflow.score} score`} />
+                        </Stack>
+                        <Typography variant="body2">{workflow.summary}</Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                  {outcomeCalibration.signals.length ? (
+                    <Stack spacing={1.25}>
+                      {outcomeCalibration.signals.map((signal) => (
+                        <Box key={signal.key} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+                          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
+                            <Chip size="small" color="info" variant="outlined" label={signal.target.toLowerCase().replace(/_/g, " ")} />
+                            <Chip size="small" color={outcomeStatusColor(signal.severity)} label={signal.severity.replace(/_/g, " ")} />
+                            <Chip size="small" variant="outlined" label={`${signal.count} found`} />
+                          </Stack>
+                          <Typography variant="body2">{signal.title}</Typography>
+                          <Typography variant="caption" color="text.secondary">{signal.summary}</Typography>
+                        </Box>
+                      ))}
+                    </Stack>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">No bad outcome calibration signals are currently detected.</Typography>
+                  )}
+                </>
+              ) : (
+                <Typography variant="body2" color="text.secondary">Create a user profile before outcome calibration can run.</Typography>
               )}
             </Stack>
           </CardContent>
@@ -760,6 +835,13 @@ function learningImpactStatusColor(status: string) {
   if (status === "helping") return "success" as const;
   if (status === "needs_review") return "warning" as const;
   if (status === "neutral") return "info" as const;
+  return "default" as const;
+}
+
+function outcomeStatusColor(status: string) {
+  if (status === "healthy") return "success" as const;
+  if (status === "needs_review") return "warning" as const;
+  if (status === "watch") return "info" as const;
   return "default" as const;
 }
 

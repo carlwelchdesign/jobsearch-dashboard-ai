@@ -104,6 +104,8 @@ Examples:
 
 Outcome data powers strategy recommendations.
 
+Outcome calibration also feeds the quality loop. Settings and `GET /api/observability/outcomes` summarize applied-to-callback rate, rejected high-score matches, active duplicate groups, resurfaced rejected/applied jobs, and assistant failures. `POST /api/observability/outcomes/recompute` captures missing redacted quality examples so repeated bad outcome patterns can be evaluated and proposed for review without rewriting agent behavior directly.
+
 ## Outcome Learning
 
 The Outcome Learning agent looks for patterns such as:
