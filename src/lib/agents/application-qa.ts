@@ -1,6 +1,7 @@
 import type { JobPosting } from "@prisma/client";
 import { runAgent } from "@/lib/agents/run-agent";
 import { prisma } from "@/lib/prisma";
+import type { QualityProposalLearningRules } from "@/lib/skills/adjustments";
 
 export type ApplicationQaInput = {
   jobPostingId: string;
@@ -8,6 +9,7 @@ export type ApplicationQaInput = {
   resumeMarkdown?: string | null;
   coverLetterBody?: string | null;
   evidenceRefs?: string[];
+  learningRules?: QualityProposalLearningRules;
 };
 
 export type ApplicationQaOutput = {
@@ -20,6 +22,7 @@ export type ApplicationQaOutput = {
   evidenceRefs: string[];
   reasoningSummary: string;
   confidence: number;
+  appliedLearning?: string[];
 };
 
 export async function runApplicationQaAgent(input: ApplicationQaInput) {
@@ -35,6 +38,7 @@ export async function runApplicationQaAgent(input: ApplicationQaInput) {
         resumeMarkdown: input.resumeMarkdown,
         coverLetterBody: input.coverLetterBody,
         evidenceRefs: input.evidenceRefs ?? [],
+        learningRules: input.learningRules,
       });
     },
   });
@@ -45,11 +49,13 @@ export function reviewApplicationMaterials({
   resumeMarkdown,
   coverLetterBody,
   evidenceRefs,
+  learningRules,
 }: {
   job: Pick<JobPosting, "title" | "company" | "description">;
   resumeMarkdown?: string | null;
   coverLetterBody?: string | null;
   evidenceRefs: string[];
+  learningRules?: QualityProposalLearningRules;
 }): ApplicationQaOutput {
   const resume = resumeMarkdown ?? "";
   const coverLetter = coverLetterBody ?? "";
@@ -64,6 +70,13 @@ export function reviewApplicationMaterials({
   if (coverLetter && coverLetter.length > 2400) warnings.push("Cover letter is longer than recommended.");
   if (coverLetter && !mentionsCompanyOrRole(coverLetter, job)) warnings.push("Cover letter does not clearly anchor to the company or role.");
   if (evidenceRefs.length === 0) warnings.push("No evidence references are attached to these materials.");
+  if (learningRules?.coverLetterFieldQa && !coverLetter) {
+    warnings.push("Active learning: cover-letter fields have been missed before, so confirm whether this application needs a cover letter.");
+    suggestedEdits.push("If the application asks why you want to join, paste or adapt the generated cover letter before submit.");
+  }
+  if (learningRules?.fieldClassificationQa) {
+    warnings.push("Active learning: field-classification mistakes have been reported, so manually review unknown required fields before submit.");
+  }
 
   if (/[—–]/.test(combined)) {
     styleViolations.push("Uses em dash or en dash punctuation.");
@@ -98,6 +111,7 @@ export function reviewApplicationMaterials({
     evidenceRefs,
     reasoningSummary: `Reviewed generated materials for ${job.company}'s ${job.title} role against truthfulness and style rules.`,
     confidence: combined.length > 1500 && evidenceRefs.length > 0 ? 0.84 : 0.62,
+    appliedLearning: learningRules?.appliedCategories?.length ? learningRules.appliedCategories : undefined,
   };
 }
 

@@ -4,11 +4,13 @@ import { runAgent } from "@/lib/agents/run-agent";
 import { createCanonicalJobKeys } from "@/lib/job-search/dedupe";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
+import type { QualityProposalLearningRules } from "@/lib/skills/adjustments";
 
 export type DuplicateStaleJobDetectorInput = {
   jobPostingId?: string;
   limit?: number;
   userId?: string;
+  learningRules?: QualityProposalLearningRules;
 };
 
 export type DuplicateStaleJobDetectorOutput = {
@@ -30,6 +32,7 @@ export type DuplicateStaleJobDetectorOutput = {
   }>;
   confidence: number;
   reasoningSummary: string;
+  appliedLearning?: string[];
 };
 
 export type JobForDetection = Pick<
@@ -44,19 +47,20 @@ export async function runDuplicateStaleJobDetectorAgent(input: DuplicateStaleJob
     userId: input.userId,
     execute: async () => {
       const jobs = await loadJobsForDetection(input);
-      const output = buildDuplicateStaleDetection(jobs);
+      const output = buildDuplicateStaleDetection(jobs, new Date(), input.learningRules);
       await persistDuplicateStaleDetection(output, jobs);
       return output;
     },
   });
 }
 
-export function buildDuplicateStaleDetection(jobs: JobForDetection[], now = new Date()): DuplicateStaleJobDetectorOutput {
+export function buildDuplicateStaleDetection(jobs: JobForDetection[], now = new Date(), learningRules?: QualityProposalLearningRules): DuplicateStaleJobDetectorOutput {
   const groupsByKey = new Map<string, JobForDetection[]>();
   for (const job of jobs) {
-    const key = createCanonicalJobKeys(job).at(-1) ?? createCanonicalJobKeys(job)[0] ?? "";
-    if (!key) continue;
-    groupsByKey.set(key, [...(groupsByKey.get(key) ?? []), job]);
+    const keys = duplicateKeysForJob(job, Boolean(learningRules?.stricterDedupe));
+    for (const key of keys) {
+      groupsByKey.set(key, [...(groupsByKey.get(key) ?? []), job]);
+    }
   }
 
   const duplicateGroups: DuplicateStaleJobDetectorOutput["duplicateGroups"] = [];
@@ -77,7 +81,7 @@ export function buildDuplicateStaleDetection(jobs: JobForDetection[], now = new 
     }
 
     for (const job of groupJobs) {
-      const stale = calculateStaleSignal(job, now);
+      const stale = calculateStaleSignal(job, now, learningRules);
       const nextDuplicateGroupId = duplicateGroupId || null;
       if ((job.duplicateGroupId ?? null) !== nextDuplicateGroupId || job.staleScore !== stale.score) {
         updatedJobs += 1;
@@ -100,7 +104,10 @@ export function buildDuplicateStaleDetection(jobs: JobForDetection[], now = new 
     duplicateGroups: duplicateGroups.sort((a, b) => b.jobIds.length - a.jobIds.length),
     staleJobs: staleJobs.sort((a, b) => b.staleScore - a.staleScore).slice(0, 60),
     confidence: jobs.length >= 50 ? 0.86 : jobs.length >= 10 ? 0.74 : 0.58,
-    reasoningSummary: "Grouped jobs by normalized company, title, and location, then scored stale risk from last seen date, first seen age, closed-posting language, and source metadata.",
+    reasoningSummary: learningRules?.stricterDedupe
+      ? "Grouped jobs by normalized company, title, location, and stricter learned duplicate keys, then scored stale risk with tighter learned thresholds."
+      : "Grouped jobs by normalized company, title, and location, then scored stale risk from last seen date, first seen age, closed-posting language, and source metadata.",
+    appliedLearning: learningRules?.appliedCategories?.length ? learningRules.appliedCategories : undefined,
   };
 }
 
@@ -168,7 +175,7 @@ function primaryJobScore(job: JobForDetection) {
   return score;
 }
 
-export function calculateStaleSignal(job: Pick<JobForDetection, "description" | "firstSeenAt" | "lastSeenAt" | "rawData">, now = new Date()) {
+export function calculateStaleSignal(job: Pick<JobForDetection, "description" | "firstSeenAt" | "lastSeenAt" | "rawData">, now = new Date(), learningRules?: QualityProposalLearningRules) {
   const reasons: string[] = [];
   let score = 0;
   const lastSeenDays = ageInDays(job.lastSeenAt, now);
@@ -199,6 +206,17 @@ export function calculateStaleSignal(job: Pick<JobForDetection, "description" | 
     reasons.push("Posting text indicates the role may be closed.");
   }
 
+  if (learningRules?.stricterDedupe) {
+    if (lastSeenDays > 14) {
+      score += 12;
+      reasons.push("Active learning applies stricter review for listings that have not been seen recently.");
+    }
+    if (firstSeenDays > 45) {
+      score += 10;
+      reasons.push("Active learning applies stricter review for listings that have resurfaced for more than 45 days.");
+    }
+  }
+
   return {
     score: Math.min(100, score),
     reasons,
@@ -217,6 +235,21 @@ function ageInDays(date: Date, now: Date) {
   return Math.max(0, Math.floor((now.getTime() - date.getTime()) / 86_400_000));
 }
 
+function duplicateKeysForJob(job: Pick<JobForDetection, "company" | "title" | "location">, strict: boolean) {
+  const keys = createCanonicalJobKeys(job);
+  if (!strict) return keys.slice(-1);
+  const company = normalizeLoose(job.company);
+  const title = normalizeLoose(job.title)
+    .replace(/\b(sr|snr)\b/g, "senior")
+    .replace(/\b(front end|front-end)\b/g, "frontend")
+    .replace(/\bsoftware engineer\b/g, "engineer");
+  return [`${company}|${title}`].filter(Boolean);
+}
+
 function objectValue(value: Prisma.JsonValue) {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function normalizeLoose(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
 }

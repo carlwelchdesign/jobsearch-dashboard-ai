@@ -20,7 +20,7 @@ import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/j
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { isJobSuppressed, loadJobSuppressionState } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
-import { applyNumericThresholdAdjustments } from "@/lib/skills/adjustments";
+import { applyNumericThresholdAdjustments, applyQualityProposalRuleAdjustments } from "@/lib/skills/adjustments";
 import type { SkillDefinition, SkillId } from "@/lib/skills/types";
 
 const anyOutput = z.unknown();
@@ -92,6 +92,7 @@ export const skillRegistry = {
     inputSchema: jobProfileInput,
     outputSchema: anyOutput,
     defaultPolicy: localMutationPolicy,
+    applyAdjustments: (input: any, adjustments: SkillAdjustment[]) => applyQualityProposalRuleAdjustments(input, adjustments),
     execute: async (input: any) => (await runJobFitScoringAgent(input)).output,
   },
   search_profile_manager: {
@@ -102,6 +103,7 @@ export const skillRegistry = {
     inputSchema: z.object(optionalUser),
     outputSchema: anyOutput,
     defaultPolicy: localMutationPolicy,
+    applyAdjustments: (input: any, adjustments: SkillAdjustment[]) => applyQualityProposalRuleAdjustments(input, adjustments),
     execute: async (input: any) => (await runSearchProfileManagerAgent(input)).output,
   },
   recruiter_intelligence: {
@@ -139,6 +141,7 @@ export const skillRegistry = {
     }),
     outputSchema: anyOutput,
     defaultPolicy: lowRiskPolicy,
+    applyAdjustments: (input: any, adjustments: SkillAdjustment[]) => applyQualityProposalRuleAdjustments(input, adjustments),
     execute: async (input: any) => (await runApplicationQaAgent(input)).output,
   },
   interview_prep: skillForApplication("interview_prep", "Interview Prep", "INTERVIEW_PREP", runInterviewPrepAgent),
@@ -188,6 +191,7 @@ export const skillRegistry = {
     inputSchema: jobInput,
     outputSchema: anyOutput,
     defaultPolicy: localMutationPolicy,
+    applyAdjustments: (input: any, adjustments: SkillAdjustment[]) => applyQualityProposalRuleAdjustments(input, adjustments),
     execute: async (input: any) => (await runDuplicateStaleJobDetectorAgent(input)).output,
   },
   search_expansion: {
@@ -240,7 +244,10 @@ export const skillRegistry = {
     inputSchema: z.object({ userId: z.string(), matchId: z.string(), minimumScore: z.number().int().min(0).max(100).default(90) }),
     outputSchema: anyOutput,
     defaultPolicy: localMutationPolicy,
-    applyAdjustments: (input: any, adjustments: SkillAdjustment[]) => applyNumericThresholdAdjustments(input, adjustments, "minimumScore", { min: 85, max: 98, maxDelta: 5 }),
+    applyAdjustments: (input: any, adjustments: SkillAdjustment[]) => applyQualityProposalRuleAdjustments(
+      applyNumericThresholdAdjustments(input, adjustments, "minimumScore", { min: 85, max: 98, maxDelta: 5 }),
+      adjustments,
+    ),
     execute: approveAgencyMatch,
   },
 };
@@ -266,7 +273,7 @@ function skillForApplication(
   };
 }
 
-async function approveAgencyMatch(input: { userId: string; matchId: string; minimumScore: number }) {
+async function approveAgencyMatch(input: { userId: string; matchId: string; minimumScore: number; learningRules?: { agencyCandidateQuality?: boolean; appliedCategories?: string[] } }) {
   const candidate = await prisma.jobProfileMatch.findUnique({
     where: { id: input.matchId },
     include: { jobPosting: true, jobSearchProfile: { select: { name: true } } },
@@ -274,6 +281,13 @@ async function approveAgencyMatch(input: { userId: string; matchId: string; mini
   if (!candidate) throw new Error("Agency match not found.");
   if (candidate.status !== JobMatchStatus.needs_review) throw new Error("Agency match is no longer awaiting review.");
   if (candidate.overallScore < input.minimumScore) throw new Error("Agency match score is below the current approval threshold.");
+  if (input.learningRules?.agencyCandidateQuality) {
+    const learnedMinimum = Math.min(98, input.minimumScore + 3);
+    const concerns = Array.isArray(candidate.concerns) ? candidate.concerns : [];
+    if (candidate.overallScore < learnedMinimum || concerns.length > 0) {
+      throw new Error("Active agency learning requires a cleaner, higher-confidence candidate before approval.");
+    }
+  }
   if (!candidate.jobPosting.applicationUrl) throw new Error("Agency match does not have an application URL.");
 
   const [existingApplications, suppressionState] = await Promise.all([
@@ -319,6 +333,7 @@ async function approveAgencyMatch(input: { userId: string; matchId: string; mini
         score: candidate.overallScore,
         jobProfileMatchId: candidate.id,
         profile: candidate.jobSearchProfile.name,
+        appliedLearning: input.learningRules?.appliedCategories ?? [],
       } as Prisma.InputJsonValue,
     },
   });

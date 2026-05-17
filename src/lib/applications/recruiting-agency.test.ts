@@ -179,6 +179,40 @@ describe("runRecruitingAgency", () => {
       data: expect.objectContaining({ type: "candidate_failed" }),
     }));
   });
+
+  it("uses active agency learning to require cleaner approval candidates", async () => {
+    findUserMock.mockResolvedValue({ id: "user_1" } as Awaited<ReturnType<typeof prisma.user.findFirst>>);
+    findApplicationsMock.mockResolvedValue([]);
+    findApplicationMock.mockResolvedValue(null);
+    findSkillAdjustmentsMock.mockImplementation(((input: { where?: { skillId?: string } }) => {
+      const skillId = (input as { where?: { skillId?: string } }).where?.skillId;
+      if (skillId !== "approve_agency_match") return Promise.resolve([] as Awaited<ReturnType<typeof prisma.skillAdjustment.findMany>>);
+      return Promise.resolve([
+        {
+          id: "adjustment_1",
+          kind: "GUIDANCE",
+          patchJson: { source: "quality_proposal", category: "CANDIDATE_FAILURE", proposalId: "proposal_1" },
+          rationale: "Be more selective.",
+        },
+      ] as unknown as Awaited<ReturnType<typeof prisma.skillAdjustment.findMany>>);
+    }) as never);
+    const agencyMatch = match({
+      id: "match_1",
+      jobPostingId: "job_1",
+      score: 91,
+      company: "Acme",
+      title: "Senior Frontend Engineer",
+    });
+    findMatchesMock.mockResolvedValue([agencyMatch] as Awaited<ReturnType<typeof prisma.jobProfileMatch.findMany>>);
+    findMatchMock.mockResolvedValue(agencyMatch as Awaited<ReturnType<typeof prisma.jobProfileMatch.findUnique>>);
+
+    const result = await runRecruitingAgency({ minimumScore: 90, limit: 1 });
+
+    expect(updateMatchMock).not.toHaveBeenCalled();
+    expect(createApplicationMock).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ approved: 1, prepared: 0, failed: 1 });
+    expect(result.results[0]?.error).toBe("Active agency learning requires a cleaner, higher-confidence candidate before approval.");
+  });
 });
 
 function match(input: {

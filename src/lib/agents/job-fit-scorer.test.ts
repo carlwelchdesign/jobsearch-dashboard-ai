@@ -81,4 +81,70 @@ describe("buildJobEvaluation", () => {
     expect(evaluation.recommendedAction).toBe("NEEDS_REVIEW");
     expect(evaluation.risks).toContain("No approved candidate evidence was retrieved for this role.");
   });
+
+  it("applies rejected high-score learning as stricter review guidance", () => {
+    const job = {
+      title: "Senior Frontend Engineer, Identity",
+      company: "Example Security",
+      location: "Remote US",
+      description: "Build React and TypeScript admin consoles for authentication, passkeys, WebAuthn, and security workflows.",
+      salaryMin: 180000,
+      salaryMax: 220000,
+      remoteType: "remote",
+      lastSeenAt: new Date(),
+      source: { name: "Company ATS" },
+    } as JobPosting & { source: { name: string } };
+    const profile = {
+      name: "Security SaaS",
+      titles: ["Senior Frontend Engineer"],
+      keywordsRequired: ["React", "TypeScript"],
+      keywordsPreferred: ["WebAuthn", "passkeys", "admin console"],
+      keywordsExcluded: [],
+      excludedCompanies: [],
+      excludedTitles: [],
+      industries: ["security", "identity"],
+      includeUnknownSalary: false,
+      minimumMatchScore: 75,
+      remotePreference: "remote_us_only",
+      relocationPreference: "unknown",
+    } as unknown as JobSearchProfile;
+    const evidence = [
+      {
+        id: "ev_webauthn",
+        title: "WebAuthn Core",
+        content: "Reusable WebAuthn orchestration package.",
+        tags: ["webauthn", "passkeys", "security", "typescript"],
+      },
+      {
+        id: "ev_admin",
+        title: "Security Admin Console",
+        content: "React and TypeScript workflow platform for enterprise security administration.",
+        tags: ["react", "typescript", "admin console", "security"],
+      },
+      {
+        id: "ev_identity",
+        title: "Identity Platform",
+        content: "Authentication UI and identity product systems.",
+        tags: ["identity", "authentication", "frontend"],
+      },
+    ] as CandidateEvidence[];
+
+    const baseline = buildJobEvaluation({ job, profile, evidence });
+    const learned = buildJobEvaluation({
+      job,
+      profile,
+      evidence,
+      learningRules: {
+        highScoreUserRejected: true,
+        appliedCategories: ["high_score_user_rejected"],
+        appliedAdjustmentIds: ["adjustment_1"],
+      },
+    });
+
+    expect(baseline.recommendedAction).toBe("APPLY_NOW");
+    expect(learned.recommendedAction).not.toBe("APPLY_NOW");
+    expect(learned.confidenceScore).toBe(baseline.confidenceScore - 10);
+    expect(learned.risks).toContain("Active learning: repeated high-score rejections require stricter review before promotion.");
+    expect(learned.appliedLearning).toEqual(["high_score_user_rejected"]);
+  });
 });

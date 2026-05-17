@@ -58,4 +58,26 @@ describe("duplicate stale job detector", () => {
     expect(stale.score).toBe(100);
     expect(stale.reasons).toEqual(expect.arrayContaining(["Posting text indicates the role may be closed."]));
   });
+
+  it("applies stricter learned stale handling for resurfacing jobs", () => {
+    const now = new Date("2026-05-15T12:00:00.000Z");
+    const listing = job({
+      firstSeenAt: new Date("2026-03-15T12:00:00.000Z"),
+      lastSeenAt: new Date("2026-04-25T12:00:00.000Z"),
+    });
+
+    const baseline = calculateStaleSignal(listing, now);
+    const learned = calculateStaleSignal(listing, now, {
+      stricterDedupe: true,
+      appliedCategories: ["dedupe_ineffective"],
+      appliedAdjustmentIds: ["adjustment_1"],
+    });
+
+    expect(baseline.score).toBe(0);
+    expect(learned.score).toBeGreaterThan(0);
+    expect(learned.reasons).toEqual(expect.arrayContaining([
+      "Active learning applies stricter review for listings that have not been seen recently.",
+      "Active learning applies stricter review for listings that have resurfaced for more than 45 days.",
+    ]));
+  });
 });

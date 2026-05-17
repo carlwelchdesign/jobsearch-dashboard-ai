@@ -67,4 +67,31 @@ describe("reviewApplicationMaterials", () => {
     expect(qa.unsupportedClaims.some((claim) => claim.includes("people-management"))).toBe(true);
     expect(qa.warnings).toContain("No evidence references are attached to these materials.");
   });
+
+  it("applies assistant QA learning for cover letter and field classification issues", () => {
+    const qa = reviewApplicationMaterials({
+      job: {
+        title: "Frontend Engineer",
+        company: "Example Co",
+        description: "React and TypeScript role.",
+      } as JobPosting,
+      resumeMarkdown: "# Candidate\nBuilt React systems.",
+      coverLetterBody: null,
+      evidenceRefs: ["ev1"],
+      learningRules: {
+        coverLetterFieldQa: true,
+        fieldClassificationQa: true,
+        appliedCategories: ["cover_letter_field", "field_classification"],
+        appliedAdjustmentIds: ["adjustment_1", "adjustment_2"],
+      },
+    });
+
+    expect(qa.status).toBe("NEEDS_REVIEW");
+    expect(qa.warnings).toEqual(expect.arrayContaining([
+      "Active learning: cover-letter fields have been missed before, so confirm whether this application needs a cover letter.",
+      "Active learning: field-classification mistakes have been reported, so manually review unknown required fields before submit.",
+    ]));
+    expect(qa.suggestedEdits).toContain("If the application asks why you want to join, paste or adapt the generated cover letter before submit.");
+    expect(qa.appliedLearning).toEqual(["cover_letter_field", "field_classification"]);
+  });
 });

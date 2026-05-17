@@ -220,11 +220,18 @@ async function processAgencyCandidatesNode(state: RecruitingAgencyWorkflowState)
       const candidatePayload = candidateEventPayload(candidate);
       await persistAgencyWorkflowState({ ...state, results, currentNode: "evaluateCandidate" });
       await createAgencyRunEvent(state.agentRunId, "candidate_evaluating", `Evaluating ${candidate.jobPosting.company} - ${candidate.jobPosting.title}.`, candidatePayload);
-      await runSkill({
+      const approval = await runSkill({
         skillId: "approve_agency_match",
         input: { userId: state.userId, matchId: candidate.id, minimumScore: state.minimumScore },
         userId: state.userId,
       });
+      if (approval.appliedAdjustments.length) {
+        await createAgencyRunEvent(state.agentRunId, "learning_applied", `Applied ${approval.appliedAdjustments.length} agency learning adjustment${approval.appliedAdjustments.length === 1 ? "" : "s"} while evaluating ${candidate.jobPosting.company}.`, {
+          ...candidatePayload,
+          adjustmentIds: approval.appliedAdjustments.map((adjustment) => adjustment.id),
+          categories: approval.appliedAdjustments.map((adjustment) => objectValue(adjustment.patchJson).category).filter(Boolean),
+        });
+      }
       await persistAgencyWorkflowState({ ...state, results, currentNode: "approveCandidate" });
       await createAgencyRunEvent(state.agentRunId, "match_approved", `Approved ${candidate.jobPosting.company} - ${candidate.jobPosting.title} at ${candidate.overallScore}.`, candidatePayload);
       await persistAgencyWorkflowState({ ...state, results, currentNode: "prepareApplicationPacket" });
@@ -430,6 +437,10 @@ function candidateEventPayload(candidate: Awaited<ReturnType<typeof findAgencyCa
 
 function toJsonValue(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
+}
+
+function objectValue(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 async function findAgencyCandidates({ userId, minimumScore, limit }: { userId: string; minimumScore: number; limit: number }) {

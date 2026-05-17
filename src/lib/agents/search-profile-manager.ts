@@ -2,9 +2,11 @@ import type { ApplicationOutcomeType, JobSearchProfile } from "@prisma/client";
 import { runAgent } from "@/lib/agents/run-agent";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
+import type { QualityProposalLearningRules } from "@/lib/skills/adjustments";
 
 export type SearchProfileManagerInput = {
   userId?: string;
+  learningRules?: QualityProposalLearningRules;
 };
 
 export type SearchProfileManagerOutput = {
@@ -36,6 +38,7 @@ export type SearchProfileManagerOutput = {
   profilesToDelete: string[];
   rationale: string;
   confidence: number;
+  appliedLearning?: string[];
 };
 
 export type SearchProfilePerformanceSummary = {
@@ -111,7 +114,7 @@ export async function runSearchProfileManagerAgent(input: SearchProfileManagerIn
       const profileHealthScores = profiles.map((profile) => scoreProfileHealth(profile));
       await persistPerformanceSnapshots(profileHealthScores);
       const overlaps = findOverlappingProfiles(profiles);
-      const recommendedChanges = buildRecommendations(profiles, profileHealthScores, overlaps);
+      const recommendedChanges = buildRecommendations(profiles, profileHealthScores, overlaps, input.learningRules);
       const profilesToPause = recommendedChanges.filter((change) => change.action === "pause").map((change) => change.profileId);
       const profilesToCreate = suggestProfilesToCreate(profiles);
 
@@ -122,8 +125,11 @@ export async function runSearchProfileManagerAgent(input: SearchProfileManagerIn
         profilesToPause,
         profilesToCreate,
         profilesToDelete: [],
-        rationale: "Reviewed search profiles using match volume, approval rate, rejection rate, average score, specificity, and title/keyword overlap. No destructive changes are applied automatically.",
+        rationale: input.learningRules?.lowSavedYield
+          ? "Reviewed search profiles with active low-yield learning, emphasizing source quality, query breadth, and profile specificity. No destructive changes are applied automatically."
+          : "Reviewed search profiles using match volume, approval rate, rejection rate, average score, specificity, and title/keyword overlap. No destructive changes are applied automatically.",
         confidence: profiles.some((profile) => profile.matches.length >= 20) ? 0.82 : 0.62,
+        appliedLearning: input.learningRules?.appliedCategories?.length ? input.learningRules.appliedCategories : undefined,
       };
     },
   });
@@ -211,10 +217,11 @@ async function persistPerformanceSnapshots(profileHealthScores: SearchProfileMan
   });
 }
 
-function buildRecommendations(
+export function buildRecommendations(
   profiles: ProfileWithStats[],
   health: SearchProfileManagerOutput["profileHealthScores"],
   overlaps: SearchProfileManagerOutput["profilesToMerge"],
+  learningRules?: QualityProposalLearningRules,
 ) {
   const healthById = new Map(health.map((item) => [item.profileId, item]));
   const overlappingIds = new Set(overlaps.flatMap((overlap) => overlap.profileIds));
@@ -234,6 +241,9 @@ function buildRecommendations(
     }
     if (score < 45 && profile.matches.length >= 20) {
       return { profileId: profile.id, profileName: profile.name, action: "pause" as const, summary: "Low health with enough sample size. Pause or narrow this profile before another scheduled run." };
+    }
+    if (learningRules?.lowSavedYield && (profile.matches.length === 0 || score < 65)) {
+      return { profileId: profile.id, profileName: profile.name, action: "review" as const, summary: "Active low-yield learning is enabled. Review query breadth, source quality, and profile specificity before the next search run." };
     }
     if (titles.length === 0 || required.length + preferred.length < 4) {
       return { profileId: profile.id, profileName: profile.name, action: "edit" as const, summary: "Profile is broad. Add target titles and high-signal keywords so job scoring has a clearer intent." };

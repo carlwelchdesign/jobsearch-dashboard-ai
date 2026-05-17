@@ -4,11 +4,13 @@ import { retrieveCandidateEvidence } from "@/lib/evidence/retrieval";
 import { jsonArray } from "@/lib/json";
 import { scoreJobForProfile } from "@/lib/job-search/scoring";
 import { prisma } from "@/lib/prisma";
+import type { QualityProposalLearningRules } from "@/lib/skills/adjustments";
 
 export type JobFitScoringInput = {
   jobPostingId: string;
   jobSearchProfileId: string;
   userId?: string;
+  learningRules?: QualityProposalLearningRules;
 };
 
 export type JobFitScoringOutput = {
@@ -23,6 +25,7 @@ export type JobFitScoringOutput = {
   missingKeywords: string[];
   evidenceRefs: string[];
   explanation: string;
+  appliedLearning?: string[];
 };
 
 type EvaluationDraft = Omit<JobFitScoringOutput, "evaluationId">;
@@ -53,7 +56,7 @@ export async function runJobFitScoringAgent(input: JobFitScoringInput) {
             limit: 10,
           })
         : [];
-      const draft = buildJobEvaluation({ job, profile, evidence });
+      const draft = buildJobEvaluation({ job, profile, evidence, learningRules: input.learningRules });
       const evaluation = await persistJobEvaluation(job.id, profile.id, draft);
       await persistCompatibleMatch(job.id, profile.id, draft);
 
@@ -69,10 +72,12 @@ export function buildJobEvaluation({
   job,
   profile,
   evidence,
+  learningRules,
 }: {
   job: Pick<JobPosting, "title" | "company" | "location" | "description" | "salaryMin" | "salaryMax" | "remoteType" | "lastSeenAt"> & { source?: { name: string } | null };
   profile: JobSearchProfile;
   evidence: CandidateEvidence[];
+  learningRules?: QualityProposalLearningRules;
 }): EvaluationDraft {
   const baseline = scoreJobForProfile(job, profile);
   const required = jsonArray(profile.keywordsRequired);
@@ -88,22 +93,28 @@ export function buildJobEvaluation({
   const opportunityScore = calculateOpportunityScore(job, profile, baseline);
   const confidenceScore = calculateConfidenceScore(job, profile, evidence, required, preferred);
   const missingKeywords = Array.from(new Set([...baseline.missingKeywords, ...required.filter((term) => !jobText.includes(term.toLowerCase()))]));
-  const risks = Array.from(new Set([...baseline.concerns, ...opportunityRisks(job, profile), ...confidenceRisks(confidenceScore, evidence.length)]));
+  const learnedRisks = learningRules?.highScoreUserRejected
+    ? ["Active learning: repeated high-score rejections require stricter review before promotion."]
+    : [];
+  const risks = Array.from(new Set([...baseline.concerns, ...opportunityRisks(job, profile), ...confidenceRisks(confidenceScore, evidence.length), ...learnedRisks]));
   const strengths = Array.from(new Set([...baseline.strongestMatches, ...evidenceMatches])).slice(0, 10);
-  const recommendedAction = recommendAction(fitScore, opportunityScore, confidenceScore, risks);
+  const adjustedConfidenceScore = learningRules?.highScoreUserRejected ? Math.max(0, confidenceScore - 10) : confidenceScore;
+  const baseRecommendedAction = recommendAction(fitScore, opportunityScore, adjustedConfidenceScore, risks);
+  const recommendedAction = learningRules?.highScoreUserRejected && baseRecommendedAction === "APPLY_NOW" ? "MAYBE_APPLY" : baseRecommendedAction;
   const recommendedResumeProfile = recommendResumeProfile(jobText, strengths);
 
   return {
     fitScore,
     opportunityScore,
-    confidenceScore,
+    confidenceScore: adjustedConfidenceScore,
     recommendedAction,
     recommendedResumeProfile,
     strengths,
     risks,
     missingKeywords,
     evidenceRefs,
-    explanation: explainEvaluation({ job, profile, fitScore, opportunityScore, confidenceScore, strengths, risks, recommendedAction }),
+    explanation: explainEvaluation({ job, profile, fitScore, opportunityScore, confidenceScore: adjustedConfidenceScore, strengths, risks, recommendedAction }),
+    appliedLearning: learningRules?.appliedCategories?.length ? learningRules.appliedCategories : undefined,
   };
 }
 

@@ -1,6 +1,6 @@
 import type { JobSearchProfile } from "@prisma/client";
 import { describe, expect, it } from "vitest";
-import { calculatePerformanceSummary } from "@/lib/agents/search-profile-manager";
+import { buildRecommendations, calculatePerformanceSummary } from "@/lib/agents/search-profile-manager";
 
 describe("search profile performance", () => {
   it("summarizes jobs, applications, outcomes, duplicates, and scores", () => {
@@ -26,6 +26,31 @@ describe("search profile performance", () => {
     expect(summary.averageFitScore).toBe(82);
     expect(summary.averageOpportunityScore).toBe(74);
     expect(summary.callbackRate).toBe(100);
+  });
+
+  it("applies low-yield learning as profile review guidance", () => {
+    const recommendations = buildRecommendations(
+      [
+        {
+          id: "profile_1",
+          name: "Broad Frontend",
+          enabled: true,
+          titles: ["Engineer"],
+          keywordsRequired: [],
+          keywordsPreferred: [],
+          industries: [],
+          matches: [],
+        } as unknown as Parameters<typeof buildRecommendations>[0][number],
+      ],
+      [{ profileId: "profile_1", name: "Broad Frontend", healthScore: 50, rationale: "", performance: calculatePerformanceSummary({ matches: [] } as never) }],
+      [],
+      { lowSavedYield: true, appliedCategories: ["low_saved_yield"], appliedAdjustmentIds: ["adjustment_1"] },
+    );
+
+    expect(recommendations[0]).toMatchObject({
+      action: "review",
+      summary: expect.stringContaining("Active low-yield learning"),
+    });
   });
 });
 
