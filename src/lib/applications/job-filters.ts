@@ -1,5 +1,5 @@
 import { JobMatchStatus } from "@prisma/client";
-import { createCanonicalJobKeys } from "@/lib/job-search/dedupe";
+import { createApplicationCanonicalJobKeys } from "@/lib/applications/reconciliation";
 
 type JobIdentity = {
   company: string;
@@ -31,7 +31,7 @@ export const suppressedJobMatchStatuses: JobMatchStatus[] = [
 export function applicationJobKeySet(applications: ApplicationJobRecord[]) {
   const keys = new Set<string>();
   for (const application of applications) {
-    for (const key of createCanonicalJobKeys(application.jobPosting)) {
+    for (const key of createApplicationCanonicalJobKeys(application.jobPosting)) {
       keys.add(key);
     }
   }
@@ -47,7 +47,7 @@ export function suppressedJobKeySet(records: ApplicationJobRecord[]) {
 }
 
 export function hasApplicationForJob(job: JobIdentity, applicationKeys: Set<string>) {
-  return createCanonicalJobKeys(job).some((key) => applicationKeys.has(key));
+  return createApplicationCanonicalJobKeys(job).some((key) => applicationKeys.has(key));
 }
 
 export function isSubmittedApplicationStatus(status: JobMatchStatus | string | undefined) {

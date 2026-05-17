@@ -10,6 +10,28 @@ describe("application reconciliation helpers", () => {
     expect(duplicateApplicationCleanupIds([approved, applied])).toEqual(["approved"]);
   });
 
+  it("collapses same-company same-title application trackers across regional postings after submission", () => {
+    const applied = app({
+      id: "linear_applied",
+      company: "Linear",
+      title: "Senior / Staff Fullstack Engineer",
+      location: "North America",
+      status: "applied",
+      updatedAt: new Date("2026-05-17T10:00:00Z"),
+    });
+    const readyEurope = app({
+      id: "linear_ready_europe",
+      company: "Linear",
+      title: "Senior / Staff Fullstack Engineer",
+      location: "Europe",
+      status: "ready_to_apply",
+      updatedAt: new Date("2026-05-17T11:00:00Z"),
+    });
+
+    expect(visibleCanonicalApplications([readyEurope, applied]).map((item) => item.id)).toEqual(["linear_applied"]);
+    expect(duplicateApplicationCleanupIds([readyEurope, applied])).toEqual(["linear_ready_europe"]);
+  });
+
   it("keeps ready applications visible when no submitted sibling exists", () => {
     const ready = app({ id: "ready", status: "ready_to_apply" });
     const approved = app({ id: "approved", status: "approved" });
@@ -23,6 +45,13 @@ describe("application reconciliation helpers", () => {
     const second = app({ id: "second", company: "Acme", title: "Software Engineer", status: "approved" });
 
     expect(visibleCanonicalApplications([first, second]).map((item) => item.id).sort()).toEqual(["first", "second"]);
+  });
+
+  it("keeps distinct titles at the same company separate", () => {
+    const fullstack = app({ id: "fullstack", company: "Linear", title: "Senior / Staff Fullstack Engineer", location: "North America", status: "applied" });
+    const product = app({ id: "product", company: "Linear", title: "Senior / Staff Product Engineer", location: "Europe", status: "ready_to_apply" });
+
+    expect(visibleCanonicalApplications([fullstack, product]).map((item) => item.id).sort()).toEqual(["fullstack", "product"]);
   });
 });
 

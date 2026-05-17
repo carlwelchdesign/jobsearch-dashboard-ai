@@ -22,6 +22,24 @@ describe("application integrity report", () => {
     });
   });
 
+  it("detects cross-region stale duplicate trackers after a same-company title is submitted", () => {
+    const report = buildApplicationIntegrityReport({
+      applications: [
+        application({ id: "linear_applied", status: "applied", company: "Linear", title: "Senior / Staff Fullstack Engineer", location: "North America" }),
+        application({ id: "linear_ready_europe", status: "ready_to_apply", company: "Linear", title: "Senior / Staff Fullstack Engineer", location: "Europe" }),
+      ],
+    });
+
+    expect(report.issueCounts.STALE_DUPLICATE_APPLICATION).toBe(1);
+    expect(report.issues[0]).toMatchObject({
+      kind: "STALE_DUPLICATE_APPLICATION",
+      applicationId: "linear_applied",
+      duplicateApplicationId: "linear_ready_europe",
+      expectedStatus: "applied",
+      actualStatus: "ready_to_apply",
+    });
+  });
+
   it("detects submitted application and match status drift", () => {
     const report = buildApplicationIntegrityReport({
       applications: [
@@ -74,6 +92,26 @@ describe("application integrity report", () => {
       actualStatus: "needs_review",
     });
   });
+
+  it("detects active regional variants that resurface after a canonical submission", () => {
+    const report = buildApplicationIntegrityReport({
+      applications: [
+        application({ id: "linear_applied", status: "applied", company: "Linear", title: "Senior / Staff Fullstack Engineer", location: "North America" }),
+      ],
+      activeMatches: [
+        match({ id: "linear_europe_match", status: "ready_to_apply", company: "Linear", title: "Senior / Staff Fullstack Engineer", location: "Europe" }),
+      ],
+    });
+
+    expect(report.issueCounts.RESURFACED_SUBMITTED_JOB).toBe(1);
+    expect(report.issues[0]).toMatchObject({
+      kind: "RESURFACED_SUBMITTED_JOB",
+      applicationId: "linear_applied",
+      jobProfileMatchId: "linear_europe_match",
+      expectedStatus: "applied",
+      actualStatus: "ready_to_apply",
+    });
+  });
 });
 
 function application(input: {
@@ -81,6 +119,7 @@ function application(input: {
   status: string;
   company?: string;
   title?: string;
+  location?: string;
   matchId?: string | null;
   matchStatus?: string;
   emailConfirmed?: boolean;
@@ -102,7 +141,7 @@ function application(input: {
       id: `job_${input.id}`,
       company,
       title,
-      location: "Remote",
+      location: input.location ?? "Remote",
       lastSeenAt: now,
       duplicateGroupId: null,
     },
@@ -121,7 +160,7 @@ function application(input: {
   } as never;
 }
 
-function match(input: { id: string; status: string; company: string; title: string }) {
+function match(input: { id: string; status: string; company: string; title: string; location?: string }) {
   return {
     id: input.id,
     status: input.status,
@@ -130,7 +169,7 @@ function match(input: { id: string; status: string; company: string; title: stri
       id: `job_${input.id}`,
       company: input.company,
       title: input.title,
-      location: "Remote",
+      location: input.location ?? "Remote",
       lastSeenAt: now,
       duplicateGroupId: null,
     },

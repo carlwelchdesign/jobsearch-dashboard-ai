@@ -2,12 +2,12 @@ import type { Application, ApplicationAutomationRun, EmailMessageRecord, JobMatc
 import { recordApplicationOutcome } from "@/lib/applications/outcomes";
 import {
   canonicalApplicationGroupKey,
+  createApplicationCanonicalJobKeys,
   duplicateApplicationCleanupIds,
   reconcileApplicationCanonicalState,
   submittedStatus,
   visibleCanonicalApplications,
 } from "@/lib/applications/reconciliation";
-import { createCanonicalJobKeys } from "@/lib/job-search/dedupe";
 import { recordSubmittedJobSuppression } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 
@@ -117,7 +117,7 @@ export function buildApplicationIntegrityReport(input: {
   for (const group of groups.values()) {
     const visible = visibleCanonicalApplications(group)[0];
     if (visible && submittedStatus(visible.status)) {
-      for (const key of createCanonicalJobKeys(visible.jobPosting)) submittedByKey.set(key, visible);
+      for (const key of createApplicationCanonicalJobKeys(visible.jobPosting)) submittedByKey.set(key, visible);
     }
 
     for (const duplicateId of duplicateApplicationCleanupIds(group)) {
@@ -183,7 +183,7 @@ export function buildApplicationIntegrityReport(input: {
   }
 
   for (const match of input.activeMatches ?? []) {
-    const submittedApplication = createCanonicalJobKeys(match.jobPosting)
+    const submittedApplication = createApplicationCanonicalJobKeys(match.jobPosting)
       .map((key) => submittedByKey.get(key))
       .find(Boolean);
     if (!submittedApplication || match.status === submittedApplication.status) continue;

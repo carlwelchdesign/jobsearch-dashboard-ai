@@ -1,5 +1,5 @@
 import type { Application, JobMatchStatus, JobPosting, Prisma } from "@prisma/client";
-import { createCanonicalJobKeys } from "@/lib/job-search/dedupe";
+import { createCanonicalJobKeys, createCanonicalJobParts } from "@/lib/job-search/dedupe";
 import { recordSubmittedJobSuppression } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 
@@ -18,7 +18,14 @@ const submittedStatuses: JobMatchStatus[] = ["applied", "follow_up_due", "screen
 const cleanupStatuses: JobMatchStatus[] = ["approved", "ready_to_apply", "resume_generated", "cover_letter_generated"];
 
 export function canonicalApplicationGroupKey(application: Pick<ApplicationWithJob, "jobPosting">) {
-  return createCanonicalJobKeys(application.jobPosting)[0] ?? `${application.jobPosting.company}:${application.jobPosting.title}`.toLowerCase();
+  return createApplicationCanonicalJobKeys(application.jobPosting)[0] ?? `${application.jobPosting.company}:${application.jobPosting.title}`.toLowerCase();
+}
+
+export function createApplicationCanonicalJobKeys(job: Pick<JobPosting, "company" | "title"> & { location?: string | null }) {
+  const parts = createCanonicalJobParts(job);
+  return [
+    [parts.companyKey, parts.titleFamilyKey || parts.titleKey].join("|"),
+  ].filter((key) => !key.includes("||"));
 }
 
 export function submittedStatus(status: JobMatchStatus | string | null | undefined) {
@@ -66,9 +73,9 @@ export async function reconcileApplicationCanonicalState(input: {
     orderBy: { updatedAt: "desc" },
     take: 1000,
   });
-  const relevantKeys = scopedApplication ? new Set(createCanonicalJobKeys(scopedApplication.jobPosting)) : null;
+  const relevantKeys = scopedApplication ? new Set(createApplicationCanonicalJobKeys(scopedApplication.jobPosting)) : null;
   const groups = groupApplications(applications.filter((application) => (
-    !relevantKeys || createCanonicalJobKeys(application.jobPosting).some((key) => relevantKeys.has(key))
+    !relevantKeys || createApplicationCanonicalJobKeys(application.jobPosting).some((key) => relevantKeys.has(key))
   )));
 
   let archivedDuplicates = 0;

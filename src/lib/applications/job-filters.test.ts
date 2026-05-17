@@ -22,6 +22,30 @@ describe("application job filters", () => {
     }, tracked)).toBe(true);
   });
 
+  it("matches submitted applications across regional variants of the same company and title", () => {
+    const submitted = submittedApplicationJobKeySet([
+      {
+        status: JobMatchStatus.applied,
+        jobPosting: {
+          company: "Linear",
+          title: "Senior / Staff Fullstack Engineer",
+          location: "North America",
+        },
+      },
+    ]);
+
+    expect(hasApplicationForJob({
+      company: "Linear",
+      title: "Senior / Staff Fullstack Engineer",
+      location: "Europe",
+    }, submitted)).toBe(true);
+    expect(hasApplicationForJob({
+      company: "Linear",
+      title: "Senior / Staff Product Engineer",
+      location: "Europe",
+    }, submitted)).toBe(false);
+  });
+
   it("only treats submitted or outcome states as submitted applications", () => {
     const submitted = submittedApplicationJobKeySet([
       {
