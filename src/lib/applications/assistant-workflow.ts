@@ -1,5 +1,3 @@
-import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
-import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import type { Prisma } from "@prisma/client";
 import { findReusableAnswerMemories } from "@/lib/application-answer-memory";
 import { createAgentUserRequest } from "@/lib/agent-user-requests";
@@ -121,43 +119,6 @@ export type SerializedAssistantWorkflowStatus = {
     observed: number;
   };
 };
-
-const AssistantWorkflowAnnotation = Annotation.Root({
-  applicationId: Annotation<string>(),
-  origin: Annotation<string>(),
-  graphThreadId: Annotation<string>(),
-  automationRunId: Annotation<string | null>(),
-  currentNode: Annotation<string>(),
-  status: Annotation<AssistantWorkflowState["status"]>(),
-  error: Annotation<string | null>(),
-  fields: Annotation<AssistantWorkflowField[]>({
-    reducer: (_, right) => right,
-    default: () => [],
-  }),
-  pendingCommand: Annotation<AssistantWorkflowCommand | null>(),
-  pendingFieldId: Annotation<string | null>(),
-  pendingUserRequestId: Annotation<string | null>(),
-  filledFields: Annotation<string[]>({
-    reducer: (_, right) => right,
-    default: () => [],
-  }),
-  skippedFields: Annotation<string[]>({
-    reducer: (_, right) => right,
-    default: () => [],
-  }),
-  blockedFields: Annotation<string[]>({
-    reducer: (_, right) => right,
-    default: () => [],
-  }),
-  observedManualFields: Annotation<string[]>({
-    reducer: (_, right) => right,
-    default: () => [],
-  }),
-  events: Annotation<AssistantWorkflowEvent[]>({
-    reducer: (left, right) => [...left, ...right],
-    default: () => [],
-  }),
-});
 
 let graphPromise: Promise<any> | null = null;
 
@@ -332,85 +293,57 @@ export async function recordApplicationAssistantWorkflowCommandResult(input: {
   };
 }
 
-export async function resumeApplicationAssistantWorkflowWithRequestAnswer(input: {
-  requestId: string;
-  answer: string;
-}) {
-  const request = await prisma.agentUserRequest.findUnique({
-    where: { id: input.requestId },
-    include: {
-      application: { include: { jobPosting: true } },
-    },
-  });
-  if (!request?.applicationId || !request.application) return null;
-  const context = request.contextJson && typeof request.contextJson === "object" && !Array.isArray(request.contextJson)
-    ? request.contextJson as { source?: string; field?: AssistantWorkflowField }
-    : {};
-  if (context.source !== "application_assistant_field_command" || !context.field) return null;
-
-  const run = await latestWorkflowRun(request.applicationId);
-  const state = workflowStateFromRun(run);
-  const field = context.field;
-  const answer = input.answer.trim();
-  if (!answer) return null;
-
-  await storeObservedFieldLearning({
-    userId: run.userId,
-    applicationId: run.applicationId,
-    atsProvider: request.application.jobPosting.atsProvider,
-    host: hostFromUrl(request.application.jobPosting.applicationUrl),
-    fields: [{
-      fieldKey: field.fieldId,
-      category: field.category,
-      label: field.label,
-      inputType: field.inputType,
-      selector: field.selector,
-      answer,
-      source: "assistant_confirmation",
-      confidence: 86,
-    }],
-  }).catch(() => null);
-
-  const nextCommand = command("fill", {
-    fieldId: field.fieldId,
-    selector: field.selector,
-    value: answer,
-    reason: "User answered this field request in Needs Me.",
-  });
-  const nextState: AssistantWorkflowState = {
-    ...state,
-    currentNode: "resumeWithUserAnswer",
-    status: "RUNNING",
-    pendingCommand: nextCommand,
-    pendingFieldId: field.fieldId,
-    pendingUserRequestId: null,
-    fields: state.fields.some((candidate) => candidate.fieldId === field.fieldId)
-      ? state.fields.map((candidate) => candidate.fieldId === field.fieldId
-        ? { ...candidate, decision: "fill", confidence: 86 }
-        : candidate)
-      : [...state.fields, { ...field, decision: "fill", confidence: 86 }],
-    events: [
-      ...state.events,
-      workflowEvent("resumeWithUserAnswer", "User answered a paused application field; assistant can continue filling.", {
-        requestId: input.requestId,
-        fieldId: field.fieldId,
-      }),
-    ],
-  };
-  await persistWorkflowState(run.id, nextState);
-  return serializeWorkflowStatus(await prisma.applicationAutomationRun.findUniqueOrThrow({ where: { id: run.id } }));
-}
-
 async function assistantWorkflowGraph() {
   graphPromise ??= buildAssistantWorkflowGraph();
   return graphPromise;
 }
 
 async function buildAssistantWorkflowGraph() {
+  const [{ Annotation, END, START, StateGraph }, { PostgresSaver }] = await Promise.all([
+    import("@langchain/langgraph"),
+    import("@langchain/langgraph-checkpoint-postgres"),
+  ]);
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required for LangGraph Postgres checkpointing.");
   const checkpointer = PostgresSaver.fromConnString(databaseUrl);
   await checkpointer.setup();
+
+  const AssistantWorkflowAnnotation = Annotation.Root({
+    applicationId: Annotation<string>(),
+    origin: Annotation<string>(),
+    graphThreadId: Annotation<string>(),
+    automationRunId: Annotation<string | null>(),
+    currentNode: Annotation<string>(),
+    status: Annotation<AssistantWorkflowState["status"]>(),
+    error: Annotation<string | null>(),
+    fields: Annotation<AssistantWorkflowField[]>({
+      reducer: (_, right) => right,
+      default: () => [],
+    }),
+    pendingCommand: Annotation<AssistantWorkflowCommand | null>(),
+    pendingFieldId: Annotation<string | null>(),
+    pendingUserRequestId: Annotation<string | null>(),
+    filledFields: Annotation<string[]>({
+      reducer: (_, right) => right,
+      default: () => [],
+    }),
+    skippedFields: Annotation<string[]>({
+      reducer: (_, right) => right,
+      default: () => [],
+    }),
+    blockedFields: Annotation<string[]>({
+      reducer: (_, right) => right,
+      default: () => [],
+    }),
+    observedManualFields: Annotation<string[]>({
+      reducer: (_, right) => right,
+      default: () => [],
+    }),
+    events: Annotation<AssistantWorkflowEvent[]>({
+      reducer: (left, right) => [...left, ...right],
+      default: () => [],
+    }),
+  });
 
   return new StateGraph(AssistantWorkflowAnnotation)
     .addNode("loadPackage", async (state: AssistantWorkflowState) => {
@@ -838,8 +771,11 @@ function normalizeWorkflowFields(fields: AssistantWorkflowBrowserField[]) {
 }
 
 function fieldHandled(state: AssistantWorkflowState, field: AssistantWorkflowField) {
+  const status = field.status?.toLowerCase() ?? "";
   return field.result === "success"
     || field.result === "skipped"
+    || status === "filled"
+    || status === "checked"
     || state.filledFields.includes(field.fieldId)
     || state.skippedFields.includes(field.fieldId)
     || state.blockedFields.includes(field.fieldId)
@@ -866,15 +802,6 @@ function fieldIdFor(input: { selector?: string | null; label?: string | null; in
 
 function canonicalKey(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 120) || "unknown";
-}
-
-function hostFromUrl(url?: string | null) {
-  if (!url) return "unknown";
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "unknown";
-  }
 }
 
 function questionLike(field: AssistantWorkflowField) {

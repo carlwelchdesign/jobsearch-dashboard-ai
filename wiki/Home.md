@@ -27,7 +27,7 @@ The product is not a blind mass-apply bot. It is designed around verified candid
 - QA checks for unsupported claims, generic writing, fake metrics, style issues, and missing evidence.
 - Email response ingestion through IMAP and OAuth foundation for Gmail/Outlook.
 - Outcome tracking and outcome-learning recommendations.
-- Local Playwright application assistant with safety gates.
+- Local Playwright application assistant with LangGraph-backed durable workflow state and safety gates.
 - MCP server exposing app tools to local agents.
 - Chrome extension for capturing externally found jobs into the system.
 
@@ -46,6 +46,8 @@ The product is not a blind mass-apply bot. It is designed around verified candid
 ## Safety Model
 
 The system can find jobs, score jobs, generate materials, prepare application packets, draft messages, monitor responses, and launch local automation. It must not silently invent career claims or submit/send externally without the configured approval rules and safety gates.
+
+LangGraph is used for the application assistant state machine where durable interrupt/resume behavior matters. It tracks browser launch, field inspection, pending field commands, user pauses, resumes, and ready-to-submit state. It does not remove the manual final-submit gate.
 
 Hard rules:
 

@@ -153,6 +153,7 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
   const [loading, setLoading] = useState(false);
   const [markingApplied, setMarkingApplied] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [question, setQuestion] = useState("");
   const [questionLoading, setQuestionLoading] = useState(false);
@@ -215,6 +216,26 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
       setNotice(error instanceof Error ? error.message : "Unable to mark application applied.");
     } finally {
       setMarkingApplied(false);
+    }
+  }
+
+  async function resetSelectedAssistant() {
+    if (!selected) return;
+    if (!window.confirm(`Reset assistant test state for ${selected.company} - ${selected.title}? This stops any tracked local assistant run and clears open assistant blockers for this application. It will not reject the job or delete learned memories.`)) return;
+
+    setResetting(true);
+    try {
+      const response = await fetch(`/api/applications/${selected.id}/assistant-workflow/reset`, { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? "Unable to reset assistant state.");
+      setLaunch(null);
+      setLog("");
+      setNotice(payload.message ?? "Assistant test state reset.");
+      router.refresh();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to reset assistant state.");
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -416,16 +437,25 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
                   <Button
                     variant="outlined"
                     startIcon={<PlayCircleOutlineOutlinedIcon />}
-                    disabled={loading}
+                    disabled={loading || resetting}
                     onClick={() => void launchSelected(true)}
                   >
                     Launch next unlaunched
                   </Button>
                   <Button
                     variant="outlined"
+                    color="warning"
+                    startIcon={<RefreshOutlinedIcon />}
+                    disabled={!selected || loading || resetting}
+                    onClick={() => void resetSelectedAssistant()}
+                  >
+                    {resetting ? "Resetting..." : "Reset assistant test state"}
+                  </Button>
+                  <Button
+                    variant="outlined"
                     color="error"
                     startIcon={<DeleteOutlineOutlinedIcon />}
-                    disabled={!selected || deleting || loading}
+                    disabled={!selected || deleting || loading || resetting}
                     onClick={() => void deleteSelected()}
                   >
                     {deleting ? "Rejecting..." : "Reject from queue"}

@@ -48,7 +48,7 @@ describe("DELETE /api/applications/[id]", () => {
         title: "Senior Engineer",
         location: "Remote",
       },
-    } as Awaited<ReturnType<typeof prisma.application.findUnique>>);
+    } as unknown as Awaited<ReturnType<typeof prisma.application.findUnique>>);
 
     const response = await DELETE(new Request("http://localhost/api/applications/app_1"), { params: { id: "app_1" } });
 

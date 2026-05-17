@@ -16,6 +16,7 @@ describe("buildDailyCommandCenter", () => {
       profileOptimizerRunCreatedAt: now,
       latestSearchRunStartedAt: now,
       applyNowEvaluations: [testEvaluation(job)],
+      agencyCandidateCount: 0,
     });
 
     expect(plan.actions[0].category).toBe("submit_applications");

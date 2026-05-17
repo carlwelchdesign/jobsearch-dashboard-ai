@@ -133,3 +133,5 @@ This checks that key app pages render against a running local server.
 - Keep generated writing grounded in `CandidateEvidence`.
 - Prefer deterministic fallbacks when provider keys are missing.
 - Avoid destructive changes without explicit user approval.
+- Keep LangGraph and LangChain imports out of generic route/module top levels. Import them lazily inside server-only workflow construction so Next.js RSC bundles for unrelated API routes do not include `@langchain/*`.
+- Treat `ApplicationAutomationRun.workflowStateJson` as the UI projection of assistant workflow state; LangGraph checkpointing is the durable graph state layer.

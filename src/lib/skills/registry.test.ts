@@ -6,7 +6,7 @@ describe("skill registry", () => {
   it("covers every agent type with a code-first skill", () => {
     const registeredAgentTypes = new Set(
       Object.values(skillRegistry)
-        .map((skill) => skill.agentType)
+        .map((skill) => "agentType" in skill ? skill.agentType : undefined)
         .filter(Boolean),
     );
 

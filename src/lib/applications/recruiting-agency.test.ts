@@ -138,7 +138,7 @@ describe("runRecruitingAgency", () => {
           lastSeenAt: new Date("2026-05-01"),
         },
       },
-    ] as Awaited<ReturnType<typeof prisma.application.findMany>>);
+    ] as unknown as Awaited<ReturnType<typeof prisma.application.findMany>>);
     findMatchesMock.mockResolvedValue([
       match({ id: "match_1", jobPostingId: "job_1", score: 94, company: "Acme", title: "Senior Frontend Engineer", location: "Remote" }),
     ] as Awaited<ReturnType<typeof prisma.jobProfileMatch.findMany>>);
@@ -195,6 +195,19 @@ function match(input: {
     jobSearchProfileId: "profile_1",
     status: "needs_review",
     overallScore: input.score,
+    recommendedAction: "Review",
+    missingKeywords: [],
+    titleFit: input.score,
+    skillFit: input.score,
+    seniorityFit: input.score,
+    industryFit: input.score,
+    compensationFit: input.score,
+    remoteFit: input.score,
+    relocationFit: input.score,
+    strongestMatches: [],
+    concerns: [],
+    aiExplanation: "",
+    reviewedAt: null,
     createdAt: new Date("2026-05-01"),
     updatedAt: new Date("2026-05-02"),
     jobPosting: {

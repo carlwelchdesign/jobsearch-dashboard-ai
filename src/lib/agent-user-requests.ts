@@ -137,7 +137,7 @@ export async function resolveAgentUserRequest(input: ResolveAgentUserRequestInpu
   }
 
   if (request.type === "UNKNOWN_ANSWER" && answer) {
-    const { resumeApplicationAssistantWorkflowWithRequestAnswer } = await import("@/lib/applications/assistant-workflow");
+    const { resumeApplicationAssistantWorkflowWithRequestAnswer } = await import("@/lib/applications/assistant-workflow-resume");
     await resumeApplicationAssistantWorkflowWithRequestAnswer({
       requestId: request.id,
       answer,

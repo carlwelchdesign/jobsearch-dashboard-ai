@@ -260,6 +260,29 @@ def main() -> int:
         print_field_inventory("Detected fields before filling", inventory_before)
 
         if package.get("workflow", {}).get("fieldByFieldCommands"):
+            filled = sum(fill_safe_fields(context, package) for context in form_contexts)
+            learned_filled = sum(fill_learned_form_rules(context, package) for context in form_contexts)
+            memory_filled = sum(fill_learned_field_memories(context, package) for context in form_contexts)
+            demographic_filled = sum(
+                fill_demographic_fields(context, package["candidate"].get("demographicAnswers", {}))
+                for context in form_contexts
+            )
+            uploads = sum(upload_materials(context, resume_pdf, cover_letter_pdf) for context in form_contexts)
+            inventory_after_legacy_fill = detect_fields_in_contexts(form_contexts)
+            print_field_inventory("Detected fields after package, learned memory, and upload fill", inventory_after_legacy_fill)
+            print()
+            print(f"Filled {filled} safe text fields.")
+            print(f"Filled {learned_filled} learned recurring field(s).")
+            print(f"Filled {memory_filled} saved field memory value(s).")
+            print(f"Filled {demographic_filled} configured demographic field(s).")
+            print(f"Uploaded {uploads} material file(s).")
+            assistant_event(args.application_id, "fill_summary", "Assistant completed package and learned-memory fill pass.", {
+                "safeFieldsFilled": filled,
+                "learnedFieldsFilled": learned_filled,
+                "memoryFieldsFilled": memory_filled,
+                "demographicFieldsFilled": demographic_filled,
+                "uploads": uploads,
+            })
             field_command_loop(
                 args,
                 page,
@@ -267,7 +290,7 @@ def main() -> int:
                 package,
                 resume_pdf,
                 cover_letter_pdf,
-                inventory_before,
+                inventory_after_legacy_fill,
             )
             if not auto_submit_allowed:
                 for context in form_contexts:

@@ -119,7 +119,7 @@ export default async function ApplicationAssistantPage() {
               : null,
             assistantLaunched: application.events.some((event) => {
               const payload = event.payload as { note?: string } | null;
-              return payload?.note === "Local Playwright assistant launched. Manual submit checkpoint required.";
+              return Boolean(application.automationRuns[0]) && payload?.note === "Local Playwright assistant launched. Manual submit checkpoint required.";
             }),
           }))}
         />

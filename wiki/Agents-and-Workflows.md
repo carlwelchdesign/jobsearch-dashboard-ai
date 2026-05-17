@@ -2,6 +2,10 @@
 
 The app implements agents as deterministic services with typed inputs and outputs. Agents do not randomly talk to each other. Workflows orchestrate agents in a controlled order and persist `AgentRun` records for observability.
 
+LangGraph is used selectively where durable state-machine behavior is useful. The first production use case is the application assistant workflow, where the system needs to move through states such as package validation, browser launch, field inspection, field command, user pause, resume, and ready-to-submit.
+
+LangGraph is not used as a general replacement for every deterministic service. Most agents remain plain typed services because they are easier to test, reason about, and run synchronously.
+
 ## Agent Run Observability
 
 `AgentRun` stores:
@@ -70,6 +74,28 @@ The Agent Board shows recent runs, recommendations, warnings, and review needs.
 5. Materials are generated as a draft application packet.
 6. Application QA checks unsupported claims, style violations, and weak evidence.
 7. User reviews and approves before submission or outreach.
+
+## Application Assistant Workflow
+
+The application assistant workflow combines LangGraph orchestration with local Playwright execution.
+
+1. User launches the assistant from Apply Sprint or an application route.
+2. LangGraph validates the ready application package.
+3. LangGraph starts the local Playwright runner.
+4. Playwright opens the employer form and performs the broad safe fill pass.
+5. Playwright reports field inventory and fill events back to the app.
+6. The workflow stores current node, events, field decisions, pending command, and counts on the latest automation run.
+7. If a known field remains, the workflow issues a fill/upload/skip command.
+8. If an unknown required or custom field remains, the workflow creates a Needs Me request and waits.
+9. When the user answers, the workflow resumes with a fill command and saves safe learning according to field-memory policy.
+10. The workflow stops before final submit and waits for manual review.
+
+Implementation notes:
+
+- LangGraph dependencies are imported lazily inside server-only workflow construction to avoid bundling `@langchain/*` into unrelated Next.js RSC route chunks.
+- `ApplicationAutomationRun.workflowStateJson` is the app-facing state projection used by Apply Sprint.
+- LangGraph checkpointing is backed by Postgres.
+- Playwright remains responsible for browser I/O; LangGraph decides workflow state and commands.
 
 ## Outcome Learning Workflow
 

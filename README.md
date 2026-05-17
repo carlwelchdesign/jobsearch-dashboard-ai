@@ -120,6 +120,14 @@ Scheduled job search runs are configured in `vercel.json` and call `/api/cron/jo
 
 The app does not submit applications automatically. For jobs marked `ready_to_apply`, you can run a local browser assistant that fills safe known fields, uploads the generated resume and cover letter when matching inputs are visible, then stops before submit.
 
+The assistant is orchestrated by a LangGraph-backed workflow plus a local Playwright browser runner:
+
+- LangGraph validates the application package, launches the browser runner, stores workflow checkpoints, and records workflow state on `ApplicationAutomationRun`.
+- The Playwright runner is still the only component that controls the browser. It performs the broad safe autofill pass, reports detected fields, executes workflow commands, observes manual input, and watches for submit confirmation.
+- Workflow state is persisted in Postgres through LangGraph checkpointing and in `workflowStateJson` for app UI visibility.
+- The graph does not click final submit in the current phase. It stops at manual review and can resume after Needs Me answers for unknown fields.
+- LangGraph imports are loaded lazily inside server-only workflow construction so ordinary Next.js route bundles do not pull `@langchain/*` into unrelated RSC chunks.
+
 Install local browser automation dependencies:
 
 ```bash
@@ -138,6 +146,9 @@ The assistant will:
 - fill safe fields such as name, email, phone, location, LinkedIn, GitHub, and portfolio
 - upload the generated resume PDF and cover letter text file when matching upload controls exist
 - prepare selected application-question answers as a local text file when you have chosen an answer option in the packet review page
+- report meaningful workflow activity, detected fields, pending commands, blockers, and ready-to-submit state back to Apply Sprint
+- create Needs Me requests when a required or custom field cannot be safely answered
+- learn from approved/manual field answers through application field memory with sensitivity and reuse policies
 - highlight likely submit buttons and wait for your manual review
 
 The assistant will not:
@@ -147,6 +158,8 @@ The assistant will not:
 - use stealth browser settings
 - rotate proxies
 - answer sensitive demographic questions automatically
+
+During autofill testing, Apply Sprint includes a reset control for the selected application. It clears assistant automation runs and open assistant blockers, stops any tracked local runner process, and lets you relaunch without rejecting the job or deleting learned memories.
 
 Application-question workflow:
 
