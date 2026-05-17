@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getOutcomeCalibration, recomputeOutcomeCalibration, refreshOutcomeCalibration } from "@/lib/observability/outcome-calibration";
+import {
+  getOutcomeCalibration,
+  proposeOutcomeReviewActionImprovements,
+  recomputeOutcomeCalibration,
+  refreshOutcomeCalibration,
+} from "@/lib/observability/outcome-calibration";
 import { ensureAgentQualityDataset, proposeImprovementsFromFailedExamples } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
 
@@ -16,7 +21,7 @@ vi.mock("@/lib/prisma", () => ({
     jobSuppression: { findMany: vi.fn() },
     applicationAutomationRun: { findMany: vi.fn() },
     agentQualityExample: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
-    agentImprovementProposal: { findMany: vi.fn() },
+    agentImprovementProposal: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
   },
 }));
 
@@ -29,6 +34,8 @@ const exampleFindManyMock = vi.mocked(prisma.agentQualityExample.findMany);
 const exampleFindFirstMock = vi.mocked(prisma.agentQualityExample.findFirst);
 const exampleCreateMock = vi.mocked(prisma.agentQualityExample.create);
 const proposalFindManyMock = vi.mocked(prisma.agentImprovementProposal.findMany);
+const proposalFindFirstMock = vi.mocked(prisma.agentImprovementProposal.findFirst);
+const proposalCreateMock = vi.mocked(prisma.agentImprovementProposal.create);
 const ensureDatasetMock = vi.mocked(ensureAgentQualityDataset);
 const proposeMock = vi.mocked(proposeImprovementsFromFailedExamples);
 
@@ -76,6 +83,8 @@ describe("outcome calibration", () => {
     ] as never);
     exampleFindManyMock.mockResolvedValue([{ id: "example_1" }] as never);
     proposalFindManyMock.mockResolvedValue([{ id: "proposal_1", status: "PROPOSED" }] as never);
+    proposalFindFirstMock.mockResolvedValue(null);
+    proposalCreateMock.mockImplementation((input) => ({ id: `proposal_${String((input as any).data.metadataJson.actionId).replace(/[^a-z0-9]/gi, "_")}` }) as never);
     exampleFindFirstMock.mockResolvedValue(null);
     exampleCreateMock.mockResolvedValue({ id: "created" } as never);
     ensureDatasetMock.mockResolvedValue({ id: "dataset_1" } as never);
@@ -187,6 +196,67 @@ describe("outcome calibration", () => {
 
     expect(report.createdExamples).toBe(0);
     expect(exampleCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("promotes outcome review actions into governed proposals", async () => {
+    const result = await proposeOutcomeReviewActionImprovements("user_1");
+
+    expect(result).toMatchObject({
+      scanned: 5,
+      created: 5,
+      existing: 0,
+    });
+    expect(proposalCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        userId: "user_1",
+        status: "PROPOSED",
+        metadataJson: expect.objectContaining({
+          source: "outcome_review_action",
+          actionCategory: "repair_suppression",
+          targetType: "job",
+          targetId: "job_4",
+        }),
+        patchJson: expect.objectContaining({
+          policy: "proposal_only",
+          category: "suppression_resurfacing",
+        }),
+      }),
+      select: { id: true },
+    }));
+  });
+
+  it("does not duplicate open outcome review proposals", async () => {
+    proposalFindFirstMock.mockResolvedValue({ id: "proposal_existing" } as never);
+
+    const result = await proposeOutcomeReviewActionImprovements("user_1");
+
+    expect(result).toMatchObject({
+      scanned: 5,
+      created: 0,
+      existing: 5,
+    });
+    expect(proposalCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("does not create proposals when no review actions are present", async () => {
+    applicationFindManyMock.mockResolvedValue([
+      application({ id: "app_clean", status: "screening", outcomes: [{ outcome: "RECRUITER_SCREEN" }] }),
+    ] as never);
+    matchFindManyMock.mockResolvedValue([
+      match({ id: "match_clean", jobPostingId: "job_clean", status: "approved", overallScore: 82, duplicateGroupId: null }),
+    ] as never);
+    suppressionFindManyMock.mockResolvedValue([] as never);
+    automationFindManyMock.mockResolvedValue([] as never);
+
+    const result = await proposeOutcomeReviewActionImprovements("user_1");
+
+    expect(result).toMatchObject({
+      scanned: 0,
+      created: 0,
+      existing: 0,
+      proposals: [],
+    });
+    expect(proposalCreateMock).not.toHaveBeenCalled();
   });
 
   it("refreshes outcome calibration without throwing when background recompute fails", async () => {

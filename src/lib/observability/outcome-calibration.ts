@@ -162,6 +162,76 @@ export async function recomputeOutcomeCalibration(
   return { ...report, createdExamples, proposals };
 }
 
+export async function proposeOutcomeReviewActionImprovements(userId?: string | null) {
+  const data = await loadOutcomeData(userId);
+  const ownerId = userId ?? data.user?.id;
+  if (!ownerId) return { scanned: 0, created: 0, existing: 0, proposals: [] };
+
+  const report = buildOutcomeCalibrationReport(data);
+  let created = 0;
+  let existing = 0;
+  const proposals: Array<{ id: string; actionId: string; status: "created" | "existing" }> = [];
+
+  for (const action of report.actions.filter((item) => item.severity === "watch" || item.severity === "needs_review")) {
+    const plan = proposalPlanForReviewAction(action);
+    const current = await prisma.agentImprovementProposal.findFirst({
+      where: {
+        userId: ownerId,
+        target: plan.target,
+        status: "PROPOSED",
+        AND: [
+          { metadataJson: { path: ["source"], equals: "outcome_review_action" } },
+          { metadataJson: { path: ["actionCategory"], equals: action.category } },
+          { metadataJson: { path: ["targetType"], equals: action.targetType } },
+          { metadataJson: { path: ["targetId"], equals: action.targetId ?? action.id } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (current) {
+      existing += 1;
+      proposals.push({ id: current.id, actionId: action.id, status: "existing" });
+      continue;
+    }
+
+    const proposal = await prisma.agentImprovementProposal.create({
+      data: {
+        userId: ownerId,
+        target: plan.target,
+        type: plan.type,
+        status: "PROPOSED",
+        riskLevel: plan.riskLevel,
+        title: plan.title,
+        summary: action.summary,
+        rationale: `${action.rationale} This proposal was promoted from outcome calibration and must be reviewed before any behavior changes are accepted.`,
+        affectedExampleIds: [],
+        patchJson: {
+          category: plan.category,
+          policy: "proposal_only",
+          recommendedChange: plan.title,
+          actionId: action.id,
+          href: action.href,
+        },
+        metadataJson: {
+          source: "outcome_review_action",
+          actionId: action.id,
+          actionCategory: action.category,
+          actionSeverity: action.severity,
+          targetType: action.targetType,
+          targetId: action.targetId ?? action.id,
+          affectedCount: action.affectedCount,
+          href: action.href,
+        },
+      },
+      select: { id: true },
+    });
+    created += 1;
+    proposals.push({ id: proposal.id, actionId: action.id, status: "created" });
+  }
+
+  return { scanned: report.actions.length, created, existing, proposals };
+}
+
 export function refreshOutcomeCalibration(input: { userId?: string | null; source: OutcomeCalibrationRefreshSource }) {
   void recomputeOutcomeCalibration(input.userId, { source: input.source }).catch((error) => {
     console.warn("Outcome calibration refresh failed.", error);
@@ -424,6 +494,58 @@ function buildReviewActions(details: OutcomeCalibrationReport["details"]): Outco
   })));
 
   return actions.slice(0, 12);
+}
+
+function proposalPlanForReviewAction(action: OutcomeCalibrationReviewAction): {
+  target: AgentQualityTarget;
+  type: "PROMPT" | "SKILL" | "CLASSIFIER" | "WORKFLOW";
+  riskLevel: "LOW" | "HIGH";
+  category: string;
+  title: string;
+} {
+  if (action.category === "resolve_duplicates") {
+    return {
+      target: "JOB_SEARCH",
+      type: "WORKFLOW",
+      riskLevel: "LOW",
+      category: "dedupe_ineffective",
+      title: action.title,
+    };
+  }
+  if (action.category === "repair_suppression") {
+    return {
+      target: "JOB_SEARCH",
+      type: "WORKFLOW",
+      riskLevel: "HIGH",
+      category: "suppression_resurfacing",
+      title: action.title,
+    };
+  }
+  if (action.category === "tighten_profile") {
+    return {
+      target: "JOB_MATCHING",
+      type: "CLASSIFIER",
+      riskLevel: "HIGH",
+      category: "outcome_tighten_profile",
+      title: action.title,
+    };
+  }
+  if (action.category === "review_assistant_failures") {
+    return {
+      target: "APPLICATION_ASSISTANT",
+      type: "WORKFLOW",
+      riskLevel: "HIGH",
+      category: "assistant_outcome_failure",
+      title: action.title,
+    };
+  }
+  return {
+    target: "JOB_SEARCH",
+    type: "WORKFLOW",
+    riskLevel: "HIGH",
+    category: "outcome_source_review",
+    title: action.title,
+  };
 }
 
 function resurfacedSuppressedJobDetails(data: LoadedData): OutcomeCalibrationReport["details"]["resurfacedSuppressedJobs"] {

@@ -286,6 +286,15 @@ export default async function SettingsPage() {
                 >
                   Repair outcome signals
                 </ActionButton>
+                <ActionButton
+                  postTo="/api/observability/outcomes/propose-actions"
+                  variant="outlined"
+                  color="secondary"
+                  size="small"
+                  message="Outcome review proposals updated."
+                >
+                  Create proposals from actions
+                </ActionButton>
               </Stack>
               {outcomeCalibration ? (
                 <>
@@ -334,7 +343,7 @@ export default async function SettingsPage() {
                     </Stack>
                     <Typography variant="h4">Recommended review actions</Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                      Advisory next steps based on outcome signals. These do not change sources, profiles, thresholds, suppressions, or automation.
+                      Advisory next steps based on outcome signals. These can be promoted into governed proposals, but they do not directly change sources, profiles, thresholds, suppressions, or automation.
                     </Typography>
                     {outcomeCalibration.actions.length ? (
                       <Stack spacing={1.25} sx={{ mt: 1.25 }}>
