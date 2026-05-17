@@ -85,7 +85,7 @@ With `OPENAI_API_KEY`, resume parsing, job scoring, and resume tailoring use Ope
 
 With `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY`, the app emits redacted metadata traces for agent runs, OpenAI helper calls, the application assistant workflow, and graph-backed recruiting agency runs. Tracing is optional and fail-open: if LangSmith is unavailable, the app continues without tracing. The default trace payload masks resume text, cover letters, raw application answers, prompts, secrets, emails, phone numbers, and full field values while preserving useful debugging metadata such as workflow step, field label, field type, command type, result, status, model, and counts.
 
-The app also keeps a local LangSmith-style quality loop. Assistant failures, browser-close repairs, manual submit corrections, recruiting agency candidate failures, and explicit mistake reports become redacted `AgentQualityExample` records. `/api/observability/evaluations/run` scores those examples and creates propose-only `AgentImprovementProposal` records; it never auto-applies prompt or workflow changes. Quality targets now cover the application assistant, recruiting agency, job search, job matching, generated materials, GitHub review, outreach, outcome learning, and command center recommendations.
+The app also keeps a local LangSmith-style quality loop. Assistant failures, browser-close repairs, manual submit corrections, recruiting agency candidate failures, noisy search runs, rejected high-score matches, and explicit mistake reports become redacted `AgentQualityExample` records. `/api/observability/evaluations/run` scores supported targets and creates propose-only `AgentImprovementProposal` records; it never auto-applies prompt, scoring, search, or workflow changes. Deterministic evaluators currently cover the application assistant, recruiting agency, job search, and job matching; the schema also supports generated materials, GitHub review, outreach, outcome learning, and command center recommendations.
 
 Set your GitHub profile URL in `/settings` and click `Sync GitHub context` to pull public repository context into the candidate profile. Public repos are used as project context in tailored resumes and cover letters when relevant. Add `GITHUB_TOKEN` only if you need higher GitHub API rate limits.
 
@@ -164,6 +164,18 @@ Quality loop endpoints:
 curl -X POST http://localhost:3000/api/observability/examples/backfill
 curl -X POST http://localhost:3000/api/observability/evaluations/run
 curl http://localhost:3000/api/observability/evaluations
+```
+
+Use an optional `target` body or query value to focus on one evaluator, for example:
+
+```bash
+curl -X POST http://localhost:3000/api/observability/examples/backfill \
+  -H "content-type: application/json" \
+  -d '{"target":"JOB_MATCHING"}'
+curl -X POST http://localhost:3000/api/observability/evaluations/run \
+  -H "content-type: application/json" \
+  -d '{"target":"RECRUITING_AGENCY"}'
+curl "http://localhost:3000/api/observability/evaluations?target=JOB_SEARCH"
 ```
 - learn from approved/manual field answers through application field memory with sensitivity and reuse policies
 - highlight likely submit buttons and wait for your manual review

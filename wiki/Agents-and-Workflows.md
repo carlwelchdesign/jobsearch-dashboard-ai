@@ -39,7 +39,14 @@ When `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` are configured, agent runs
 
 The app has a local quality loop for turning mistakes into repeatable checks. `AgentQualityDataset` groups examples, `AgentQualityExample` stores redacted failure/success cases, `AgentQualityEvaluation` stores scored results, and `AgentImprovementProposal` stores propose-only changes for review.
 
-The first dataset is `application_assistant_autofill`. It is populated from assistant failures, browser/page-close repairs, manual submit corrections, and explicit Jolene mistake reports. Recruiting agency failures are captured under `recruiting_agency_decisions`. The schema also supports quality targets for job search, job matching, generated materials, GitHub review, outreach, outcome learning, and command center recommendations. Evaluation runs score examples and cluster repeated failure categories into proposals. V1 does not auto-apply prompt, classifier, or workflow changes.
+The supported deterministic evaluator targets are `APPLICATION_ASSISTANT`, `RECRUITING_AGENCY`, `JOB_SEARCH`, and `JOB_MATCHING`.
+
+- `APPLICATION_ASSISTANT` uses `application_assistant_autofill` examples from assistant failures, browser/page-close repairs, manual submit corrections, and explicit Jolene mistake reports.
+- `RECRUITING_AGENCY` uses `recruiting_agency_decisions` examples from candidate failures, stale graph repairs, manual cancels, and retry-needed agency runs.
+- `JOB_SEARCH` uses `job_search_results` examples from failed/partial runs, low saved-result yield, and weak dedupe signals.
+- `JOB_MATCHING` uses `job_matching_decisions` examples from high-scoring matches the user rejected.
+
+Evaluation runs score examples and cluster repeated failure categories into review-only proposals. V1 does not auto-apply prompt, classifier, scoring, search, or workflow changes. The schema also supports generated materials, GitHub review, outreach, outcome learning, and command center quality targets for future evaluators.
 
 ## Implemented Agent Areas
 

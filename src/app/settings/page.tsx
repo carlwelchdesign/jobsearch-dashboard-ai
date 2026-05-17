@@ -100,20 +100,26 @@ export default async function SettingsPage() {
     : [[], [], []];
   const quality = user
     ? await Promise.all([
-        prisma.agentQualityExample.count({ where: { userId: user.id, target: "APPLICATION_ASSISTANT" } }),
-        prisma.agentQualityEvaluation.count({ where: { userId: user.id, target: "APPLICATION_ASSISTANT", status: "FAILED" } }),
+        prisma.agentQualityExample.count({ where: { userId: user.id } }),
+        prisma.agentQualityEvaluation.count({ where: { userId: user.id, status: "FAILED" } }),
         prisma.agentQualityEvaluation.aggregate({
-          where: { userId: user.id, target: "APPLICATION_ASSISTANT" },
+          where: { userId: user.id },
           _avg: { score: true },
         }),
         prisma.agentImprovementProposal.findMany({
-          where: { userId: user.id, target: "APPLICATION_ASSISTANT" },
+          where: { userId: user.id },
           orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-          take: 5,
+          take: 8,
+        }),
+        prisma.agentQualityEvaluation.groupBy({
+          by: ["target"],
+          where: { userId: user.id },
+          _count: { target: true },
+          _avg: { score: true },
         }),
       ])
-    : [0, 0, { _avg: { score: null } }, []] as const;
-  const [qualityExampleCount, qualityFailedCount, qualityScore, qualityProposals] = quality;
+    : [0, 0, { _avg: { score: null } }, [], []] as const;
+  const [qualityExampleCount, qualityFailedCount, qualityScore, qualityProposals, qualityByTarget] = quality;
   const nextAction = getSettingsNextAction({
     hasUser: Boolean(user),
     aiConfigured: Boolean(process.env.OPENAI_API_KEY),
@@ -180,16 +186,29 @@ export default async function SettingsPage() {
                   <Chip size="small" color={qualityFailedCount ? "warning" : "success"} variant="outlined" label={`${qualityFailedCount} failed evals`} />
                   <Chip size="small" variant="outlined" label={qualityScore._avg.score === null ? "not scored" : `${Math.round(qualityScore._avg.score)} avg`} />
                 </Stack>
-                <Typography variant="h3">Application assistant evaluation loop</Typography>
+                <Typography variant="h3">Cross-agent evaluation loop</Typography>
                 <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                  Assistant failures, repairs, and user mistake reports become redacted quality examples. Evaluations score recurring behavior and create propose-only improvements for review.
+                  Assistant failures, agency run repairs, noisy search runs, and rejected high-score matches become redacted quality examples. Evaluations score recurring behavior and create propose-only improvements for review.
                 </Typography>
               </Box>
+              {qualityByTarget.length ? (
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                  {qualityByTarget.map((item) => (
+                    <Chip
+                      key={item.target}
+                      size="small"
+                      variant="outlined"
+                      label={`${item.target.toLowerCase().replace(/_/g, " ")}: ${item._count.target} evals${item._avg.score === null ? "" : `, ${Math.round(item._avg.score)} avg`}`}
+                    />
+                  ))}
+                </Stack>
+              ) : null}
               {qualityProposals.length ? (
                 <Stack spacing={1.25}>
                   {qualityProposals.map((proposal) => (
                     <Box key={proposal.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
                       <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
+                        <Chip size="small" color="info" variant="outlined" label={proposal.target.toLowerCase().replace(/_/g, " ")} />
                         <Chip size="small" label={proposal.type.toLowerCase()} />
                         <Chip size="small" color={proposal.status === "PROPOSED" ? "warning" : proposal.status === "ACCEPTED" ? "success" : "default"} label={proposal.status.toLowerCase()} />
                         <Chip size="small" variant="outlined" label={proposal.riskLevel.toLowerCase()} />

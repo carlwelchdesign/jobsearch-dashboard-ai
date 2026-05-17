@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  backfillAgentQualityExamples,
   createQualityExampleFromAutomationRun,
   proposeImprovementsFromFailedExamples,
+  runAgentQualityEvaluations,
   runApplicationAssistantEvaluations,
 } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
@@ -14,6 +16,19 @@ vi.mock("@/lib/prisma", () => ({
     applicationAutomationRun: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
+    },
+    agentRun: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+    },
+    jobSearchRun: {
+      findMany: vi.fn(),
+    },
+    jobProfileMatch: {
+      findMany: vi.fn(),
+    },
+    user: {
+      findFirst: vi.fn(),
     },
     agentQualityExample: {
       findFirst: vi.fn(),
@@ -33,6 +48,11 @@ vi.mock("@/lib/prisma", () => ({
 
 const datasetUpsertMock = vi.mocked(prisma.agentQualityDataset.upsert);
 const runFindUniqueMock = vi.mocked(prisma.applicationAutomationRun.findUnique);
+const automationRunFindManyMock = vi.mocked(prisma.applicationAutomationRun.findMany);
+const agentRunFindManyMock = vi.mocked(prisma.agentRun.findMany);
+const jobSearchRunFindManyMock = vi.mocked(prisma.jobSearchRun.findMany);
+const jobProfileMatchFindManyMock = vi.mocked(prisma.jobProfileMatch.findMany);
+const userFindFirstMock = vi.mocked(prisma.user.findFirst);
 const exampleFindFirstMock = vi.mocked(prisma.agentQualityExample.findFirst);
 const exampleCreateMock = vi.mocked(prisma.agentQualityExample.create);
 const exampleFindManyMock = vi.mocked(prisma.agentQualityExample.findMany);
@@ -50,6 +70,11 @@ describe("agent quality evaluation loop", () => {
     evaluationCreateMock.mockImplementation((input) => ({ id: "eval_1", ...(input as any).data }) as never);
     proposalFindFirstMock.mockResolvedValue(null);
     proposalCreateMock.mockResolvedValue({ id: "proposal_1" } as never);
+    automationRunFindManyMock.mockResolvedValue([] as never);
+    agentRunFindManyMock.mockResolvedValue([] as never);
+    jobSearchRunFindManyMock.mockResolvedValue([] as never);
+    jobProfileMatchFindManyMock.mockResolvedValue([] as never);
+    userFindFirstMock.mockResolvedValue({ id: "user_1" } as never);
   });
 
   it("creates redacted assistant examples from failed automation runs", async () => {
@@ -133,6 +158,95 @@ describe("agent quality evaluation loop", () => {
 
     expect(result.created).toBe(0);
     expect(proposalCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("evaluates recruiting agency quality examples with target-specific scoring", async () => {
+    exampleFindManyMock.mockResolvedValue([
+      {
+        id: "example_agency",
+        userId: "user_1",
+        datasetId: "dataset_1",
+        agentRunId: "agent_run_1",
+        failureCategory: "stale_graph_run",
+        source: "AGENT_RUN",
+        actualJson: { status: "FAILED", workflowState: { resultCount: 0, candidateCount: 2 } },
+        evaluations: [],
+      },
+    ] as never);
+    evaluationFindManyMock.mockResolvedValue([
+      {
+        id: "eval_agency",
+        userId: "user_1",
+        exampleId: "example_agency",
+        failureCategory: "stale_graph_run",
+        status: "FAILED",
+        example: { id: "example_agency" },
+      },
+    ] as never);
+
+    const result = await runAgentQualityEvaluations({ userId: "user_1", target: "RECRUITING_AGENCY" });
+
+    expect(result.targets).toEqual(expect.arrayContaining([expect.objectContaining({ target: "RECRUITING_AGENCY", evaluated: 1 })]));
+    expect(evaluationCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        target: "RECRUITING_AGENCY",
+        evaluatorVersion: "recruiting-agency-quality-v1",
+        status: "FAILED",
+        score: 35,
+      }),
+    }));
+    expect(proposalCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        target: "RECRUITING_AGENCY",
+        title: "Improve recruiting agency stale-run recovery",
+      }),
+    }));
+  });
+
+  it("backfills job search and job matching examples", async () => {
+    jobSearchRunFindManyMock.mockResolvedValue([
+      {
+        id: "search_1",
+        startedAt: new Date("2026-05-17T10:00:00Z"),
+        status: "completed",
+        triggeredBy: "manual",
+        profileIds: [],
+        jobsFetched: 20,
+        jobsAfterDedupe: 19,
+        jobsAfterFilters: 19,
+        jobsSaved: 0,
+        progress: [],
+        errors: [],
+        createdAt: new Date("2026-05-17T10:00:00Z"),
+      },
+    ] as never);
+    jobProfileMatchFindManyMock.mockResolvedValue([
+      {
+        id: "match_1",
+        jobPostingId: "job_1",
+        status: "rejected",
+        overallScore: 92,
+        recommendedAction: "APPLY_NOW",
+        concerns: [],
+        missingKeywords: [],
+        aiExplanation: "Strong match",
+        jobPosting: { id: "job_1", company: "Acme", title: "Senior Engineer" },
+        jobSearchProfile: { userId: "user_1", name: "Senior Frontend" },
+      },
+    ] as never);
+
+    const result = await backfillAgentQualityExamples({ userId: "user_1" });
+
+    expect(result.targets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ target: "JOB_SEARCH", examples: 1 }),
+      expect.objectContaining({ target: "JOB_MATCHING", examples: 1 }),
+    ]));
+    expect(exampleCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ target: "JOB_SEARCH", failureCategory: "low_saved_yield" }),
+    }));
+    expect(exampleCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ target: "JOB_MATCHING", failureCategory: "high_score_user_rejected" }),
+    }));
   });
 });
 

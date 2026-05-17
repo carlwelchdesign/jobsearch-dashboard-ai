@@ -50,7 +50,7 @@ The system can find jobs, score jobs, generate materials, prepare application pa
 
 LangGraph is used where durable state-machine behavior matters. The application assistant tracks browser launch, field inspection, pending field commands, user pauses, resumes, and ready-to-submit state. The recruiting agency tracks candidate discovery, approval, packet preparation, result recording, and finalization. The assistant graph does not remove the manual final-submit gate.
 
-LangSmith is available as an optional observability layer. When configured, it traces redacted metadata for agent runs, OpenAI calls, assistant workflow steps, and recruiting agency graph runs. The app also has a local quality loop that turns application-assistant failures, recruiting agency failures, and user mistake reports into redacted examples, scores them, and creates propose-only improvement proposals without sending raw resumes, cover letters, application answers, prompts, or secrets by default.
+LangSmith is available as an optional observability layer. When configured, it traces redacted metadata for agent runs, OpenAI calls, assistant workflow steps, and recruiting agency graph runs. The app also has a local quality loop that turns application-assistant failures, recruiting agency failures, noisy search runs, rejected high-score matches, and user mistake reports into redacted examples, scores them with deterministic evaluators, and creates propose-only improvement proposals without sending raw resumes, cover letters, application answers, prompts, or secrets by default.
 
 Hard rules:
 
