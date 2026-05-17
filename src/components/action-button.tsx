@@ -6,6 +6,7 @@ import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import Snackbar from "@mui/material/Snackbar";
+import type { SxProps, Theme } from "@mui/material/styles";
 import { useEffect, useRef, useState } from "react";
 
 type ActionButtonProps = {
@@ -22,6 +23,7 @@ type ActionButtonProps = {
   endIcon?: React.ReactNode;
   runInBackground?: boolean;
   loadingLabel?: string;
+  sx?: SxProps<Theme>;
 };
 
 export function ActionButton({
@@ -38,6 +40,7 @@ export function ActionButton({
   endIcon,
   runInBackground = false,
   loadingLabel = "Working...",
+  sx,
 }: ActionButtonProps) {
   const router = useRouter();
   const [notice, setNotice] = useState("");
@@ -53,7 +56,7 @@ export function ActionButton({
 
   if (href) {
     return (
-      <Button component={Link} href={href} variant={variant} color={color} size={size} startIcon={startIcon} endIcon={endIcon}>
+      <Button component={Link} href={href} variant={variant} color={color} size={size} startIcon={startIcon} endIcon={endIcon} sx={sx}>
         {children}
       </Button>
     );
@@ -126,17 +129,18 @@ export function ActionButton({
         disabled={loading}
         aria-busy={loading}
         onClick={runAction}
-        sx={{
+        sx={[
+          ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
           ...(loading
-            ? {
+            ? [{
                 "&.Mui-disabled": {
                   bgcolor: "warning.main",
                   color: "warning.contrastText",
                   opacity: 1,
                 },
-              }
-            : {}),
-        }}
+              }]
+            : []),
+        ]}
       >
         {loading ? loadingLabel : children}
       </Button>

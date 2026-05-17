@@ -8,6 +8,8 @@ It can:
 
 - select ready applications
 - show packet readiness
+- run the recruiting agency from a primary command panel
+- prepare approved packets, sync packet records, open the sprint console, and launch the next ready application from a consistent operations grid
 - prepare assistant package data
 - launch the local browser assistant
 - surface blocker state

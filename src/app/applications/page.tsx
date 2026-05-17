@@ -30,6 +30,12 @@ import { MarkAppliedButton } from "./mark-applied-button";
 export const dynamic = "force-dynamic";
 
 const columns = ["approved", "ready_to_apply", "applied", "follow_up_due", "screening", "interviewing", "offer", "archived"];
+const commandButtonSx = {
+  minHeight: 42,
+  width: "100%",
+  justifyContent: "flex-start",
+  textAlign: "left",
+};
 
 export default async function ApplicationsPage() {
   await reconcileApplicationCanonicalState({ source: "applications_page" }).catch(() => null);
@@ -118,27 +124,68 @@ export default async function ApplicationsPage() {
         </Card>
         <Card>
           <CardContent>
-            <Stack spacing={1.5}>
-              <Typography variant="h3">Agency command center</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Search now hands strong matches to the agency automatically. Use these controls for manual retries, approved-job packet backfills, and launching the next ready application.
-              </Typography>
-              <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ alignItems: { md: "center" } }}>
-                <AgencyRunControl />
-                <BulkPrepareControl compact defaultMinimumScore={90} defaultLimit={10} />
-                <BackfillPacketsButton />
-                <ActionButton href="/applications/assistant" variant="outlined" startIcon={<BoltOutlinedIcon />}>
-                  Open sprint console
-                </ActionButton>
-                <ActionButton
-                  postTo="/api/applications/next-ready/launch-assistant"
-                  variant="contained"
-                  color="success"
-                  startIcon={<PlayCircleOutlineOutlinedIcon />}
-                >
-                  Launch next ready
-                </ActionButton>
-              </Stack>
+            <Stack spacing={2}>
+              <Box>
+                <Typography variant="h3">Agency command center</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 780 }}>
+                  Run the agency, prepare approved packets, and launch the next application from one focused control surface.
+                </Typography>
+              </Box>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: { xs: "1fr", lg: "minmax(360px, 1.25fr) minmax(320px, 0.75fr)" },
+                  gap: 2,
+                  alignItems: "start",
+                }}
+              >
+                <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 2, bgcolor: "background.paper" }}>
+                  <Stack spacing={1.5}>
+                    <Box>
+                      <Chip size="small" color="primary" label="Primary workflow" />
+                      <Typography variant="h4" sx={{ mt: 1 }}>Recruiting agency</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Review high-fit matches, approve the right jobs, and generate application packets.
+                      </Typography>
+                    </Box>
+                    <AgencyRunControl buttonSx={{ minHeight: 44, px: 2.25 }} />
+                  </Stack>
+                </Box>
+                <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 2, bgcolor: "background.paper" }}>
+                  <Stack spacing={1.5}>
+                    <Box>
+                      <Chip size="small" variant="outlined" label="Actions" />
+                      <Typography variant="h4" sx={{ mt: 1 }}>Application operations</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Prepare, inspect, recover, or launch the next ready item.
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: "grid", gridTemplateColumns: "1fr", gap: 1.25 }}>
+                      <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                          Prepare approved packets
+                        </Typography>
+                        <BulkPrepareControl compact defaultMinimumScore={90} defaultLimit={10} buttonSx={commandButtonSx} />
+                      </Box>
+                      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1 }}>
+                        <BackfillPacketsButton sx={commandButtonSx} />
+                        <ActionButton href="/applications/assistant" variant="outlined" startIcon={<BoltOutlinedIcon />} sx={commandButtonSx}>
+                          Open sprint console
+                        </ActionButton>
+                        <ActionButton
+                          postTo="/api/applications/next-ready/launch-assistant"
+                          variant="contained"
+                          color="success"
+                          startIcon={<PlayCircleOutlineOutlinedIcon />}
+                          sx={commandButtonSx}
+                        >
+                          Launch next ready
+                        </ActionButton>
+                      </Box>
+                    </Box>
+                  </Stack>
+                </Box>
+              </Box>
             </Stack>
           </CardContent>
         </Card>

@@ -10,6 +10,7 @@ import CardContent from "@mui/material/CardContent";
 import MenuItem from "@mui/material/MenuItem";
 import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
+import type { SxProps, Theme } from "@mui/material/styles";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useEffect, useRef, useState } from "react";
@@ -18,6 +19,7 @@ type BulkPrepareControlProps = {
   compact?: boolean;
   defaultMinimumScore?: number;
   defaultLimit?: number;
+  buttonSx?: SxProps<Theme>;
 };
 
 type BulkPrepareResponse = {
@@ -34,7 +36,7 @@ type BulkPrepareResponse = {
   } | null;
 };
 
-export function BulkPrepareControl({ compact = false, defaultMinimumScore = 85, defaultLimit = 10 }: BulkPrepareControlProps) {
+export function BulkPrepareControl({ compact = false, defaultMinimumScore = 85, defaultLimit = 10, buttonSx }: BulkPrepareControlProps) {
   const router = useRouter();
   const [minimumScore, setMinimumScore] = useState(defaultMinimumScore);
   const [limit, setLimit] = useState(defaultLimit);
@@ -127,6 +129,7 @@ export function BulkPrepareControl({ compact = false, defaultMinimumScore = 85, 
         startIcon={<AutoAwesomeOutlinedIcon />}
         disabled={loading}
         onClick={prepareBatch}
+        sx={buttonSx}
       >
         {loading ? "Preparing..." : "Auto-prepare"}
       </Button>

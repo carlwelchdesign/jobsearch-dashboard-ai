@@ -34,6 +34,12 @@ Tracked run data includes:
 
 The goal is for the user to see what the search system is actually doing instead of only seeing a spinner.
 
+## Apply Sprint Agency Command Center
+
+The Apply Sprint page has a dedicated Agency command center for the application workflow. It uses a primary action panel for running the recruiting agency and showing live graph activity, plus a separate operations panel for packet preparation, packet sync, sprint-console access, and launching the next ready application.
+
+This keeps the main agency workflow visually distinct from secondary actions and avoids mixing stateful run status, select inputs, and action buttons in one uneven toolbar.
+
 ## Daily Plan
 
 The daily command center agent can produce a short action list from current jobs, applications, blockers, follow-ups, and profile health.

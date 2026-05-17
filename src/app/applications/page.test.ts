@@ -7,7 +7,12 @@ describe("/applications page agency workflow", () => {
     const pageSource = readFileSync(fileURLToPath(new URL("./page.tsx", import.meta.url)), "utf8");
 
     expect(pageSource).toContain("Agency command center");
+    expect(pageSource).toContain("Primary workflow");
+    expect(pageSource).toContain("Application operations");
+    expect(pageSource).toContain("Prepare approved packets");
     expect(pageSource).toContain("/api/applications/agency/run");
+    expect(pageSource).toContain("/api/applications/next-ready/launch-assistant");
+    expect(pageSource).toContain("/applications/assistant");
     expect(pageSource).not.toContain("ApplicationCreateForm");
   });
 

@@ -8,6 +8,7 @@ import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
+import type { SxProps, Theme } from "@mui/material/styles";
 import Typography from "@mui/material/Typography";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -46,6 +47,7 @@ type AgencyRunControlProps = {
   color?: "primary" | "success";
   variant?: "contained" | "outlined";
   showLatestOnMount?: boolean;
+  buttonSx?: SxProps<Theme>;
 };
 
 export function AgencyRunControl({
@@ -55,6 +57,7 @@ export function AgencyRunControl({
   color = "primary",
   variant = "contained",
   showLatestOnMount = true,
+  buttonSx,
 }: AgencyRunControlProps) {
   const router = useRouter();
   const [run, setRun] = useState<AgencyRunStatus | null>(null);
@@ -153,6 +156,7 @@ export function AgencyRunControl({
           startIcon={running ? <CircularProgress color="inherit" size={16} thickness={5} /> : <AutoAwesomeOutlinedIcon />}
           disabled={running}
           onClick={() => void startAgency()}
+          sx={buttonSx}
         >
           {running ? "Agency running..." : label}
         </Button>
