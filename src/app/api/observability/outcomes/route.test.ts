@@ -24,6 +24,7 @@ describe("GET /api/observability/outcomes", () => {
       summary: { applications: 1 },
       workflows: [{ target: "JOB_SEARCH", status: "healthy", score: 100, summary: "Clean", metrics: {} }],
       signals: [],
+      details: { resurfacedSuppressedJobs: [{ jobId: "job_1" }] },
     } as never);
   });
 
@@ -36,6 +37,7 @@ describe("GET /api/observability/outcomes", () => {
       ok: true,
       summary: { applications: 1 },
       workflows: [{ target: "JOB_SEARCH" }],
+      details: { resurfacedSuppressedJobs: [{ jobId: "job_1" }] },
     });
   });
 });

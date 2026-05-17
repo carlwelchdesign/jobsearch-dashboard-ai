@@ -55,11 +55,24 @@ describe("outcome calibration", () => {
         companyKey: "company",
         titleFamilyKey: "title",
         jobPostingId: "job_4",
+        jobProfileMatchId: null,
+        applicationId: null,
+        source: "job_reject",
         createdAt: new Date("2026-05-17T10:00:00.000Z"),
       },
     ] as never);
     automationFindManyMock.mockResolvedValue([
-      { id: "run_1", applicationId: "app_1", jobPostingId: "job_1", status: "FAILED", blockerType: null, currentNode: "failed", startedAt: new Date() },
+      {
+        id: "run_1",
+        applicationId: "app_1",
+        jobPostingId: "job_1",
+        status: "FAILED",
+        blockerType: null,
+        blockerMessage: null,
+        currentNode: "failed",
+        startedAt: new Date(),
+        jobPosting: { company: "Company", title: "Role" },
+      },
     ] as never);
     exampleFindManyMock.mockResolvedValue([{ id: "example_1" }] as never);
     proposalFindManyMock.mockResolvedValue([{ id: "proposal_1", status: "PROPOSED" }] as never);
@@ -91,6 +104,40 @@ describe("outcome calibration", () => {
       "rejected_high_score_matches",
       "assistant_failures",
     ]));
+    expect(report.details.resurfacedSuppressedJobs[0]).toMatchObject({
+      jobId: "job_4",
+      matchId: "match_4",
+      company: "Company",
+      title: "Role",
+      matchStatus: "discovered",
+    });
+    expect(report.details.activeDuplicateGroups[0]).toMatchObject({
+      duplicateGroupId: "dup_2",
+      activeMatchCount: 2,
+    });
+    expect(report.details.rejectedHighScoreMatches[0]).toMatchObject({
+      matchId: "match_1",
+      score: 91,
+      profileName: "AI Product",
+    });
+    expect(report.details.assistantFailures[0]).toMatchObject({
+      automationRunId: "run_1",
+      status: "FAILED",
+      company: "Company",
+    });
+    expect(report.details.profileBreakdown[0]).toMatchObject({
+      profileId: "profile_1",
+      profileName: "AI Product",
+      rejectedHighScoreMatches: 1,
+      applied: 3,
+      positiveOutcomes: 1,
+      callbackRate: 33,
+    });
+    expect(report.details.sourceBreakdown[0]).toMatchObject({
+      sourceId: "source_1",
+      sourceName: "Company Source",
+      noisySignals: 1,
+    });
   });
 
   it("captures missing outcome signals as redacted quality examples and proposes improvements", async () => {
@@ -134,8 +181,19 @@ function application(input: { id: string; status: string; outcomes: Array<{ outc
     status: input.status,
     updatedAt: new Date("2026-05-17T10:00:00.000Z"),
     outcomes: input.outcomes.map((outcome) => ({ ...outcome, occurredAt: new Date("2026-05-17T10:00:00.000Z") })),
-    jobPosting: { id: "job", company: "Company", title: "Role", sourceId: null },
-    jobProfileMatch: { id: "match", overallScore: 80, jobSearchProfileId: "profile_1" },
+    jobPosting: {
+      id: "job",
+      company: "Company",
+      title: "Role",
+      sourceId: "source_1",
+      source: { id: "source_1", name: "Company Source", type: "company_site" },
+    },
+    jobProfileMatch: {
+      id: "match",
+      overallScore: 80,
+      jobSearchProfileId: "profile_1",
+      jobSearchProfile: { id: "profile_1", name: "AI Product" },
+    },
   };
 }
 
@@ -147,6 +205,12 @@ function match(input: { id: string; jobPostingId: string; status: string; overal
     status: input.status,
     overallScore: input.overallScore,
     updatedAt: new Date("2026-05-17T10:00:00.000Z"),
-    jobPosting: { company: "Company", title: "Role", duplicateGroupId: input.duplicateGroupId },
+    jobPosting: {
+      company: "Company",
+      title: "Role",
+      duplicateGroupId: input.duplicateGroupId,
+      source: { id: "source_1", name: "Company Source", type: "company_site" },
+    },
+    jobSearchProfile: { id: "profile_1", name: "AI Product" },
   };
 }

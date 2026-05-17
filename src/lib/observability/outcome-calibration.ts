@@ -52,6 +52,69 @@ export type OutcomeCalibrationReport = {
     metrics: Record<string, number | null>;
   }>;
   signals: OutcomeCalibrationSignal[];
+  details: {
+    resurfacedSuppressedJobs: Array<{
+      suppressionId: string;
+      jobId: string | null;
+      matchId: string | null;
+      applicationId: string | null;
+      company: string;
+      title: string;
+      suppressionKind: string;
+      suppressionSource: string;
+      matchStatus: string | null;
+      score: number | null;
+      createdAt: Date;
+    }>;
+    activeDuplicateGroups: Array<{
+      duplicateGroupId: string;
+      company: string;
+      title: string;
+      activeMatchCount: number;
+      jobs: Array<{ jobId: string; matchId: string; company: string; title: string; status: string; score: number }>;
+    }>;
+    rejectedHighScoreMatches: Array<{
+      matchId: string;
+      jobId: string;
+      company: string;
+      title: string;
+      score: number;
+      profileId: string;
+      profileName: string;
+      rejectedAt: Date;
+    }>;
+    assistantFailures: Array<{
+      automationRunId: string;
+      applicationId: string;
+      jobId: string;
+      company: string;
+      title: string;
+      status: string;
+      blockerType: string | null;
+      blockerMessage: string | null;
+      currentNode: string | null;
+      startedAt: Date;
+    }>;
+    profileBreakdown: Array<{
+      profileId: string;
+      profileName: string;
+      activeMatches: number;
+      rejectedHighScoreMatches: number;
+      applied: number;
+      positiveOutcomes: number;
+      callbackRate: number | null;
+    }>;
+    sourceBreakdown: Array<{
+      sourceId: string | null;
+      sourceName: string;
+      sourceType: string;
+      applications: number;
+      activeMatches: number;
+      positiveOutcomes: number;
+      callbackRate: number | null;
+      noisySignals: number;
+    }>;
+  };
 };
 
 type LoadedData = Awaited<ReturnType<typeof loadOutcomeData>>;
@@ -144,6 +207,7 @@ function buildOutcomeCalibrationReport(data: LoadedData): OutcomeCalibrationRepo
     summary,
     workflows,
     signals: buildSignals(summary),
+    details: buildDetails(data),
   };
 }
 
@@ -162,8 +226,23 @@ async function loadOutcomeData(userId?: string | null) {
       where: whereUser,
       include: {
         outcomes: { orderBy: { occurredAt: "desc" }, take: 5 },
-        jobPosting: { select: { id: true, company: true, title: true, sourceId: true } },
-        jobProfileMatch: { select: { id: true, overallScore: true, jobSearchProfileId: true } },
+        jobPosting: {
+          select: {
+            id: true,
+            company: true,
+            title: true,
+            sourceId: true,
+            source: { select: { id: true, name: true, type: true } },
+          },
+        },
+        jobProfileMatch: {
+          select: {
+            id: true,
+            overallScore: true,
+            jobSearchProfileId: true,
+            jobSearchProfile: { select: { id: true, name: true } },
+          },
+        },
       },
       orderBy: { updatedAt: "desc" },
       take: 500,
@@ -177,7 +256,15 @@ async function loadOutcomeData(userId?: string | null) {
         status: true,
         overallScore: true,
         updatedAt: true,
-        jobPosting: { select: { company: true, title: true, duplicateGroupId: true } },
+        jobPosting: {
+          select: {
+            company: true,
+            title: true,
+            duplicateGroupId: true,
+            source: { select: { id: true, name: true, type: true } },
+          },
+        },
+        jobSearchProfile: { select: { id: true, name: true } },
       },
       orderBy: { updatedAt: "desc" },
       take: 1000,
@@ -191,6 +278,9 @@ async function loadOutcomeData(userId?: string | null) {
         companyKey: true,
         titleFamilyKey: true,
         jobPostingId: true,
+        jobProfileMatchId: true,
+        applicationId: true,
+        source: true,
         createdAt: true,
       },
       orderBy: { createdAt: "desc" },
@@ -206,6 +296,8 @@ async function loadOutcomeData(userId?: string | null) {
         blockerType: true,
         currentNode: true,
         startedAt: true,
+        blockerMessage: true,
+        jobPosting: { select: { company: true, title: true } },
       },
       orderBy: { startedAt: "desc" },
       take: 300,
@@ -228,6 +320,184 @@ async function loadOutcomeData(userId?: string | null) {
     }),
   ]);
   return { user, applications, matches, suppressions, automationRuns, qualityExamples, proposals };
+}
+
+function buildDetails(data: LoadedData): OutcomeCalibrationReport["details"] {
+  return {
+    resurfacedSuppressedJobs: resurfacedSuppressedJobDetails(data),
+    activeDuplicateGroups: activeDuplicateGroupDetails(data.matches),
+    rejectedHighScoreMatches: rejectedHighScoreMatchDetails(data.matches),
+    assistantFailures: assistantFailureDetails(data.automationRuns),
+    profileBreakdown: profileBreakdown(data),
+    sourceBreakdown: sourceBreakdown(data),
+  };
+}
+
+function resurfacedSuppressedJobDetails(data: LoadedData): OutcomeCalibrationReport["details"]["resurfacedSuppressedJobs"] {
+  return data.suppressions.flatMap((suppression) => {
+    if (!suppression.jobPostingId) return [];
+    const match = data.matches.find((item) => item.jobPostingId === suppression.jobPostingId && ACTIVE_MATCH_STATUSES.includes(item.status as typeof ACTIVE_MATCH_STATUSES[number]));
+    if (!match) return [];
+    return [{
+      suppressionId: suppression.id,
+      jobId: suppression.jobPostingId,
+      matchId: suppression.jobProfileMatchId ?? match.id,
+      applicationId: suppression.applicationId,
+      company: match.jobPosting.company,
+      title: match.jobPosting.title,
+      suppressionKind: suppression.kind,
+      suppressionSource: suppression.source,
+      matchStatus: match.status,
+      score: match.overallScore,
+      createdAt: suppression.createdAt,
+    }];
+  }).slice(0, 25);
+}
+
+function activeDuplicateGroupDetails(matches: LoadedData["matches"]): OutcomeCalibrationReport["details"]["activeDuplicateGroups"] {
+  const groups = new Map<string, LoadedData["matches"]>();
+  for (const match of matches) {
+    const groupId = match.jobPosting.duplicateGroupId;
+    if (!groupId || !ACTIVE_MATCH_STATUSES.includes(match.status as typeof ACTIVE_MATCH_STATUSES[number])) continue;
+    groups.set(groupId, [...(groups.get(groupId) ?? []), match]);
+  }
+  return Array.from(groups.entries())
+    .filter(([, groupMatches]) => groupMatches.length > 1)
+    .map(([duplicateGroupId, groupMatches]) => ({
+      duplicateGroupId,
+      company: groupMatches[0]?.jobPosting.company ?? "Unknown company",
+      title: groupMatches[0]?.jobPosting.title ?? "Unknown role",
+      activeMatchCount: groupMatches.length,
+      jobs: groupMatches.map((match) => ({
+        jobId: match.jobPostingId,
+        matchId: match.id,
+        company: match.jobPosting.company,
+        title: match.jobPosting.title,
+        status: match.status,
+        score: match.overallScore,
+      })),
+    }))
+    .slice(0, 20);
+}
+
+function rejectedHighScoreMatchDetails(matches: LoadedData["matches"]): OutcomeCalibrationReport["details"]["rejectedHighScoreMatches"] {
+  return matches
+    .filter((match) => match.status === "rejected" && match.overallScore >= 85)
+    .map((match) => ({
+      matchId: match.id,
+      jobId: match.jobPostingId,
+      company: match.jobPosting.company,
+      title: match.jobPosting.title,
+      score: match.overallScore,
+      profileId: match.jobSearchProfile.id,
+      profileName: match.jobSearchProfile.name,
+      rejectedAt: match.updatedAt,
+    }))
+    .slice(0, 25);
+}
+
+function assistantFailureDetails(runs: LoadedData["automationRuns"]): OutcomeCalibrationReport["details"]["assistantFailures"] {
+  return runs
+    .filter((run) => run.status === "FAILED" || run.status === "NEEDS_USER" || run.blockerType)
+    .map((run) => ({
+      automationRunId: run.id,
+      applicationId: run.applicationId,
+      jobId: run.jobPostingId,
+      company: run.jobPosting.company,
+      title: run.jobPosting.title,
+      status: run.status,
+      blockerType: run.blockerType,
+      blockerMessage: run.blockerMessage,
+      currentNode: run.currentNode,
+      startedAt: run.startedAt,
+    }))
+    .slice(0, 25);
+}
+
+function profileBreakdown(data: LoadedData): OutcomeCalibrationReport["details"]["profileBreakdown"] {
+  const profiles = new Map<string, { profileName: string; activeMatches: number; rejectedHighScoreMatches: number; applied: number; positiveOutcomes: number }>();
+  for (const match of data.matches) {
+    const current = profiles.get(match.jobSearchProfile.id) ?? {
+      profileName: match.jobSearchProfile.name,
+      activeMatches: 0,
+      rejectedHighScoreMatches: 0,
+      applied: 0,
+      positiveOutcomes: 0,
+    };
+    if (ACTIVE_MATCH_STATUSES.includes(match.status as typeof ACTIVE_MATCH_STATUSES[number])) current.activeMatches += 1;
+    if (match.status === "rejected" && match.overallScore >= 85) current.rejectedHighScoreMatches += 1;
+    profiles.set(match.jobSearchProfile.id, current);
+  }
+  for (const application of data.applications) {
+    const profile = application.jobProfileMatch?.jobSearchProfile;
+    if (!profile) continue;
+    const current = profiles.get(profile.id) ?? {
+      profileName: profile.name,
+      activeMatches: 0,
+      rejectedHighScoreMatches: 0,
+      applied: 0,
+      positiveOutcomes: 0,
+    };
+    if (isAppliedApplication(application)) current.applied += 1;
+    if (isPositiveApplication(application)) current.positiveOutcomes += 1;
+    profiles.set(profile.id, current);
+  }
+  return Array.from(profiles.entries())
+    .map(([profileId, item]) => ({
+      profileId,
+      profileName: item.profileName,
+      activeMatches: item.activeMatches,
+      rejectedHighScoreMatches: item.rejectedHighScoreMatches,
+      applied: item.applied,
+      positiveOutcomes: item.positiveOutcomes,
+      callbackRate: item.applied ? percent(item.positiveOutcomes, item.applied) : null,
+    }))
+    .sort((left, right) => right.rejectedHighScoreMatches - left.rejectedHighScoreMatches || right.activeMatches - left.activeMatches)
+    .slice(0, 20);
+}
+
+function sourceBreakdown(data: LoadedData): OutcomeCalibrationReport["details"]["sourceBreakdown"] {
+  const sources = new Map<string, { sourceId: string | null; sourceName: string; sourceType: string; applications: number; activeMatches: number; positiveOutcomes: number; applied: number; noisySignals: number }>();
+  const keyFor = (source: { id: string; name: string; type: string } | null | undefined) => source?.id ?? "manual";
+  const ensure = (source: { id: string; name: string; type: string } | null | undefined) => {
+    const key = keyFor(source);
+    const item = sources.get(key) ?? {
+      sourceId: source?.id ?? null,
+      sourceName: source?.name ?? "Manual or unknown",
+      sourceType: source?.type ?? "manual",
+      applications: 0,
+      activeMatches: 0,
+      positiveOutcomes: 0,
+      applied: 0,
+      noisySignals: 0,
+    };
+    sources.set(key, item);
+    return item;
+  };
+  for (const match of data.matches) {
+    const item = ensure(match.jobPosting.source);
+    if (ACTIVE_MATCH_STATUSES.includes(match.status as typeof ACTIVE_MATCH_STATUSES[number])) item.activeMatches += 1;
+    if (match.status === "rejected" && match.overallScore >= 85) item.noisySignals += 1;
+  }
+  for (const application of data.applications) {
+    const item = ensure(application.jobPosting.source);
+    item.applications += 1;
+    if (isAppliedApplication(application)) item.applied += 1;
+    if (isPositiveApplication(application)) item.positiveOutcomes += 1;
+  }
+  return Array.from(sources.values())
+    .map((item) => ({
+      sourceId: item.sourceId,
+      sourceName: item.sourceName,
+      sourceType: item.sourceType,
+      applications: item.applications,
+      activeMatches: item.activeMatches,
+      positiveOutcomes: item.positiveOutcomes,
+      callbackRate: item.applied ? percent(item.positiveOutcomes, item.applied) : null,
+      noisySignals: item.noisySignals,
+    }))
+    .sort((left, right) => right.noisySignals - left.noisySignals || right.activeMatches - left.activeMatches)
+    .slice(0, 20);
 }
 
 async function createOutcomeQualityExample(

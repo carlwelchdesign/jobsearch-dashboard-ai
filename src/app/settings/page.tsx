@@ -327,6 +327,74 @@ export default async function SettingsPage() {
                   ) : (
                     <Typography variant="body2" color="text.secondary">No bad outcome calibration signals are currently detected.</Typography>
                   )}
+                  <Box sx={{ borderTop: 1, borderColor: "divider", pt: 1.5 }}>
+                    <Typography variant="h4">Signal drill-down</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                      Review the jobs, profiles, sources, duplicate groups, and assistant runs behind the scorecard.
+                    </Typography>
+                    <Stack spacing={1.25} sx={{ mt: 1.25 }}>
+                      <OutcomeDetailSection
+                        title="Resurfaced suppressed jobs"
+                        empty="No rejected or applied jobs are currently resurfacing in active results."
+                        rows={outcomeCalibration.details.resurfacedSuppressedJobs.map((item) => ({
+                          key: item.suppressionId,
+                          title: `${item.company} - ${item.title}`,
+                          detail: `${item.suppressionKind.toLowerCase().replace(/_/g, " ")} via ${item.suppressionSource.replace(/_/g, " ")}${item.matchStatus ? ` · active as ${item.matchStatus.replace(/_/g, " ")}` : ""}${item.score === null ? "" : ` · ${item.score} score`}`,
+                          href: item.jobId ? `/jobs/${item.jobId}` : undefined,
+                        }))}
+                      />
+                      <OutcomeDetailSection
+                        title="Active duplicate groups"
+                        empty="No active duplicate groups have more than one live match."
+                        rows={outcomeCalibration.details.activeDuplicateGroups.map((item) => ({
+                          key: item.duplicateGroupId,
+                          title: `${item.company} - ${item.title}`,
+                          detail: `${item.activeMatchCount} active match${item.activeMatchCount === 1 ? "" : "es"} · ${item.jobs.map((job) => `${job.status.replace(/_/g, " ")} ${job.score}`).join(", ")}`,
+                          href: item.jobs[0]?.jobId ? `/jobs/${item.jobs[0].jobId}` : undefined,
+                        }))}
+                      />
+                      <OutcomeDetailSection
+                        title="Rejected high-score matches"
+                        empty="No 85+ score matches are currently rejected."
+                        rows={outcomeCalibration.details.rejectedHighScoreMatches.map((item) => ({
+                          key: item.matchId,
+                          title: `${item.company} - ${item.title}`,
+                          detail: `${item.score} score · ${item.profileName} · rejected ${item.rejectedAt.toLocaleString()}`,
+                          href: `/jobs/${item.jobId}`,
+                        }))}
+                      />
+                      <OutcomeDetailSection
+                        title="Assistant failures"
+                        empty="No recent assistant failures or blockers are contributing to outcome calibration."
+                        rows={outcomeCalibration.details.assistantFailures.map((item) => ({
+                          key: item.automationRunId,
+                          title: `${item.company} - ${item.title}`,
+                          detail: `${item.status.toLowerCase().replace(/_/g, " ")}${item.blockerType ? ` · ${item.blockerType.replace(/_/g, " ")}` : ""}${item.currentNode ? ` · ${item.currentNode.replace(/_/g, " ")}` : ""}${item.blockerMessage ? ` · ${item.blockerMessage}` : ""}`,
+                          href: `/applications/${item.applicationId}`,
+                        }))}
+                      />
+                      <OutcomeDetailSection
+                        title="Profile breakdown"
+                        empty="No profile-level outcome data is available yet."
+                        rows={outcomeCalibration.details.profileBreakdown.map((item) => ({
+                          key: item.profileId,
+                          title: item.profileName,
+                          detail: `${item.activeMatches} active · ${item.rejectedHighScoreMatches} rejected high-score · ${item.applied} applied · ${item.positiveOutcomes} positive${item.callbackRate === null ? "" : ` · ${item.callbackRate}% callback`}`,
+                          href: "/profiles",
+                        }))}
+                      />
+                      <OutcomeDetailSection
+                        title="Source breakdown"
+                        empty="No source-level outcome data is available yet."
+                        rows={outcomeCalibration.details.sourceBreakdown.map((item) => ({
+                          key: item.sourceId ?? item.sourceName,
+                          title: item.sourceName,
+                          detail: `${item.sourceType.toLowerCase()} · ${item.activeMatches} active · ${item.applications} applications · ${item.positiveOutcomes} positive${item.callbackRate === null ? "" : ` · ${item.callbackRate}% callback`} · ${item.noisySignals} noisy`,
+                          href: "/sources",
+                        }))}
+                      />
+                    </Stack>
+                  </Box>
                 </>
               ) : (
                 <Typography variant="body2" color="text.secondary">Create a user profile before outcome calibration can run.</Typography>
@@ -843,6 +911,43 @@ function outcomeStatusColor(status: string) {
   if (status === "needs_review") return "warning" as const;
   if (status === "watch") return "info" as const;
   return "default" as const;
+}
+
+function OutcomeDetailSection({ title, empty, rows }: {
+  title: string;
+  empty: string;
+  rows: Array<{ key: string; title: string; detail: string; href?: string }>;
+}) {
+  return (
+    <Box sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", mb: 0.75 }}>
+        <Typography variant="body2" sx={{ fontWeight: 800 }}>{title}</Typography>
+        <Chip size="small" variant="outlined" label={`${rows.length} item${rows.length === 1 ? "" : "s"}`} />
+      </Stack>
+      {rows.length ? (
+        <Stack spacing={0.75}>
+          {rows.slice(0, 5).map((row) => (
+            <Stack key={row.key} direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
+              <Box>
+                <Typography variant="body2">{row.title}</Typography>
+                <Typography variant="caption" color="text.secondary">{row.detail}</Typography>
+              </Box>
+              {row.href ? (
+                <ActionButton href={row.href} variant="text" size="small">
+                  Open
+                </ActionButton>
+              ) : null}
+            </Stack>
+          ))}
+          {rows.length > 5 ? (
+            <Typography variant="caption" color="text.secondary">Showing 5 of {rows.length} items.</Typography>
+          ) : null}
+        </Stack>
+      ) : (
+        <Typography variant="body2" color="text.secondary">{empty}</Typography>
+      )}
+    </Box>
+  );
 }
 
 function autoRollbackCandidates(
