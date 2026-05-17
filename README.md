@@ -134,6 +134,8 @@ The manual search run uses enabled external source adapters. Direct ATS sources 
 
 The seeded `Company Source List` is a curated target list, not a claim that every company is hiring today. Search runs probe likely company careers/ATS feeds from that list, filter for role families such as React, TypeScript, Next.js, design systems, security/identity, AI tooling, developer platforms, defense tech, geospatial, and enterprise dashboards, then score the resulting roles against enabled profiles.
 
+Chrome-captured jobs also feed search strategy. If a job saved from the browser has zero matching profiles, Job Search OS now creates an enabled captured-intent profile for similar roles and scores the captured job against it immediately. The default lane is `AI-Native Enterprise Product Frontend`, aimed at AI-native product/frontend, enterprise workflow, analytics, agentic UX, design-system, and data-rich UI work like this app, while keeping required keywords empty so urgent broader frontend/product opportunities are not blocked.
+
 Scheduled job search runs are configured in `vercel.json` and call `/api/cron/job-search` daily at `14:00 UTC`. Scheduled runs only use enabled profiles where scheduling is enabled. Set `CRON_SECRET` in the deployment environment to require `Authorization: Bearer <CRON_SECRET>` on cron requests.
 
 ## Local Playwright Application Assistant

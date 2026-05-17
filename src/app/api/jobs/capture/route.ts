@@ -1,8 +1,10 @@
 import { AtsProvider, RemoteType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
 import { apiError } from "@/lib/api";
 import { captureManualJob } from "@/lib/jobs/manual-capture";
+import { createProfileFromZeroMatchCapture } from "@/lib/profiles/capture-profile-learning";
 
 export const dynamic = "force-dynamic";
 
@@ -46,11 +48,26 @@ export async function POST(request: Request) {
         metadata: body.metadata,
       },
     });
+    const learnedProfile = result.matches.length === 0
+      ? await createProfileFromZeroMatchCapture(result.job)
+      : null;
+    const learnedMatch = learnedProfile?.created && learnedProfile.profile
+      ? await runJobFitScoringAgent({
+          jobPostingId: result.job.id,
+          jobSearchProfileId: learnedProfile.profile.id,
+        }).then((agentResult) => agentResult.output).catch(() => null)
+      : null;
+    const matches = learnedMatch ? [...result.matches, learnedMatch] : result.matches;
 
     return NextResponse.json({
       ...result,
       jobUrl: `/jobs/${result.job.id}`,
-      matchCount: result.matches.length,
+      matches,
+      matchCount: matches.length,
+      initialMatchCount: result.matches.length,
+      profileCreated: Boolean(learnedProfile?.created),
+      profileName: learnedProfile?.profile?.name ?? null,
+      profileUrl: learnedProfile?.profile ? "/profiles" : null,
       message: result.created ? "Captured job from browser." : "Updated existing captured job.",
     }, { status: result.created ? 201 : 200 });
   } catch (error) {

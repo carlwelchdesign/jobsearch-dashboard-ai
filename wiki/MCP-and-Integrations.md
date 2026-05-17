@@ -68,6 +68,8 @@ The extension can capture:
 
 Captured jobs flow through normalization, dedupe, and scoring.
 
+If a Chrome-captured job has zero matching profiles, the app treats the save as a search-strategy signal, creates an enabled captured-intent profile, and scores the captured job against that profile immediately. The default profile is `AI-Native Enterprise Product Frontend`, which targets AI-native frontend/product engineering, agentic workflows, analytics-heavy enterprise UI, design systems, and workflow automation work similar to Job Search OS.
+
 ## GitHub Context
 
 Settings can sync public GitHub repository context into the candidate profile.

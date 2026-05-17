@@ -12,6 +12,8 @@ Local Chrome extension for saving job pages into the app.
 
 Open a job page, click the extension, review the extracted fields, and save. The extension posts to `POST /api/jobs/capture`, which runs the same dedupe and scoring path as manual job paste.
 
+If the saved job has zero matching search profiles, the app creates an enabled captured-intent profile for similar roles, scores the captured job against it immediately, and reports that profile name in the popup status. The default lane is `AI-Native Enterprise Product Frontend`.
+
 If the app is running on a different local port, open **Local settings** in the extension popup and set **App URL** to that address, for example `http://localhost:3001`.
 
 ## Package

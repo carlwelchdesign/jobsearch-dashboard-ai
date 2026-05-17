@@ -88,8 +88,10 @@ async function saveCapture() {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Unable to save job.");
     setOpenJobLink(payload.jobUrl);
-    const matchText = Number.isFinite(payload.matchCount) ? ` ${payload.matchCount} matching profiles.` : "";
-    setStatus(`${payload.message || "Saved."}${matchText}`);
+    const displayedMatchCount = Number.isFinite(payload.initialMatchCount) ? payload.initialMatchCount : payload.matchCount;
+    const matchText = Number.isFinite(displayedMatchCount) ? ` ${displayedMatchCount} matching profiles.` : "";
+    const profileText = payload.profileCreated && payload.profileName ? ` Created search profile: ${payload.profileName}.` : "";
+    setStatus(`${payload.message || "Saved."}${matchText}${profileText}`);
   } catch (error) {
     setOpenJobLink(null);
     setStatus(error instanceof Error ? error.message : "Unable to save job.");

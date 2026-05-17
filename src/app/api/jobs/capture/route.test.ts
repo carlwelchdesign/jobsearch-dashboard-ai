@@ -1,16 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
 import { captureManualJob } from "@/lib/jobs/manual-capture";
+import { createProfileFromZeroMatchCapture } from "@/lib/profiles/capture-profile-learning";
 import { POST } from "./route";
+
+vi.mock("@/lib/agents/job-fit-scorer", () => ({
+  runJobFitScoringAgent: vi.fn(),
+}));
 
 vi.mock("@/lib/jobs/manual-capture", () => ({
   captureManualJob: vi.fn(),
 }));
 
+vi.mock("@/lib/profiles/capture-profile-learning", () => ({
+  createProfileFromZeroMatchCapture: vi.fn(),
+}));
+
 const captureManualJobMock = vi.mocked(captureManualJob);
+const createProfileFromZeroMatchCaptureMock = vi.mocked(createProfileFromZeroMatchCapture);
+const runJobFitScoringAgentMock = vi.mocked(runJobFitScoringAgent);
 
 describe("/api/jobs/capture", () => {
   beforeEach(() => {
+    runJobFitScoringAgentMock.mockReset();
     captureManualJobMock.mockReset();
+    createProfileFromZeroMatchCaptureMock.mockReset();
+    createProfileFromZeroMatchCaptureMock.mockResolvedValue({ created: false, profile: null, reason: "No profile needed." });
+    runJobFitScoringAgentMock.mockResolvedValue({
+      output: { evaluationId: "eval_1", fitScore: 82, opportunityScore: 80, confidenceScore: 72 },
+    } as unknown as Awaited<ReturnType<typeof runJobFitScoringAgent>>);
     vi.unstubAllEnvs();
   });
 
@@ -20,6 +38,11 @@ describe("/api/jobs/capture", () => {
       matches: [],
       created: true,
     } as unknown as Awaited<ReturnType<typeof captureManualJob>>);
+    createProfileFromZeroMatchCaptureMock.mockResolvedValue({
+      created: true,
+      profile: { id: "profile_1", name: "AI-Native Enterprise Product Frontend" },
+      reason: "Created from zero-match Chrome capture for Acme - Senior Frontend Engineer.",
+    });
 
     const response = await POST(new Request("http://localhost/api/jobs/capture", {
       method: "POST",
@@ -39,11 +62,49 @@ describe("/api/jobs/capture", () => {
       sourceName: "Chrome Capture",
     }));
     expect(response.status).toBe(201);
+    expect(createProfileFromZeroMatchCaptureMock).toHaveBeenCalledWith(expect.objectContaining({ id: "job_1" }));
+    expect(runJobFitScoringAgentMock).toHaveBeenCalledWith({
+      jobPostingId: "job_1",
+      jobSearchProfileId: "profile_1",
+    });
     await expect(response.json()).resolves.toMatchObject({
       job: { id: "job_1" },
       jobUrl: "/jobs/job_1",
-      matchCount: 0,
+      initialMatchCount: 0,
+      matchCount: 1,
+      profileCreated: true,
+      profileName: "AI-Native Enterprise Product Frontend",
+      profileUrl: "/profiles",
       message: "Captured job from browser.",
+    });
+  });
+
+  it("does not create a search profile when capture already matches an existing profile", async () => {
+    captureManualJobMock.mockResolvedValue({
+      job: { id: "job_1", company: "Acme", title: "Senior Frontend Engineer" },
+      matches: [{ id: "match_1" }],
+      created: true,
+    } as unknown as Awaited<ReturnType<typeof captureManualJob>>);
+
+    const response = await POST(new Request("http://localhost/api/jobs/capture", {
+      method: "POST",
+      body: JSON.stringify({
+        pageUrl: "https://acme.example/jobs/123",
+        pageTitle: "Senior Frontend Engineer | Acme",
+        company: "Acme",
+        selectedText: "React TypeScript product UI role.",
+      }),
+    }));
+
+    expect(response.status).toBe(201);
+    expect(createProfileFromZeroMatchCaptureMock).not.toHaveBeenCalled();
+    expect(runJobFitScoringAgentMock).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      matchCount: 1,
+      initialMatchCount: 1,
+      profileCreated: false,
+      profileName: null,
+      profileUrl: null,
     });
   });
 

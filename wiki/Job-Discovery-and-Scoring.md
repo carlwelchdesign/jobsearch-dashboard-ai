@@ -56,6 +56,8 @@ The source configuration can store company slugs and adapter settings.
 
 Jobs can be added manually through the app or through the Chrome extension. Captured jobs are normalized, deduped, saved, and then scored when possible.
 
+Chrome capture also learns from selection intent. When a captured job produces zero matching profiles, the system creates an enabled captured-intent profile and scores the captured job against it immediately. The first generated lane is `AI-Native Enterprise Product Frontend`, combining the preferred career direction of AI-native product/frontend work with broader senior frontend/product engineering defaults for urgent search coverage.
+
 ## Duplicate and Stale Detection
 
 The Duplicate/Stale Job Detector looks for:
