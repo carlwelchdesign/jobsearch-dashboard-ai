@@ -14,6 +14,7 @@ import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { PageHeader } from "@/components/ui/page-header";
+import { getLearningImpact } from "@/lib/observability/learning-impact";
 import { prisma } from "@/lib/prisma";
 import { FieldMemoryDisableButton } from "./field-memory-disable-button";
 import { SettingsClient } from "./settings-client";
@@ -120,6 +121,7 @@ export default async function SettingsPage() {
       ])
     : [0, 0, { _avg: { score: null } }, [], []] as const;
   const [qualityExampleCount, qualityFailedCount, qualityScore, qualityProposals, qualityByTarget] = quality;
+  const learningImpact = user ? await getLearningImpact(user.id) : [];
   const nextAction = getSettingsNextAction({
     hasUser: Boolean(user),
     aiConfigured: Boolean(process.env.OPENAI_API_KEY),
@@ -251,6 +253,45 @@ export default async function SettingsPage() {
                 </Stack>
               ) : (
                 <Typography variant="body2" color="text.secondary">No quality improvement proposals have been generated yet.</Typography>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+        <Card id="settings-learning-impact">
+          <CardContent>
+            <Stack spacing={2}>
+              <Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color="primary" label="Learning impact" />
+                  <Chip size="small" variant="outlined" label={`${learningImpact.length} active rule${learningImpact.length === 1 ? "" : "s"}`} />
+                  <Chip size="small" color={learningImpact.some((item) => item.status === "needs_review") ? "warning" : "success"} variant="outlined" label={`${learningImpact.filter((item) => item.status === "needs_review").length} need review`} />
+                </Stack>
+                <Typography variant="h3">Learning impact</Typography>
+                <Typography color="text.secondary" sx={{ mt: 0.75 }}>
+                  Active proposal-backed learning is tracked against later agent runs and quality evaluations. This section is read-only; rollback remains manual.
+                </Typography>
+              </Box>
+              {learningImpact.length ? (
+                <Stack spacing={1.25}>
+                  {learningImpact.map((item) => (
+                    <Box key={item.adjustmentId} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+                      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
+                        <Chip size="small" label={item.skillId.replace(/_/g, " ")} />
+                        {item.category ? <Chip size="small" variant="outlined" label={item.category.replace(/_/g, " ")} /> : null}
+                        <Chip size="small" color={learningImpactStatusColor(item.status)} label={item.status.replace(/_/g, " ")} />
+                        <Chip size="small" variant="outlined" label={`${item.appliedRunCount} applied run${item.appliedRunCount === 1 ? "" : "s"}`} />
+                        {item.averageScore === null ? null : <Chip size="small" variant="outlined" label={`${item.averageScore} avg`} />}
+                      </Stack>
+                      <Typography variant="body2">{item.impactSummary}</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                        {item.latestAppliedAt ? `Latest applied ${item.latestAppliedAt.toLocaleString()}` : `Active since ${item.activeSince.toLocaleString()}`}
+                        {item.relatedFailedCount || item.relatedNeedsReviewCount ? ` · ${item.relatedFailedCount} failed, ${item.relatedNeedsReviewCount} needs review` : ""}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">No active proposal-backed learning has enough metadata to analyze yet.</Typography>
               )}
             </Stack>
           </CardContent>
@@ -598,6 +639,13 @@ function proposalActivationLabel(proposal: {
   return mapped
     ? { activates: true, label: "activates learning", detail: "Accepting creates a low-risk skill adjustment." }
     : { activates: false, label: "review-only", detail: "Accepting records review intent without changing agent behavior." };
+}
+
+function learningImpactStatusColor(status: string) {
+  if (status === "helping") return "success" as const;
+  if (status === "needs_review") return "warning" as const;
+  if (status === "neutral") return "info" as const;
+  return "default" as const;
 }
 
 type SettingsGithubReview = {
