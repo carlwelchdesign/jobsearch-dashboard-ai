@@ -172,6 +172,19 @@ export type OutcomeCalibrationTrendReport = {
   }>;
 };
 
+export type OutcomeRegressionProposalResult = {
+  scanned: number;
+  created: number;
+  existing: number;
+  proposals: Array<{
+    id: string;
+    trendKey: string;
+    status: "created" | "existing";
+    proposalStatus: AgentImprovementProposalStatus;
+    target: AgentQualityTarget;
+  }>;
+};
+
 export async function getOutcomeCalibration(userId?: string | null): Promise<OutcomeCalibrationReport> {
   const data = await loadOutcomeData(userId);
   return buildOutcomeCalibrationReport(data);
@@ -231,6 +244,76 @@ export async function getOutcomeCalibrationTrends(userId?: string | null): Promi
     metrics: buildMetricTrends(latest?.summary ?? null, previous?.summary ?? null),
     workflows: buildWorkflowTrends(latest?.workflows ?? null, previous?.workflows ?? null),
   };
+}
+
+export async function proposeOutcomeTrendRegressionReviews(userId?: string | null): Promise<OutcomeRegressionProposalResult> {
+  const user = userId ? { id: userId } : await prisma.user.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
+  if (!user?.id) return { scanned: 0, created: 0, existing: 0, proposals: [] };
+
+  const trends = await getOutcomeCalibrationTrends(user.id);
+  const latestSnapshotId = trends.snapshots[0]?.id ?? null;
+  if (!latestSnapshotId || trends.snapshots.length < 2) return { scanned: 0, created: 0, existing: 0, proposals: [] };
+
+  const candidates = regressionCandidates(trends);
+  let created = 0;
+  let existing = 0;
+  const proposals: OutcomeRegressionProposalResult["proposals"] = [];
+
+  for (const candidate of candidates) {
+    const current = await prisma.agentImprovementProposal.findFirst({
+      where: {
+        userId: user.id,
+        target: candidate.target,
+        AND: [
+          { metadataJson: { path: ["source"], equals: "outcome_trend_regression" } },
+          { metadataJson: { path: ["trendKey"], equals: candidate.trendKey } },
+          { metadataJson: { path: ["latestSnapshotId"], equals: latestSnapshotId } },
+        ],
+      },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, status: true, target: true },
+    });
+    if (current) {
+      existing += 1;
+      proposals.push({ id: current.id, trendKey: candidate.trendKey, status: "existing", proposalStatus: current.status, target: current.target });
+      continue;
+    }
+
+    const proposal = await prisma.agentImprovementProposal.create({
+      data: {
+        userId: user.id,
+        target: candidate.target,
+        type: candidate.type,
+        status: "PROPOSED",
+        riskLevel: "HIGH",
+        title: candidate.title,
+        summary: candidate.summary,
+        rationale: "Outcome trend regression proposals are review-only. Inspect the underlying trend and related outcome details before changing agent behavior.",
+        affectedExampleIds: [],
+        patchJson: {
+          category: candidate.category,
+          policy: "proposal_only",
+          recommendedChange: candidate.title,
+          trendKey: candidate.trendKey,
+          latestSnapshotId,
+        },
+        metadataJson: {
+          source: "outcome_trend_regression",
+          trendKey: candidate.trendKey,
+          trendKind: candidate.kind,
+          latestSnapshotId,
+          latest: candidate.latest,
+          previous: candidate.previous,
+          delta: candidate.delta,
+        },
+      },
+      select: { id: true, status: true, target: true },
+    });
+    created += 1;
+    proposals.push({ id: proposal.id, trendKey: candidate.trendKey, status: "created", proposalStatus: proposal.status, target: proposal.target });
+  }
+
+  return { scanned: candidates.length, created, existing, proposals };
 }
 
 export async function proposeOutcomeReviewActionImprovements(userId?: string | null) {
@@ -1123,6 +1206,66 @@ function buildWorkflowTrends(
       direction: trendDirection(latestScore, previousScore, "higher"),
     };
   });
+}
+
+type RegressionCandidate = {
+  trendKey: string;
+  kind: "metric" | "workflow";
+  target: AgentQualityTarget;
+  type: "WORKFLOW" | "CLASSIFIER";
+  category: string;
+  title: string;
+  summary: string;
+  latest: number | null;
+  previous: number | null;
+  delta: number | null;
+};
+
+function regressionCandidates(trends: OutcomeCalibrationTrendReport): RegressionCandidate[] {
+  if (trends.snapshots.length < 2) return [];
+  const metricCandidates = trends.metrics
+    .filter((metric) => metric.direction === "regressing")
+    .map((metric) => {
+      const target = targetForRegressionMetric(metric.key);
+      return {
+        trendKey: `metric:${String(metric.key)}`,
+        kind: "metric" as const,
+        target,
+        type: typeForRegressionTarget(target),
+        category: `trend_${String(metric.key)}`,
+        title: `Review regressing outcome trend: ${metric.label}`,
+        summary: `${metric.label} changed from ${metric.previous ?? "n/a"} to ${metric.latest ?? "n/a"} across recent outcome snapshots.`,
+        latest: metric.latest,
+        previous: metric.previous,
+        delta: metric.delta,
+      };
+    });
+  const workflowCandidates = trends.workflows
+    .filter((workflow) => workflow.direction === "regressing")
+    .map((workflow) => ({
+      trendKey: `workflow:${workflow.target}`,
+      kind: "workflow" as const,
+      target: workflow.target,
+      type: "WORKFLOW" as const,
+      category: "trend_workflow_score",
+      title: `Review regressing workflow score: ${workflow.target.toLowerCase().replace(/_/g, " ")}`,
+      summary: `${workflow.target.toLowerCase().replace(/_/g, " ")} score changed from ${workflow.previousScore ?? "n/a"} to ${workflow.latestScore ?? "n/a"} across recent outcome snapshots.`,
+      latest: workflow.latestScore,
+      previous: workflow.previousScore,
+      delta: workflow.delta,
+    }));
+  return [...metricCandidates, ...workflowCandidates];
+}
+
+function targetForRegressionMetric(key: keyof OutcomeCalibrationReport["summary"]): AgentQualityTarget {
+  if (key === "rejectedHighScoreMatches") return "JOB_MATCHING";
+  if (key === "assistantFailures") return "APPLICATION_ASSISTANT";
+  if (key === "callbackRate") return "RECRUITING_AGENCY";
+  return "JOB_SEARCH";
+}
+
+function typeForRegressionTarget(target: AgentQualityTarget): "WORKFLOW" | "CLASSIFIER" {
+  return target === "JOB_MATCHING" ? "CLASSIFIER" : "WORKFLOW";
 }
 
 function metricTrend(

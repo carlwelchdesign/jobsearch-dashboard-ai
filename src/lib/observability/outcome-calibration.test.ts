@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getOutcomeCalibration,
   getOutcomeCalibrationTrends,
+  proposeOutcomeTrendRegressionReviews,
   proposeOutcomeReviewActionImprovements,
   recomputeOutcomeCalibration,
   refreshOutcomeCalibration,
@@ -302,6 +303,94 @@ describe("outcome calibration", () => {
     expect(trends.workflows.find((workflow) => workflow.target === "APPLICATION_ASSISTANT")).toMatchObject({
       direction: "insufficient_data",
     });
+  });
+
+  it("creates review-only proposals for regressing outcome trends", async () => {
+    snapshotFindManyMock.mockResolvedValue([
+      snapshot({
+        id: "snapshot_latest",
+        summaryJson: { callbackRate: 5, rejectedHighScoreMatches: 4, duplicateActiveGroups: 3, resurfacedSuppressedJobs: 2, assistantFailures: 2 },
+        workflowsJson: [
+          { target: "JOB_SEARCH", score: 60, status: "needs_review", summary: "Latest", metrics: {} },
+          { target: "APPLICATION_ASSISTANT", score: 70, status: "watch", summary: "Latest", metrics: {} },
+        ],
+      }),
+      snapshot({
+        id: "snapshot_previous",
+        summaryJson: { callbackRate: 15, rejectedHighScoreMatches: 1, duplicateActiveGroups: 1, resurfacedSuppressedJobs: 0, assistantFailures: 1 },
+        workflowsJson: [
+          { target: "JOB_SEARCH", score: 80, status: "watch", summary: "Previous", metrics: {} },
+          { target: "APPLICATION_ASSISTANT", score: 90, status: "healthy", summary: "Previous", metrics: {} },
+        ],
+      }),
+    ] as never);
+
+    const result = await proposeOutcomeTrendRegressionReviews("user_1");
+
+    expect(result.created).toBeGreaterThan(0);
+    expect(result.scanned).toBe(7);
+    expect(proposalCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        userId: "user_1",
+        status: "PROPOSED",
+        riskLevel: "HIGH",
+        metadataJson: expect.objectContaining({
+          source: "outcome_trend_regression",
+          trendKey: "metric:callbackRate",
+          latestSnapshotId: "snapshot_latest",
+        }),
+        patchJson: expect.objectContaining({
+          policy: "proposal_only",
+          category: "trend_callbackRate",
+        }),
+      }),
+      select: expect.objectContaining({ id: true }),
+    }));
+  });
+
+  it("does not create regression proposals without enough trend data", async () => {
+    snapshotFindManyMock.mockResolvedValue([
+      snapshot({
+        id: "snapshot_latest",
+        summaryJson: { callbackRate: 5 },
+        workflowsJson: [{ target: "JOB_SEARCH", score: 60, status: "needs_review", summary: "Latest", metrics: {} }],
+      }),
+    ] as never);
+
+    const result = await proposeOutcomeTrendRegressionReviews("user_1");
+
+    expect(result).toMatchObject({ scanned: 0, created: 0, existing: 0, proposals: [] });
+    expect(proposalCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("dedupes regression proposals by trend and latest snapshot", async () => {
+    snapshotFindManyMock.mockResolvedValue([
+      snapshot({
+        id: "snapshot_latest",
+        summaryJson: { callbackRate: 5 },
+        workflowsJson: [],
+      }),
+      snapshot({
+        id: "snapshot_previous",
+        summaryJson: { callbackRate: 15 },
+        workflowsJson: [],
+      }),
+    ] as never);
+    proposalFindFirstMock.mockResolvedValue({
+      id: "proposal_existing",
+      status: "PROPOSED",
+      target: "RECRUITING_AGENCY",
+    } as never);
+
+    const result = await proposeOutcomeTrendRegressionReviews("user_1");
+
+    expect(result).toMatchObject({
+      scanned: 1,
+      created: 0,
+      existing: 1,
+      proposals: [{ id: "proposal_existing", trendKey: "metric:callbackRate", status: "existing", proposalStatus: "PROPOSED" }],
+    });
+    expect(proposalCreateMock).not.toHaveBeenCalled();
   });
 
   it("does not duplicate existing outcome quality examples", async () => {

@@ -222,7 +222,7 @@ export default async function SettingsPage() {
                           <Chip size="small" color={proposal.status === "PROPOSED" ? "warning" : proposal.status === "ACCEPTED" ? "success" : "default"} label={proposal.status.toLowerCase()} />
                           <Chip size="small" variant="outlined" label={proposal.riskLevel.toLowerCase()} />
                           <Chip size="small" color={activation.activates ? "success" : "default"} variant="outlined" label={activation.label} />
-                          {isOutcomeActionProposal(proposal.metadataJson) ? <Chip size="small" color="secondary" variant="outlined" label="outcome action" /> : null}
+                          {proposalSourceLabel(proposal.metadataJson) ? <Chip size="small" color="secondary" variant="outlined" label={proposalSourceLabel(proposal.metadataJson)} /> : null}
                         </Stack>
                         <Typography variant="body2">{proposal.title}</Typography>
                         <Typography variant="caption" color="text.secondary">{proposal.summary}</Typography>
@@ -331,6 +331,17 @@ export default async function SettingsPage() {
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                         Aggregate snapshot history for outcome quality. Trends are read-only and do not change agent behavior.
                       </Typography>
+                      <Box sx={{ mt: 1 }}>
+                        <ActionButton
+                          postTo="/api/observability/outcomes/trends/alerts"
+                          variant="outlined"
+                          color="warning"
+                          size="small"
+                          message="Outcome regression reviews updated."
+                        >
+                          Create regression review
+                        </ActionButton>
+                      </Box>
                       <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
                         {outcomeTrends.metrics.map((metric) => (
                           <Chip
@@ -989,9 +1000,11 @@ function proposalActivationLabel(proposal: {
     : { activates: false, label: "review-only", detail: "Accepting records review intent without changing agent behavior." };
 }
 
-function isOutcomeActionProposal(metadataJson: unknown) {
+function proposalSourceLabel(metadataJson: unknown) {
   const metadata = isRecord(metadataJson) ? metadataJson : {};
-  return metadata.source === "outcome_review_action";
+  if (metadata.source === "outcome_review_action") return "outcome action";
+  if (metadata.source === "outcome_trend_regression") return "outcome regression";
+  return null;
 }
 
 function learningImpactStatusColor(status: string) {
