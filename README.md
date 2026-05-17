@@ -132,11 +132,11 @@ The app does not submit applications automatically. For jobs marked `ready_to_ap
 The assistant is orchestrated by a LangGraph-backed workflow plus a local Playwright browser runner:
 
 - LangGraph validates the application package, launches the browser runner, stores workflow checkpoints, and records workflow state on `ApplicationAutomationRun`.
-- The Playwright runner is still the only component that controls the browser. It performs the broad safe autofill pass, reports detected fields, executes workflow commands, observes manual input, and watches for submit confirmation.
+- The Playwright runner is still the only component that controls the browser. It performs the broad safe autofill pass, reports detected fields, executes workflow commands, observes manual input, detects submit intent, and reports whether the browser closed after submit or before submit.
 - Workflow state is persisted in Postgres through LangGraph checkpointing and in `workflowStateJson` for app UI visibility.
 - Optional LangSmith observability stores redacted workflow traces and trace metadata on `ApplicationAutomationRun.observabilityJson`.
 - Assistant failures and repairs are captured as redacted quality examples, evaluated locally, and surfaced as improvement proposals on Settings. Safe accepted proposals become low-risk QA/guidance adjustments that application QA consumes; browser lifecycle and submit-state workflow changes remain review-only.
-- The graph does not click final submit in the current phase. It stops at manual review and can resume after Needs Me answers for unknown fields.
+- The graph does not click final submit in the current phase. It stops at manual review and can resume after Needs Me answers for unknown fields. If you click submit and then close the browser without a visible validation error, the workflow treats that as applied and updates the application state.
 - LangGraph imports are loaded lazily inside server-only workflow construction so ordinary Next.js route bundles do not pull `@langchain/*` into unrelated RSC chunks.
 
 Install local browser automation dependencies:

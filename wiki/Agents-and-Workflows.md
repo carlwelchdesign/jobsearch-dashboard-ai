@@ -117,6 +117,8 @@ The application assistant workflow combines LangGraph orchestration with local P
 8. If an unknown required or custom field remains, the workflow creates a Needs Me request and waits.
 9. When the user answers, the workflow resumes with a fill command and saves safe learning according to field-memory policy.
 10. The workflow stops before final submit and waits for manual review.
+11. Playwright keeps observing manual field edits, submit intent, submit confirmation, and browser close events until the browser session ends.
+12. Submit confirmation or submit-click-then-close marks the application applied; closing before submit moves the run to `NEEDS_USER` with an `assistant_closed` blocker.
 
 Implementation notes:
 
@@ -126,6 +128,7 @@ Implementation notes:
 - Assistant failures and repairs create redacted `AgentQualityExample` records for later evaluation.
 - LangGraph checkpointing is backed by Postgres.
 - Playwright remains responsible for browser I/O; LangGraph decides workflow state and commands.
+- Ignoring Needs Me does not disable passive observation. Safe manual field edits can still become field memories while the browser remains open.
 
 ## Recruiting Agency Workflow
 

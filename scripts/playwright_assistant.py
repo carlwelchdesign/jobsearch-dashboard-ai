@@ -478,6 +478,28 @@ def post_json(url: str, payload: dict[str, Any] | None = None) -> dict[str, Any]
         return json.loads(response.read().decode("utf-8"))
 
 
+def post_workflow_event(state: dict[str, Any] | None, event_type: str, message: str, payload: dict[str, Any] | None = None) -> bool:
+    if not state:
+        return False
+    app_url = str(state.get("app_url") or "").rstrip("/")
+    application_id = str(state.get("application_id") or "")
+    if not app_url or not application_id:
+        return False
+    try:
+        post_json(
+            f"{app_url}/api/applications/{application_id}/assistant-workflow/events",
+            {
+                "type": event_type,
+                "message": message,
+                **(payload or {}),
+            },
+        )
+        return True
+    except Exception as exc:
+        print(f"Unable to post assistant workflow event {event_type}: {exc}", file=sys.stderr)
+        return False
+
+
 def field_command_loop(
     args: argparse.Namespace,
     page: Any,
@@ -1998,18 +2020,26 @@ def maybe_mark_manual_submit(browser: Any, workdir: Path, mark_applied_state: di
             return
         if any(validation_error_detected(page) for page in browser_pages(browser)):
             return
-        print(f"Manual submit button click detected: {str(submit_intent.get('descriptor') or 'submit control')[:160]}")
-        marked = mark_application_applied(
-            str(mark_applied_state["app_url"]),
-            str(mark_applied_state["application_id"]),
-            "manual submit button click",
-        )
-        mark_applied_state["marked"] = marked
+        if not mark_applied_state.get("submit_intent_reported"):
+            print(f"Manual submit button click detected: {str(submit_intent.get('descriptor') or 'submit control')[:160]}")
+            post_workflow_event(
+                mark_applied_state,
+                "submit_intent_detected",
+                "Manual submit button click detected.",
+                {"submitIntent": submit_intent},
+            )
+            mark_applied_state["submit_intent_reported"] = True
         return
 
     print("Manual submit confirmation detected.")
     capture_submit_confirmation(confirmation_page, workdir)
-    marked = mark_application_applied(
+    event_posted = post_workflow_event(
+        mark_applied_state,
+        "submit_confirmation",
+        "Manual submit confirmation detected.",
+        {"submitIntent": latest_manual_submit_intent(browser, mark_applied_state)},
+    )
+    marked = event_posted or mark_application_applied(
         str(mark_applied_state["app_url"]),
         str(mark_applied_state["application_id"]),
         "manual submit confirmation",
@@ -2079,6 +2109,24 @@ def maybe_report_field_learning(browser: Any, state: dict[str, Any] | None) -> N
             {"host": host.removeprefix("www."), "fields": candidates},
         )
         print(f"Field learning updated: saved {result.get('saved', 0)}, ignored {result.get('ignored', 0)} observed manual field(s).")
+        post_workflow_event(
+            state,
+            "manual_input_observed",
+            f"Observed {len(candidates)} manually completed field(s) for future learning.",
+            {
+                "fields": [
+                    {
+                        "fieldId": field.get("fieldKey", ""),
+                        "category": field.get("category", "custom"),
+                        "label": field.get("label", ""),
+                        "inputType": field.get("inputType", ""),
+                        "selector": field.get("selector", ""),
+                        "status": "observed",
+                    }
+                    for field in candidates
+                ],
+            },
+        )
     except Exception as exc:
         print(f"Unable to save observed field learning: {exc}", file=sys.stderr)
 
@@ -2204,7 +2252,13 @@ def browser_was_closed_without_pages(browser: Any, state: dict[str, Any] | None 
         if elapsed_seconds < 4:
             return False
         print(f"Browser closed after manual submit click: {str(submit_intent.get('descriptor') or 'submit control')[:160]}")
-        marked = mark_application_applied(
+        event_posted = post_workflow_event(
+            state,
+            "browser_closed_after_submit",
+            "Assistant browser closed after manual submit click.",
+            {"submitIntent": submit_intent, "closeReason": "after_submit"},
+        )
+        marked = event_posted or mark_application_applied(
             str(state.get("app_url") or ""),
             str(state.get("application_id") or ""),
             "manual submit button click before browser close",
@@ -2212,6 +2266,12 @@ def browser_was_closed_without_pages(browser: Any, state: dict[str, Any] | None 
         state["marked"] = marked
         return True
     print("Assistant browser/page closed before a submission confirmation was observed.")
+    post_workflow_event(
+        state,
+        "browser_closed_without_submit",
+        "Assistant browser closed before submit.",
+        {"closeReason": "without_submit"},
+    )
     return True
 
 

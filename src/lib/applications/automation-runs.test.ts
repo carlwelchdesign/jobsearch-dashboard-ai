@@ -26,6 +26,14 @@ Review every field in the browser. Submit manually only if everything is correct
 Manual submit button click detected: Submit application
 Tracker updated: Application marked applied.
 `)).toMatchObject({ status: "SUBMITTED" });
+    expect(classifyAssistantLog("Browser closed after manual submit click: Submit application")).toMatchObject({ status: "SUBMITTED" });
+  });
+
+  it("classifies browser close before submit as needing user review", () => {
+    expect(classifyAssistantLog("Assistant browser/page closed before a submission confirmation was observed.")).toMatchObject({
+      status: "NEEDS_USER",
+      blockerType: "assistant_closed",
+    });
   });
 
   it("does not classify detached-frame watcher failures after manual review as failed", () => {

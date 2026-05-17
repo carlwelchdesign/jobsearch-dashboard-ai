@@ -409,8 +409,16 @@ export async function persistFormPatternsFromLog(input: {
 
 export function classifyAssistantLog(log: string): AssistantLogClassification {
   if (!log.trim()) return { status: "RUNNING" };
-  if (/Manual submit (button click|confirmation) detected|Tracker updated:.*Application marked applied/i.test(log)) {
+  if (/Manual submit (button click|confirmation) detected|Browser closed after manual submit click|Tracker updated:.*Application marked applied/i.test(log)) {
     return { status: "SUBMITTED" };
+  }
+
+  if (/Assistant browser\/page closed before a submission confirmation was observed/i.test(log)) {
+    return {
+      status: "NEEDS_USER",
+      blockerType: assistantClosedBlockerType,
+      blockerMessage: assistantClosedBlockerMessage,
+    };
   }
 
   if (/Traceback|Unable to load assistant package|Playwright is not installed|Assistant launch failed/i.test(log)) {

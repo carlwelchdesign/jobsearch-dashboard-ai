@@ -3,7 +3,9 @@ import { findReusableAnswerMemories } from "@/lib/application-answer-memory";
 import { createAgentUserRequest } from "@/lib/agent-user-requests";
 import { storeObservedFieldLearning, type ObservedApplicationField } from "@/lib/applications/field-learning";
 import { launchApplicationAssistant, type LaunchAssistantResult } from "@/lib/applications/launch-assistant";
+import { recordApplicationOutcome } from "@/lib/applications/outcomes";
 import { langSmithTraceMetadata, traceWorkflowStep } from "@/lib/observability/langsmith";
+import { createQualityExampleFromAutomationRun } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
 
 type AssistantWorkflowEvent = {
@@ -85,6 +87,13 @@ export type AssistantWorkflowBrowserEvent = {
   status?: string | null;
   valuePreview?: string | null;
   fields?: AssistantWorkflowBrowserField[];
+  submitIntent?: {
+    at?: number | string;
+    source?: string | null;
+    descriptor?: string | null;
+    url?: string | null;
+  };
+  closeReason?: "after_submit" | "without_submit";
   result?: string | null;
   error?: string | null;
   url?: string | null;
@@ -559,24 +568,31 @@ async function reduceBrowserEvent(
     });
   }
 
-  if (event.type === "manual_input_observed" && event.label && event.valuePreview) {
-    const fieldId = event.fieldId ?? fieldIdFor({
-      selector: event.selector,
-      label: event.label,
-      inputType: event.inputType,
-      context: null,
-    });
+  if (event.type === "manual_input_observed") {
+    const observedFields = normalizeWorkflowFields(event.fields ?? (event.label ? [event] : []));
+    const observedFieldIds = observedFields.map((field) => field.fieldId);
     return {
       ...state,
       currentNode: "observeManualInput",
-      observedManualFields: state.observedManualFields.includes(fieldId)
-        ? state.observedManualFields
-        : [...state.observedManualFields, fieldId],
+      observedManualFields: uniqueStrings([...state.observedManualFields, ...observedFieldIds]),
       events: [
         ...state.events,
         workflowEvent("manual_input_observed", event.message ?? "Observed manual field input for future learning.", {
-          fieldId,
-          label: event.label,
+          fieldCount: observedFields.length,
+          labels: observedFields.map((field) => field.label).slice(0, 8),
+        }),
+      ],
+    };
+  }
+
+  if (event.type === "submit_intent_detected") {
+    return {
+      ...state,
+      currentNode: "detectSubmitOrClose",
+      events: [
+        ...state.events,
+        workflowEvent("submit_intent_detected", event.message ?? "Manual submit intent detected.", {
+          submitIntent: safeSubmitIntent(event.submitIntent),
         }),
       ],
     };
@@ -593,13 +609,30 @@ async function reduceBrowserEvent(
     };
   }
 
-  if (event.type === "browser_closed") {
+  if (event.type === "browser_closed_after_submit") {
+    await markApplicationSubmitted(run.applicationId, run.id, event.message ?? "Browser closed after manual submit click.");
+    return {
+      ...state,
+      currentNode: "detectSubmitOrClose",
+      status: "SUBMITTED",
+      pendingCommand: null,
+      events: [
+        ...state.events,
+        workflowEvent("browser_closed_after_submit", event.message ?? "Browser closed after manual submit click.", {
+          submitIntent: safeSubmitIntent(event.submitIntent),
+        }),
+      ],
+    };
+  }
+
+  if (event.type === "browser_closed_without_submit" || event.type === "browser_closed") {
+    await markAssistantClosedWithoutSubmit(run, event.message ?? "Assistant browser closed before submit.");
     return {
       ...state,
       currentNode: "detectSubmitOrClose",
       status: "NEEDS_USER",
       pendingCommand: null,
-      events: [...state.events, workflowEvent("browser_closed", event.message ?? "Assistant browser closed before submit.")],
+      events: [...state.events, workflowEvent("browser_closed_without_submit", event.message ?? "Assistant browser closed before submit.")],
     };
   }
 
@@ -878,6 +911,10 @@ function stringArray(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values));
+}
+
 function workflowEventMessage(event: AssistantWorkflowBrowserEvent) {
   if (event.type === "field_inventory") return "Application field inventory received.";
   if (event.type === "field_result") return "Application field command result received.";
@@ -895,13 +932,34 @@ async function appendWorkflowAction(runId: string, action: { type: string; messa
 }
 
 async function markApplicationSubmitted(applicationId: string, automationRunId: string, note: string) {
-  await prisma.application.update({
-    where: { id: applicationId },
-    data: { status: "applied", appliedAt: new Date() },
+  const existing = await prisma.applicationOutcome.findFirst({
+    where: { applicationId, outcome: "APPLIED" },
   }).catch(() => null);
+  if (!existing) {
+    await recordApplicationOutcome({
+      applicationId,
+      outcome: "APPLIED",
+      notes: note,
+      source: "assistant_state",
+    }).catch(async () => {
+      await prisma.application.update({
+        where: { id: applicationId },
+        data: { status: "applied", appliedAt: new Date() },
+      }).catch(() => null);
+    });
+  }
   await prisma.applicationAutomationRun.update({
     where: { id: automationRunId },
-    data: { status: "SUBMITTED", finishedAt: new Date() },
+    data: {
+      status: "SUBMITTED",
+      blockerType: null,
+      blockerMessage: null,
+      finishedAt: new Date(),
+    },
+  }).catch(() => null);
+  await prisma.agentUserRequest.updateMany({
+    where: { applicationId, status: "OPEN" },
+    data: { status: "RESOLVED", resolvedAt: new Date() },
   }).catch(() => null);
   await prisma.applicationEvent.create({
     data: {
@@ -910,4 +968,53 @@ async function markApplicationSubmitted(applicationId: string, automationRunId: 
       payload: { source: "application_assistant_workflow", automationRunId, note } as Prisma.InputJsonValue,
     },
   }).catch(() => null);
+}
+
+async function markAssistantClosedWithoutSubmit(
+  run: Awaited<ReturnType<typeof latestWorkflowRun>>,
+  message: string,
+) {
+  const blockerType = "assistant_closed";
+  const blockerMessage = message || "Assistant browser closed before submit.";
+  await prisma.applicationAutomationRun.update({
+    where: { id: run.id },
+    data: {
+      status: "NEEDS_USER",
+      blockerType,
+      blockerMessage,
+      finishedAt: new Date(),
+    },
+  }).catch(() => null);
+  const existing = await prisma.agentUserRequest.findFirst({
+    where: {
+      applicationId: run.applicationId,
+      type: "APPLICATION_BLOCKED",
+      status: "OPEN",
+    },
+  }).catch(() => null);
+  if (!existing) {
+    await createAgentUserRequest({
+      userId: run.userId,
+      applicationId: run.applicationId,
+      jobPostingId: run.jobPostingId,
+      type: "APPLICATION_BLOCKED",
+      question: blockerMessage,
+      contextJson: {
+        blockerType,
+        source: "assistant_browser_lifecycle",
+        automationRunId: run.id,
+      } as Prisma.InputJsonValue,
+    }).catch(() => null);
+  }
+  await createQualityExampleFromAutomationRun(run.id, "AUTOMATION_RUN").catch(() => null);
+}
+
+function safeSubmitIntent(intent: AssistantWorkflowBrowserEvent["submitIntent"]) {
+  if (!intent) return null;
+  return {
+    at: intent.at ?? null,
+    source: intent.source ?? null,
+    descriptor: intent.descriptor?.slice(0, 240) ?? null,
+    url: intent.url ?? null,
+  };
 }

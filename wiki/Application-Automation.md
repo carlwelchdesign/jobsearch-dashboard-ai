@@ -114,6 +114,8 @@ The assistant can:
 - upload generated resume and cover letter files when matching controls are visible
 - write selected application answers to a local text file
 - report workflow activity and field progress to Apply Sprint
+- observe safe manual field edits for future field memory
+- detect submit intent, submit confirmation, and browser close lifecycle events
 - detect blockers
 - update automation run records
 - ask the user for help through Needs Me

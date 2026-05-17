@@ -31,6 +31,13 @@ const eventSchema = z.object({
   status: z.string().trim().max(120).nullish(),
   valuePreview: z.string().trim().max(500).nullish(),
   fields: z.array(fieldSchema).max(250).optional(),
+  submitIntent: z.object({
+    at: z.union([z.number(), z.string()]).optional(),
+    source: z.string().trim().max(120).optional(),
+    descriptor: z.string().trim().max(800).optional(),
+    url: z.string().trim().max(2000).optional(),
+  }).optional(),
+  closeReason: z.enum(["after_submit", "without_submit"]).optional(),
   result: z.string().trim().max(120).nullish(),
   error: z.string().trim().max(1000).nullish(),
   url: z.string().trim().max(2000).nullish(),
