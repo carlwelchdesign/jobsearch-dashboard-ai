@@ -83,7 +83,7 @@ PUSHOVER_APP_TOKEN=...
 
 With `OPENAI_API_KEY`, resume parsing, job scoring, and resume tailoring use OpenAI structured outputs. Without it, those flows still run through deterministic parsers/scorers so the dashboard remains usable.
 
-The primary workflow is agency-first. Running search fetches, dedupes, scores, and saves matches, then automatically hands new 90+ application-ready matches to the recruiting agency when no agency run is already active. The agency approves appropriate jobs, creates application trackers, generates resume and cover-letter packets, and moves them to `ready_to_apply`; borderline roles stay in the Jobs exception queue for manual review. Bulk packet preparation is restricted to already-approved jobs so it cannot bypass agency approval. Final application submission remains manual.
+The primary workflow is agency-first. Running search fetches, dedupes, scores, and saves matches, then automatically hands new 90+ application-ready matches to the recruiting agency when no agency run is already active. The agency approves appropriate jobs, creates application trackers, generates resume and cover-letter packets, and moves them to `ready_to_apply`; borderline roles stay in the Jobs exception queue for manual review. Bulk packet preparation is restricted to already-approved jobs so it cannot bypass agency approval. Application state is reconciled by canonical job identity, so when one duplicate tracker is submitted/applied, stale approved or ready duplicates are archived and sibling job matches are synced. Final application submission remains manual.
 
 With `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY`, the app emits redacted metadata traces for agent runs, OpenAI helper calls, the application assistant workflow, and graph-backed recruiting agency runs. Tracing is optional and fail-open: if LangSmith is unavailable, the app continues without tracing. The default trace payload masks resume text, cover letters, raw application answers, prompts, secrets, emails, phone numbers, and full field values while preserving useful debugging metadata such as workflow step, field label, field type, command type, result, status, model, and counts.
 
@@ -111,7 +111,7 @@ curl -X POST http://localhost:3000/api/email/imap-sync \
   -d '{"limit":25,"sinceDays":14}'
 ```
 
-Synced messages are classified as rejection, interview request, assessment, offer, confirmation, or needs review. Matched messages update application outcomes, create `Needs Me` items when action is required, and trigger interview prep for interview/assessment messages.
+Synced messages are classified as rejection, interview request, assessment, offer, confirmation, or needs review. Matched messages update application outcomes, reconcile duplicate application trackers, create `Needs Me` items when action is required, and trigger interview prep for interview/assessment messages.
 
 An hourly email sync cron is configured in `vercel.json` and calls `/api/cron/email-sync` at the top of every hour. It checks connected Gmail OAuth accounts and any configured IMAP mailbox. Set `EMAIL_SYNC_SECRET` or `CRON_SECRET` to require `Authorization: Bearer <secret>` on cron requests.
 

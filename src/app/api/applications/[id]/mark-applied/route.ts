@@ -1,5 +1,6 @@
 import { apiError } from "@/lib/api";
 import { recordApplicationOutcome } from "@/lib/applications/outcomes";
+import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
 import { createQualityExampleFromAutomationRun } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
 
@@ -14,6 +15,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       },
     });
     if (existing) {
+      await reconcileApplicationCanonicalState({ applicationId: params.id, source: "mark_applied_existing" }).catch(() => null);
       return Response.json({
         outcome: existing,
         message: "Application was already marked applied.",
@@ -31,6 +33,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     if (latestRun && ["FAILED", "NEEDS_USER", "RUNNING"].includes(latestRun.status)) {
       await createQualityExampleFromAutomationRun(latestRun.id, "MANUAL_REPAIR").catch(() => null);
     }
+    await reconcileApplicationCanonicalState({ applicationId: params.id, source: "mark_applied" }).catch(() => null);
 
     return Response.json({ outcome: result.outcome, message: result.message });
   } catch (error) {

@@ -26,7 +26,7 @@ The product is not a blind mass-apply bot. It is designed around verified candid
 - Cover letters, recruiter messages, hiring manager messages, company briefs, and application answers.
 - QA checks for unsupported claims, generic writing, fake metrics, style issues, and missing evidence.
 - Email response ingestion through IMAP and OAuth foundation for Gmail/Outlook.
-- Outcome tracking and outcome-learning recommendations.
+- Outcome tracking, canonical application reconciliation, and outcome-learning recommendations.
 - Local Playwright application assistant with LangGraph-backed durable workflow state and safety gates.
 - Agency-first search flow: completed searches hand strong matches to the recruiting agency automatically, show the linked agency activity on Dashboard, and keep borderline matches in the Jobs exception queue.
 - LangGraph-backed recruiting agency workflow with live `AgentRun` activity, packet-preparation state, and explicit repair/retry/cancel controls.

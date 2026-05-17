@@ -19,6 +19,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip, formatStatus } from "@/components/ui/status-chip";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
+import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from "@/lib/applications/reconciliation";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
@@ -31,6 +32,7 @@ export const dynamic = "force-dynamic";
 const columns = ["approved", "ready_to_apply", "applied", "follow_up_due", "screening", "interviewing", "offer", "archived"];
 
 export default async function ApplicationsPage() {
+  await reconcileApplicationCanonicalState({ source: "applications_page" }).catch(() => null);
   const [applications, rawAgencyMatches] = await Promise.all([
     prisma.application.findMany({
       include: {
@@ -59,8 +61,9 @@ export default async function ApplicationsPage() {
       take: 250,
     }),
   ]);
+  const visibleApplications = visibleCanonicalApplications(applications);
   const suppressionStates = await loadJobSuppressionStatesByUserIds(rawAgencyMatches.map((match) => match.jobSearchProfile.userId));
-  const trackedJobKeys = applicationJobKeySet(applications);
+  const trackedJobKeys = applicationJobKeySet(visibleApplications);
   const agencyCandidates = uniqueMatchesByCanonicalJob(
     rawAgencyMatches.filter((match) => {
       const suppressionState = suppressionStates.get(match.jobSearchProfile.userId);
@@ -68,8 +71,8 @@ export default async function ApplicationsPage() {
     }),
   );
   const nextAction = applicationsNextAction({
-    approvedCount: applications.filter((application) => application.status === "approved").length,
-    readyCount: applications.filter((application) => application.status === "ready_to_apply").length,
+    approvedCount: visibleApplications.filter((application) => application.status === "approved").length,
+    readyCount: visibleApplications.filter((application) => application.status === "ready_to_apply").length,
     agencyCandidateCount: agencyCandidates.length,
   });
 
@@ -141,7 +144,7 @@ export default async function ApplicationsPage() {
         </Card>
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)", xl: "repeat(4, 1fr)" }, gap: 2 }}>
           {columns.map((status) => {
-            const items = applications.filter((application) => application.status === status);
+            const items = visibleApplications.filter((application) => application.status === status);
             return (
               <Card key={status} sx={{ minHeight: 220 }}>
                 <CardContent>
@@ -219,7 +222,7 @@ export default async function ApplicationsPage() {
             );
           })}
         </Box>
-        {applications.length === 0 ? (
+        {visibleApplications.length === 0 ? (
           <Card>
             <EmptyState title="No applications tracked" body="Run search from the Dashboard. Strong matches will flow through the recruiting agency into prepared application packets." />
           </Card>

@@ -4,6 +4,7 @@ import { createAgentUserRequest } from "@/lib/agent-user-requests";
 import { storeObservedFieldLearning, type ObservedApplicationField } from "@/lib/applications/field-learning";
 import { launchApplicationAssistant, type LaunchAssistantResult } from "@/lib/applications/launch-assistant";
 import { recordApplicationOutcome } from "@/lib/applications/outcomes";
+import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
 import { langSmithTraceMetadata, traceWorkflowStep } from "@/lib/observability/langsmith";
 import { createQualityExampleFromAutomationRun } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
@@ -967,6 +968,10 @@ async function markApplicationSubmitted(applicationId: string, automationRunId: 
       type: "applied",
       payload: { source: "application_assistant_workflow", automationRunId, note } as Prisma.InputJsonValue,
     },
+  }).catch(() => null);
+  await reconcileApplicationCanonicalState({
+    applicationId,
+    source: "assistant_submit_lifecycle",
   }).catch(() => null);
 }
 

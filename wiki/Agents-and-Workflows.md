@@ -153,9 +153,10 @@ Implementation notes:
 ## Outcome Learning Workflow
 
 1. User records outcomes or email sync detects them.
-2. Outcome Learning reviews patterns across profiles, sources, industries, and materials.
-3. It distinguishes low sample size from meaningful trends.
-4. The app surfaces actionable strategy changes.
+2. Application reconciliation syncs canonical duplicate trackers so submitted jobs win over stale approved/ready duplicates.
+3. Outcome Learning reviews patterns across profiles, sources, industries, and materials.
+4. It distinguishes low sample size from meaningful trends.
+5. The app surfaces actionable strategy changes.
 
 ## Hands-Off Principle
 

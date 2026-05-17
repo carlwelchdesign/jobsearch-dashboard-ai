@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
+import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
 import { clearJobSuppressionForApproval } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 import { apiError } from "@/lib/api";
@@ -29,6 +30,12 @@ export async function POST(request: Request, { params }: { params: { id: string 
       jobProfileMatchId: match.id,
       jobPosting: match.jobPosting,
     });
+    if (application) {
+      await reconcileApplicationCanonicalState({
+        applicationId: application.id,
+        source: "job_approval",
+      }).catch(() => null);
+    }
 
     return NextResponse.json({
       jobId: params.id,

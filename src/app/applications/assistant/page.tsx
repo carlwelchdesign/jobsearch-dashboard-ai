@@ -5,12 +5,14 @@ import { prisma } from "@/lib/prisma";
 import { summarizeAutomationBlockers } from "@/lib/applications/automation-analytics";
 import { recoverStaleApplicationAutomationRuns, syncRunningApplicationAutomationRunsFromLogs } from "@/lib/applications/automation-runs";
 import { hasApplicationForJob, submittedApplicationJobKeySet, submittedApplicationStatuses } from "@/lib/applications/job-filters";
+import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from "@/lib/applications/reconciliation";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { AssistantWorkbench } from "./assistant-workbench";
 
 export const dynamic = "force-dynamic";
 
 export default async function ApplicationAssistantPage() {
+  await reconcileApplicationCanonicalState({ source: "apply_sprint_page" }).catch(() => null);
   await syncRunningApplicationAutomationRunsFromLogs();
   await recoverStaleApplicationAutomationRuns();
 
@@ -73,7 +75,8 @@ export default async function ApplicationAssistantPage() {
   ]);
   const suppressionStates = await loadJobSuppressionStatesByUserIds(applications.map((application) => application.userId));
   const submittedJobKeys = submittedApplicationJobKeySet(submittedApplications);
-  const visibleApplications = applications.filter((application) => (
+  const canonicalApplications = visibleCanonicalApplications(applications);
+  const visibleApplications = canonicalApplications.filter((application) => (
     !hasApplicationForJob(application.jobPosting, submittedJobKeys)
     && (!suppressionStates.get(application.userId) || !isJobSuppressed(application.jobPosting, suppressionStates.get(application.userId)!))
   ));

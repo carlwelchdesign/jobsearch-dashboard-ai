@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
+import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from "@/lib/applications/reconciliation";
 import { recordSubmittedJobSuppression } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 
@@ -16,6 +17,7 @@ const createApplicationSchema = z.object({
 
 export async function GET() {
   try {
+    await reconcileApplicationCanonicalState({ source: "applications_api" }).catch(() => null);
     const applications = await prisma.application.findMany({
       include: {
         jobPosting: true,
@@ -24,7 +26,7 @@ export async function GET() {
       orderBy: { updatedAt: "desc" },
     });
 
-    return NextResponse.json({ applications });
+    return NextResponse.json({ applications: visibleCanonicalApplications(applications) });
   } catch (error) {
     return apiError(error);
   }
@@ -100,6 +102,7 @@ export async function POST(request: Request) {
         source: "application_create",
         reason: "created_applied_application",
       });
+      await reconcileApplicationCanonicalState({ applicationId: application.id, source: "application_create" }).catch(() => null);
     }
 
     return NextResponse.json({ application }, { status: 201 });

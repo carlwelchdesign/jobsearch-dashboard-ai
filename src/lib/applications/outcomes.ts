@@ -2,6 +2,7 @@ import type { ApplicationOutcomeType, JobMatchStatus, Prisma } from "@prisma/cli
 import { syncApplicationPacket } from "@/lib/applications/application-packets";
 import { ensureInterviewPrepForApplication } from "@/lib/applications/interview-prep-workflow";
 import { submittedApplicationStatuses } from "@/lib/applications/job-filters";
+import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
 import { recordSubmittedJobSuppression } from "@/lib/jobs/suppression";
 import { refreshOutcomeCalibration, type OutcomeCalibrationRefreshSource } from "@/lib/observability/outcome-calibration";
 import { prisma } from "@/lib/prisma";
@@ -94,6 +95,10 @@ export async function recordApplicationOutcome(input: RecordApplicationOutcomeIn
       source: "application_outcome",
       reason: input.outcome,
     });
+    await reconcileApplicationCanonicalState({
+      applicationId: application.id,
+      source: input.source ?? "application_outcome",
+    }).catch(() => null);
   }
   await syncApplicationPacket(application.id);
   if (shouldTriggerInterviewPrepForOutcome(input.outcome)) {
