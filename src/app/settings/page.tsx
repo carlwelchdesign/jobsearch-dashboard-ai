@@ -15,7 +15,7 @@ import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { PageHeader } from "@/components/ui/page-header";
 import { getLearningImpact } from "@/lib/observability/learning-impact";
-import { getOutcomeCalibration, getOutcomeCalibrationTrends } from "@/lib/observability/outcome-calibration";
+import { getOutcomeCalibration, getOutcomeCalibrationTrends, getOutcomeRegressionTriage } from "@/lib/observability/outcome-calibration";
 import { getLearningRollbackAudit } from "@/lib/observability/rollback-audit";
 import { prisma } from "@/lib/prisma";
 import { FieldMemoryDisableButton } from "./field-memory-disable-button";
@@ -125,6 +125,7 @@ export default async function SettingsPage() {
   const [qualityExampleCount, qualityFailedCount, qualityScore, qualityProposals, qualityByTarget] = quality;
   const outcomeCalibration = user ? await getOutcomeCalibration(user.id) : null;
   const outcomeTrends = user ? await getOutcomeCalibrationTrends(user.id) : null;
+  const outcomeRegressionTriage = user ? await getOutcomeRegressionTriage(user.id) : [];
   const learningImpact = user ? await getLearningImpact(user.id) : [];
   const rollbackAudit = user ? await getLearningRollbackAudit(user.id) : [];
   const nextAction = getSettingsNextAction({
@@ -364,6 +365,47 @@ export default async function SettingsPage() {
                           </Box>
                         ))}
                       </Stack>
+                      <Box sx={{ borderTop: 1, borderColor: "divider", pt: 1.5, mt: 1.5 }}>
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                          <Chip size="small" color="warning" label="Regression triage" />
+                          <Chip size="small" variant="outlined" label={`${outcomeRegressionTriage.length} open`} />
+                          <Chip size="small" color={outcomeRegressionTriage.some((item) => item.priority === "high") ? "warning" : "default"} variant="outlined" label={`${outcomeRegressionTriage.filter((item) => item.priority === "high").length} high priority`} />
+                        </Stack>
+                        <Typography variant="h4">Regression triage</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                          Open regression proposals ranked by urgency and routed to the clearest review surface. Triage is advisory and does not change agent behavior.
+                        </Typography>
+                        {outcomeRegressionTriage.length ? (
+                          <Stack spacing={1.25} sx={{ mt: 1.25 }}>
+                            {outcomeRegressionTriage.map((item) => (
+                              <Box key={item.proposalId} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+                                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
+                                  <Chip size="small" color={outcomeRegressionPriorityColor(item.priority)} label={`${item.priority} priority`} />
+                                  <Chip size="small" variant="outlined" label={item.ownerArea} />
+                                  <Chip size="small" variant="outlined" label={item.signalType.replace(/_/g, " ")} />
+                                  <Chip size="small" variant="outlined" label={`${item.target.toLowerCase().replace(/_/g, " ")}`} />
+                                </Stack>
+                                <Typography variant="body2">{item.title}</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>{item.reason}</Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
+                                  {item.trendKey.replace(/:/g, " ")} changed from {outcomeTrendValue(item.previous)} to {outcomeTrendValue(item.latest)}
+                                  {item.delta === null ? "" : ` (${item.delta > 0 ? "+" : ""}${item.delta})`}
+                                </Typography>
+                                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 0.75 }}>
+                                  <ActionButton href={item.reviewHref} variant="text" size="small">
+                                    Open review
+                                  </ActionButton>
+                                  <ActionButton href="#settings-quality-proposals" variant="text" size="small">
+                                    Open proposal
+                                  </ActionButton>
+                                </Stack>
+                              </Box>
+                            ))}
+                          </Stack>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>No open outcome regression proposals need triage.</Typography>
+                        )}
+                      </Box>
                     </Box>
                   ) : null}
                   {outcomeCalibration.signals.length ? (
@@ -1045,6 +1087,12 @@ function outcomeTrendColor(status: string) {
   if (status === "improving") return "success" as const;
   if (status === "regressing") return "warning" as const;
   if (status === "flat") return "info" as const;
+  return "default" as const;
+}
+
+function outcomeRegressionPriorityColor(priority: string) {
+  if (priority === "high") return "warning" as const;
+  if (priority === "medium") return "info" as const;
   return "default" as const;
 }
 

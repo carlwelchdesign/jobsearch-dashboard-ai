@@ -185,6 +185,29 @@ export type OutcomeRegressionProposalResult = {
   }>;
 };
 
+export type OutcomeRegressionTriagePriority = "high" | "medium" | "low";
+
+export type OutcomeRegressionTriageItem = {
+  proposalId: string;
+  status: AgentImprovementProposalStatus;
+  target: AgentQualityTarget;
+  riskLevel: SkillAdjustmentRiskLevel;
+  title: string;
+  summary: string;
+  priority: OutcomeRegressionTriagePriority;
+  ownerArea: string;
+  reviewHref: string;
+  reason: string;
+  trendKey: string;
+  signalType: string;
+  latestSnapshotId: string | null;
+  latest: number | null;
+  previous: number | null;
+  delta: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export async function getOutcomeCalibration(userId?: string | null): Promise<OutcomeCalibrationReport> {
   const data = await loadOutcomeData(userId);
   return buildOutcomeCalibrationReport(data);
@@ -260,6 +283,7 @@ export async function proposeOutcomeTrendRegressionReviews(userId?: string | nul
   const proposals: OutcomeRegressionProposalResult["proposals"] = [];
 
   for (const candidate of candidates) {
+    const triage = triageForRegressionCandidate(candidate);
     const current = await prisma.agentImprovementProposal.findFirst({
       where: {
         userId: user.id,
@@ -305,6 +329,7 @@ export async function proposeOutcomeTrendRegressionReviews(userId?: string | nul
           latest: candidate.latest,
           previous: candidate.previous,
           delta: candidate.delta,
+          triage,
         },
       },
       select: { id: true, status: true, target: true },
@@ -314,6 +339,25 @@ export async function proposeOutcomeTrendRegressionReviews(userId?: string | nul
   }
 
   return { scanned: candidates.length, created, existing, proposals };
+}
+
+export async function getOutcomeRegressionTriage(userId?: string | null): Promise<OutcomeRegressionTriageItem[]> {
+  const user = userId ? { id: userId } : await prisma.user.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
+  if (!user?.id) return [];
+
+  const proposals = await prisma.agentImprovementProposal.findMany({
+    where: {
+      userId: user.id,
+      status: "PROPOSED",
+      metadataJson: { path: ["source"], equals: "outcome_trend_regression" },
+    },
+    orderBy: [{ updatedAt: "desc" }],
+    take: 50,
+  });
+
+  return proposals
+    .map((proposal) => triageItemForProposal(proposal))
+    .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || b.updatedAt.getTime() - a.updatedAt.getTime());
 }
 
 export async function proposeOutcomeReviewActionImprovements(userId?: string | null) {
@@ -1221,6 +1265,14 @@ type RegressionCandidate = {
   delta: number | null;
 };
 
+type RegressionTriageMetadata = {
+  priority: OutcomeRegressionTriagePriority;
+  ownerArea: string;
+  reviewHref: string;
+  reason: string;
+  signalType: string;
+};
+
 function regressionCandidates(trends: OutcomeCalibrationTrendReport): RegressionCandidate[] {
   if (trends.snapshots.length < 2) return [];
   const metricCandidates = trends.metrics
@@ -1255,6 +1307,119 @@ function regressionCandidates(trends: OutcomeCalibrationTrendReport): Regression
       delta: workflow.delta,
     }));
   return [...metricCandidates, ...workflowCandidates];
+}
+
+function triageForRegressionCandidate(candidate: RegressionCandidate): RegressionTriageMetadata {
+  if (candidate.trendKey === "metric:callbackRate") {
+    return {
+      priority: "high",
+      ownerArea: "Recruiting agency",
+      reviewHref: "/outcomes",
+      reason: "Callback rate declined, so review sourcing quality, agency approval, and application targeting before accepting more automation.",
+      signalType: "callback_decline",
+    };
+  }
+  if (candidate.trendKey === "metric:assistantFailures" || candidate.trendKey === "workflow:APPLICATION_ASSISTANT") {
+    return {
+      priority: "high",
+      ownerArea: "Application assistant",
+      reviewHref: "/applications/assistant",
+      reason: "Assistant quality regressed, so inspect recent failed or blocked runs before expanding autofill behavior.",
+      signalType: "assistant_quality",
+    };
+  }
+  if (candidate.trendKey === "metric:rejectedHighScoreMatches" || candidate.trendKey === "workflow:JOB_MATCHING") {
+    return {
+      priority: "high",
+      ownerArea: "Job matching",
+      reviewHref: "/jobs",
+      reason: "High-scoring jobs are being rejected or matching quality dropped, so review scoring and rejection feedback patterns.",
+      signalType: "matching_quality",
+    };
+  }
+  if (candidate.trendKey === "metric:duplicateActiveGroups" || candidate.trendKey === "metric:resurfacedSuppressedJobs") {
+    return {
+      priority: "medium",
+      ownerArea: "Job search",
+      reviewHref: "/jobs",
+      reason: "Search hygiene regressed through duplicates or resurfaced suppressed jobs, so review dedupe and suppression behavior.",
+      signalType: "search_hygiene",
+    };
+  }
+  if (candidate.trendKey === "workflow:JOB_SEARCH") {
+    return {
+      priority: "medium",
+      ownerArea: "Job search",
+      reviewHref: "/settings#settings-outcome-calibration",
+      reason: "Job search workflow score dropped, so review sources, profiles, and saved-result yield before changing schedules.",
+      signalType: "search_quality",
+    };
+  }
+  return {
+    priority: "low",
+    ownerArea: candidate.target.toLowerCase().replace(/_/g, " "),
+    reviewHref: "/settings#settings-outcome-calibration",
+    reason: "A regression was detected, but it needs review before any behavior changes are considered.",
+    signalType: "workflow_quality",
+  };
+}
+
+function triageItemForProposal(proposal: {
+  id: string;
+  status: AgentImprovementProposalStatus;
+  target: AgentQualityTarget;
+  riskLevel: SkillAdjustmentRiskLevel;
+  title: string;
+  summary: string;
+  metadataJson: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+}): OutcomeRegressionTriageItem {
+  const metadata = objectJson(proposal.metadataJson);
+  const triage = objectJson(metadata.triage);
+  const trendKey = typeof metadata.trendKey === "string" ? metadata.trendKey : "unknown";
+  const fallback = triageForRegressionCandidate({
+    trendKey,
+    kind: metadata.trendKind === "workflow" ? "workflow" : "metric",
+    target: proposal.target,
+    type: typeForRegressionTarget(proposal.target),
+    category: `trend_${trendKey.replace(/[^a-z0-9]+/gi, "_")}`,
+    title: proposal.title,
+    summary: proposal.summary,
+    latest: nullableNumberValue(metadata.latest),
+    previous: nullableNumberValue(metadata.previous),
+    delta: nullableNumberValue(metadata.delta),
+  });
+  return {
+    proposalId: proposal.id,
+    status: proposal.status,
+    target: proposal.target,
+    riskLevel: proposal.riskLevel,
+    title: proposal.title,
+    summary: proposal.summary,
+    priority: priorityValue(triage.priority) ?? fallback.priority,
+    ownerArea: typeof triage.ownerArea === "string" ? triage.ownerArea : fallback.ownerArea,
+    reviewHref: typeof triage.reviewHref === "string" ? triage.reviewHref : fallback.reviewHref,
+    reason: typeof triage.reason === "string" ? triage.reason : fallback.reason,
+    signalType: typeof triage.signalType === "string" ? triage.signalType : fallback.signalType,
+    trendKey,
+    latestSnapshotId: typeof metadata.latestSnapshotId === "string" ? metadata.latestSnapshotId : null,
+    latest: nullableNumberValue(metadata.latest),
+    previous: nullableNumberValue(metadata.previous),
+    delta: nullableNumberValue(metadata.delta),
+    createdAt: proposal.createdAt,
+    updatedAt: proposal.updatedAt,
+  };
+}
+
+function priorityValue(value: unknown): OutcomeRegressionTriagePriority | null {
+  return value === "high" || value === "medium" || value === "low" ? value : null;
+}
+
+function priorityRank(priority: OutcomeRegressionTriagePriority) {
+  if (priority === "high") return 0;
+  if (priority === "medium") return 1;
+  return 2;
 }
 
 function targetForRegressionMetric(key: keyof OutcomeCalibrationReport["summary"]): AgentQualityTarget {

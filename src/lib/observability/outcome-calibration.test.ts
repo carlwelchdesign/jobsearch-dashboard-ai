@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getOutcomeCalibration,
   getOutcomeCalibrationTrends,
+  getOutcomeRegressionTriage,
   proposeOutcomeTrendRegressionReviews,
   proposeOutcomeReviewActionImprovements,
   recomputeOutcomeCalibration,
@@ -338,6 +339,11 @@ describe("outcome calibration", () => {
           source: "outcome_trend_regression",
           trendKey: "metric:callbackRate",
           latestSnapshotId: "snapshot_latest",
+          triage: expect.objectContaining({
+            priority: "high",
+            ownerArea: "Recruiting agency",
+            reviewHref: "/outcomes",
+          }),
         }),
         patchJson: expect.objectContaining({
           policy: "proposal_only",
@@ -391,6 +397,63 @@ describe("outcome calibration", () => {
       proposals: [{ id: "proposal_existing", trendKey: "metric:callbackRate", status: "existing", proposalStatus: "PROPOSED" }],
     });
     expect(proposalCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns open outcome regression triage sorted by priority", async () => {
+    proposalFindManyMock.mockResolvedValue([
+      regressionProposal({
+        id: "proposal_medium",
+        target: "JOB_SEARCH",
+        title: "Review duplicate regression",
+        metadataJson: {
+          source: "outcome_trend_regression",
+          trendKey: "metric:duplicateActiveGroups",
+          trendKind: "metric",
+          latestSnapshotId: "snapshot_latest",
+          latest: 3,
+          previous: 1,
+          delta: 2,
+        },
+        updatedAt: new Date("2026-05-17T12:00:00.000Z"),
+      }),
+      regressionProposal({
+        id: "proposal_high",
+        target: "APPLICATION_ASSISTANT",
+        title: "Review assistant regression",
+        metadataJson: {
+          source: "outcome_trend_regression",
+          trendKey: "metric:assistantFailures",
+          trendKind: "metric",
+          latestSnapshotId: "snapshot_latest",
+          latest: 2,
+          previous: 1,
+          delta: 1,
+        },
+        updatedAt: new Date("2026-05-17T10:00:00.000Z"),
+      }),
+    ] as never);
+
+    const triage = await getOutcomeRegressionTriage("user_1");
+
+    expect(proposalFindManyMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        userId: "user_1",
+        status: "PROPOSED",
+        metadataJson: { path: ["source"], equals: "outcome_trend_regression" },
+      }),
+    }));
+    expect(triage.map((item) => item.proposalId)).toEqual(["proposal_high", "proposal_medium"]);
+    expect(triage[0]).toMatchObject({
+      priority: "high",
+      ownerArea: "Application assistant",
+      reviewHref: "/applications/assistant",
+      signalType: "assistant_quality",
+    });
+    expect(triage[1]).toMatchObject({
+      priority: "medium",
+      ownerArea: "Job search",
+      signalType: "search_hygiene",
+    });
   });
 
   it("does not duplicate existing outcome quality examples", async () => {
@@ -559,6 +622,31 @@ function outcomeProposal(input: {
     },
     createdAt: new Date("2026-05-17T10:00:00.000Z"),
     updatedAt: new Date("2026-05-17T10:00:00.000Z"),
+  };
+}
+
+function regressionProposal(input: {
+  id: string;
+  target: string;
+  title: string;
+  metadataJson: Record<string, unknown>;
+  updatedAt: Date;
+}) {
+  return {
+    id: input.id,
+    userId: "user_1",
+    target: input.target,
+    type: "WORKFLOW",
+    status: "PROPOSED",
+    riskLevel: "HIGH",
+    title: input.title,
+    summary: "Regression summary",
+    rationale: "Rationale",
+    affectedExampleIds: [],
+    patchJson: { policy: "proposal_only" },
+    metadataJson: input.metadataJson,
+    createdAt: new Date("2026-05-17T09:00:00.000Z"),
+    updatedAt: input.updatedAt,
   };
 }
 
