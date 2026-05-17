@@ -46,7 +46,7 @@ The supported deterministic evaluator targets are `APPLICATION_ASSISTANT`, `RECR
 - `JOB_SEARCH` uses `job_search_results` examples from failed/partial runs, low saved-result yield, and weak dedupe signals.
 - `JOB_MATCHING` uses `job_matching_decisions` examples from high-scoring matches the user rejected.
 
-Evaluation runs score examples and cluster repeated failure categories into review-only proposals. V1 does not auto-apply prompt, classifier, scoring, search, or workflow changes. The schema also supports generated materials, GitHub review, outreach, outcome learning, and command center quality targets for future evaluators.
+Evaluation runs score examples and cluster repeated failure categories into proposals. Accepting a low-risk mapped proposal can create an active `SkillAdjustment` with conservative guidance for the relevant skill. Current mapped categories include rejected high-score matches, weak dedupe, low-yield searches, agency candidate quality, cover-letter fields, and field classification. High-risk, unmapped, prompt, scoring-policy, search-source, and workflow proposals remain review-only and do not rewrite behavior automatically. The schema also supports generated materials, GitHub review, outreach, outcome learning, and command center quality targets for future evaluators.
 
 ## Implemented Agent Areas
 

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  acceptImprovementProposal,
   backfillAgentQualityExamples,
   createQualityExampleFromAutomationRun,
   proposeImprovementsFromFailedExamples,
@@ -40,6 +41,12 @@ vi.mock("@/lib/prisma", () => ({
       findMany: vi.fn(),
     },
     agentImprovementProposal: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
+    skillAdjustment: {
       findFirst: vi.fn(),
       create: vi.fn(),
     },
@@ -59,7 +66,11 @@ const exampleFindManyMock = vi.mocked(prisma.agentQualityExample.findMany);
 const evaluationCreateMock = vi.mocked(prisma.agentQualityEvaluation.create);
 const evaluationFindManyMock = vi.mocked(prisma.agentQualityEvaluation.findMany);
 const proposalFindFirstMock = vi.mocked(prisma.agentImprovementProposal.findFirst);
+const proposalFindUniqueMock = vi.mocked(prisma.agentImprovementProposal.findUnique);
 const proposalCreateMock = vi.mocked(prisma.agentImprovementProposal.create);
+const proposalUpdateMock = vi.mocked(prisma.agentImprovementProposal.update);
+const skillAdjustmentFindFirstMock = vi.mocked(prisma.skillAdjustment.findFirst);
+const skillAdjustmentCreateMock = vi.mocked(prisma.skillAdjustment.create);
 
 describe("agent quality evaluation loop", () => {
   beforeEach(() => {
@@ -70,6 +81,10 @@ describe("agent quality evaluation loop", () => {
     evaluationCreateMock.mockImplementation((input) => ({ id: "eval_1", ...(input as any).data }) as never);
     proposalFindFirstMock.mockResolvedValue(null);
     proposalCreateMock.mockResolvedValue({ id: "proposal_1" } as never);
+    proposalFindUniqueMock.mockResolvedValue(null);
+    proposalUpdateMock.mockImplementation((input) => ({ id: (input as any).where.id, ...(input as any).data }) as never);
+    skillAdjustmentFindFirstMock.mockResolvedValue(null);
+    skillAdjustmentCreateMock.mockImplementation((input) => ({ id: "adjustment_1", ...(input as any).data }) as never);
     automationRunFindManyMock.mockResolvedValue([] as never);
     agentRunFindManyMock.mockResolvedValue([] as never);
     jobSearchRunFindManyMock.mockResolvedValue([] as never);
@@ -248,6 +263,86 @@ describe("agent quality evaluation loop", () => {
       data: expect.objectContaining({ target: "JOB_MATCHING", failureCategory: "high_score_user_rejected" }),
     }));
   });
+
+  it("activates accepted low-risk proposals as skill adjustments", async () => {
+    proposalFindUniqueMock.mockResolvedValueOnce(improvementProposal({
+      target: "JOB_MATCHING",
+      type: "CLASSIFIER",
+      riskLevel: "LOW",
+      category: "high_score_user_rejected",
+    }) as never);
+    proposalFindUniqueMock.mockResolvedValueOnce(improvementProposal({
+      target: "JOB_MATCHING",
+      type: "CLASSIFIER",
+      riskLevel: "LOW",
+      category: "high_score_user_rejected",
+    }) as never);
+
+    const result = await acceptImprovementProposal("proposal_1");
+
+    expect(skillAdjustmentCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        skillId: "job_fit_scorer",
+        kind: "GUIDANCE",
+        status: "ACTIVE",
+        patchJson: expect.objectContaining({
+          proposalId: "proposal_1",
+          source: "quality_proposal",
+          category: "high_score_user_rejected",
+        }),
+      }),
+    }));
+    expect(result.activation).toEqual(expect.objectContaining({ status: "created", skillId: "job_fit_scorer" }));
+    expect(proposalUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        status: "ACCEPTED",
+        metadataJson: expect.objectContaining({
+          activation: expect.objectContaining({ status: "created" }),
+        }),
+      }),
+    }));
+  });
+
+  it("does not create duplicate skill adjustments when proposal activation already exists", async () => {
+    proposalFindUniqueMock.mockResolvedValueOnce(improvementProposal({
+      target: "JOB_SEARCH",
+      type: "WORKFLOW",
+      riskLevel: "LOW",
+      category: "dedupe_ineffective",
+    }) as never);
+    skillAdjustmentFindFirstMock.mockResolvedValue({ id: "adjustment_existing" } as never);
+    proposalFindUniqueMock.mockResolvedValueOnce(improvementProposal({
+      target: "JOB_SEARCH",
+      type: "WORKFLOW",
+      riskLevel: "LOW",
+      category: "dedupe_ineffective",
+    }) as never);
+
+    const result = await acceptImprovementProposal("proposal_1");
+
+    expect(skillAdjustmentCreateMock).not.toHaveBeenCalled();
+    expect(result.activation).toEqual(expect.objectContaining({ status: "already_active", adjustmentId: "adjustment_existing" }));
+  });
+
+  it("accepts high-risk or unmapped proposals as review-only", async () => {
+    proposalFindUniqueMock.mockResolvedValueOnce(improvementProposal({
+      target: "APPLICATION_ASSISTANT",
+      type: "WORKFLOW",
+      riskLevel: "HIGH",
+      category: "browser_lifecycle",
+    }) as never);
+    proposalFindUniqueMock.mockResolvedValueOnce(improvementProposal({
+      target: "APPLICATION_ASSISTANT",
+      type: "WORKFLOW",
+      riskLevel: "HIGH",
+      category: "browser_lifecycle",
+    }) as never);
+
+    const result = await acceptImprovementProposal("proposal_1");
+
+    expect(skillAdjustmentCreateMock).not.toHaveBeenCalled();
+    expect(result.activation).toEqual(expect.objectContaining({ status: "review_only" }));
+  });
 });
 
 function automationRun(input: { status: string; blockerType: string | null; blockerMessage: string | null }) {
@@ -269,5 +364,27 @@ function automationRun(input: { status: string; blockerType: string | null; bloc
       title: "Senior Software Engineer II",
       atsProvider: "ashby",
     },
+  };
+}
+
+function improvementProposal(input: { target: string; type: string; riskLevel: string; category: string }) {
+  return {
+    id: "proposal_1",
+    userId: "user_1",
+    target: input.target,
+    type: input.type,
+    status: "PROPOSED",
+    riskLevel: input.riskLevel,
+    title: "Tighten quality behavior",
+    summary: "Detected repeated quality issues.",
+    rationale: "Repeated examples should influence future skill runs.",
+    affectedExampleIds: ["example_1"],
+    patchJson: { category: input.category },
+    metadataJson: { failureCategory: input.category },
+    skillFeedbackId: null,
+    acceptedAt: null,
+    dismissedAt: null,
+    createdAt: new Date("2026-05-17T10:00:00Z"),
+    updatedAt: new Date("2026-05-17T10:00:00Z"),
   };
 }

@@ -1,13 +1,13 @@
 import { apiError } from "@/lib/api";
-import { setImprovementProposalStatus } from "@/lib/observability/quality";
+import { acceptImprovementProposal } from "@/lib/observability/quality";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(_: Request, { params }: { params: { id: string } }) {
   try {
-    const proposal = await setImprovementProposalStatus(params.id, "ACCEPTED");
-    return Response.json({ ok: true, proposal });
+    const result = await acceptImprovementProposal(params.id);
+    return Response.json({ ok: true, ...result });
   } catch (error) {
     return apiError(error, 400);
   }

@@ -85,7 +85,7 @@ With `OPENAI_API_KEY`, resume parsing, job scoring, and resume tailoring use Ope
 
 With `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY`, the app emits redacted metadata traces for agent runs, OpenAI helper calls, the application assistant workflow, and graph-backed recruiting agency runs. Tracing is optional and fail-open: if LangSmith is unavailable, the app continues without tracing. The default trace payload masks resume text, cover letters, raw application answers, prompts, secrets, emails, phone numbers, and full field values while preserving useful debugging metadata such as workflow step, field label, field type, command type, result, status, model, and counts.
 
-The app also keeps a local LangSmith-style quality loop. Assistant failures, browser-close repairs, manual submit corrections, recruiting agency candidate failures, noisy search runs, rejected high-score matches, and explicit mistake reports become redacted `AgentQualityExample` records. `/api/observability/evaluations/run` scores supported targets and creates propose-only `AgentImprovementProposal` records; it never auto-applies prompt, scoring, search, or workflow changes. Deterministic evaluators currently cover the application assistant, recruiting agency, job search, and job matching; the schema also supports generated materials, GitHub review, outreach, outcome learning, and command center recommendations.
+The app also keeps a local LangSmith-style quality loop. Assistant failures, browser-close repairs, manual submit corrections, recruiting agency candidate failures, noisy search runs, rejected high-score matches, and explicit mistake reports become redacted `AgentQualityExample` records. `/api/observability/evaluations/run` scores supported targets and creates `AgentImprovementProposal` records. Accepting a low-risk mapped proposal can activate conservative `SkillAdjustment` guidance that agents already consume; high-risk, unmapped, prompt, search-source, scoring-policy, and workflow changes remain review-only and never rewrite behavior automatically. Deterministic evaluators currently cover the application assistant, recruiting agency, job search, and job matching; the schema also supports generated materials, GitHub review, outreach, outcome learning, and command center recommendations.
 
 Set your GitHub profile URL in `/settings` and click `Sync GitHub context` to pull public repository context into the candidate profile. Public repos are used as project context in tailored resumes and cover letters when relevant. Add `GITHUB_TOKEN` only if you need higher GitHub API rate limits.
 
@@ -133,7 +133,7 @@ The assistant is orchestrated by a LangGraph-backed workflow plus a local Playwr
 - The Playwright runner is still the only component that controls the browser. It performs the broad safe autofill pass, reports detected fields, executes workflow commands, observes manual input, and watches for submit confirmation.
 - Workflow state is persisted in Postgres through LangGraph checkpointing and in `workflowStateJson` for app UI visibility.
 - Optional LangSmith observability stores redacted workflow traces and trace metadata on `ApplicationAutomationRun.observabilityJson`.
-- Assistant failures and repairs are captured as redacted quality examples, evaluated locally, and surfaced as propose-only improvement proposals on Settings.
+- Assistant failures and repairs are captured as redacted quality examples, evaluated locally, and surfaced as improvement proposals on Settings. Safe accepted proposals can become low-risk QA/guidance adjustments; browser lifecycle and submit-state workflow changes remain review-only.
 - The graph does not click final submit in the current phase. It stops at manual review and can resume after Needs Me answers for unknown fields.
 - LangGraph imports are loaded lazily inside server-only workflow construction so ordinary Next.js route bundles do not pull `@langchain/*` into unrelated RSC chunks.
 
@@ -206,6 +206,7 @@ Graph-backed agent runs also have explicit reliability controls on the Agent Rev
 - `Retry` creates a new child `AgentRun` with `parentRunId` pointing to the failed or stale source run.
 - `Cancel` marks a pending/running graph run failed with a `manual_cancel` node and records an event.
 - Reliability actions create redacted quality examples so repeated stale, cancelled, or retry-needed runs can be reviewed later.
+- Accepted quality proposals can activate low-risk skill guidance for known categories such as rejected high-score matches, weak dedupe, low-yield searches, agency candidate quality, cover-letter fields, and field classification. Reliability and workflow proposals are accepted as review intent unless a safe skill-guidance mapping exists.
 
 Application-question workflow:
 

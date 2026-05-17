@@ -205,18 +205,49 @@ export default async function SettingsPage() {
               ) : null}
               {qualityProposals.length ? (
                 <Stack spacing={1.25}>
-                  {qualityProposals.map((proposal) => (
-                    <Box key={proposal.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
-                      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
-                        <Chip size="small" color="info" variant="outlined" label={proposal.target.toLowerCase().replace(/_/g, " ")} />
-                        <Chip size="small" label={proposal.type.toLowerCase()} />
-                        <Chip size="small" color={proposal.status === "PROPOSED" ? "warning" : proposal.status === "ACCEPTED" ? "success" : "default"} label={proposal.status.toLowerCase()} />
-                        <Chip size="small" variant="outlined" label={proposal.riskLevel.toLowerCase()} />
-                      </Stack>
-                      <Typography variant="body2">{proposal.title}</Typography>
-                      <Typography variant="caption" color="text.secondary">{proposal.summary}</Typography>
-                    </Box>
-                  ))}
+                  {qualityProposals.map((proposal) => {
+                    const activation = proposalActivationLabel(proposal);
+                    return (
+                      <Box key={proposal.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
+                          <Chip size="small" color="info" variant="outlined" label={proposal.target.toLowerCase().replace(/_/g, " ")} />
+                          <Chip size="small" label={proposal.type.toLowerCase()} />
+                          <Chip size="small" color={proposal.status === "PROPOSED" ? "warning" : proposal.status === "ACCEPTED" ? "success" : "default"} label={proposal.status.toLowerCase()} />
+                          <Chip size="small" variant="outlined" label={proposal.riskLevel.toLowerCase()} />
+                          <Chip size="small" color={activation.activates ? "success" : "default"} variant="outlined" label={activation.label} />
+                        </Stack>
+                        <Typography variant="body2">{proposal.title}</Typography>
+                        <Typography variant="caption" color="text.secondary">{proposal.summary}</Typography>
+                        {activation.detail ? (
+                          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                            {activation.detail}
+                          </Typography>
+                        ) : null}
+                        {proposal.status === "PROPOSED" ? (
+                          <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                            <ActionButton
+                              postTo={`/api/observability/proposals/${proposal.id}/accept`}
+                              variant="outlined"
+                              color="success"
+                              size="small"
+                              message={activation.activates ? "Proposal accepted and learning activated." : "Proposal accepted for review."}
+                            >
+                              Accept
+                            </ActionButton>
+                            <ActionButton
+                              postTo={`/api/observability/proposals/${proposal.id}/dismiss`}
+                              variant="outlined"
+                              color="secondary"
+                              size="small"
+                              message="Proposal dismissed."
+                            >
+                              Dismiss
+                            </ActionButton>
+                          </Stack>
+                        ) : null}
+                      </Box>
+                    );
+                  })}
                 </Stack>
               ) : (
                 <Typography variant="body2" color="text.secondary">No quality improvement proposals have been generated yet.</Typography>
@@ -533,6 +564,40 @@ function getSettingsNextAction(input: SettingsNextActionInput) {
     icon: <SettingsSuggestOutlinedIcon />,
     scope: "application flow",
   };
+}
+
+function proposalActivationLabel(proposal: {
+  target: string;
+  riskLevel: string;
+  type: string;
+  metadataJson: unknown;
+  patchJson: unknown;
+}) {
+  const metadata = isRecord(proposal.metadataJson) ? proposal.metadataJson : {};
+  const patch = isRecord(proposal.patchJson) ? proposal.patchJson : {};
+  const existingActivation = isRecord(metadata.activation) ? metadata.activation : null;
+  const category = String(metadata.failureCategory ?? patch.category ?? "");
+  const mapped =
+    proposal.riskLevel === "LOW" &&
+    proposal.type !== "PROMPT" &&
+    (
+      (proposal.target === "JOB_MATCHING" && category === "high_score_user_rejected") ||
+      (proposal.target === "JOB_SEARCH" && ["dedupe_ineffective", "low_saved_yield"].includes(category)) ||
+      (proposal.target === "APPLICATION_ASSISTANT" && ["cover_letter_field", "field_classification"].includes(category)) ||
+      (proposal.target === "RECRUITING_AGENCY" && ["CANDIDATE_FAILURE", "candidate_failure"].includes(category))
+    );
+
+  if (existingActivation) {
+    return {
+      activates: mapped,
+      label: existingActivation.status === "created" || existingActivation.status === "already_active" ? "learning active" : "review-only",
+      detail: typeof existingActivation.reason === "string" ? existingActivation.reason : null,
+    };
+  }
+
+  return mapped
+    ? { activates: true, label: "activates learning", detail: "Accepting creates a low-risk skill adjustment." }
+    : { activates: false, label: "review-only", detail: "Accepting records review intent without changing agent behavior." };
 }
 
 type SettingsGithubReview = {

@@ -5,9 +5,11 @@ import type {
   AgentQualityTarget,
   ApplicationAutomationRunStatus,
   Prisma,
+  SkillAdjustmentKind,
 } from "@prisma/client";
 import { sanitizeTraceInput } from "@/lib/observability/langsmith";
 import { prisma } from "@/lib/prisma";
+import type { SkillId } from "@/lib/skills/types";
 
 const APPLICATION_ASSISTANT_DATASET = "application_assistant_autofill";
 const SUPPORTED_EVALUATION_TARGETS = ["APPLICATION_ASSISTANT", "RECRUITING_AGENCY", "JOB_SEARCH", "JOB_MATCHING"] as const satisfies readonly AgentQualityTarget[];
@@ -28,6 +30,11 @@ const EVALUATOR_VERSIONS: Record<typeof SUPPORTED_EVALUATION_TARGETS[number], st
   JOB_SEARCH: "job-search-quality-v1",
   JOB_MATCHING: "job-matching-quality-v1",
 };
+
+export type ImprovementProposalActivation =
+  | { status: "created"; adjustmentId: string; skillId: SkillId; kind: SkillAdjustmentKind; reason: string }
+  | { status: "already_active"; adjustmentId: string; skillId: SkillId; kind: SkillAdjustmentKind; reason: string }
+  | { status: "review_only"; reason: string };
 
 type AutomationRunForQuality = Prisma.ApplicationAutomationRunGetPayload<{
   include: {
@@ -592,6 +599,192 @@ export async function setImprovementProposalStatus(id: string, status: AgentImpr
       dismissedAt: status === "DISMISSED" ? new Date() : undefined,
     },
   });
+}
+
+export async function acceptImprovementProposal(id: string): Promise<{ proposal: Awaited<ReturnType<typeof setImprovementProposalStatus>>; activation: ImprovementProposalActivation }> {
+  const proposal = await prisma.agentImprovementProposal.findUnique({ where: { id } });
+  if (!proposal) throw new Error("Improvement proposal not found.");
+
+  const activationPlan = activationPlanForProposal(proposal);
+  if (!activationPlan) {
+    const activation = {
+      status: "review_only" as const,
+      reason: proposal.riskLevel === "LOW"
+        ? "No safe skill-adjustment mapping exists for this proposal yet."
+        : "High-risk proposals require human review and are not auto-applied.",
+    };
+    return {
+      proposal: await updateAcceptedProposal(proposal.id, activation),
+      activation,
+    };
+  }
+
+  const existing = await prisma.skillAdjustment.findFirst({
+    where: {
+      userId: proposal.userId,
+      skillId: activationPlan.skillId,
+      patchJson: { path: ["proposalId"], equals: proposal.id },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (existing) {
+    const activation = {
+      status: "already_active" as const,
+      adjustmentId: existing.id,
+      skillId: activationPlan.skillId,
+      kind: activationPlan.kind,
+      reason: "A skill adjustment already exists for this accepted proposal.",
+    };
+    return {
+      proposal: await updateAcceptedProposal(proposal.id, activation),
+      activation,
+    };
+  }
+
+  const adjustment = await prisma.skillAdjustment.create({
+    data: {
+      userId: proposal.userId,
+      skillId: activationPlan.skillId,
+      kind: activationPlan.kind,
+      riskLevel: "LOW",
+      status: "ACTIVE",
+      patchJson: toJson({
+        ...activationPlan.patchJson,
+        source: "quality_proposal",
+        proposalId: proposal.id,
+        target: proposal.target,
+        category: activationPlan.category,
+      }),
+      rationale: activationPlan.rationale,
+      appliedAt: new Date(),
+    },
+  });
+
+  const activation = {
+    status: "created" as const,
+    adjustmentId: adjustment.id,
+    skillId: activationPlan.skillId,
+    kind: activationPlan.kind,
+    reason: "Accepted low-risk proposal activated as skill guidance.",
+  };
+  return {
+    proposal: await updateAcceptedProposal(proposal.id, activation),
+    activation,
+  };
+}
+
+async function updateAcceptedProposal(id: string, activation: ImprovementProposalActivation) {
+  const existing = await prisma.agentImprovementProposal.findUnique({ where: { id } });
+  return prisma.agentImprovementProposal.update({
+    where: { id },
+    data: {
+      status: "ACCEPTED",
+      acceptedAt: new Date(),
+      metadataJson: toJson({
+        ...objectJson(existing?.metadataJson),
+        activation,
+      }),
+    },
+  });
+}
+
+function activationPlanForProposal(proposal: {
+  target: AgentQualityTarget;
+  type: string;
+  riskLevel: string;
+  title: string;
+  rationale: string;
+  patchJson: Prisma.JsonValue;
+  metadataJson: Prisma.JsonValue;
+}) {
+  if (proposal.riskLevel !== "LOW") return null;
+  if (proposal.type === "PROMPT") return null;
+
+  const category = String(objectJson(proposal.metadataJson).failureCategory ?? objectJson(proposal.patchJson).category ?? "unknown");
+  const basePatch = {
+    guidance: `${proposal.title}: ${proposal.rationale}`,
+    recommendedChange: proposal.title,
+  };
+
+  if (proposal.target === "JOB_MATCHING" && category === "high_score_user_rejected") {
+    return {
+      skillId: "job_fit_scorer" as SkillId,
+      kind: "GUIDANCE" as SkillAdjustmentKind,
+      category,
+      patchJson: {
+        ...basePatch,
+        rule: "Treat repeated high-score user rejections as evidence that the scoring explanation, concern detection, and rejection-memory alignment need stricter review before promotion.",
+      },
+      rationale: "Activated conservative job-fit guidance from rejected high-score match quality examples.",
+    };
+  }
+
+  if (proposal.target === "JOB_SEARCH" && category === "dedupe_ineffective") {
+    return {
+      skillId: "duplicate_stale_job_detector" as SkillId,
+      kind: "GUIDANCE" as SkillAdjustmentKind,
+      category,
+      patchJson: {
+        ...basePatch,
+        rule: "Apply stricter duplicate and stale-job checks when search runs repeatedly keep nearly all fetched jobs after dedupe.",
+      },
+      rationale: "Activated conservative duplicate/stale-job guidance from noisy search quality examples.",
+    };
+  }
+
+  if (proposal.target === "JOB_SEARCH" && category === "low_saved_yield") {
+    return {
+      skillId: "search_profile_manager" as SkillId,
+      kind: "GUIDANCE" as SkillAdjustmentKind,
+      category,
+      patchJson: {
+        ...basePatch,
+        rule: "Review search query breadth, source quality, and profile specificity when repeated runs fetch jobs but save none.",
+      },
+      rationale: "Activated conservative search-profile guidance from low-yield search quality examples.",
+    };
+  }
+
+  if (proposal.target === "RECRUITING_AGENCY" && ["CANDIDATE_FAILURE", "candidate_failure"].includes(category)) {
+    return {
+      skillId: "approve_agency_match" as SkillId,
+      kind: "GUIDANCE" as SkillAdjustmentKind,
+      category,
+      patchJson: {
+        ...basePatch,
+        rule: "Use repeated agency candidate failures as guidance to be more selective before approving jobs for the apply sprint.",
+      },
+      rationale: "Activated conservative recruiting-agency approval guidance from candidate quality examples.",
+    };
+  }
+
+  if (proposal.target === "APPLICATION_ASSISTANT" && category === "cover_letter_field") {
+    return {
+      skillId: "application_qa" as SkillId,
+      kind: "QA_CHECK" as SkillAdjustmentKind,
+      category,
+      patchJson: {
+        ...basePatch,
+        rule: "Require explicit QA attention to obvious cover-letter fields and why-you-want-to-join prompts.",
+      },
+      rationale: "Activated assistant QA guidance from repeated cover-letter field quality examples.",
+    };
+  }
+
+  if (proposal.target === "APPLICATION_ASSISTANT" && category === "field_classification") {
+    return {
+      skillId: "application_qa" as SkillId,
+      kind: "GUIDANCE" as SkillAdjustmentKind,
+      category,
+      patchJson: {
+        ...basePatch,
+        rule: "Normalize field labels more aggressively before deciding a field is unknown or should be skipped.",
+      },
+      rationale: "Activated assistant QA guidance from repeated field-classification quality examples.",
+    };
+  }
+
+  return null;
 }
 
 function evaluateApplicationAssistantExample(example: {
