@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
+import { clearJobSuppressionForApproval } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 import { apiError } from "@/lib/api";
 
@@ -13,18 +14,21 @@ const approveJobSchema = z.object({
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
     const { matchId } = approveJobSchema.parse(await request.json());
-    const user = await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });
     const match = await prisma.jobProfileMatch.update({
       where: { id: matchId },
       data: { status: "approved", reviewedAt: new Date() },
-      include: { jobPosting: { select: { company: true, title: true, location: true, lastSeenAt: true } } },
+      include: {
+        jobSearchProfile: { select: { userId: true } },
+        jobPosting: { select: { id: true, company: true, title: true, location: true, lastSeenAt: true, duplicateGroupId: true } },
+      },
     });
-    const application = user ? await upsertApprovedApplication({
-      userId: user.id,
+    await clearJobSuppressionForApproval(match.jobSearchProfile.userId, match.jobPosting);
+    const application = await upsertApprovedApplication({
+      userId: match.jobSearchProfile.userId,
       jobPostingId: params.id,
       jobProfileMatchId: match.id,
       jobPosting: match.jobPosting,
-    }) : null;
+    });
 
     return NextResponse.json({
       jobId: params.id,

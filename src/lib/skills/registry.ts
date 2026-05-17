@@ -18,6 +18,7 @@ import { runSearchExpansionAgent } from "@/lib/agents/search-expansion";
 import { runSearchProfileManagerAgent } from "@/lib/agents/search-profile-manager";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
+import { isJobSuppressed, loadJobSuppressionState } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 import { applyNumericThresholdAdjustments } from "@/lib/skills/adjustments";
 import type { SkillDefinition, SkillId } from "@/lib/skills/types";
@@ -209,6 +210,20 @@ export const skillRegistry = {
     defaultPolicy: lowRiskPolicy,
     execute: async (input: any) => (await runDailyCommandCenterAgent(input)).output,
   },
+  recruiting_agency: {
+    id: "recruiting_agency",
+    label: "Recruiting Agency",
+    agentType: "RECRUITING_AGENCY",
+    riskLevel: "HIGH",
+    inputSchema: z.object({
+      minimumScore: z.number().int().min(0).max(100).optional(),
+      limit: z.number().int().min(1).max(25).optional(),
+      triggeredBy: z.enum(["manual", "cron"]).optional(),
+    }),
+    outputSchema: anyOutput,
+    defaultPolicy: manualSubmitPolicy,
+    execute: async (input: any) => (await import("@/lib/applications/recruiting-agency")).runRecruitingAgency(input),
+  },
   prepare_application_packet: {
     id: "prepare_application_packet",
     label: "Prepare Application Packet",
@@ -261,15 +276,21 @@ async function approveAgencyMatch(input: { userId: string; matchId: string; mini
   if (candidate.overallScore < input.minimumScore) throw new Error("Agency match score is below the current approval threshold.");
   if (!candidate.jobPosting.applicationUrl) throw new Error("Agency match does not have an application URL.");
 
-  const existingApplications = await prisma.application.findMany({
+  const [existingApplications, suppressionState] = await Promise.all([
+    prisma.application.findMany({
     where: { userId: input.userId },
     select: {
       status: true,
       jobPosting: { select: { company: true, title: true, location: true, lastSeenAt: true } },
     },
-  });
+    }),
+    loadJobSuppressionState(input.userId),
+  ]);
   if (hasApplicationForJob(candidate.jobPosting, applicationJobKeySet(existingApplications))) {
     throw new Error("This job is already tracked as an application.");
+  }
+  if (isJobSuppressed(candidate.jobPosting, suppressionState)) {
+    throw new Error("This job is suppressed by a previous rejection, application, archive, or company cooldown.");
   }
 
   await prisma.jobProfileMatch.update({

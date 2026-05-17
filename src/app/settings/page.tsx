@@ -15,6 +15,7 @@ import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { PageHeader } from "@/components/ui/page-header";
 import { prisma } from "@/lib/prisma";
+import { FieldMemoryDisableButton } from "./field-memory-disable-button";
 import { SettingsClient } from "./settings-client";
 
 export const dynamic = "force-dynamic";
@@ -77,7 +78,7 @@ export default async function SettingsPage() {
         orderBy: { provider: "asc" },
       })
     : [];
-  const [skillFeedback, skillAdjustments] = user
+  const [skillFeedback, skillAdjustments, fieldMemories] = user
     ? await Promise.all([
         prisma.skillFeedback.findMany({
           where: { userId: user.id },
@@ -90,8 +91,13 @@ export default async function SettingsPage() {
           orderBy: [{ status: "asc" }, { createdAt: "desc" }],
           take: 12,
         }),
+        prisma.applicationFieldMemory.findMany({
+          where: { userId: user.id },
+          orderBy: [{ status: "asc" }, { updatedAt: "desc" }],
+          take: 12,
+        }),
       ])
-    : [[], []];
+    : [[], [], []];
   const nextAction = getSettingsNextAction({
     hasUser: Boolean(user),
     aiConfigured: Boolean(process.env.OPENAI_API_KEY),
@@ -145,6 +151,46 @@ export default async function SettingsPage() {
               <ActionButton href={nextAction.href} variant="contained" color={nextAction.color} startIcon={nextAction.icon}>
                 {nextAction.label}
               </ActionButton>
+            </Stack>
+          </CardContent>
+        </Card>
+        <Card id="settings-field-learning">
+          <CardContent>
+            <Stack spacing={2}>
+              <Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color="primary" label="Field learning" />
+                  <Chip size="small" variant="outlined" label={`${fieldMemories.filter((item) => item.status === "ACTIVE").length} auto-fill`} />
+                  <Chip size="small" variant="outlined" label={`${fieldMemories.filter((item) => item.status === "NEEDS_REVIEW").length} review`} />
+                </Stack>
+                <Typography variant="h3">Application field memories</Typography>
+                <Typography color="text.secondary" sx={{ mt: 0.75 }}>
+                  The local assistant saves safe fields you manually fill, then reuses low-sensitivity high-confidence memories on future applications.
+                </Typography>
+              </Box>
+              {fieldMemories.length ? (
+                <Stack spacing={1.25}>
+                  {fieldMemories.map((memory) => (
+                    <Box key={memory.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
+                      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
+                        <Chip size="small" label={memory.category.replace(/_/g, " ")} />
+                        <Chip size="small" variant="outlined" label={memory.host} />
+                        <Chip size="small" color={memory.status === "ACTIVE" ? "success" : memory.status === "NEEDS_REVIEW" ? "warning" : "default"} label={memory.status.toLowerCase().replace(/_/g, " ")} />
+                        <Chip size="small" variant="outlined" label={`${memory.confidence}%`} />
+                      </Stack>
+                      <Typography variant="body2">{memory.label}</Typography>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between", mt: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {memory.sensitivity.toLowerCase()} · {memory.reusePolicy.toLowerCase().replace(/_/g, " ")} · seen {memory.lastSeenAt.toLocaleString()}
+                        </Typography>
+                        {memory.status !== "DISABLED" ? <FieldMemoryDisableButton memoryId={memory.id} /> : null}
+                      </Stack>
+                    </Box>
+                  ))}
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">No application field memories have been learned yet.</Typography>
+              )}
             </Stack>
           </CardContent>
         </Card>

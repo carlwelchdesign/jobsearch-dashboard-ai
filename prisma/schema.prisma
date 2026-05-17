@@ -87,6 +87,13 @@ enum JobMatchStatus {
   archived
 }
 
+enum JobSuppressionKind {
+  REJECTED_JOB
+  SUBMITTED_JOB
+  ARCHIVED_JOB
+  COMPANY_COOLDOWN
+}
+
 enum ExperienceCategory {
   frontend
   fullstack
@@ -216,6 +223,7 @@ enum AgentType {
   DUPLICATE_STALE_JOB_DETECTOR
   SEARCH_EXPANSION
   DAILY_COMMAND_CENTER
+  RECRUITING_AGENCY
 }
 
 enum AgentRunStatus {
@@ -305,6 +313,12 @@ enum AnswerMemoryReusePolicy {
   NEVER_REUSE
 }
 
+enum ApplicationFieldMemoryStatus {
+  ACTIVE
+  NEEDS_REVIEW
+  DISABLED
+}
+
 enum ApplicationAutomationRunStatus {
   RUNNING
   BLOCKED
@@ -371,6 +385,7 @@ model User {
   coverLetters         GeneratedCoverLetter[]
   emailMessages        EmailMessageRecord[]
   emailOAuthConnections EmailOAuthConnection[]
+  fieldMemories        ApplicationFieldMemory[]
   formPatterns         ApplicationFormPattern[]
   interviewPrepTasks   InterviewPrepTask[]
   joleneConversations  JoleneConversation[]
@@ -385,6 +400,7 @@ model User {
   searchProfiles       JobSearchProfile[]
   skillAdjustments      SkillAdjustment[]
   skillFeedback         SkillFeedback[]
+  jobSuppressions       JobSuppression[]
 }
 
 model JoleneConversation {
@@ -671,6 +687,7 @@ model JobPosting {
   recruiterOutreach  RecruiterOutreach[]
   resumes            GeneratedResume[]
   skillFeedback       SkillFeedback[]
+  suppressions         JobSuppression[]
   source             JobSource?             @relation(fields: [sourceId], references: [id], onDelete: SetNull)
 
   @@index([company, title])
@@ -703,6 +720,7 @@ model JobProfileMatch {
   updatedAt          DateTime               @updatedAt
   applications       Application[]
   coverLetters       GeneratedCoverLetter[]
+  suppressions        JobSuppression[]
   jobPosting         JobPosting             @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
   jobSearchProfile   JobSearchProfile       @relation(fields: [jobSearchProfileId], references: [id], onDelete: Cascade)
   resumes            GeneratedResume[]
@@ -757,15 +775,48 @@ model Application {
   agentUserRequests  AgentUserRequest[]
   events             ApplicationEvent[]
   emailMessages      EmailMessageRecord[]
+  fieldMemories      ApplicationFieldMemory[]
   interviewPrepTasks InterviewPrepTask[]
   outcomes           ApplicationOutcome[]
   skillFeedback       SkillFeedback[]
+  suppressions         JobSuppression[]
   coverLetter        GeneratedCoverLetter? @relation(fields: [coverLetterId], references: [id])
   jobPosting         JobPosting            @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
   jobProfileMatch    JobProfileMatch?      @relation(fields: [jobProfileMatchId], references: [id], onDelete: SetNull)
   resume             GeneratedResume?      @relation(fields: [resumeId], references: [id])
   sourceContact      Contact?              @relation(fields: [sourceContactId], references: [id], onDelete: SetNull)
   user               User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model JobSuppression {
+  id                String             @id @default(cuid())
+  userId            String
+  kind              JobSuppressionKind
+  canonicalKey      String
+  companyKey        String
+  titleFamilyKey    String
+  locationKey       String
+  reason            String?
+  source            String
+  expiresAt         DateTime?
+  jobPostingId      String?
+  jobProfileMatchId String?
+  applicationId     String?
+  duplicateGroupId  String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  application       Application?       @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  jobPosting        JobPosting?        @relation(fields: [jobPostingId], references: [id], onDelete: SetNull)
+  jobProfileMatch   JobProfileMatch?   @relation(fields: [jobProfileMatchId], references: [id], onDelete: SetNull)
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, canonicalKey])
+  @@index([userId, kind, expiresAt])
+  @@index([userId, companyKey, titleFamilyKey])
+  @@index([jobPostingId])
+  @@index([jobProfileMatchId])
+  @@index([applicationId])
+  @@index([duplicateGroupId])
 }
 
 model ExperienceBullet {
@@ -948,9 +999,23 @@ model AgentRun {
   user       User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   userRequests AgentUserRequest[]
   skillFeedback SkillFeedback[]
+  events     AgentRunEvent[]
 
   @@index([agentType, createdAt])
   @@index([status, createdAt])
+}
+
+model AgentRunEvent {
+  id          String   @id @default(cuid())
+  agentRunId  String
+  type        String
+  message     String
+  payloadJson Json     @default("{}")
+  createdAt   DateTime @default(now())
+  agentRun    AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+
+  @@index([agentRunId, createdAt])
+  @@index([type, createdAt])
 }
 
 model SkillFeedback {
@@ -1065,10 +1130,13 @@ model ApplicationAutomationRun {
   currentUrl      String?
   logPath         String?
   pid             Int?
+  graphThreadId   String?
+  currentNode     String?
   blockerType     String?
   blockerMessage  String?
   actionsJson     Json                           @default("[]")
   screenshotsJson Json                           @default("[]")
+  workflowStateJson Json                          @default("{}")
   startedAt       DateTime                       @default(now())
   finishedAt      DateTime?
   createdAt       DateTime                       @default(now())
@@ -1080,6 +1148,7 @@ model ApplicationAutomationRun {
   @@index([userId, status, startedAt])
   @@index([applicationId, startedAt])
   @@index([jobPostingId, startedAt])
+  @@index([graphThreadId])
 }
 
 model ApplicationFormPattern {
@@ -1098,11 +1167,49 @@ model ApplicationFormPattern {
   metadataJson Json        @default("{}")
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
+  fieldMemories ApplicationFieldMemory[]
   user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, host, fieldKey, category])
   @@index([userId, atsProvider, lastSeenAt])
   @@index([userId, category])
+}
+
+model ApplicationFieldMemory {
+  id                  String                       @id @default(cuid())
+  userId              String
+  sourceApplicationId String?
+  formPatternId       String?
+  atsProvider         AtsProvider                  @default(unknown)
+  host                String
+  fieldKey            String
+  category            String
+  label               String
+  inputType           String?
+  selector            String?
+  answer              String
+  sensitivity         AnswerMemorySensitivity      @default(MEDIUM)
+  reusePolicy         AnswerMemoryReusePolicy      @default(ASK_FIRST)
+  status              ApplicationFieldMemoryStatus @default(NEEDS_REVIEW)
+  confidence          Int                          @default(50)
+  successCount        Int                          @default(0)
+  failureCount        Int                          @default(0)
+  useCount            Int                          @default(0)
+  lastUsedAt          DateTime?
+  lastSeenAt          DateTime                     @default(now())
+  metadataJson        Json                         @default("{}")
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+  formPattern         ApplicationFormPattern?      @relation(fields: [formPatternId], references: [id], onDelete: SetNull)
+  sourceApplication   Application?                 @relation(fields: [sourceApplicationId], references: [id], onDelete: SetNull)
+  user                User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, host, fieldKey, category])
+  @@index([userId, status, updatedAt])
+  @@index([userId, atsProvider, host])
+  @@index([userId, category])
+  @@index([formPatternId])
+  @@index([sourceApplicationId])
 }
 
 model ApplicationAutomationSettings {

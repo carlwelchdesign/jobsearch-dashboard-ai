@@ -31,6 +31,16 @@ export function createCanonicalJobKeys(job: CanonicalJobParts) {
   ].filter((key) => !key.includes("||")));
 }
 
+export function createCanonicalJobParts(job: CanonicalJobParts) {
+  return {
+    companyKey: normalizeCompany(job.company),
+    titleKey: normalizeTitle(job.title),
+    titleFamilyKey: normalizeTitleFamily(job.title),
+    locationKey: normalizeLocation(job.location),
+    locationFamilyKey: normalizeLocationFamily(job.location),
+  };
+}
+
 export function hasSameCanonicalJob(a: CanonicalJobParts, b: CanonicalJobParts) {
   const leftKeys = new Set(createCanonicalJobKeys(a));
   return createCanonicalJobKeys(b).some((key) => leftKeys.has(key));

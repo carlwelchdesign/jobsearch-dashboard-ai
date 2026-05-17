@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { assistantLogActions, assistantLogFieldPatterns, assistantLogScreenshots, buildAutomationRunEventPayload, classifyAssistantLog } from "@/lib/applications/automation-runs";
+import {
+  assistantLogActions,
+  assistantLogFieldPatterns,
+  assistantLogScreenshots,
+  buildAutomationRunEventPayload,
+  classifyAssistantLog,
+  shouldRecoverRunningAutomationRun,
+} from "@/lib/applications/automation-runs";
 
 describe("application automation runs", () => {
   it("classifies a successful fill run as ready to submit", () => {
@@ -12,6 +19,13 @@ Review every field in the browser. Submit manually only if everything is correct
 
   it("classifies gated auto-submit completion", () => {
     expect(classifyAssistantLog("Auto-submit confirmed after safety checks passed.")).toMatchObject({ status: "SUBMITTED" });
+  });
+
+  it("classifies observed manual submit completion", () => {
+    expect(classifyAssistantLog(`
+Manual submit button click detected: Submit application
+Tracker updated: Application marked applied.
+`)).toMatchObject({ status: "SUBMITTED" });
   });
 
   it("classifies skipped auto-submit as ready for manual review", () => {
@@ -106,5 +120,38 @@ Detected fields after filling:
       screenshotCount: 1,
       logPath: "/tmp/assistant.log",
     });
+  });
+
+  it("recovers running automation runs that are stale or have no live process", () => {
+    const now = new Date("2026-05-16T12:00:00.000Z");
+    expect(shouldRecoverRunningAutomationRun({
+      status: "RUNNING",
+      pid: 123,
+      startedAt: new Date("2026-05-16T10:29:59.000Z"),
+    }, {
+      now,
+      staleMinutes: 90,
+      processAlive: () => true,
+    })).toBe(true);
+
+    expect(shouldRecoverRunningAutomationRun({
+      status: "RUNNING",
+      pid: 123,
+      startedAt: new Date("2026-05-16T11:59:00.000Z"),
+    }, {
+      now,
+      staleMinutes: 90,
+      processAlive: () => false,
+    })).toBe(true);
+
+    expect(shouldRecoverRunningAutomationRun({
+      status: "RUNNING",
+      pid: 123,
+      startedAt: new Date("2026-05-16T11:59:00.000Z"),
+    }, {
+      now,
+      staleMinutes: 90,
+      processAlive: () => true,
+    })).toBe(false);
   });
 });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
+import { recordSubmittedJobSuppression } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -40,9 +41,11 @@ export async function POST(request: Request) {
       prisma.jobPosting.findUnique({
         where: { id: body.jobPostingId },
         select: {
+          id: true,
           company: true,
           title: true,
           location: true,
+          duplicateGroupId: true,
           lastSeenAt: true,
         },
       }),
@@ -86,6 +89,16 @@ export async function POST(request: Request) {
       await prisma.jobProfileMatch.update({
         where: { id: body.jobProfileMatchId },
         data: { status: body.status },
+      });
+    }
+    if (body.status === "applied") {
+      await recordSubmittedJobSuppression({
+        userId: user.id,
+        job: jobPosting,
+        jobProfileMatchId: body.jobProfileMatchId ?? null,
+        applicationId: application.id,
+        source: "application_create",
+        reason: "created_applied_application",
       });
     }
 

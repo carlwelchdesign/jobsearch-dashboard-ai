@@ -19,6 +19,7 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { JobDescription } from "@/components/job-description";
+import { JobRejectButton } from "@/components/job-reject-button";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { jsonArray } from "@/lib/json";
@@ -32,7 +33,7 @@ export default async function JobDetailPage({ params }: { params: { id: string }
     include: {
       matches: {
         include: {
-          jobSearchProfile: { select: { name: true } },
+          jobSearchProfile: { select: { name: true, userId: true } },
         },
         orderBy: { overallScore: "desc" },
       },
@@ -95,6 +96,38 @@ export default async function JobDetailPage({ params }: { params: { id: string }
               ) : null}
 
               <Divider />
+              {topMatch ? (
+                <>
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+                    <Box>
+                      <Typography variant="h3">Review decision</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Approve this job to create or refresh its application tracker, or reject it so this job and its duplicates stop resurfacing.
+                      </Typography>
+                    </Box>
+                    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", justifyContent: { md: "flex-end" } }}>
+                      <JobRejectButton
+                        jobId={job.id}
+                        matchId={topMatch.id}
+                        label={`${job.company} - ${job.title}`}
+                        variant="outlined"
+                        color="error"
+                        source="job_detail_reject"
+                      />
+                      <ActionButton
+                        postTo={`/api/jobs/${job.id}/approve`}
+                        body={{ matchId: topMatch.id }}
+                        variant="contained"
+                        color="success"
+                        startIcon={<AssignmentTurnedInOutlinedIcon />}
+                      >
+                        Approve
+                      </ActionButton>
+                    </Stack>
+                  </Stack>
+                  <Divider />
+                </>
+              ) : null}
               <Alert severity="info">
                 This app prepares materials and tracks the application. It does not submit applications automatically.
               </Alert>

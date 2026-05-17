@@ -13,12 +13,14 @@ import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import Link from "next/link";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
+import { AgencyRunControl } from "@/components/agency-run-control";
 import { BulkPrepareControl } from "@/components/bulk-prepare-control";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip, formatStatus } from "@/components/ui/status-chip";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
+import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 import { ApplicationDeleteButton } from "./application-delete-button";
 import { BackfillPacketsButton } from "./backfill-packets-button";
@@ -52,14 +54,18 @@ export default async function ApplicationsPage() {
           applicationUrl: { not: null },
         },
       },
-      include: { jobPosting: true },
+      include: { jobPosting: true, jobSearchProfile: { select: { userId: true } } },
       orderBy: [{ overallScore: "desc" }, { updatedAt: "desc" }],
       take: 250,
     }),
   ]);
+  const suppressionStates = await loadJobSuppressionStatesByUserIds(rawAgencyMatches.map((match) => match.jobSearchProfile.userId));
   const trackedJobKeys = applicationJobKeySet(applications);
   const agencyCandidates = uniqueMatchesByCanonicalJob(
-    rawAgencyMatches.filter((match) => !hasApplicationForJob(match.jobPosting, trackedJobKeys)),
+    rawAgencyMatches.filter((match) => {
+      const suppressionState = suppressionStates.get(match.jobSearchProfile.userId);
+      return !hasApplicationForJob(match.jobPosting, trackedJobKeys) && (!suppressionState || !isJobSuppressed(match.jobPosting, suppressionState));
+    }),
   );
   const nextAction = applicationsNextAction({
     approvedCount: applications.filter((application) => application.status === "approved").length,
@@ -86,18 +92,24 @@ export default async function ApplicationsPage() {
                 <Typography variant="h3">{nextAction.title}</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{nextAction.detail}</Typography>
               </Box>
-              <ActionButton
-                href={nextAction.href}
-                postTo={nextAction.postTo}
-                body={nextAction.body}
-                runInBackground={nextAction.runInBackground}
-                variant="contained"
-                color={nextAction.color}
-                startIcon={nextAction.icon}
-                loadingLabel={nextAction.loadingLabel}
-              >
-                {nextAction.label}
-              </ActionButton>
+              {nextAction.postTo === "/api/applications/agency/run" ? (
+                <Box sx={{ minWidth: { md: 360 } }}>
+                  <AgencyRunControl label={nextAction.label} color="primary" showLatestOnMount={false} />
+                </Box>
+              ) : (
+                <ActionButton
+                  href={nextAction.href}
+                  postTo={nextAction.postTo}
+                  body={nextAction.body}
+                  runInBackground={nextAction.runInBackground}
+                  variant="contained"
+                  color={nextAction.color}
+                  startIcon={nextAction.icon}
+                  loadingLabel={nextAction.loadingLabel}
+                >
+                  {nextAction.label}
+                </ActionButton>
+              )}
             </Stack>
           </CardContent>
         </Card>
@@ -109,18 +121,7 @@ export default async function ApplicationsPage() {
                 Auto-approve 90+ matches, create application trackers, and generate tailored packets. Submission remains assist-only: the agent prepares and fills, you confirm final submit.
               </Typography>
               <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ alignItems: { md: "center" } }}>
-                <ActionButton
-                  postTo="/api/applications/agency/run"
-                  body={{ minimumScore: 90, limit: 10, triggeredBy: "manual" }}
-                  runInBackground
-                  variant="contained"
-                  color="primary"
-                  startIcon={<AutoAwesomeOutlinedIcon />}
-                  loadingLabel="Agency running..."
-                  message="Recruiting agency started. You can leave this page while it approves and prepares packets."
-                >
-                  Run recruiting agency
-                </ActionButton>
+                <AgencyRunControl />
                 <BulkPrepareControl compact defaultMinimumScore={90} defaultLimit={10} />
                 <BackfillPacketsButton />
                 <ActionButton href="/applications/assistant" variant="outlined" startIcon={<BoltOutlinedIcon />}>

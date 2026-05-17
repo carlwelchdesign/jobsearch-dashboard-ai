@@ -14,16 +14,19 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
+import { AgencyRunControl } from "@/components/agency-run-control";
 import { BulkPrepareControl } from "@/components/bulk-prepare-control";
+import { JobRejectButton } from "@/components/job-reject-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { SearchRunCommandCenter } from "@/components/search-run-command-center";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { formatStatus } from "@/components/ui/status-chip";
 import { agentUserRequestHref, agentUserRequestTypeLabel, listOpenAgentUserRequests } from "@/lib/agent-user-requests";
-import { applicationJobKeySet, hasApplicationForJob, submittedApplicationJobKeySet, submittedApplicationStatuses } from "@/lib/applications/job-filters";
+import { applicationJobKeySet, hasApplicationForJob, submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
+import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 import { RunDailyPlanButton } from "./daily-plan-card";
 
@@ -46,7 +49,7 @@ type DailyPlanOutput = {
 };
 
 export default async function DashboardPage() {
-  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, submittedApplications, trackedApplicationsForAgency, agencyCandidateMatches, latestDailyPlanRun, agentUserRequests] = await Promise.all([
+  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, trackedApplicationsForAgency, agencyCandidateMatches, latestDailyPlanRun, agentUserRequests] = await Promise.all([
     prisma.jobSearchProfile.findMany({ where: { enabled: true }, orderBy: { name: "asc" } }),
     prisma.jobSearchRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.application.groupBy({ by: ["status"], _count: { status: true } }),
@@ -65,24 +68,10 @@ export default async function DashboardPage() {
       },
       include: {
         jobPosting: true,
-        jobSearchProfile: { select: { name: true } },
+        jobSearchProfile: { select: { name: true, userId: true } },
       },
       orderBy: [{ overallScore: "desc" }, { createdAt: "desc" }],
       take: 50,
-    }),
-    prisma.application.findMany({
-      where: { status: { in: submittedApplicationStatuses } },
-      select: {
-        status: true,
-        jobPosting: {
-          select: {
-            company: true,
-            title: true,
-            location: true,
-            lastSeenAt: true,
-          },
-        },
-      },
     }),
     prisma.application.findMany({
       select: {
@@ -105,7 +94,7 @@ export default async function DashboardPage() {
           applicationUrl: { not: null },
         },
       },
-      include: { jobPosting: true },
+      include: { jobPosting: true, jobSearchProfile: { select: { userId: true } } },
       orderBy: [{ overallScore: "desc" }, { updatedAt: "desc" }],
       take: 100,
     }),
@@ -115,13 +104,22 @@ export default async function DashboardPage() {
     }),
     listOpenAgentUserRequests(5),
   ]);
-  const submittedJobKeys = submittedApplicationJobKeySet(submittedApplications);
+  const suppressionStates = await loadJobSuppressionStatesByUserIds([
+    ...needsReview.map((match) => match.jobSearchProfile.userId),
+    ...agencyCandidateMatches.map((match) => match.jobSearchProfile.userId),
+  ]);
   const agencyJobKeys = applicationJobKeySet(trackedApplicationsForAgency);
   const agencyCandidateCount = uniqueMatchesByCanonicalJob(
-    agencyCandidateMatches.filter((match) => !hasApplicationForJob(match.jobPosting, agencyJobKeys)),
+    agencyCandidateMatches.filter((match) => {
+      const suppressionState = suppressionStates.get(match.jobSearchProfile.userId);
+      return !hasApplicationForJob(match.jobPosting, agencyJobKeys) && (!suppressionState || !isJobSuppressed(match.jobPosting, suppressionState));
+    }),
   ).length;
   const visibleNeedsReview = uniqueMatchesByCanonicalJob(
-    needsReview.filter((match) => !hasApplicationForJob(match.jobPosting, submittedJobKeys)),
+    needsReview.filter((match) => {
+      const suppressionState = suppressionStates.get(match.jobSearchProfile.userId);
+      return !suppressionState || !isJobSuppressed(match.jobPosting, suppressionState);
+    }),
   ).slice(0, 5);
   const applicationCountByStatus = new Map(applicationStatusCounts.map((count) => [count.status, count._count.status]));
   const readyToApply = readyApplicationCount;
@@ -165,7 +163,11 @@ export default async function DashboardPage() {
                 <Typography variant="h2">{nextAction.title}</Typography>
                 <Typography color="text.secondary" sx={{ mt: 0.5 }}>{nextAction.detail}</Typography>
               </Box>
-              {nextAction.postTo ? (
+              {nextAction.postTo === "/api/applications/agency/run" ? (
+                <Box sx={{ minWidth: { lg: 380 } }}>
+                  <AgencyRunControl label={nextAction.label} color="primary" showLatestOnMount={false} />
+                </Box>
+              ) : nextAction.postTo ? (
                 <ActionButton
                   postTo={nextAction.postTo}
                   body={nextAction.body}
@@ -222,7 +224,14 @@ export default async function DashboardPage() {
                             </Box>
                           </Stack>
                           <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start", flexShrink: 0 }}>
-                            <ActionButton postTo={`/api/jobs/${match.jobPosting.id}/reject`} body={{ matchId: match.id }} variant="outlined" color="secondary">Reject</ActionButton>
+                            <JobRejectButton
+                              jobId={match.jobPosting.id}
+                              matchId={match.id}
+                              label={`${match.jobPosting.company} - ${match.jobPosting.title}`}
+                              variant="outlined"
+                              color="secondary"
+                              source="dashboard_reject"
+                            />
                             <ActionButton postTo={`/api/jobs/${match.jobPosting.id}/approve`} body={{ matchId: match.id }} variant="contained">Approve</ActionButton>
                           </Stack>
                         </Stack>

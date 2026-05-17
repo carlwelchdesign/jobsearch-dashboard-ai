@@ -14,14 +14,14 @@ export function ApplicationDeleteButton({ applicationId, label }: { applicationI
   const [loading, setLoading] = useState(false);
 
   async function remove() {
-    if (!window.confirm(`Delete application tracker item for ${label}? Generated resume and cover letter records will remain available.`)) return;
+    if (!window.confirm(`Reject ${label} and remove it from the application board? The agency will remember this as a not-good-fit signal.`)) return;
     setLoading(true);
     try {
       const response = await fetch(`/api/applications/${applicationId}`, { method: "DELETE" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "Unable to delete application.");
       setSeverity("success");
-      setNotice(payload.message ?? "Application removed.");
+      setNotice(payload.message ?? "Application removed and job marked rejected.");
       router.refresh();
     } catch (error) {
       setSeverity("error");
@@ -34,7 +34,7 @@ export function ApplicationDeleteButton({ applicationId, label }: { applicationI
   return (
     <>
       <Button size="small" variant="outlined" color="error" startIcon={<DeleteOutlineOutlinedIcon />} disabled={loading} onClick={remove}>
-        {loading ? "Deleting..." : "Delete"}
+        {loading ? "Rejecting..." : "Reject"}
       </Button>
       <Snackbar open={Boolean(notice)} autoHideDuration={4500} onClose={() => setNotice("")}>
         <Alert severity={severity} variant="filled" onClose={() => setNotice("")}>

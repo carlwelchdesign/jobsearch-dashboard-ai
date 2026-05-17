@@ -3,12 +3,18 @@ import { PageHeader } from "@/components/ui/page-header";
 import Stack from "@mui/material/Stack";
 import { prisma } from "@/lib/prisma";
 import { summarizeAutomationBlockers } from "@/lib/applications/automation-analytics";
+import { recoverStaleApplicationAutomationRuns, syncRunningApplicationAutomationRunsFromLogs } from "@/lib/applications/automation-runs";
+import { hasApplicationForJob, submittedApplicationJobKeySet, submittedApplicationStatuses } from "@/lib/applications/job-filters";
+import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { AssistantWorkbench } from "./assistant-workbench";
 
 export const dynamic = "force-dynamic";
 
 export default async function ApplicationAssistantPage() {
-  const [applications, atsBlockers] = await Promise.all([
+  await syncRunningApplicationAutomationRunsFromLogs();
+  await recoverStaleApplicationAutomationRuns();
+
+  const [applications, submittedApplications, atsBlockers] = await Promise.all([
     prisma.application.findMany({
     where: {
       status: "ready_to_apply",
@@ -49,8 +55,28 @@ export default async function ApplicationAssistantPage() {
     ],
     take: 50,
     }),
+    prisma.application.findMany({
+      where: { status: { in: submittedApplicationStatuses } },
+      select: {
+        status: true,
+        jobPosting: {
+          select: {
+            company: true,
+            title: true,
+            location: true,
+            lastSeenAt: true,
+          },
+        },
+      },
+    }),
     summarizeAutomationBlockers(200),
   ]);
+  const suppressionStates = await loadJobSuppressionStatesByUserIds(applications.map((application) => application.userId));
+  const submittedJobKeys = submittedApplicationJobKeySet(submittedApplications);
+  const visibleApplications = applications.filter((application) => (
+    !hasApplicationForJob(application.jobPosting, submittedJobKeys)
+    && (!suppressionStates.get(application.userId) || !isJobSuppressed(application.jobPosting, suppressionStates.get(application.userId)!))
+  ));
 
   return (
     <AppShell>
@@ -62,8 +88,10 @@ export default async function ApplicationAssistantPage() {
         />
         <AssistantWorkbench
           atsBlockers={atsBlockers}
-          applications={applications.map((application) => ({
+          applications={visibleApplications.map((application) => ({
             id: application.id,
+            jobPostingId: application.jobPostingId,
+            jobProfileMatchId: application.jobProfileMatchId,
             company: application.jobPosting.company,
             title: application.jobPosting.title,
             applicationUrl: application.jobPosting.applicationUrl,
@@ -74,7 +102,11 @@ export default async function ApplicationAssistantPage() {
               ? {
                   id: application.automationRuns[0].id,
                   status: application.automationRuns[0].status,
+                  blockerType: application.automationRuns[0].blockerType,
                   blockerMessage: application.automationRuns[0].blockerMessage,
+                  currentNode: application.automationRuns[0].currentNode,
+                  graphThreadId: application.automationRuns[0].graphThreadId,
+                  workflowState: application.automationRuns[0].workflowStateJson,
                   startedAt: application.automationRuns[0].startedAt.toISOString(),
                   finishedAt: application.automationRuns[0].finishedAt?.toISOString() ?? null,
                 }

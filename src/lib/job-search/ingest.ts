@@ -1,11 +1,11 @@
 import { JobSearchRun, NotificationSettings, Prisma, User } from "@prisma/client";
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
-import { hasApplicationForJob, submittedApplicationStatuses, suppressedJobKeySet, suppressedJobMatchStatuses } from "@/lib/applications/job-filters";
 import { createCanonicalJobKeys, createJobContentHash, hasSameCanonicalJob } from "@/lib/job-search/dedupe";
 import { getAdapterForSource } from "@/lib/job-search/adapters";
 import { scoreJobForProfile } from "@/lib/job-search/scoring";
 import type { NormalizedJobPosting } from "@/lib/job-search/source-adapter";
+import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { sendNotification } from "@/lib/notifications/send";
 import { prisma } from "@/lib/prisma";
 
@@ -59,7 +59,7 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
   };
   const errors: Array<{ source: string; profile: string; message: string }> = [];
   const newMatches: Array<{ score: number; title: string; company: string; profile: string }> = [];
-  const suppressedJobKeysByUserId = await loadSuppressedJobKeysByUserId(profiles.map((profile) => profile.userId));
+  const suppressionStateByUserId = await loadJobSuppressionStatesByUserIds(profiles.map((profile) => profile.userId));
 
   await appendProgress(run.id, `Starting job search across ${profiles.length} enabled profiles and ${sources.length} enabled external sources.`, stats);
 
@@ -91,13 +91,13 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
           if (savedForProfile >= profile.maxResultsPerRun) break;
 
           const { normalized, score } = rankedJob;
-          const suppressedJobKeys = suppressedJobKeysByUserId.get(profile.userId) ?? new Set<string>();
-          if (hasApplicationForJob(jobIdentity(normalized), suppressedJobKeys)) {
+          const suppressionState = suppressionStateByUserId.get(profile.userId);
+          if (suppressionState && isJobSuppressed(jobIdentity(normalized), suppressionState)) {
             continue;
           }
 
           const { job, isNew } = await upsertDedupedJob(normalized, source.id);
-          if (hasApplicationForJob(job, suppressedJobKeys)) {
+          if (suppressionState && isJobSuppressed(job, suppressionState)) {
             continue;
           }
           if (isNew) stats.jobsAfterDedupe += 1;
@@ -188,49 +188,6 @@ function jobIdentity(job: Pick<NormalizedJobPosting, "company" | "title" | "loca
     title: job.title,
     location: job.location ?? null,
   };
-}
-
-async function loadSuppressedJobKeysByUserId(userIds: string[]) {
-  const uniqueUserIds = Array.from(new Set(userIds));
-  const entries = await Promise.all(uniqueUserIds.map(async (userId) => {
-    const [applications, rejectedMatches] = await Promise.all([
-      prisma.application.findMany({
-        where: { userId, status: { in: submittedApplicationStatuses } },
-        select: {
-          status: true,
-          jobPosting: {
-            select: {
-              company: true,
-              title: true,
-              location: true,
-              lastSeenAt: true,
-            },
-          },
-        },
-      }),
-      prisma.jobProfileMatch.findMany({
-        where: {
-          status: { in: suppressedJobMatchStatuses },
-          jobSearchProfile: { userId },
-        },
-        select: {
-          status: true,
-          jobPosting: {
-            select: {
-              company: true,
-              title: true,
-              location: true,
-              lastSeenAt: true,
-            },
-          },
-        },
-      }),
-    ]);
-
-    return [userId, suppressedJobKeySet([...applications, ...rejectedMatches])] as const;
-  }));
-
-  return new Map(entries);
 }
 
 async function updateRunStats(runId: string, stats: { jobsFetched: number; jobsAfterDedupe: number; jobsAfterFilters: number; jobsSaved: number }, message?: string) {

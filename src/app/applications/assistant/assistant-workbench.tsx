@@ -20,9 +20,12 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { RejectionReasonDialog, type RejectionReasonCode } from "@/components/job-reject-button";
 
 type ReadyApplication = {
   id: string;
+  jobPostingId: string;
+  jobProfileMatchId: string | null;
   company: string;
   title: string;
   applicationUrl: string | null;
@@ -32,7 +35,11 @@ type ReadyApplication = {
   automationRun: {
     id: string;
     status: "RUNNING" | "BLOCKED" | "NEEDS_USER" | "READY_TO_SUBMIT" | "SUBMITTED" | "FAILED";
+    blockerType: string | null;
     blockerMessage: string | null;
+    currentNode: string | null;
+    graphThreadId: string | null;
+    workflowState: unknown;
     startedAt: string;
     finishedAt: string | null;
   } | null;
@@ -49,12 +56,48 @@ type LaunchResponse = {
   message?: string;
   logPath?: string;
   automationRunId?: string;
+  workflow?: WorkflowStatus | null;
   application?: {
     id: string;
     company: string;
     title: string;
     applicationUrl: string | null;
   };
+};
+
+type WorkflowStatus = {
+  graphThreadId: string | null;
+  currentNode: string | null;
+  status: string | null;
+  automationRunId: string | null;
+  pendingCommand: {
+    type: string;
+    reason: string;
+    fieldId?: string | null;
+  } | null;
+  counts?: {
+    detected: number;
+    filled: number;
+    skipped: number;
+    blocked: number;
+    observed: number;
+  };
+  fields?: Array<{
+    fieldId: string;
+    label: string;
+    decision?: string | null;
+    result?: string | null;
+  }>;
+  latestEvent: {
+    type: string;
+    message: string;
+    at: string;
+  } | null;
+  events: Array<{
+    type: string;
+    message: string;
+    at: string;
+  }>;
 };
 
 type QuestionHelperResponse = {
@@ -115,6 +158,7 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
   const [questionLoading, setQuestionLoading] = useState(false);
   const [questionHelper, setQuestionHelper] = useState<QuestionHelperResponse | null>(null);
   const [savingMemoryIndex, setSavingMemoryIndex] = useState<number | null>(null);
+  const [pendingRejectionFeedback, setPendingRejectionFeedback] = useState<Pick<ReadyApplication, "jobPostingId" | "jobProfileMatchId" | "company" | "title"> | null>(null);
   const [notice, setNotice] = useState("");
   const visibleApplications = useMemo(
     () => applications.filter((application) => !deletedIds.includes(application.id)),
@@ -123,6 +167,7 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
   const selected = useMemo(() => visibleApplications.find((application) => application.id === selectedId), [visibleApplications, selectedId]);
   const selectedBlocker = selected?.blocker ?? null;
   const selectedRunState = selected?.automationRun ? automationRunState(selected.automationRun) : null;
+  const selectedWorkflow = workflowStatusForApplication(selected, launch);
   const selectedPrimaryAction = selected ? primarySprintAction(selected, Boolean(launch?.application?.id ?? selectedId)) : null;
   const queueProgress = useMemo(() => visibleApplications.map((application) => ({
     ...application,
@@ -152,7 +197,8 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
     if (!applicationId) return;
     const response = await fetch(`/api/applications/${applicationId}/assistant-log`);
     const payload = await response.json().catch(() => ({}));
-    if (response.ok) setLog(payload.log ?? "");
+      if (response.ok) setLog(payload.log ?? "");
+      if (response.ok && payload.automationRun?.workflowStateJson) router.refresh();
   }
 
   async function markApplied() {
@@ -174,7 +220,7 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
 
   async function deleteSelected() {
     if (!selected) return;
-    if (!window.confirm(`Delete ${selected.company} - ${selected.title} from Apply Sprint? Generated resume and cover letter records will remain available.`)) return;
+    if (!window.confirm(`Reject ${selected.company} - ${selected.title} and remove it from Apply Sprint? The agency will remember this as a not-good-fit signal.`)) return;
 
     setDeleting(true);
     try {
@@ -183,16 +229,43 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
       if (!response.ok) throw new Error(payload.error ?? "Unable to delete application.");
       const remaining = visibleApplications.filter((application) => application.id !== selected.id);
       setDeletedIds((current) => [...current, selected.id]);
+      if (selected.jobProfileMatchId) {
+        setPendingRejectionFeedback({
+          jobPostingId: selected.jobPostingId,
+          jobProfileMatchId: selected.jobProfileMatchId,
+          company: selected.company,
+          title: selected.title,
+        });
+      }
       setSelectedId(remaining[0]?.id ?? "");
       setLaunch(null);
       setLog("");
-      setNotice(payload.message ?? "Application removed from Apply Sprint.");
+      setNotice(payload.message ?? "Application removed and job marked rejected.");
       router.refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to delete application.");
     } finally {
       setDeleting(false);
     }
+  }
+
+  async function submitRejectionFeedback(reasons: RejectionReasonCode[], note: string) {
+    if (!pendingRejectionFeedback?.jobProfileMatchId) return;
+    const response = await fetch("/api/jobs/rejection-feedback", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        matchId: pendingRejectionFeedback.jobProfileMatchId,
+        jobPostingId: pendingRejectionFeedback.jobPostingId,
+        reasons,
+        note,
+        source: "apply_sprint_rejection_reason_prompt",
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error ?? "Unable to save rejection feedback.");
+    setPendingRejectionFeedback(null);
+    setNotice(payload.message ?? "Rejection feedback saved for agent learning.");
   }
 
   async function generateQuestionOptions() {
@@ -274,6 +347,8 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
                     <Chip size="small" color="success" variant="outlined" label="Resume ready" />
                     <Chip size="small" color="secondary" variant="outlined" label="Cover letter ready" />
                     {selectedRunState ? <Chip size="small" color={selectedRunState.color} variant={selectedRunState.variant} label={selectedRunState.label} /> : null}
+                    {selectedWorkflow?.currentNode ? <Chip size="small" color="info" variant="outlined" label={`Workflow: ${workflowNodeLabel(selectedWorkflow.currentNode)}`} /> : null}
+                    {selectedWorkflow?.counts?.detected ? <Chip size="small" color="info" variant="outlined" label={`${selectedWorkflow.counts.filled}/${selectedWorkflow.counts.detected} fields`} /> : null}
                     {selected.assistantLaunched ? <Chip size="small" color="warning" variant="outlined" label="Assistant launched" /> : null}
                     {selected.blocker ? <Chip size="small" color="warning" label="Needs answer" /> : null}
                     {selected.score ? <Chip size="small" label={`${selected.score} score`} /> : null}
@@ -301,6 +376,18 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
                 </Alert>
               ) : selectedRunState?.message ? (
                 <Alert severity={selectedRunState.alert}>{selectedRunState.message}</Alert>
+              ) : null}
+              {selectedWorkflow?.latestEvent ? (
+                <Alert severity="info">
+                  {selectedWorkflow.latestEvent.message}
+                </Alert>
+              ) : null}
+              {selectedWorkflow?.pendingCommand ? (
+                <Alert severity={selectedWorkflow.pendingCommand.type === "ask_user" ? "warning" : "info"}>
+                  {selectedWorkflow.pendingCommand.type === "ask_user"
+                    ? "Assistant is paused for your answer."
+                    : `Next field action: ${workflowNodeLabel(selectedWorkflow.pendingCommand.type)}.`} {selectedWorkflow.pendingCommand.reason}
+                </Alert>
               ) : null}
               {selectedPrimaryAction ? (
                 <Stack spacing={1}>
@@ -341,7 +428,7 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
                     disabled={!selected || deleting || loading}
                     onClick={() => void deleteSelected()}
                   >
-                    {deleting ? "Deleting..." : "Delete from queue"}
+                    {deleting ? "Rejecting..." : "Reject from queue"}
                   </Button>
                 </Stack>
               </Box>
@@ -583,6 +670,12 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
           {notice}
         </Alert>
       </Snackbar>
+      <RejectionReasonDialog
+        open={Boolean(pendingRejectionFeedback)}
+        title={pendingRejectionFeedback ? `Why reject ${pendingRejectionFeedback.company} - ${pendingRejectionFeedback.title}?` : "Why reject this job?"}
+        onClose={() => setPendingRejectionFeedback(null)}
+        onSubmit={submitRejectionFeedback}
+      />
     </>
   );
 }
@@ -616,6 +709,14 @@ function sprintProgressForApplication(application: ReadyApplication): {
       detail: "Needs your answer before the assistant should run again.",
       value: 60,
       color: "warning",
+    };
+  }
+  if (isAssistantClosedRun(application.automationRun)) {
+    return {
+      label: "Ready",
+      detail: "Previous assistant session closed before submit. Relaunch when you are ready.",
+      value: 50,
+      color: "primary",
     };
   }
   if (application.assistantLaunched) {
@@ -693,6 +794,37 @@ function automationRunState(run: NonNullable<ReadyApplication["automationRun"]>)
   };
 }
 
+function workflowStatusForApplication(application: ReadyApplication | undefined, launch: LaunchResponse | null): WorkflowStatus | null {
+  if (!application) return launch?.workflow ?? null;
+  if (launch?.application?.id === application.id && launch.workflow) return launch.workflow;
+  const state = application.automationRun?.workflowState;
+  if (!state || typeof state !== "object" || Array.isArray(state)) return null;
+  const workflow = state as Partial<WorkflowStatus>;
+  const events = Array.isArray(workflow.events) ? workflow.events : [];
+  return {
+    graphThreadId: application.automationRun?.graphThreadId ?? workflow.graphThreadId ?? null,
+    currentNode: application.automationRun?.currentNode ?? workflow.currentNode ?? null,
+    status: workflow.status ?? application.automationRun?.status ?? null,
+    automationRunId: application.automationRun?.id ?? workflow.automationRunId ?? null,
+    pendingCommand: workflow.pendingCommand ?? null,
+    counts: workflow.counts,
+    fields: workflow.fields,
+    events,
+    latestEvent: workflow.latestEvent ?? events.at(-1) ?? null,
+  };
+}
+
+function workflowNodeLabel(value: string) {
+  return value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
+}
+
+function isAssistantClosedRun(run: ReadyApplication["automationRun"]) {
+  return run?.status === "NEEDS_USER" && run.blockerType === "assistant_closed";
+}
+
 function primarySprintAction(application: ReadyApplication, canMarkApplied: boolean): {
   kind: "answer" | "launch" | "mark_applied";
   label: string;
@@ -718,6 +850,16 @@ function primarySprintAction(application: ReadyApplication, canMarkApplied: bool
       detail: "The local browser assistant is already working in the background.",
       color: "primary",
       disabled: true,
+    };
+  }
+  const closedRun = isAssistantClosedRun(application.automationRun) ? application.automationRun : null;
+  if (closedRun) {
+    return {
+      kind: "launch",
+      label: "Relaunch assistant",
+      loadingLabel: "Launching...",
+      detail: closedRun.blockerMessage ?? "The previous assistant session closed before submit.",
+      color: "success",
     };
   }
   if (application.assistantLaunched) {

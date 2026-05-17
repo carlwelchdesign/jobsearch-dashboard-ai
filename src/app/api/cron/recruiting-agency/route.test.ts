@@ -17,6 +17,7 @@ describe("/api/cron/recruiting-agency", () => {
 
   it("runs the recruiting agency with cron settings", async () => {
     runRecruitingAgencyMock.mockResolvedValue({
+      agentRunId: "agent_run_1",
       requested: { minimumScore: 92, limit: 5, triggeredBy: "cron" },
       approved: 3,
       prepared: 2,

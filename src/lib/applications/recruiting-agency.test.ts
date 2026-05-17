@@ -21,6 +21,14 @@ vi.mock("@/lib/prisma", () => ({
     applicationEvent: {
       create: vi.fn(),
     },
+    agentRun: {
+      create: vi.fn(),
+      update: vi.fn(),
+      findFirst: vi.fn(),
+    },
+    agentRunEvent: {
+      create: vi.fn(),
+    },
     jobProfileMatch: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -38,6 +46,9 @@ const findApplicationMock = vi.mocked(prisma.application.findFirst);
 const createApplicationMock = vi.mocked(prisma.application.create);
 const updateApplicationMock = vi.mocked(prisma.application.update);
 const createEventMock = vi.mocked(prisma.applicationEvent.create);
+const createAgentRunMock = vi.mocked(prisma.agentRun.create);
+const updateAgentRunMock = vi.mocked(prisma.agentRun.update);
+const createAgentRunEventMock = vi.mocked(prisma.agentRunEvent.create);
 const findMatchesMock = vi.mocked(prisma.jobProfileMatch.findMany);
 const findMatchMock = vi.mocked(prisma.jobProfileMatch.findUnique);
 const updateMatchMock = vi.mocked(prisma.jobProfileMatch.update);
@@ -52,12 +63,18 @@ describe("runRecruitingAgency", () => {
     createApplicationMock.mockReset();
     updateApplicationMock.mockReset();
     createEventMock.mockReset();
+    createAgentRunMock.mockReset();
+    updateAgentRunMock.mockReset();
+    createAgentRunEventMock.mockReset();
     findMatchesMock.mockReset();
     findMatchMock.mockReset();
     updateMatchMock.mockReset();
     findSkillAdjustmentsMock.mockReset();
     preparePackageMock.mockReset();
     findSkillAdjustmentsMock.mockResolvedValue([]);
+    createAgentRunMock.mockResolvedValue({ id: "agent_run_1" } as Awaited<ReturnType<typeof prisma.agentRun.create>>);
+    updateAgentRunMock.mockResolvedValue({ id: "agent_run_1" } as Awaited<ReturnType<typeof prisma.agentRun.update>>);
+    createAgentRunEventMock.mockResolvedValue({ id: "event_1" } as Awaited<ReturnType<typeof prisma.agentRunEvent.create>>);
   });
 
   it("auto-approves strong untracked matches and prepares application packages", async () => {
@@ -91,12 +108,22 @@ describe("runRecruitingAgency", () => {
       }),
     }));
     expect(preparePackageMock).toHaveBeenCalledWith("job_1");
-    expect(result).toMatchObject({ approved: 1, prepared: 1, failed: 0 });
+    expect(result).toMatchObject({ agentRunId: "agent_run_1", approved: 1, prepared: 1, failed: 0 });
     expect(result.results[0]).toMatchObject({
       matchId: "match_1",
       applicationId: "app_1",
       status: "ready_to_apply",
     });
+    expect(createAgentRunEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ type: "candidate_evaluating" }),
+    }));
+    expect(createAgentRunEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ type: "packet_ready" }),
+    }));
+    expect(updateAgentRunMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "agent_run_1" },
+      data: expect.objectContaining({ status: "COMPLETED" }),
+    }));
   });
 
   it("skips canonical duplicates that already have applications", async () => {
@@ -120,7 +147,10 @@ describe("runRecruitingAgency", () => {
 
     expect(updateMatchMock).not.toHaveBeenCalled();
     expect(preparePackageMock).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ approved: 0, prepared: 0, failed: 0 });
+    expect(result).toMatchObject({ approved: 0, prepared: 0, failed: 0, skipped: 10 });
+    expect(createAgentRunEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ type: "candidate_skipped" }),
+    }));
   });
 
   it("leaves approved applications visible when package preparation fails", async () => {
@@ -145,6 +175,9 @@ describe("runRecruitingAgency", () => {
       status: "failed",
       error: "No approved candidate profile.",
     });
+    expect(createAgentRunEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ type: "candidate_failed" }),
+    }));
   });
 });
 

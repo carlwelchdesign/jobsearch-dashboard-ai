@@ -136,6 +136,14 @@ export async function resolveAgentUserRequest(input: ResolveAgentUserRequestInpu
     });
   }
 
+  if (request.type === "UNKNOWN_ANSWER" && answer) {
+    const { resumeApplicationAssistantWorkflowWithRequestAnswer } = await import("@/lib/applications/assistant-workflow");
+    await resumeApplicationAssistantWorkflowWithRequestAnswer({
+      requestId: request.id,
+      answer,
+    }).catch(() => null);
+  }
+
   return resolved;
 }
 

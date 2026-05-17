@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
 import { evaluateAutoSubmitEligibility } from "@/lib/applications/auto-submit-policy";
 import { selectedApplicationAnswers } from "@/lib/applications/application-packets";
+import { fieldMemoryForAssistant, findActiveFieldMemories } from "@/lib/applications/field-learning";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +48,13 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const [firstName, ...lastNameParts] = fullName.split(/\s+/).filter(Boolean);
     const packet = application.applicationPackets[0];
     const autoSubmit = await evaluateAutoSubmitEligibility(application.id);
+    const applicationHost = hostFromUrl(application.jobPosting.applicationUrl);
+    const fieldMemories = await findActiveFieldMemories({
+      userId: application.userId,
+      atsProvider: application.jobPosting.atsProvider,
+      host: applicationHost,
+      limit: 50,
+    });
 
     return NextResponse.json({
       safety: {
@@ -77,6 +85,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
         country: application.jobPosting.country,
         remoteType: application.jobPosting.remoteType,
         applicationUrl: application.jobPosting.applicationUrl,
+        applicationHost,
       },
       candidate: {
         fullName,
@@ -104,8 +113,26 @@ export async function GET(request: Request, { params }: { params: { id: string }
         coverLetterBody: application.coverLetter.body,
         selectedApplicationAnswers: selectedApplicationAnswers(packet?.applicationAnswersJson),
       },
+      learning: {
+        fieldMemories: fieldMemories.map(fieldMemoryForAssistant),
+      },
+      workflow: {
+        fieldByFieldCommands: true,
+        eventUrl: `${origin}/api/applications/${application.id}/assistant-workflow/events`,
+        commandUrl: `${origin}/api/applications/${application.id}/assistant-workflow/command`,
+        commandResultUrl: `${origin}/api/applications/${application.id}/assistant-workflow/command-result`,
+      },
     });
   } catch (error) {
     return apiError(error, 400);
+  }
+}
+
+function hostFromUrl(url: string | null) {
+  if (!url) return "unknown";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "unknown";
   }
 }

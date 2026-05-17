@@ -25,6 +25,7 @@ import Typography from "@mui/material/Typography";
 import { useRouter } from "next/navigation";
 import { PointerEvent, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
+import { JobRejectButton, RejectionReasonDialog, type RejectionReasonCode } from "@/components/job-reject-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { StatusChip } from "@/components/ui/status-chip";
@@ -57,6 +58,7 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
   const [severity, setSeverity] = useState<"success" | "error" | "info">("info");
   const [signalQuery, setSignalQuery] = useState("");
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
+  const [pendingRejectionFeedback, setPendingRejectionFeedback] = useState<Array<Pick<JobsTableMatch, "id" | "jobId" | "title" | "company">>>([]);
   const filteredMatches = useMemo(() => {
     const dismissed = new Set(dismissedIds);
     return filterBySignals(matches, signalQuery).filter((match) => !dismissed.has(match.id));
@@ -93,15 +95,19 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
 
     setLoading(true);
     try {
+      const rejectedMatches = status === "rejected"
+        ? matches.filter((match) => selectedIds.includes(match.id)).map((match) => ({ id: match.id, jobId: match.jobId, title: match.title, company: match.company }))
+        : [];
       const response = await fetch("/api/jobs/bulk/status", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ matchIds: selectedIds, status }),
+        body: JSON.stringify({ matchIds: selectedIds, status, source: "jobs_bulk_status" }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "Batch update failed.");
       setSeverity("success");
       setNotice(payload.message ?? "Batch update complete.");
+      if (status === "rejected" && rejectedMatches.length) setPendingRejectionFeedback(rejectedMatches);
       setSelectedIds([]);
       router.refresh();
     } catch (error) {
@@ -127,12 +133,34 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "Unable to update job.");
+      if (status === "rejected") setPendingRejectionFeedback([{ id: match.id, jobId: match.jobId, title: match.title, company: match.company }]);
       router.refresh();
     } catch (error) {
       setDismissedIds((current) => current.filter((id) => id !== match.id));
       setSeverity("error");
       setNotice(error instanceof Error ? error.message : "Unable to update job.");
     }
+  }
+
+  async function submitPendingRejectionFeedback(reasons: RejectionReasonCode[], note: string) {
+    await Promise.all(pendingRejectionFeedback.map((match) => fetch("/api/jobs/rejection-feedback", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        matchId: match.id,
+        jobPostingId: match.jobId,
+        reasons,
+        note,
+        source: pendingRejectionFeedback.length > 1 ? "bulk_rejection_reason_prompt" : "swipe_rejection_reason_prompt",
+      }),
+    }).then(async (response) => {
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? "Unable to save rejection feedback.");
+      return payload;
+    })));
+    setPendingRejectionFeedback([]);
+    setSeverity("success");
+    setNotice("Rejection feedback saved for agent learning.");
   }
 
   return (
@@ -323,7 +351,7 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
                         <Stack direction="row" spacing={0.5} sx={{ justifyContent: "flex-end", minWidth: 224 }}>
                           <ActionButton href={`/jobs/${match.jobId}`} size="small" endIcon={<OpenInNewIcon />}>Open</ActionButton>
                           <ActionButton postTo={`/api/jobs/${match.jobId}/approve`} body={{ matchId: match.id }} size="small" color="success">Approve</ActionButton>
-                          <ActionButton postTo={`/api/jobs/${match.jobId}/reject`} body={{ matchId: match.id }} size="small" color="error">Reject</ActionButton>
+                          <JobRejectButton jobId={match.jobId} matchId={match.id} label={`${match.company} - ${match.title}`} />
                         </Stack>
                       </TableCell>
                     </TableRow>
@@ -339,6 +367,14 @@ export function JobsTable({ matches, statusView }: { matches: JobsTableMatch[]; 
           {notice}
         </Alert>
       </Snackbar>
+      <RejectionReasonDialog
+        open={pendingRejectionFeedback.length > 0}
+        title={pendingRejectionFeedback.length === 1
+          ? `Why reject ${pendingRejectionFeedback[0].company} - ${pendingRejectionFeedback[0].title}?`
+          : `Why reject ${pendingRejectionFeedback.length} selected jobs?`}
+        onClose={() => setPendingRejectionFeedback([])}
+        onSubmit={submitPendingRejectionFeedback}
+      />
     </>
   );
 }

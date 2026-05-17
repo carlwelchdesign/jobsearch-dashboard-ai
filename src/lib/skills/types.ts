@@ -20,6 +20,7 @@ export type SkillId =
   | "duplicate_stale_job_detector"
   | "search_expansion"
   | "daily_command_center"
+  | "recruiting_agency"
   | "prepare_application_packet"
   | "approve_agency_match";
 

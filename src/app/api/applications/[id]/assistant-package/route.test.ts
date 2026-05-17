@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { evaluateAutoSubmitEligibility } from "@/lib/applications/auto-submit-policy";
+import { findActiveFieldMemories } from "@/lib/applications/field-learning";
 import { prisma } from "@/lib/prisma";
 import { GET } from "./route";
 
 vi.mock("@/lib/applications/auto-submit-policy", () => ({
   evaluateAutoSubmitEligibility: vi.fn(),
+}));
+
+vi.mock("@/lib/applications/field-learning", () => ({
+  fieldMemoryForAssistant: vi.fn((memory) => memory),
+  findActiveFieldMemories: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -16,6 +22,7 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 const evaluateAutoSubmitEligibilityMock = vi.mocked(evaluateAutoSubmitEligibility);
+const findFieldMemoriesMock = vi.mocked(findActiveFieldMemories);
 const findApplicationMock = vi.mocked(prisma.application.findUnique);
 
 describe("GET /api/applications/[id]/assistant-package", () => {
@@ -36,6 +43,8 @@ describe("GET /api/applications/[id]/assistant-package", () => {
         allowDemographicSubmission: false,
       },
     });
+    findFieldMemoriesMock.mockReset();
+    findFieldMemoriesMock.mockResolvedValue([]);
     findApplicationMock.mockReset();
   });
 
@@ -80,6 +89,7 @@ describe("GET /api/applications/[id]/assistant-package", () => {
         company: "Linear",
         title: "Senior Frontend Engineer",
         applicationUrl: "https://linear.app/apply",
+        atsProvider: "greenhouse",
       },
       resume: { id: "resume_1" },
       coverLetter: { id: "letter_1", body: "Cover letter body." },
@@ -142,6 +152,12 @@ describe("GET /api/applications/[id]/assistant-package", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.application.packetId).toBe("packet_1");
+    expect(body.job.applicationHost).toBe("linear.app");
+    expect(body.learning.fieldMemories).toEqual([]);
+    expect(findFieldMemoriesMock).toHaveBeenCalledWith(expect.objectContaining({
+      atsProvider: "greenhouse",
+      host: "linear.app",
+    }));
     expect(body.materials.selectedApplicationAnswers).toEqual([
       {
         question: "How did you find this role?",

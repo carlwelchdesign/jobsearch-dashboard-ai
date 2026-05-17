@@ -1,0 +1,924 @@
+import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
+import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
+import type { Prisma } from "@prisma/client";
+import { findReusableAnswerMemories } from "@/lib/application-answer-memory";
+import { createAgentUserRequest } from "@/lib/agent-user-requests";
+import { storeObservedFieldLearning, type ObservedApplicationField } from "@/lib/applications/field-learning";
+import { launchApplicationAssistant, type LaunchAssistantResult } from "@/lib/applications/launch-assistant";
+import { prisma } from "@/lib/prisma";
+
+type AssistantWorkflowEvent = {
+  type: string;
+  message: string;
+  at: string;
+  payload?: Record<string, unknown>;
+};
+
+type AssistantWorkflowState = {
+  applicationId: string;
+  origin: string;
+  graphThreadId: string;
+  automationRunId: string | null;
+  currentNode: string;
+  status: "RUNNING" | "NEEDS_USER" | "READY_TO_SUBMIT" | "SUBMITTED" | "FAILED";
+  events: AssistantWorkflowEvent[];
+  fields: AssistantWorkflowField[];
+  pendingCommand: AssistantWorkflowCommand | null;
+  pendingFieldId: string | null;
+  pendingUserRequestId: string | null;
+  filledFields: string[];
+  skippedFields: string[];
+  blockedFields: string[];
+  observedManualFields: string[];
+  error: string | null;
+};
+
+export type AssistantWorkflowField = {
+  fieldId: string;
+  selector: string | null;
+  label: string;
+  inputType: string | null;
+  required: boolean;
+  category: string;
+  status: string | null;
+  context: string | null;
+  valuePreview?: string | null;
+  decision?: string | null;
+  result?: string | null;
+  confidence?: number | null;
+  memoryMatchId?: string | null;
+};
+
+type AssistantWorkflowBrowserField = {
+  fieldId?: string | null;
+  selector?: string | null;
+  label?: string | null;
+  inputType?: string | null;
+  required?: boolean | null;
+  category?: string | null;
+  status?: string | null;
+  type?: string | null;
+  context?: string | null;
+  valuePreview?: string | null;
+};
+
+export type AssistantWorkflowCommand = {
+  id: string;
+  type: "fill" | "upload" | "skip" | "ask_user" | "observe" | "stop_for_submit";
+  fieldId?: string | null;
+  selector?: string | null;
+  value?: string | null;
+  material?: "resume" | "cover_letter" | null;
+  reason: string;
+  requiresUserApproval: boolean;
+  createdAt: string;
+};
+
+export type AssistantWorkflowBrowserEvent = {
+  type: string;
+  message?: string | null;
+  fieldId?: string | null;
+  selector?: string | null;
+  label?: string | null;
+  inputType?: string | null;
+  required?: boolean | null;
+  category?: string | null;
+  status?: string | null;
+  valuePreview?: string | null;
+  fields?: AssistantWorkflowBrowserField[];
+  result?: string | null;
+  error?: string | null;
+  url?: string | null;
+  at?: string | null;
+};
+
+type KnownFieldApplication = Prisma.ApplicationGetPayload<{
+  include: {
+    coverLetter: true;
+    jobPosting: true;
+    user: { include: { profile: true } };
+  };
+}>;
+
+export type AssistantWorkflowStartResult = LaunchAssistantResult & {
+  workflow: SerializedAssistantWorkflowStatus;
+};
+
+export type SerializedAssistantWorkflowStatus = {
+  graphThreadId: string | null;
+  currentNode: string | null;
+  status: string | null;
+  automationRunId: string | null;
+  events: AssistantWorkflowEvent[];
+  latestEvent: AssistantWorkflowEvent | null;
+  fields: AssistantWorkflowField[];
+  pendingCommand: AssistantWorkflowCommand | null;
+  counts: {
+    detected: number;
+    filled: number;
+    skipped: number;
+    blocked: number;
+    observed: number;
+  };
+};
+
+const AssistantWorkflowAnnotation = Annotation.Root({
+  applicationId: Annotation<string>(),
+  origin: Annotation<string>(),
+  graphThreadId: Annotation<string>(),
+  automationRunId: Annotation<string | null>(),
+  currentNode: Annotation<string>(),
+  status: Annotation<AssistantWorkflowState["status"]>(),
+  error: Annotation<string | null>(),
+  fields: Annotation<AssistantWorkflowField[]>({
+    reducer: (_, right) => right,
+    default: () => [],
+  }),
+  pendingCommand: Annotation<AssistantWorkflowCommand | null>(),
+  pendingFieldId: Annotation<string | null>(),
+  pendingUserRequestId: Annotation<string | null>(),
+  filledFields: Annotation<string[]>({
+    reducer: (_, right) => right,
+    default: () => [],
+  }),
+  skippedFields: Annotation<string[]>({
+    reducer: (_, right) => right,
+    default: () => [],
+  }),
+  blockedFields: Annotation<string[]>({
+    reducer: (_, right) => right,
+    default: () => [],
+  }),
+  observedManualFields: Annotation<string[]>({
+    reducer: (_, right) => right,
+    default: () => [],
+  }),
+  events: Annotation<AssistantWorkflowEvent[]>({
+    reducer: (left, right) => [...left, ...right],
+    default: () => [],
+  }),
+});
+
+let graphPromise: Promise<any> | null = null;
+
+export async function startApplicationAssistantWorkflow(applicationId: string, origin: string): Promise<AssistantWorkflowStartResult> {
+  const graphThreadId = `application-assistant:${applicationId}:${Date.now()}`;
+  const graph = await assistantWorkflowGraph();
+  const state = await graph.invoke(
+    {
+      applicationId,
+      origin,
+      graphThreadId,
+      automationRunId: null,
+      currentNode: "start",
+      status: "RUNNING",
+      error: null,
+      fields: [],
+      pendingCommand: null,
+      pendingFieldId: null,
+      pendingUserRequestId: null,
+      filledFields: [],
+      skippedFields: [],
+      blockedFields: [],
+      observedManualFields: [],
+      events: [],
+    },
+    { configurable: { thread_id: graphThreadId, checkpoint_ns: "" } },
+  ) as AssistantWorkflowState;
+  if (!state.automationRunId) throw new Error("Assistant workflow did not create an automation run.");
+
+  const run = await prisma.applicationAutomationRun.findUnique({
+    where: { id: state.automationRunId },
+    include: { application: true, jobPosting: true },
+  });
+  if (!run) throw new Error("Assistant automation run was not found after workflow launch.");
+
+  return {
+    ok: true,
+    pid: run.pid ?? undefined,
+    automationRunId: run.id,
+    logPath: run.logPath ?? "",
+    message: `Assistant launched for ${run.jobPosting.company} - ${run.jobPosting.title}. Review the browser, then submit manually.`,
+    manualSubmitRequired: true,
+    application: {
+      id: run.application.id,
+      company: run.jobPosting.company,
+      title: run.jobPosting.title,
+      applicationUrl: run.jobPosting.applicationUrl,
+    },
+    workflow: serializeWorkflowStatus(run),
+  };
+}
+
+export async function getApplicationAssistantWorkflowStatus(applicationId: string): Promise<SerializedAssistantWorkflowStatus | null> {
+  const run = await prisma.applicationAutomationRun.findFirst({
+    where: { applicationId },
+    orderBy: { startedAt: "desc" },
+  });
+  return run ? serializeWorkflowStatus(run) : null;
+}
+
+export async function resumeApplicationAssistantWorkflow(input: {
+  applicationId: string;
+  action?: string;
+  message?: string;
+  host?: string;
+  fields?: ObservedApplicationField[];
+}) {
+  const run = await prisma.applicationAutomationRun.findFirst({
+    where: { applicationId: input.applicationId },
+    include: { application: true, jobPosting: true },
+    orderBy: { startedAt: "desc" },
+  });
+  if (!run) throw new Error("No assistant workflow has been started for this application.");
+
+  let learning: { saved: number; ignored: number } | null = null;
+  if (input.fields?.length && input.host) {
+    learning = await storeObservedFieldLearning({
+      userId: run.userId,
+      applicationId: run.applicationId,
+      atsProvider: run.jobPosting.atsProvider,
+      host: input.host,
+      fields: input.fields,
+    });
+  }
+
+  const state = workflowStateFromRun(run);
+  const nextState: AssistantWorkflowState = {
+    ...state,
+    currentNode: input.action === "manual_input_observed" ? "observeManualInput" : "pauseForUser",
+    status: "NEEDS_USER",
+    events: [
+      ...state.events,
+      workflowEvent(input.action ?? "workflow_resumed", input.message ?? "Assistant workflow resumed with user input.", learning ?? undefined),
+    ],
+  };
+  await persistWorkflowState(run.id, nextState);
+  return serializeWorkflowStatus(await prisma.applicationAutomationRun.findUniqueOrThrow({ where: { id: run.id } }));
+}
+
+export async function ingestApplicationAssistantWorkflowEvent(input: {
+  applicationId: string;
+  event: AssistantWorkflowBrowserEvent;
+}) {
+  const run = await latestWorkflowRun(input.applicationId);
+  const state = workflowStateFromRun(run);
+  const nextState = await reduceBrowserEvent(run, state, input.event);
+  await persistWorkflowState(run.id, nextState);
+  await appendWorkflowAction(run.id, {
+    type: input.event.type,
+    message: input.event.message ?? workflowEventMessage(input.event),
+    at: input.event.at ?? new Date().toISOString(),
+  });
+  return serializeWorkflowStatus(await prisma.applicationAutomationRun.findUniqueOrThrow({ where: { id: run.id } }));
+}
+
+export async function getApplicationAssistantWorkflowCommand(applicationId: string) {
+  const run = await latestWorkflowRun(applicationId);
+  const state = workflowStateFromRun(run);
+  return {
+    command: state.pendingCommand,
+    workflow: serializeWorkflowStatus(run),
+  };
+}
+
+export async function recordApplicationAssistantWorkflowCommandResult(input: {
+  applicationId: string;
+  commandId: string;
+  result: "success" | "failed" | "skipped";
+  message?: string | null;
+  valuePreview?: string | null;
+}) {
+  const run = await latestWorkflowRun(input.applicationId);
+  const state = workflowStateFromRun(run);
+  if (state.pendingCommand?.id && state.pendingCommand.id !== input.commandId) {
+    throw new Error("Command result does not match the active assistant command.");
+  }
+  const fieldId = state.pendingCommand?.fieldId ?? null;
+  const nextFields = fieldId
+    ? state.fields.map((field) => field.fieldId === fieldId
+      ? { ...field, result: input.result, valuePreview: input.valuePreview ?? field.valuePreview ?? null }
+      : field)
+    : state.fields;
+  const nextState: AssistantWorkflowState = {
+    ...state,
+    currentNode: input.result === "success" ? "decideNextField" : "validatePage",
+    pendingCommand: null,
+    pendingFieldId: null,
+    fields: nextFields,
+    filledFields: fieldId && input.result === "success" && !state.filledFields.includes(fieldId)
+      ? [...state.filledFields, fieldId]
+      : state.filledFields,
+    skippedFields: fieldId && input.result === "skipped" && !state.skippedFields.includes(fieldId)
+      ? [...state.skippedFields, fieldId]
+      : state.skippedFields,
+    blockedFields: fieldId && input.result === "failed" && !state.blockedFields.includes(fieldId)
+      ? [...state.blockedFields, fieldId]
+      : state.blockedFields,
+    events: [
+      ...state.events,
+      workflowEvent("field_result", input.message ?? `Field command ${input.result}.`, {
+        commandId: input.commandId,
+        fieldId,
+        result: input.result,
+      }),
+    ],
+  };
+  const commandedState = await ensureNextCommand(run, nextState);
+  await persistWorkflowState(run.id, commandedState);
+  return {
+    workflow: serializeWorkflowStatus(await prisma.applicationAutomationRun.findUniqueOrThrow({ where: { id: run.id } })),
+    command: commandedState.pendingCommand,
+  };
+}
+
+export async function resumeApplicationAssistantWorkflowWithRequestAnswer(input: {
+  requestId: string;
+  answer: string;
+}) {
+  const request = await prisma.agentUserRequest.findUnique({
+    where: { id: input.requestId },
+    include: {
+      application: { include: { jobPosting: true } },
+    },
+  });
+  if (!request?.applicationId || !request.application) return null;
+  const context = request.contextJson && typeof request.contextJson === "object" && !Array.isArray(request.contextJson)
+    ? request.contextJson as { source?: string; field?: AssistantWorkflowField }
+    : {};
+  if (context.source !== "application_assistant_field_command" || !context.field) return null;
+
+  const run = await latestWorkflowRun(request.applicationId);
+  const state = workflowStateFromRun(run);
+  const field = context.field;
+  const answer = input.answer.trim();
+  if (!answer) return null;
+
+  await storeObservedFieldLearning({
+    userId: run.userId,
+    applicationId: run.applicationId,
+    atsProvider: request.application.jobPosting.atsProvider,
+    host: hostFromUrl(request.application.jobPosting.applicationUrl),
+    fields: [{
+      fieldKey: field.fieldId,
+      category: field.category,
+      label: field.label,
+      inputType: field.inputType,
+      selector: field.selector,
+      answer,
+      source: "assistant_confirmation",
+      confidence: 86,
+    }],
+  }).catch(() => null);
+
+  const nextCommand = command("fill", {
+    fieldId: field.fieldId,
+    selector: field.selector,
+    value: answer,
+    reason: "User answered this field request in Needs Me.",
+  });
+  const nextState: AssistantWorkflowState = {
+    ...state,
+    currentNode: "resumeWithUserAnswer",
+    status: "RUNNING",
+    pendingCommand: nextCommand,
+    pendingFieldId: field.fieldId,
+    pendingUserRequestId: null,
+    fields: state.fields.some((candidate) => candidate.fieldId === field.fieldId)
+      ? state.fields.map((candidate) => candidate.fieldId === field.fieldId
+        ? { ...candidate, decision: "fill", confidence: 86 }
+        : candidate)
+      : [...state.fields, { ...field, decision: "fill", confidence: 86 }],
+    events: [
+      ...state.events,
+      workflowEvent("resumeWithUserAnswer", "User answered a paused application field; assistant can continue filling.", {
+        requestId: input.requestId,
+        fieldId: field.fieldId,
+      }),
+    ],
+  };
+  await persistWorkflowState(run.id, nextState);
+  return serializeWorkflowStatus(await prisma.applicationAutomationRun.findUniqueOrThrow({ where: { id: run.id } }));
+}
+
+async function assistantWorkflowGraph() {
+  graphPromise ??= buildAssistantWorkflowGraph();
+  return graphPromise;
+}
+
+async function buildAssistantWorkflowGraph() {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) throw new Error("DATABASE_URL is required for LangGraph Postgres checkpointing.");
+  const checkpointer = PostgresSaver.fromConnString(databaseUrl);
+  await checkpointer.setup();
+
+  return new StateGraph(AssistantWorkflowAnnotation)
+    .addNode("loadPackage", async (state: AssistantWorkflowState) => {
+      const application = await prisma.application.findUnique({
+        where: { id: state.applicationId },
+        include: { coverLetter: true, jobPosting: true, resume: true },
+      });
+      if (!application) throw new Error("Application not found.");
+      if (application.status !== "ready_to_apply") throw new Error("Prepare the application package first.");
+      if (!application.jobPosting.applicationUrl) throw new Error("This job does not have an application URL.");
+      if (!application.resume || !application.coverLetter) throw new Error("A generated resume and cover letter are required.");
+      return {
+        currentNode: "loadPackage",
+        events: [workflowEvent("loadPackage", "Application package validated for assistant workflow.")],
+      };
+    })
+    .addNode("launchBrowser", async (state: AssistantWorkflowState) => {
+      const launched = await launchApplicationAssistant(state.applicationId, state.origin);
+      const nextState: AssistantWorkflowState = {
+        ...state,
+        automationRunId: launched.automationRunId,
+        currentNode: "launchBrowser",
+        status: "RUNNING",
+        events: [workflowEvent("launchBrowser", "Playwright browser runner launched.", {
+          automationRunId: launched.automationRunId,
+          pid: launched.pid,
+          logPath: launched.logPath,
+        })],
+      };
+      await persistWorkflowState(launched.automationRunId, {
+        ...nextState,
+        events: [...state.events, ...nextState.events],
+      });
+      return nextState;
+    })
+    .addNode("awaitFieldInventory", async (state: AssistantWorkflowState) => {
+      const nextState: AssistantWorkflowState = {
+        ...state,
+        currentNode: "awaitFieldInventory",
+        status: "RUNNING",
+        events: [workflowEvent("awaitFieldInventory", "Assistant browser is opening and waiting to report form fields.")],
+      };
+      if (state.automationRunId) {
+        await persistWorkflowState(state.automationRunId, {
+          ...nextState,
+          events: [...state.events, ...nextState.events],
+        });
+      }
+      return nextState;
+    })
+    .addEdge(START, "loadPackage")
+    .addEdge("loadPackage", "launchBrowser")
+    .addEdge("launchBrowser", "awaitFieldInventory")
+    .addEdge("awaitFieldInventory", END)
+    .compile({ checkpointer });
+}
+
+async function persistWorkflowState(automationRunId: string, state: AssistantWorkflowState) {
+  await prisma.applicationAutomationRun.update({
+    where: { id: automationRunId },
+    data: {
+      graphThreadId: state.graphThreadId,
+      currentNode: state.currentNode,
+      workflowStateJson: state as unknown as Prisma.InputJsonValue,
+    },
+  });
+}
+
+function serializeWorkflowStatus(run: {
+  id: string;
+  graphThreadId: string | null;
+  currentNode: string | null;
+  status: string;
+  workflowStateJson: Prisma.JsonValue;
+}) {
+  const state = workflowStateFromRun(run);
+  const events = state.events ?? [];
+  return {
+    graphThreadId: run.graphThreadId,
+    currentNode: run.currentNode ?? state.currentNode ?? null,
+    status: state.status ?? run.status,
+    automationRunId: run.id,
+    events,
+    latestEvent: events.at(-1) ?? null,
+    fields: state.fields,
+    pendingCommand: state.pendingCommand,
+    counts: {
+      detected: state.fields.length,
+      filled: state.filledFields.length,
+      skipped: state.skippedFields.length,
+      blocked: state.blockedFields.length,
+      observed: state.observedManualFields.length,
+    },
+  };
+}
+
+function workflowStateFromRun(run: {
+  id: string;
+  graphThreadId: string | null;
+  currentNode: string | null;
+  status: string;
+  applicationId?: string;
+  workflowStateJson: Prisma.JsonValue;
+}) {
+  const value = run.workflowStateJson && typeof run.workflowStateJson === "object" && !Array.isArray(run.workflowStateJson)
+    ? run.workflowStateJson as Partial<AssistantWorkflowState>
+    : {};
+  return {
+    applicationId: value.applicationId ?? run.applicationId ?? "",
+    origin: value.origin ?? "",
+    graphThreadId: value.graphThreadId ?? run.graphThreadId ?? "",
+    automationRunId: value.automationRunId ?? run.id,
+    currentNode: value.currentNode ?? run.currentNode ?? "unknown",
+    status: value.status ?? run.status as AssistantWorkflowState["status"],
+    error: value.error ?? null,
+    events: Array.isArray(value.events) ? value.events : [],
+    fields: Array.isArray(value.fields) ? value.fields : [],
+    pendingCommand: isWorkflowCommand(value.pendingCommand) ? value.pendingCommand : null,
+    pendingFieldId: typeof value.pendingFieldId === "string" ? value.pendingFieldId : null,
+    pendingUserRequestId: typeof value.pendingUserRequestId === "string" ? value.pendingUserRequestId : null,
+    filledFields: stringArray(value.filledFields),
+    skippedFields: stringArray(value.skippedFields),
+    blockedFields: stringArray(value.blockedFields),
+    observedManualFields: stringArray(value.observedManualFields),
+  };
+}
+
+function workflowEvent(type: string, message: string, payload?: Record<string, unknown>): AssistantWorkflowEvent {
+  return {
+    type,
+    message,
+    at: new Date().toISOString(),
+    ...(payload ? { payload } : {}),
+  };
+}
+
+async function latestWorkflowRun(applicationId: string) {
+  const run = await prisma.applicationAutomationRun.findFirst({
+    where: { applicationId },
+    orderBy: { startedAt: "desc" },
+  });
+  if (!run) throw new Error("No assistant workflow has been started for this application.");
+  return run;
+}
+
+async function reduceBrowserEvent(
+  run: Awaited<ReturnType<typeof latestWorkflowRun>>,
+  state: AssistantWorkflowState,
+  event: AssistantWorkflowBrowserEvent,
+): Promise<AssistantWorkflowState> {
+  if (event.type === "field_inventory") {
+    const fields = normalizeWorkflowFields(event.fields ?? []);
+    return ensureNextCommand(run, {
+      ...state,
+      currentNode: "inspectPage",
+      status: "RUNNING",
+      fields,
+      events: [
+        ...state.events,
+        workflowEvent("field_inventory", event.message ?? `Detected ${fields.length} application field(s).`, {
+          fieldCount: fields.length,
+          url: event.url ?? null,
+        }),
+      ],
+    });
+  }
+
+  if (event.type === "manual_input_observed" && event.label && event.valuePreview) {
+    const fieldId = event.fieldId ?? fieldIdFor({
+      selector: event.selector,
+      label: event.label,
+      inputType: event.inputType,
+      context: null,
+    });
+    return {
+      ...state,
+      currentNode: "observeManualInput",
+      observedManualFields: state.observedManualFields.includes(fieldId)
+        ? state.observedManualFields
+        : [...state.observedManualFields, fieldId],
+      events: [
+        ...state.events,
+        workflowEvent("manual_input_observed", event.message ?? "Observed manual field input for future learning.", {
+          fieldId,
+          label: event.label,
+        }),
+      ],
+    };
+  }
+
+  if (event.type === "submit_confirmation") {
+    await markApplicationSubmitted(run.applicationId, run.id, event.message ?? "Manual submit confirmation detected.");
+    return {
+      ...state,
+      currentNode: "detectSubmitOrClose",
+      status: "SUBMITTED",
+      pendingCommand: null,
+      events: [...state.events, workflowEvent("submit_confirmation", event.message ?? "Application submission detected.")],
+    };
+  }
+
+  if (event.type === "browser_closed") {
+    return {
+      ...state,
+      currentNode: "detectSubmitOrClose",
+      status: "NEEDS_USER",
+      pendingCommand: null,
+      events: [...state.events, workflowEvent("browser_closed", event.message ?? "Assistant browser closed before submit.")],
+    };
+  }
+
+  return {
+    ...state,
+    events: [...state.events, workflowEvent(event.type, event.message ?? workflowEventMessage(event), { fieldId: event.fieldId ?? null })],
+  };
+}
+
+async function ensureNextCommand(
+  run: Awaited<ReturnType<typeof latestWorkflowRun>>,
+  state: AssistantWorkflowState,
+): Promise<AssistantWorkflowState> {
+  if (state.pendingCommand) return state;
+  const field = state.fields.find((candidate) => !fieldHandled(state, candidate));
+  if (!field) {
+    return {
+      ...state,
+      currentNode: "readyForSubmit",
+      status: "READY_TO_SUBMIT",
+      pendingCommand: command("stop_for_submit", {
+        reason: "All known assistant-controlled fields have been handled. Manual submit is still required.",
+      }),
+      events: [
+        ...state.events,
+        workflowEvent("readyForSubmit", "Field-by-field assistant is ready for manual review and submit."),
+      ],
+    };
+  }
+
+  const decision = await decideCommandForField(run, field);
+  return {
+    ...state,
+    currentNode: decision.currentNode,
+    pendingCommand: decision.command,
+    pendingFieldId: field.fieldId,
+    pendingUserRequestId: decision.pendingUserRequestId ?? state.pendingUserRequestId,
+    fields: state.fields.map((candidate) => candidate.fieldId === field.fieldId
+      ? { ...candidate, decision: decision.command.type, confidence: decision.confidence ?? null, memoryMatchId: decision.memoryMatchId ?? null }
+      : candidate),
+    events: [
+      ...state.events,
+      workflowEvent(decision.currentNode, decision.message, {
+        fieldId: field.fieldId,
+        commandType: decision.command.type,
+      }),
+    ],
+  };
+}
+
+async function decideCommandForField(
+  run: Awaited<ReturnType<typeof latestWorkflowRun>>,
+  field: AssistantWorkflowField,
+) {
+  const application = await prisma.application.findUnique({
+    where: { id: run.applicationId },
+    include: {
+      coverLetter: true,
+      jobPosting: true,
+      user: { include: { profile: true } },
+    },
+  });
+  if (!application) throw new Error("Application not found.");
+
+  const value = valueForKnownField(field, application);
+  if (value) {
+    return {
+      currentNode: "resolveKnownField",
+      command: command("fill", {
+        fieldId: field.fieldId,
+        selector: field.selector,
+        value,
+        reason: `Known ${field.category} field resolved from application package.`,
+      }),
+      message: `Resolved known field: ${field.label}`,
+      confidence: 90,
+    };
+  }
+
+  const reusable = await findReusableAnswerMemories(application.userId, field.label, 1);
+  if (reusable[0]?.autoUsable) {
+    return {
+      currentNode: "resolveKnownField",
+      command: command("fill", {
+        fieldId: field.fieldId,
+        selector: field.selector,
+        value: reusable[0].answer,
+        reason: `Auto-using saved low-risk answer memory (${reusable[0].matchScore}% match).`,
+      }),
+      message: `Resolved field from answer memory: ${field.label}`,
+      confidence: reusable[0].matchScore,
+      memoryMatchId: reusable[0].id,
+    };
+  }
+
+  if (field.inputType === "file" && /resume|cv/i.test(field.label)) {
+    return {
+      currentNode: "resolveKnownField",
+      command: command("upload", {
+        fieldId: field.fieldId,
+        selector: field.selector,
+        material: "resume",
+        reason: "Resume upload control detected.",
+      }),
+      message: `Resolved resume upload field: ${field.label}`,
+      confidence: 92,
+    };
+  }
+
+  if (field.inputType === "file" && /cover/i.test(field.label)) {
+    return {
+      currentNode: "resolveKnownField",
+      command: command("upload", {
+        fieldId: field.fieldId,
+        selector: field.selector,
+        material: "cover_letter",
+        reason: "Cover letter upload control detected.",
+      }),
+      message: `Resolved cover letter upload field: ${field.label}`,
+      confidence: 92,
+    };
+  }
+
+  if (field.required || questionLike(field)) {
+    const suggestedAnswer = reusable[0]?.answer ?? "";
+    const request = await createAgentUserRequest({
+      userId: run.userId,
+      applicationId: run.applicationId,
+      jobPostingId: run.jobPostingId,
+      type: "UNKNOWN_ANSWER",
+      question: `How should the assistant answer this application field?\n\n${field.label}`,
+      contextJson: {
+        source: "application_assistant_field_command",
+        field,
+        suggestedAnswer,
+        answerMemory: reusable[0] ?? null,
+      } as Prisma.InputJsonValue,
+    });
+    return {
+      currentNode: "pauseForUser",
+      command: command("ask_user", {
+        fieldId: field.fieldId,
+        selector: field.selector,
+        value: suggestedAnswer,
+        reason: suggestedAnswer
+          ? "A similar saved answer exists, but this field needs user approval before reuse."
+          : "Required or custom application field needs user input before the assistant can continue.",
+        requiresUserApproval: true,
+      }),
+      message: `Needs user input for field: ${field.label}`,
+      pendingUserRequestId: request.id,
+      confidence: reusable[0]?.matchScore ?? 0,
+      memoryMatchId: reusable[0]?.id ?? null,
+    };
+  }
+
+  return {
+    currentNode: "decideNextField",
+    command: command("skip", {
+      fieldId: field.fieldId,
+      selector: field.selector,
+      reason: "Optional unknown field skipped by assistant policy.",
+    }),
+    message: `Skipping optional unknown field: ${field.label}`,
+    confidence: 70,
+  };
+}
+
+function valueForKnownField(field: AssistantWorkflowField, application: KnownFieldApplication) {
+  const profile = application.user.profile;
+  const fullName = profile?.fullName ?? application.user.name ?? "";
+  const [firstName, ...lastNameParts] = fullName.split(/\s+/).filter(Boolean);
+  const label = `${field.category} ${field.label}`.toLowerCase();
+  if (/\b(first name|given name)\b/.test(label)) return firstName;
+  if (/\b(last name|family name|surname)\b/.test(label)) return lastNameParts.join(" ");
+  if (/\b(full name|name)\b/.test(label)) return fullName;
+  if (/\b(email)\b/.test(label)) return profile?.email ?? application.user.email;
+  if (/\b(phone|mobile)\b/.test(label)) return profile?.phone ?? "";
+  if (/\b(linkedin)\b/.test(label)) return profile?.linkedinUrl ?? "";
+  if (/\b(github)\b/.test(label)) return profile?.githubUrl ?? "";
+  if (/\b(portfolio|website|personal site)\b/.test(label)) return profile?.portfolioUrl ?? "";
+  if (/\b(location|city|address)\b/.test(label)) return profile?.location ?? "";
+  if (/\bcover letter|why.*join|why.*team|why.*company|tell us why/i.test(label)) return application.coverLetter?.body ?? "";
+  return "";
+}
+
+function normalizeWorkflowFields(fields: AssistantWorkflowBrowserField[]) {
+  const seen = new Set<string>();
+  const normalized: AssistantWorkflowField[] = [];
+  for (const field of fields) {
+    const label = String(field.label ?? "").trim() || "(unlabeled field)";
+    const selector = typeof field.selector === "string" && field.selector.trim() ? field.selector.trim() : null;
+    const inputType = typeof field.inputType === "string" ? field.inputType.trim().toLowerCase() : (typeof field.type === "string" ? field.type.trim().toLowerCase() : null);
+    const context = typeof field.context === "string" && field.context.trim() ? field.context.trim() : null;
+    const fieldId = typeof field.fieldId === "string" && field.fieldId.trim()
+      ? field.fieldId.trim()
+      : fieldIdFor({ selector, label, inputType, context });
+    if (seen.has(fieldId)) continue;
+    seen.add(fieldId);
+    normalized.push({
+      fieldId,
+      selector,
+      label,
+      inputType,
+      required: Boolean(field.required) || /\*|required/i.test(label),
+      category: typeof field.category === "string" && field.category.trim() ? field.category.trim() : "custom",
+      status: typeof field.status === "string" ? field.status : null,
+      context,
+      valuePreview: typeof field.valuePreview === "string" ? field.valuePreview : null,
+      decision: null,
+      result: null,
+      confidence: null,
+      memoryMatchId: null,
+    });
+  }
+  return normalized;
+}
+
+function fieldHandled(state: AssistantWorkflowState, field: AssistantWorkflowField) {
+  return field.result === "success"
+    || field.result === "skipped"
+    || state.filledFields.includes(field.fieldId)
+    || state.skippedFields.includes(field.fieldId)
+    || state.blockedFields.includes(field.fieldId)
+    || state.pendingUserRequestId && state.pendingFieldId === field.fieldId;
+}
+
+function command(type: AssistantWorkflowCommand["type"], input: Partial<AssistantWorkflowCommand> & { reason: string }): AssistantWorkflowCommand {
+  return {
+    id: `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    type,
+    fieldId: input.fieldId ?? null,
+    selector: input.selector ?? null,
+    value: input.value ?? null,
+    material: input.material ?? null,
+    reason: input.reason,
+    requiresUserApproval: input.requiresUserApproval ?? false,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function fieldIdFor(input: { selector?: string | null; label?: string | null; inputType?: string | null; context?: string | null }) {
+  return `field_${canonicalKey([input.context, input.selector, input.inputType, input.label].filter(Boolean).join("_"))}`;
+}
+
+function canonicalKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 120) || "unknown";
+}
+
+function hostFromUrl(url?: string | null) {
+  if (!url) return "unknown";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "unknown";
+  }
+}
+
+function questionLike(field: AssistantWorkflowField) {
+  return /\?|why|describe|explain|tell us|cover letter|interest|experience|project|challenge|contribution/i.test(field.label);
+}
+
+function isWorkflowCommand(value: unknown): value is AssistantWorkflowCommand {
+  return Boolean(value && typeof value === "object" && "id" in value && "type" in value);
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function workflowEventMessage(event: AssistantWorkflowBrowserEvent) {
+  if (event.type === "field_inventory") return "Application field inventory received.";
+  if (event.type === "field_result") return "Application field command result received.";
+  if (event.type === "validation_error") return "Application page reported a validation error.";
+  return "Assistant workflow event received.";
+}
+
+async function appendWorkflowAction(runId: string, action: { type: string; message: string; at: string }) {
+  const run = await prisma.applicationAutomationRun.findUnique({ where: { id: runId } });
+  const actions = Array.isArray(run?.actionsJson) ? run.actionsJson : [];
+  await prisma.applicationAutomationRun.update({
+    where: { id: runId },
+    data: { actionsJson: [...actions, action] as Prisma.InputJsonValue },
+  });
+}
+
+async function markApplicationSubmitted(applicationId: string, automationRunId: string, note: string) {
+  await prisma.application.update({
+    where: { id: applicationId },
+    data: { status: "applied", appliedAt: new Date() },
+  }).catch(() => null);
+  await prisma.applicationAutomationRun.update({
+    where: { id: automationRunId },
+    data: { status: "SUBMITTED", finishedAt: new Date() },
+  }).catch(() => null);
+  await prisma.applicationEvent.create({
+    data: {
+      applicationId,
+      type: "applied",
+      payload: { source: "application_assistant_workflow", automationRunId, note } as Prisma.InputJsonValue,
+    },
+  }).catch(() => null);
+}

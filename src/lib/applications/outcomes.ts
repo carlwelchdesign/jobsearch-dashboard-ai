@@ -1,6 +1,8 @@
 import type { ApplicationOutcomeType, JobMatchStatus, Prisma } from "@prisma/client";
 import { syncApplicationPacket } from "@/lib/applications/application-packets";
 import { ensureInterviewPrepForApplication } from "@/lib/applications/interview-prep-workflow";
+import { submittedApplicationStatuses } from "@/lib/applications/job-filters";
+import { recordSubmittedJobSuppression } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 
 export type RecordApplicationOutcomeInput = {
@@ -13,7 +15,17 @@ export type RecordApplicationOutcomeInput = {
 export async function recordApplicationOutcome(input: RecordApplicationOutcomeInput) {
   const application = await prisma.application.findUnique({
     where: { id: input.applicationId },
-    include: { jobPosting: { select: { company: true, title: true } } },
+    include: {
+      jobPosting: {
+        select: {
+          id: true,
+          company: true,
+          title: true,
+          location: true,
+          duplicateGroupId: true,
+        },
+      },
+    },
   });
   if (!application) throw new Error("Application not found.");
 
@@ -71,6 +83,16 @@ export async function recordApplicationOutcome(input: RecordApplicationOutcomeIn
 
     return created;
   });
+  if (submittedApplicationStatuses.includes(nextStatus)) {
+    await recordSubmittedJobSuppression({
+      userId: application.userId,
+      job: application.jobPosting,
+      jobProfileMatchId: application.jobProfileMatchId,
+      applicationId: application.id,
+      source: "application_outcome",
+      reason: input.outcome,
+    });
+  }
   await syncApplicationPacket(application.id);
   if (shouldTriggerInterviewPrepForOutcome(input.outcome)) {
     await ensureInterviewPrepForApplication({

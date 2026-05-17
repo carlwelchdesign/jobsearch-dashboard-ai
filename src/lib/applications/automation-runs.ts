@@ -1,4 +1,6 @@
-import type { ApplicationAutomationRunStatus, AtsProvider, Prisma } from "@prisma/client";
+import type { ApplicationAutomationRun, ApplicationAutomationRunStatus, AtsProvider, Prisma } from "@prisma/client";
+import { existsSync, readFileSync } from "fs";
+import path from "path";
 import { prisma } from "@/lib/prisma";
 
 type AssistantLogClassification = {
@@ -6,6 +8,11 @@ type AssistantLogClassification = {
   blockerType?: string | null;
   blockerMessage?: string | null;
 };
+
+const defaultStaleRunMinutes = 90;
+const assistantClosedBlockerType = "assistant_closed";
+const assistantClosedBlockerMessage =
+  "The assistant browser was closed or stopped before submission. Relaunch the assistant or mark the application applied if you submitted manually.";
 
 const blockerPatterns: Array<{ type: string; pattern: RegExp; message: string }> = [
   { type: "closed_job", pattern: /closed|removed|unavailable|no form can be filled/i, message: "The application page appears closed, removed, or unavailable." },
@@ -69,6 +76,17 @@ export async function updateApplicationAutomationRunFromLog(input: {
   if (!run) return null;
 
   const classification = classifyAssistantLog(input.log);
+  const actions = assistantLogActions(input.log);
+  const screenshots = assistantLogScreenshots(input.log);
+  if (classification.status === "RUNNING") {
+    const recoveredRun = await recoverStaleAutomationRun(run, {
+      actions,
+      screenshots,
+      logPath: input.logPath,
+    });
+    if (recoveredRun) return recoveredRun;
+  }
+
   const finished = classification.status !== "RUNNING";
   await persistFormPatternsFromLog({
     userId: run.userId,
@@ -78,12 +96,11 @@ export async function updateApplicationAutomationRunFromLog(input: {
     success: classification.status === "READY_TO_SUBMIT" || classification.status === "SUBMITTED",
   });
 
-  const actions = assistantLogActions(input.log);
-  const screenshots = assistantLogScreenshots(input.log);
   const updatedRun = await prisma.applicationAutomationRun.update({
     where: { id: run.id },
     data: {
       status: classification.status,
+      ...workflowUpdateFromLog(run, classification, actions),
       blockerType: classification.blockerType ?? null,
       blockerMessage: classification.blockerMessage ?? null,
       finishedAt: finished ? run.finishedAt ?? new Date() : null,
@@ -109,6 +126,186 @@ export async function updateApplicationAutomationRunFromLog(input: {
       },
     });
   }
+
+  return updatedRun;
+}
+
+function workflowUpdateFromLog(
+  run: ApplicationAutomationRun,
+  classification: AssistantLogClassification,
+  actions: Array<{ type: string; message: string }>,
+): Prisma.ApplicationAutomationRunUpdateInput {
+  if (!run.graphThreadId) return {};
+  const currentState = run.workflowStateJson && typeof run.workflowStateJson === "object" && !Array.isArray(run.workflowStateJson)
+    ? run.workflowStateJson as { events?: Array<{ type: string; message: string; at: string }>; [key: string]: unknown }
+    : {};
+  const currentNode = nodeForAssistantStatus(classification.status);
+  const existingEvents = Array.isArray(currentState.events) ? currentState.events : [];
+  const actionEvents = actions.map((action) => ({
+    type: action.type,
+    message: action.message,
+    at: new Date().toISOString(),
+  }));
+  const statusChanged = run.status !== classification.status || run.currentNode !== currentNode;
+  const events = statusChanged
+    ? [
+        ...existingEvents,
+        ...actionEvents,
+        {
+          type: currentNode,
+          message: workflowMessageForStatus(classification),
+          at: new Date().toISOString(),
+        },
+      ]
+    : existingEvents;
+  return {
+    currentNode,
+    workflowStateJson: {
+      ...currentState,
+      automationRunId: run.id,
+      applicationId: run.applicationId,
+      graphThreadId: run.graphThreadId,
+      currentNode,
+      status: classification.status,
+      blockerType: classification.blockerType ?? null,
+      blockerMessage: classification.blockerMessage ?? null,
+      events,
+    } as Prisma.InputJsonValue,
+  };
+}
+
+function nodeForAssistantStatus(status: ApplicationAutomationRunStatus) {
+  if (status === "SUBMITTED") return "detectSubmitOrClose";
+  if (status === "READY_TO_SUBMIT") return "readyForSubmit";
+  if (status === "BLOCKED" || status === "NEEDS_USER") return "pauseForUser";
+  if (status === "FAILED") return "finalizeRun";
+  return "fillKnownFields";
+}
+
+function workflowMessageForStatus(classification: AssistantLogClassification) {
+  if (classification.status === "SUBMITTED") return "Submission confirmation detected and application state is being updated.";
+  if (classification.status === "READY_TO_SUBMIT") return "Assistant filled known fields and is waiting for manual review before submit.";
+  if (classification.status === "BLOCKED" || classification.status === "NEEDS_USER") return classification.blockerMessage ?? "Assistant needs user input before it can continue.";
+  if (classification.status === "FAILED") return classification.blockerMessage ?? "Assistant workflow failed.";
+  return "Assistant is inspecting and filling the application form.";
+}
+
+export async function recoverStaleApplicationAutomationRuns(applicationId?: string) {
+  const runs = await prisma.applicationAutomationRun.findMany({
+    where: {
+      status: "RUNNING",
+      ...(applicationId ? { applicationId } : {}),
+    },
+    orderBy: { startedAt: "asc" },
+    take: 100,
+  });
+
+  let recovered = 0;
+  for (const run of runs) {
+    const updated = await recoverStaleAutomationRun(run, {
+      actions: [],
+      screenshots: [],
+      logPath: run.logPath,
+    });
+    if (updated) recovered += 1;
+  }
+  return { recovered };
+}
+
+export async function syncRunningApplicationAutomationRunsFromLogs(applicationId?: string) {
+  const runs = await prisma.applicationAutomationRun.findMany({
+    where: {
+      status: "RUNNING",
+      logPath: { not: null },
+      ...(applicationId ? { applicationId } : {}),
+    },
+    orderBy: { startedAt: "desc" },
+    take: 100,
+  });
+  let synced = 0;
+  for (const run of runs) {
+    const log = readAssistantLog(run.logPath);
+    if (log === null) continue;
+    const updated = await updateApplicationAutomationRunFromLog({
+      applicationId: run.applicationId,
+      logPath: run.logPath ?? "",
+      log,
+    });
+    if (updated?.status !== "RUNNING") synced += 1;
+  }
+  return { synced };
+}
+
+export function shouldRecoverRunningAutomationRun(
+  run: Pick<ApplicationAutomationRun, "status" | "pid" | "startedAt">,
+  options: { now?: Date; staleMinutes?: number; processAlive?: (pid: number) => boolean } = {},
+) {
+  if (run.status !== "RUNNING") return false;
+  const staleMinutes = options.staleMinutes ?? assistantStaleRunMinutes();
+  const now = options.now ?? new Date();
+  const isStale = now.getTime() - run.startedAt.getTime() >= staleMinutes * 60_000;
+  const processIsMissing = run.pid ? !(options.processAlive ?? assistantProcessIsAlive)(run.pid) : false;
+  return isStale || processIsMissing;
+}
+
+function assistantStaleRunMinutes() {
+  const configured = Number(process.env.ASSISTANT_STALE_RUN_MINUTES);
+  return Number.isFinite(configured) && configured > 0 ? configured : defaultStaleRunMinutes;
+}
+
+function assistantProcessIsAlive(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+async function recoverStaleAutomationRun(
+  run: ApplicationAutomationRun,
+  input: {
+    actions: Array<{ type: string; message: string }>;
+    screenshots: Array<{ type: string; path: string; textPath?: string; summary?: string }>;
+    logPath?: string | null;
+  },
+) {
+  if (!shouldRecoverRunningAutomationRun(run)) return null;
+
+  const actions = [
+    ...input.actions,
+    {
+      type: assistantClosedBlockerType,
+      message: assistantClosedBlockerMessage,
+    },
+  ];
+  const updatedRun = await prisma.applicationAutomationRun.update({
+    where: { id: run.id },
+    data: {
+      status: "NEEDS_USER",
+      blockerType: assistantClosedBlockerType,
+      blockerMessage: assistantClosedBlockerMessage,
+      finishedAt: run.finishedAt ?? new Date(),
+      actionsJson: actions as Prisma.InputJsonValue,
+      screenshotsJson: input.screenshots as Prisma.InputJsonValue,
+    },
+  });
+
+  await prisma.applicationEvent.create({
+    data: {
+      applicationId: run.applicationId,
+      type: "note_added",
+      payload: buildAutomationRunEventPayload({
+        automationRunId: run.id,
+        status: "NEEDS_USER",
+        blockerType: assistantClosedBlockerType,
+        blockerMessage: assistantClosedBlockerMessage,
+        actionCount: actions.length,
+        screenshotCount: input.screenshots.length,
+        logPath: input.logPath,
+      }),
+    },
+  });
 
   return updatedRun;
 }
@@ -189,6 +386,10 @@ export function classifyAssistantLog(log: string): AssistantLogClassification {
     return { status: "FAILED", blockerType: "assistant_error", blockerMessage: "The assistant run failed before completing." };
   }
 
+  if (/Manual submit (button click|confirmation) detected|Tracker updated:.*Application marked applied/i.test(log)) {
+    return { status: "SUBMITTED" };
+  }
+
   if (/Auto-submit skipped/i.test(log)) {
     return { status: "READY_TO_SUBMIT", blockerType: "auto_submit_skipped", blockerMessage: "Auto-submit was skipped by a page-level safety check." };
   }
@@ -206,8 +407,19 @@ export function classifyAssistantLog(log: string): AssistantLogClassification {
   return { status: "RUNNING" };
 }
 
+function readAssistantLog(logPath?: string | null) {
+  if (!logPath) return null;
+  const logRoot = path.join(process.cwd(), ".assistant-logs");
+  const resolved = path.resolve(logPath);
+  if (!resolved.startsWith(logRoot)) return null;
+  return existsSync(resolved) ? readFileSync(resolved, "utf8") : "";
+}
+
 export function assistantLogActions(log: string) {
   const actions: Array<{ type: string; message: string }> = [];
+  for (const event of assistantStructuredEvents(log)) {
+    actions.push({ type: event.type, message: event.message });
+  }
   const filled = /Filled (\d+) safe text fields\./i.exec(log);
   const demographic = /Filled (\d+) configured demographic field/i.exec(log);
   const uploads = /Uploaded (\d+) material file/i.exec(log);
@@ -218,6 +430,21 @@ export function assistantLogActions(log: string) {
   if (/Selected application answers:/i.test(log)) actions.push({ type: "prepared_selected_answers", message: "Selected custom-answer drafts were prepared." });
 
   return actions;
+}
+
+function assistantStructuredEvents(log: string) {
+  const events: Array<{ type: string; message: string }> = [];
+  for (const rawLine of log.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line.startsWith("ASSISTANT_EVENT ")) continue;
+    try {
+      const event = JSON.parse(line.slice("ASSISTANT_EVENT ".length)) as { type?: string; message?: string };
+      if (event.type && event.message) events.push({ type: event.type, message: event.message });
+    } catch {
+      continue;
+    }
+  }
+  return events;
 }
 
 export function assistantLogFieldPatterns(log: string) {

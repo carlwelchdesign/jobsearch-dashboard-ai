@@ -42,6 +42,14 @@ SAFE_TEXT_FIELDS = {
     "portfolio_url": ["portfolio", "website", "personal site", "homepage"],
 }
 
+COVER_LETTER_TEXT_PATTERNS = re.compile(
+    r"cover[\s_-]*letter|coverletter|letter of interest|motivation letter|"
+    r"tell us why|why (do )?you want to join|why (are )?you interested|"
+    r"why this (role|position|company|team)|why.*join.*team|"
+    r"what interests you about (this role|our company|our team)",
+    re.I,
+)
+
 FIELD_SELECTORS = {
     "first_name": [
         "input[autocomplete='given-name']",
@@ -166,6 +174,7 @@ MANUAL_ONLY_HOSTS = {"remoteok.com", "remoteok.io"}
 
 def main() -> int:
     args = parse_args()
+    assistant_event(args.application_id, "workflow_started", "Playwright assistant runner started.")
     try:
         package = fetch_json(f"{args.app_url.rstrip('/')}/api/applications/{args.application_id}/assistant-package")
     except Exception as exc:
@@ -216,6 +225,7 @@ def main() -> int:
     with sync_playwright() as playwright:
         browser_or_context, page = open_browser(playwright, args)
         page.goto(package["job"]["applicationUrl"], wait_until="domcontentloaded", timeout=args.timeout)
+        assistant_event(args.application_id, "page_opened", "Application page opened.", {"url": page.url})
         bring_browser_to_front(page)
         page.wait_for_timeout(2500)
         open_embedded_application_form(page)
@@ -223,11 +233,13 @@ def main() -> int:
         body_text = page.inner_text("body", timeout=5000)
 
         if CLOSED_JOB_PATTERNS.search(body_text) or "404" in page.title():
+            assistant_event(args.application_id, "blocker_found", "Application page appears closed or unavailable.", {"blockerType": "closed_job", "url": page.url})
             print("This application page appears to be closed, removed, or unavailable. No form can be filled.")
             browser_or_context.close()
             return 0
 
         if "accounts.google." in page.url or GOOGLE_BLOCK_PATTERNS.search(body_text):
+            assistant_event(args.application_id, "blocker_found", "Google sign-in blocked the automation browser.", {"blockerType": "login_block", "url": page.url})
             print("Google sign-in blocked the automation browser. Handing off to normal Chrome.")
             browser_or_context.close()
             open_manual_handoff(package["job"]["applicationUrl"], workdir)
@@ -235,6 +247,7 @@ def main() -> int:
             return 0
 
         if CAPTCHA_PATTERNS.search(body_text):
+            assistant_event(args.application_id, "blocker_found", "CAPTCHA or human verification detected.", {"blockerType": "captcha", "url": page.url})
             print("CAPTCHA or human verification text detected. Stopping for manual handling.")
             browser_or_context.close()
             open_manual_handoff(package["job"]["applicationUrl"], workdir)
@@ -243,10 +256,47 @@ def main() -> int:
         form_contexts = application_contexts(page)
         print(f"Scanning {len(form_contexts)} page/frame context(s) for application fields.")
         inventory_before = detect_fields_in_contexts(form_contexts)
+        assistant_event(args.application_id, "fields_detected", "Application fields detected before filling.", {"fieldCount": len(inventory_before), "url": page.url})
         print_field_inventory("Detected fields before filling", inventory_before)
 
-        filled = sum(fill_safe_fields(context, package["candidate"]) for context in form_contexts)
+        if package.get("workflow", {}).get("fieldByFieldCommands"):
+            field_command_loop(
+                args,
+                page,
+                form_contexts,
+                package,
+                resume_pdf,
+                cover_letter_pdf,
+                inventory_before,
+            )
+            if not auto_submit_allowed:
+                for context in form_contexts:
+                    protect_submit_buttons(context)
+            learning_baseline = snapshot_fields_in_contexts(form_contexts)
+            print("Review every field in the browser. Submit manually only if everything is correct.")
+            print("The assistant will watch for a submission confirmation and mark this application applied when it appears.")
+            assistant_event(args.application_id, "ready_for_manual_submit", "Assistant is waiting for manual review and submit.", {"url": page.url})
+            mark_applied_state = {
+                "application_id": args.application_id,
+                "app_url": args.app_url,
+                "marked": False,
+                "learning_baseline": learning_baseline,
+                "reported_learning_keys": set(),
+                "package": package,
+            }
+            install_manual_submit_watchers(browser_or_context, mark_applied_state)
+            keep_open(
+                args,
+                browser_or_context,
+                package["job"]["applicationUrl"],
+                workdir,
+                mark_applied_state=mark_applied_state,
+            )
+            return 0
+
+        filled = sum(fill_safe_fields(context, package) for context in form_contexts)
         learned_filled = sum(fill_learned_form_rules(context, package) for context in form_contexts)
+        memory_filled = sum(fill_learned_field_memories(context, package) for context in form_contexts)
         demographic_filled = sum(
             fill_demographic_fields(context, package["candidate"].get("demographicAnswers", {}))
             for context in form_contexts
@@ -257,12 +307,21 @@ def main() -> int:
                 protect_submit_buttons(context)
         inventory_after = detect_fields_in_contexts(form_contexts)
         print_field_inventory("Detected fields after filling", inventory_after)
+        learning_baseline = snapshot_fields_in_contexts(form_contexts)
 
         print()
         print(f"Filled {filled} safe text fields.")
         print(f"Filled {learned_filled} learned recurring field(s).")
+        print(f"Filled {memory_filled} saved field memory value(s).")
         print(f"Filled {demographic_filled} configured demographic field(s).")
         print(f"Uploaded {uploads} material file(s).")
+        assistant_event(args.application_id, "fill_summary", "Assistant completed safe fill pass.", {
+            "safeFieldsFilled": filled,
+            "learnedFieldsFilled": learned_filled,
+            "memoryFieldsFilled": memory_filled,
+            "demographicFieldsFilled": demographic_filled,
+            "uploads": uploads,
+        })
         if filled == 0 and uploads == 0:
             print("No fillable application fields or matching upload controls were found on this page.")
             print("This is often a job listing page, login page, or intermediary board rather than the final application form.")
@@ -278,20 +337,25 @@ def main() -> int:
         else:
             print("Review every field in the browser. Submit manually only if everything is correct.")
             print("The assistant will watch for a submission confirmation and mark this application applied when it appears.")
+            assistant_event(args.application_id, "ready_for_manual_submit", "Assistant is waiting for manual review and submit.", {"url": page.url})
         print("Sensitive demographic, salary, and custom questions were intentionally left untouched unless explicitly configured.")
         if selected_answers_text:
             print(f"Use selected custom-answer drafts from: {selected_answers_text}")
-        install_manual_submit_watchers(browser_or_context)
+        mark_applied_state = {
+            "application_id": args.application_id,
+            "app_url": args.app_url,
+            "marked": application_marked_applied,
+            "learning_baseline": learning_baseline,
+            "reported_learning_keys": set(),
+            "package": package,
+        }
+        install_manual_submit_watchers(browser_or_context, mark_applied_state)
         keep_open(
             args,
             browser_or_context,
             package["job"]["applicationUrl"],
             workdir,
-            mark_applied_state={
-                "application_id": args.application_id,
-                "app_url": args.app_url,
-                "marked": application_marked_applied,
-            },
+            mark_applied_state=mark_applied_state,
         )
 
     return 0
@@ -316,6 +380,22 @@ def parse_args() -> argparse.Namespace:
         help="Persistent local browser profile directory used by the assistant.",
     )
     return parser.parse_args()
+
+
+def assistant_event(application_id: str, event_type: str, message: str, payload: dict[str, Any] | None = None) -> None:
+    print(
+        "ASSISTANT_EVENT "
+        + json.dumps(
+            {
+                "applicationId": application_id,
+                "type": event_type,
+                "message": message,
+                "payload": payload or {},
+                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            },
+            separators=(",", ":"),
+        )
+    )
 
 
 def open_browser(playwright: Any, args: argparse.Namespace) -> tuple[Any, Any]:
@@ -375,6 +455,164 @@ def post_json(url: str, payload: dict[str, Any] | None = None) -> dict[str, Any]
         return json.loads(response.read().decode("utf-8"))
 
 
+def field_command_loop(
+    args: argparse.Namespace,
+    page: Any,
+    contexts: list[Any],
+    package: dict[str, Any],
+    resume_pdf: Path,
+    cover_letter_pdf: Path,
+    inventory: list[dict[str, str]],
+) -> None:
+    workflow = package.get("workflow", {}) if isinstance(package.get("workflow"), dict) else {}
+    event_url = workflow.get("eventUrl") or f"{args.app_url.rstrip('/')}/api/applications/{args.application_id}/assistant-workflow/events"
+    command_url = workflow.get("commandUrl") or f"{args.app_url.rstrip('/')}/api/applications/{args.application_id}/assistant-workflow/command"
+    result_url = workflow.get("commandResultUrl") or f"{args.app_url.rstrip('/')}/api/applications/{args.application_id}/assistant-workflow/command-result"
+    post_json(str(event_url), {
+        "type": "field_inventory",
+        "message": f"Detected {len(inventory)} application field(s).",
+        "url": page.url,
+        "fields": [workflow_field(field) for field in inventory],
+    })
+    assistant_event(args.application_id, "field_inventory", "Field inventory sent to workflow controller.", {"fieldCount": len(inventory)})
+
+    handled_commands: set[str] = set()
+    for _ in range(160):
+        try:
+            payload = fetch_json(str(command_url))
+        except Exception as exc:
+            print(f"Unable to poll assistant workflow command: {exc}", file=sys.stderr)
+            time.sleep(2)
+            continue
+
+        command_payload = payload.get("command") if isinstance(payload, dict) else None
+        if not isinstance(command_payload, dict):
+            time.sleep(1)
+            continue
+
+        command_id = str(command_payload.get("id") or "")
+        if not command_id or command_id in handled_commands:
+            time.sleep(1)
+            continue
+
+        command_type = str(command_payload.get("type") or "")
+        if command_type == "stop_for_submit":
+            print(f"Workflow stopped for manual submit: {command_payload.get('reason') or 'review required'}")
+            assistant_event(args.application_id, "ready_for_manual_submit", "Workflow stopped for manual submit.", {"commandId": command_id})
+            handled_commands.add(command_id)
+            break
+
+        if command_type == "ask_user":
+            print(f"Workflow needs user input: {command_payload.get('reason') or 'unknown field'}")
+            assistant_event(args.application_id, "needs_user", "Workflow paused for user input.", {"commandId": command_id})
+            handled_commands.add(command_id)
+            time.sleep(3)
+            continue
+
+        result = execute_workflow_command(contexts, command_payload, resume_pdf, cover_letter_pdf)
+        handled_commands.add(command_id)
+        try:
+            post_json(str(result_url), {
+                "commandId": command_id,
+                "result": result["result"],
+                "message": result["message"],
+                "valuePreview": result.get("valuePreview", ""),
+            })
+        except Exception as exc:
+            print(f"Unable to report assistant workflow command result: {exc}", file=sys.stderr)
+            break
+
+
+def workflow_field(field: dict[str, str]) -> dict[str, Any]:
+    label = str(field.get("label") or "(unlabeled field)")
+    selector = str(field.get("selector") or "")
+    input_type = str(field.get("type") or field.get("inputType") or "")
+    context = str(field.get("context") or "")
+    return {
+        "fieldId": "field_" + canonical_field_key("_".join(part for part in [context, selector, input_type, label] if part)),
+        "selector": selector,
+        "label": label,
+        "inputType": input_type,
+        "required": bool(re.search(r"\*|required", label, re.I)),
+        "category": str(field.get("category") or "custom"),
+        "status": str(field.get("status") or ""),
+        "context": context,
+    }
+
+
+def execute_workflow_command(contexts: list[Any], command_payload: dict[str, Any], resume_pdf: Path, cover_letter_pdf: Path) -> dict[str, str]:
+    command_type = str(command_payload.get("type") or "")
+    selector = str(command_payload.get("selector") or "")
+    field_id = str(command_payload.get("fieldId") or "")
+    if command_type == "skip":
+        return {"result": "skipped", "message": f"Skipped field {field_id} by workflow policy."}
+
+    element = find_element_by_selector(contexts, selector)
+    if element is None:
+        return {"result": "failed", "message": f"Unable to locate field for command {command_payload.get('id') or ''}."}
+
+    try:
+        if command_type == "fill":
+            value = str(command_payload.get("value") or "")
+            fill_command_element(element, value)
+            mark_assistant_filled(element)
+            return {
+                "result": "success",
+                "message": "Filled field from workflow command.",
+                "valuePreview": value[:180],
+            }
+        if command_type == "upload":
+            material = str(command_payload.get("material") or "")
+            upload_path = cover_letter_pdf if material == "cover_letter" else resume_pdf
+            set_upload_file(element, upload_path)
+            mark_assistant_filled(element)
+            return {
+                "result": "success",
+                "message": f"Uploaded {material or 'material'} from workflow command.",
+                "valuePreview": upload_path.name,
+            }
+    except Exception as exc:
+        return {"result": "failed", "message": f"Workflow command failed: {exc}"}
+
+    return {"result": "failed", "message": f"Unsupported workflow command type: {command_type}"}
+
+
+def find_element_by_selector(contexts: list[Any], selector: str) -> Any | None:
+    if not selector:
+        return None
+    for context in contexts:
+        try:
+            locator = context.locator(selector).first
+            if locator.count() and locator.is_visible(timeout=500):
+                return locator
+        except Exception:
+            continue
+    return None
+
+
+def fill_command_element(element: Any, value: str) -> None:
+    tag = str(element.evaluate("node => node.tagName") or "").upper()
+    input_type = str(element.get_attribute("type") or "").lower()
+    if tag == "SELECT":
+        try:
+            element.select_option(label=value, timeout=1500)
+        except Exception:
+            element.select_option(value=value, timeout=1500)
+        return
+    if input_type in {"checkbox", "radio"}:
+        if value.lower() in {"yes", "true", "checked", "1"}:
+            element.check(timeout=1500)
+        return
+    element.fill(value, timeout=2500)
+
+
+def mark_assistant_filled(element: Any) -> None:
+    try:
+        element.evaluate("node => { node.dataset.jobSearchOsFilled = 'true'; }")
+    except Exception:
+        pass
+
+
 def download_file(url: str, path: Path) -> Path:
     with urllib.request.urlopen(url) as response:
         path.write_bytes(response.read())
@@ -423,7 +661,8 @@ def is_manual_only_url(url: str) -> bool:
     return normalized in MANUAL_ONLY_HOSTS
 
 
-def fill_safe_fields(page: Any, candidate: dict[str, str]) -> int:
+def fill_safe_fields(page: Any, package: dict[str, Any]) -> int:
+    candidate = package.get("candidate", {})
     values = {
         "first_name": candidate.get("firstName", ""),
         "last_name": candidate.get("lastName", ""),
@@ -434,6 +673,7 @@ def fill_safe_fields(page: Any, candidate: dict[str, str]) -> int:
         "linkedin_url": candidate.get("linkedinUrl", ""),
         "github_url": candidate.get("githubUrl", ""),
         "portfolio_url": candidate.get("portfolioUrl", ""),
+        "cover_letter": package.get("materials", {}).get("coverLetterBody", ""),
     }
     filled = fill_by_known_selectors(page, values)
     elements = page.locator("input:not([type=hidden]):not([type=file]), textarea")
@@ -449,15 +689,28 @@ def fill_safe_fields(page: Any, candidate: dict[str, str]) -> int:
                 continue
             if element.input_value(timeout=500):
                 continue
-            match_key = match_safe_key(field_text)
+            match_key = "cover_letter" if cover_letter_text_field(field_text, element) else match_safe_key(field_text)
             if not match_key or not values.get(match_key):
                 continue
             fill_element(element, values[match_key])
+            if match_key == "cover_letter":
+                print(f"Filled cover letter text field: {field_text[:120] or 'unlabeled field'}")
             filled += 1
         except Exception:
             continue
 
     return filled
+
+
+def cover_letter_text_field(field_text: str, element: Any) -> bool:
+    if not COVER_LETTER_TEXT_PATTERNS.search(field_text):
+        return False
+    try:
+        tag = str(element.evaluate("node => node.tagName") or "").upper()
+        input_type = str(element.get_attribute("type") or tag).lower()
+    except Exception:
+        return True
+    return tag == "TEXTAREA" or input_type in {"text", "textarea", "search"} or input_type == "input"
 
 
 def upload_materials(page: Any, resume_pdf: Path, cover_letter_pdf: Path) -> int:
@@ -606,6 +859,66 @@ def detect_fields_in_contexts(contexts: list[Any]) -> list[dict[str, str]]:
     return fields
 
 
+def snapshot_fields(page: Any) -> list[dict[str, str]]:
+    fields: list[dict[str, str]] = []
+    elements = page.locator("input, textarea, select")
+    for index in range(elements.count()):
+        element = elements.nth(index)
+        try:
+            input_type = (element.get_attribute("type") or element.evaluate("node => node.tagName")).lower()
+            if input_type in {"hidden", "password", "file"}:
+                continue
+            descriptor = field_descriptor(element)
+            if SENSITIVE_PATTERNS.search(descriptor) or blocked_learning_descriptor(descriptor):
+                continue
+            value = observed_field_value(element, input_type)
+            fields.append({
+                "fieldKey": canonical_field_key(stable_field_selector(element) or descriptor),
+                "category": field_category(descriptor),
+                "label": descriptor[:300] or "(unlabeled field)",
+                "inputType": input_type,
+                "selector": stable_field_selector(element),
+                "answer": value,
+                "assistantFilled": "true" if assistant_filled(element) else "false",
+            })
+        except Exception:
+            continue
+    return fields
+
+
+def snapshot_fields_in_contexts(contexts: list[Any]) -> dict[str, dict[str, str]]:
+    snapshot: dict[str, dict[str, str]] = {}
+    for context in contexts:
+        for field in snapshot_fields(context):
+            key = observed_field_key(field)
+            if key:
+                snapshot[key] = field
+    return snapshot
+
+
+def observed_field_value(element: Any, input_type: str) -> str:
+    try:
+        tag = str(element.evaluate("node => node.tagName") or "").upper()
+        if input_type in {"radio", "checkbox"}:
+            return "checked" if element.is_checked(timeout=300) else ""
+        if tag == "SELECT":
+            return str(element.evaluate("node => node.options[node.selectedIndex]?.text || node.value || ''") or "").strip()
+        return str(element.input_value(timeout=300) or "").strip()
+    except Exception:
+        return ""
+
+
+def assistant_filled(element: Any) -> bool:
+    try:
+        return bool(element.evaluate("node => node.dataset.jobSearchOsFilled === 'true'"))
+    except Exception:
+        return False
+
+
+def observed_field_key(field: dict[str, str]) -> str:
+    return f"{field.get('category','unknown')}:{field.get('selector') or field.get('fieldKey') or field.get('label')}"
+
+
 def print_field_inventory(title: str, fields: list[dict[str, str]]) -> None:
     print()
     print(f"{title}:")
@@ -717,6 +1030,115 @@ def fill_learned_form_rules(page: Any, package: dict[str, Any]) -> int:
     filled += fill_matching_radios(page, WORK_AUTHORIZATION_SPONSORSHIP_PATTERN, "no")
     filled += fill_matching_comboboxes(page, WORK_AUTHORIZATION_SPONSORSHIP_PATTERN, "No")
     return filled
+
+
+def fill_learned_field_memories(page: Any, package: dict[str, Any]) -> int:
+    memories = package.get("learning", {}).get("fieldMemories", [])
+    if not isinstance(memories, list):
+        return 0
+    filled = 0
+    for memory in memories:
+        if not isinstance(memory, dict) or not memory_safe_to_autofill(memory):
+            continue
+        answer = str(memory.get("answer") or "").strip()
+        if not answer:
+            continue
+        if fill_memory_by_selector(page, memory, answer):
+            filled += 1
+            continue
+        if fill_memory_by_label(page, memory, answer):
+            filled += 1
+    return filled
+
+
+def memory_safe_to_autofill(memory: dict[str, Any]) -> bool:
+    if str(memory.get("sensitivity") or "").upper() != "LOW":
+        return False
+    if str(memory.get("reusePolicy") or "") != "AUTO_USE":
+        return False
+    try:
+        if int(memory.get("confidence") or 0) < 82:
+            return False
+    except Exception:
+        return False
+    descriptor = " ".join(str(memory.get(key) or "") for key in ["category", "label", "selector", "inputType"])
+    if SENSITIVE_PATTERNS.search(descriptor) or blocked_learning_descriptor(descriptor):
+        return False
+    return True
+
+
+def fill_memory_by_selector(page: Any, memory: dict[str, Any], answer: str) -> bool:
+    selector = str(memory.get("selector") or "").strip()
+    if not selector:
+        return False
+    try:
+        element = page.locator(selector).first
+        return fill_memory_element(element, answer, memory)
+    except Exception:
+        return False
+
+
+def fill_memory_by_label(page: Any, memory: dict[str, Any], answer: str) -> bool:
+    target_label = normalize_for_match(str(memory.get("label") or ""))
+    target_category = normalize_for_match(str(memory.get("category") or ""))
+    if not target_label and not target_category:
+        return False
+    elements = page.locator("input:not([type=hidden]):not([type=file]), textarea, select, [role=combobox]")
+    for index in range(elements.count()):
+        element = elements.nth(index)
+        try:
+            descriptor = field_descriptor(element)
+            normalized = normalize_for_match(descriptor)
+            if SENSITIVE_PATTERNS.search(descriptor) or blocked_learning_descriptor(descriptor):
+                continue
+            if target_label and field_label_similarity(target_label, normalized) < 0.72:
+                if target_category and target_category not in normalized:
+                    continue
+            if fill_memory_element(element, answer, memory):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def fill_memory_element(element: Any, answer: str, memory: dict[str, Any]) -> bool:
+    try:
+        if not element.is_visible(timeout=300) or not element.is_enabled():
+            return False
+        descriptor = field_descriptor(element)
+        if SENSITIVE_PATTERNS.search(descriptor) or blocked_learning_descriptor(descriptor):
+            return False
+        if current_text_value(element) and "select" not in normalize_for_match(current_text_value(element)):
+            return False
+        tag = str(element.evaluate("node => node.tagName") or "").upper()
+        input_type = str(element.get_attribute("type") or tag).lower()
+        if input_type in {"hidden", "password", "file"}:
+            return False
+        if tag == "SELECT":
+            option_value = matching_option_value(element, answer)
+            if not option_value:
+                return False
+            element.select_option(value=option_value, timeout=1500)
+            mark_filled(element)
+            print(f"Filled saved field memory: {str(memory.get('label') or descriptor)[:120]}")
+            return True
+        if input_type in {"radio", "checkbox"}:
+            if not answer_matches_descriptor(answer, descriptor):
+                return False
+            element.check(timeout=1500)
+            mark_filled(element)
+            print(f"Selected saved field memory: {str(memory.get('label') or descriptor)[:120]}")
+            return True
+        if is_combobox_like(element, descriptor):
+            if choose_combobox_option(element, answer):
+                print(f"Selected saved field memory: {str(memory.get('label') or descriptor)[:120]}")
+                return True
+            return False
+        fill_element(element, answer)
+        print(f"Filled saved field memory: {str(memory.get('label') or descriptor)[:120]}")
+        return True
+    except Exception:
+        return False
 
 
 def fill_candidate_country_comboboxes(page: Any) -> int:
@@ -1059,6 +1481,29 @@ def answer_matches_descriptor(answer: str, descriptor: str) -> bool:
 
 def normalize_for_match(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def canonical_field_key(value: str) -> str:
+    return re.sub(r"(^_+|_+$)", "", re.sub(r"[^a-z0-9]+", "_", value.lower()))[:100] or "field"
+
+
+def blocked_learning_descriptor(value: str) -> bool:
+    return re.search(
+        r"password|captcha|token|secret|ssn|social security|payment|credit card|card number|"
+        r"upload|resume|cover letter|salary|compensation|sponsor|sponsorship|visa|"
+        r"race|ethnic|gender|veteran|disab|birth|age|citizenship|nationality|legal|attest|certify",
+        value,
+        re.I,
+    ) is not None
+
+
+def field_label_similarity(left: str, right: str) -> float:
+    left_tokens = set(normalize_for_match(left).split())
+    right_tokens = set(normalize_for_match(right).split())
+    if not left_tokens or not right_tokens:
+        return 0.0
+    overlap = len(left_tokens & right_tokens)
+    return overlap / max(len(left_tokens), 1)
 
 
 def open_embedded_application_form(page: Any) -> None:
@@ -1493,6 +1938,9 @@ def keep_open(
                 open_manual_handoff(original_url, workdir)
                 return
             maybe_mark_manual_submit(browser, workdir, mark_applied_state)
+            maybe_report_field_learning(browser, mark_applied_state)
+            if browser_was_closed_without_pages(browser, mark_applied_state):
+                return
             time.sleep(1)
         browser.close()
         return
@@ -1504,6 +1952,9 @@ def keep_open(
                 open_manual_handoff(original_url, workdir)
                 return
             maybe_mark_manual_submit(browser, workdir, mark_applied_state)
+            maybe_report_field_learning(browser, mark_applied_state)
+            if browser_was_closed_without_pages(browser, mark_applied_state):
+                return
             time.sleep(1)
     except KeyboardInterrupt:
         browser.close()
@@ -1513,10 +1964,10 @@ def maybe_mark_manual_submit(browser: Any, workdir: Path, mark_applied_state: di
     if not mark_applied_state or mark_applied_state.get("marked"):
         return
 
-    install_manual_submit_watchers(browser)
+    install_manual_submit_watchers(browser, mark_applied_state)
     confirmation_page = first_submit_confirmation_page(browser)
     if not confirmation_page:
-        submit_intent = latest_manual_submit_intent(browser)
+        submit_intent = latest_manual_submit_intent(browser, mark_applied_state)
         if not submit_intent:
             return
         elapsed_seconds = max(0, (time.time() * 1000 - float(submit_intent.get("at") or 0)) / 1000)
@@ -1543,6 +1994,68 @@ def maybe_mark_manual_submit(browser: Any, workdir: Path, mark_applied_state: di
     mark_applied_state["marked"] = marked
 
 
+def maybe_report_field_learning(browser: Any, state: dict[str, Any] | None) -> None:
+    if not state:
+        return
+    now = time.time()
+    last_check = float(state.get("last_learning_check") or 0)
+    if now - last_check < 5:
+        return
+    state["last_learning_check"] = now
+
+    baseline = state.get("learning_baseline")
+    if not isinstance(baseline, dict):
+        return
+    reported = state.get("reported_learning_keys")
+    if not isinstance(reported, set):
+        reported = set()
+        state["reported_learning_keys"] = reported
+
+    candidates: list[dict[str, str]] = []
+    for page in browser_pages(browser):
+        for context in application_contexts(page):
+            current = snapshot_fields_in_contexts([context])
+            for key, field in current.items():
+                answer = str(field.get("answer") or "").strip()
+                if not answer:
+                    continue
+                original = baseline.get(key)
+                original_answer = str(original.get("answer") or "").strip() if isinstance(original, dict) else ""
+                if answer == original_answer:
+                    continue
+                if str(field.get("assistantFilled") or "") == "true" and not original_answer:
+                    continue
+                dedupe_key = f"{key}:{answer}"
+                if dedupe_key in reported:
+                    continue
+                reported.add(dedupe_key)
+                candidates.append({
+                    "fieldKey": field.get("fieldKey", ""),
+                    "category": field.get("category", "custom"),
+                    "label": field.get("label", ""),
+                    "inputType": field.get("inputType", ""),
+                    "selector": field.get("selector", ""),
+                    "answer": answer,
+                    "source": "manual_observation",
+                    "confidence": 84,
+                })
+
+    if not candidates:
+        return
+    app_url = str(state.get("app_url") or "")
+    application_id = str(state.get("application_id") or "")
+    package = state.get("package") if isinstance(state.get("package"), dict) else {}
+    host = str(package.get("job", {}).get("applicationHost") or urlparse(str(package.get("job", {}).get("applicationUrl") or "")).hostname or "unknown")
+    try:
+        result = post_json(
+            f"{app_url.rstrip('/')}/api/applications/{application_id}/field-learning",
+            {"host": host.removeprefix("www."), "fields": candidates},
+        )
+        print(f"Field learning updated: saved {result.get('saved', 0)}, ignored {result.get('ignored', 0)} observed manual field(s).")
+    except Exception as exc:
+        print(f"Unable to save observed field learning: {exc}", file=sys.stderr)
+
+
 def first_submit_confirmation_page(browser: Any) -> Any | None:
     for page in browser_pages(browser):
         try:
@@ -1553,7 +2066,8 @@ def first_submit_confirmation_page(browser: Any) -> Any | None:
     return None
 
 
-def install_manual_submit_watchers(browser: Any) -> None:
+def install_manual_submit_watchers(browser: Any, state: dict[str, Any] | None = None) -> None:
+    install_submit_intent_binding(browser, state)
     for page in browser_pages(browser):
         for context in application_contexts(page):
             try:
@@ -1586,11 +2100,14 @@ def install_manual_submit_watchers(browser: Any) -> None:
                           descriptor: descriptor(node),
                           url: window.location.href
                         };
-                        window.__joleneSubmitIntent = intent;
-                        try {
-                          window.localStorage.setItem("__joleneSubmitIntent", JSON.stringify(intent));
-                        } catch (error) {}
-                      };
+                          window.__joleneSubmitIntent = intent;
+                          try {
+                            window.localStorage.setItem("__joleneSubmitIntent", JSON.stringify(intent));
+                          } catch (error) {}
+                          if (window.__joleneRecordSubmitIntent) {
+                            try { window.__joleneRecordSubmitIntent(intent); } catch (error) {}
+                          }
+                        };
                       document.addEventListener("click", (event) => {
                         const node = event.target && event.target.closest
                           ? event.target.closest("button,input[type='submit'],[role='button'],a")
@@ -1608,8 +2125,8 @@ def install_manual_submit_watchers(browser: Any) -> None:
                 continue
 
 
-def latest_manual_submit_intent(browser: Any) -> dict[str, Any] | None:
-    latest: dict[str, Any] | None = None
+def latest_manual_submit_intent(browser: Any, state: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    latest: dict[str, Any] | None = state.get("latest_submit_intent") if isinstance(state, dict) and isinstance(state.get("latest_submit_intent"), dict) else None
     for page in browser_pages(browser):
         for context in application_contexts(page):
             try:
@@ -1631,6 +2148,36 @@ def latest_manual_submit_intent(browser: Any) -> dict[str, Any] | None:
             if latest is None or float(value.get("at") or 0) > float(latest.get("at") or 0):
                 latest = value
     return latest
+
+
+def install_submit_intent_binding(browser: Any, state: dict[str, Any] | None = None) -> None:
+    if not state or state.get("submit_binding_installed"):
+        return
+
+    def record_submit_intent(source: Any, intent: Any) -> None:
+        if isinstance(intent, dict):
+            state["latest_submit_intent"] = intent
+
+    for context in browser_contexts(browser):
+        try:
+            context.expose_binding("__joleneRecordSubmitIntent", record_submit_intent)
+            state["submit_binding_installed"] = True
+        except Exception:
+            continue
+
+
+def browser_was_closed_without_pages(browser: Any, state: dict[str, Any] | None = None) -> bool:
+    if browser_pages(browser):
+        return False
+    if state and state.get("marked"):
+        return True
+    submit_intent = state.get("latest_submit_intent") if isinstance(state, dict) else None
+    if isinstance(submit_intent, dict):
+        elapsed_seconds = max(0, (time.time() * 1000 - float(submit_intent.get("at") or 0)) / 1000)
+        if elapsed_seconds < 4:
+            return False
+    print("Assistant browser/page closed before a submission confirmation was observed.")
+    return True
 
 
 def validation_error_detected(page: Any) -> bool:
@@ -1678,6 +2225,15 @@ def browser_pages(browser: Any) -> list[Any]:
         pages = getattr(browser, "pages", None)
         if pages is not None:
             return list(pages)
+    except Exception:
+        return []
+
+
+def browser_contexts(browser: Any) -> list[Any]:
+    if hasattr(browser, "expose_binding"):
+        return [browser]
+    try:
+        return list(browser.contexts)
     except Exception:
         return []
 
