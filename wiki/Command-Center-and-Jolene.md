@@ -65,6 +65,15 @@ Jolene is context-aware. The app passes the current route and relevant local dat
 - Which setting controls this behavior?
 - How should future search parameters change?
 
+Jolene also has app-aware local retrieval tools. Before falling back to a general LLM answer, she can search generated cover letters, generated materials, application packets, application trackers, and job records. This supports direct operational requests such as:
+
+- Where is the cover letter for Linear?
+- Show me application materials for Terzo.
+- Find the application for a specific company or role.
+- Open the job record for a company.
+
+When Jolene finds a match, she returns direct links to the relevant local pages and exports, including generated cover-letter text/PDF routes, generated materials, application detail, and job detail. She does not include full cover-letter bodies in default answers; she points to the stored material unless the user explicitly asks for content.
+
 ## Jolene Persistence
 
 Jolene stores conversations in:

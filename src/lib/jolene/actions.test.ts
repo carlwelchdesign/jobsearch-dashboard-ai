@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { syncJobResponseEmail } from "@/lib/email/sync";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
 import { executeJoleneAction } from "@/lib/jolene/actions";
@@ -15,10 +15,26 @@ vi.mock("@/lib/agents/duplicate-stale-job-detector", () => ({
   runDuplicateStaleJobDetectorAgent: vi.fn(),
 }));
 
+vi.mock("@/lib/prisma", () => ({
+  prisma: {
+    generatedCoverLetter: { findMany: vi.fn() },
+    application: { findMany: vi.fn() },
+    jobPosting: { findMany: vi.fn() },
+  },
+}));
+
 const syncJobResponseEmailMock = vi.mocked(syncJobResponseEmail);
 const startJobSearchRunMock = vi.mocked(startJobSearchRun);
 
 describe("executeJoleneAction", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.generatedCoverLetter.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.application.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.jobPosting.findMany).mockResolvedValue([] as never);
+  });
+
   it("checks email when the user asks Jolene to check Gmail", async () => {
     syncJobResponseEmailMock.mockResolvedValue({
       ok: true,
@@ -80,5 +96,90 @@ describe("executeJoleneAction", () => {
     expect(startJobSearchRunMock).toHaveBeenCalledWith("manual");
     expect(result.handled).toBe(true);
     expect(result.actionJson).toMatchObject({ action: "run_job_search", runId: "run_1" });
+  });
+
+  it("finds a generated cover letter by company", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.generatedCoverLetter.findMany).mockResolvedValue([
+      {
+        id: "letter_1",
+        userId: "user_1",
+        jobPostingId: "job_1",
+        jobProfileMatchId: "match_1",
+        body: "Cover letter body",
+        version: 1,
+        generationNotes: {},
+        createdAt: new Date("2026-05-15T12:00:00.000Z"),
+        updatedAt: new Date("2026-05-15T12:30:00.000Z"),
+        jobPosting: { id: "job_1", company: "Linear", title: "Senior / Staff Fullstack Engineer" },
+        applications: [{ id: "app_1", status: "applied" }],
+      },
+    ] as never);
+    vi.mocked(prisma.application.findMany).mockResolvedValue([] as never);
+
+    const result = await executeJoleneAction("Where is the cover letter for Linear?", { userId: "user_1" });
+
+    expect(prisma.generatedCoverLetter.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: "user_1" } }));
+    expect(result.handled).toBe(true);
+    expect(result.reply).toContain("Cover letter for Linear");
+    expect(result.actionJson).toMatchObject({
+      action: "find_cover_letter",
+      query: "Linear",
+      resultCount: 1,
+      resultLinks: expect.arrayContaining([
+        expect.objectContaining({ label: "Text", href: "/api/cover-letters/letter_1/plain-text" }),
+        expect.objectContaining({ label: "Application", href: "/applications/app_1" }),
+      ]),
+    });
+  });
+
+  it("lists related records when a cover letter is missing", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.generatedCoverLetter.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.application.findMany)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([
+        {
+          id: "app_2",
+          status: "ready_to_apply",
+          updatedAt: new Date("2026-05-16T12:00:00.000Z"),
+          jobPosting: { id: "job_2", company: "Terzo", title: "Frontend Engineer" },
+        },
+      ] as never);
+    vi.mocked(prisma.jobPosting.findMany).mockResolvedValue([
+      { id: "job_2", company: "Terzo", title: "Frontend Engineer", updatedAt: new Date("2026-05-16T12:00:00.000Z") },
+    ] as never);
+
+    const result = await executeJoleneAction("Find my cover letter for Terzo", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.reply).toContain("did not find a generated cover letter");
+    expect(result.actionJson?.resultLinks).toEqual(expect.arrayContaining([expect.objectContaining({ href: "/applications/app_2" })]));
+  });
+
+  it("returns candidate links for application material lookups", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.generatedCoverLetter.findMany).mockResolvedValue([
+      {
+        id: "letter_3",
+        userId: "user_1",
+        jobPostingId: "job_3",
+        jobProfileMatchId: "match_3",
+        body: "Cover letter body",
+        version: 1,
+        generationNotes: {},
+        createdAt: new Date("2026-05-15T12:00:00.000Z"),
+        updatedAt: new Date("2026-05-15T12:30:00.000Z"),
+        jobPosting: { id: "job_3", company: "Terzo", title: "Frontend Engineer" },
+        applications: [{ id: "app_3", status: "ready_to_apply" }],
+      },
+    ] as never);
+    vi.mocked(prisma.application.findMany).mockResolvedValue([] as never);
+
+    const result = await executeJoleneAction("Show me application materials for Terzo", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({ action: "find_application_materials", resultCount: 1 });
+    expect(result.actionJson?.resultLinks).toEqual(expect.arrayContaining([expect.objectContaining({ href: "/resumes/generated" })]));
   });
 });

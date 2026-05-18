@@ -27,6 +27,13 @@ type JoleneMessage = {
   id: string;
   role: "USER" | "ASSISTANT" | "SYSTEM";
   content: string;
+  actionJson?: {
+    resultLinks?: Array<{
+      label: string;
+      href: string;
+      kind?: "page" | "download" | "api";
+    }>;
+  };
   createdAt: string;
 };
 
@@ -506,6 +513,24 @@ export function JoleneAgentButton() {
                       }}
                     >
                       <Typography variant="body2">{message.content}</Typography>
+                      {!isUser && message.actionJson?.resultLinks?.length ? (
+                        <Stack direction="row" spacing={0.75} sx={{ flexWrap: "wrap", rowGap: 0.75, mt: 1 }}>
+                          {message.actionJson.resultLinks.slice(0, 5).map((link) => (
+                            <Button
+                              key={`${message.id}-${link.href}-${link.label}`}
+                              component={link.href.startsWith("/") && !link.href.startsWith("/api") ? Link : "a"}
+                              href={link.href}
+                              target={link.href.startsWith("/api") ? "_blank" : undefined}
+                              rel={link.href.startsWith("/api") ? "noreferrer" : undefined}
+                              variant="outlined"
+                              size="small"
+                              sx={{ minHeight: 30, bgcolor: "background.paper" }}
+                            >
+                              {link.label}
+                            </Button>
+                          ))}
+                        </Stack>
+                      ) : null}
                     </Paper>
                   </Box>
                 );

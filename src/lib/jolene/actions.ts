@@ -1,6 +1,7 @@
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { syncJobResponseEmail } from "@/lib/email/sync";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
+import { executeJoleneRetrieval, type JoleneResultLink } from "@/lib/jolene/retrieval";
 
 export type JoleneClientAction =
   | { type: "navigate"; href: string; refresh?: boolean }
@@ -9,11 +10,14 @@ export type JoleneClientAction =
 export type JoleneActionResult = {
   handled: boolean;
   reply?: string;
-  actionJson?: Record<string, unknown>;
+  actionJson?: Record<string, unknown> & { resultLinks?: JoleneResultLink[] };
   clientAction?: JoleneClientAction;
 };
 
-export async function executeJoleneAction(message: string): Promise<JoleneActionResult> {
+export async function executeJoleneAction(message: string, options: { userId?: string | null } = {}): Promise<JoleneActionResult> {
+  const retrieval = await executeJoleneRetrieval(message, options);
+  if (retrieval.handled) return retrieval;
+
   const intent = parseIntent(message);
 
   if (intent === "run_job_search") {

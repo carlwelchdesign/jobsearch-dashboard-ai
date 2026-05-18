@@ -112,7 +112,7 @@ export async function POST(request: Request) {
       };
       reply = actionResult.reply;
     } else {
-      actionResult = await executeJoleneAction(body.message);
+      actionResult = await executeJoleneAction(body.message, { userId: user.id });
       reply = actionResult.reply;
     }
 
@@ -192,12 +192,14 @@ function serializeMessage(message: {
   id: string;
   role: JoleneMessageRole;
   content: string;
+  actionJson?: Prisma.JsonValue;
   createdAt: Date;
 }) {
   return {
     id: message.id,
     role: message.role,
     content: message.content,
+    actionJson: message.actionJson ?? {},
     createdAt: message.createdAt.toISOString(),
   };
 }
