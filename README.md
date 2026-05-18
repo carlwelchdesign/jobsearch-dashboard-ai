@@ -136,7 +136,14 @@ The seeded `Company Source List` is a curated target list, not a claim that ever
 
 Chrome-captured jobs also feed search strategy. If a job saved from the browser has zero matching profiles, Job Search OS now creates an enabled captured-intent profile for similar roles and scores the captured job against it immediately. The default lane is `AI-Native Enterprise Product Frontend`, aimed at AI-native product/frontend, enterprise workflow, analytics, agentic UX, design-system, and data-rich UI work like this app, while keeping required keywords empty so urgent broader frontend/product opportunities are not blocked.
 
-Profiles also include a weekly Market Intelligence brief. The `MARKET_INTELLIGENCE` agent compares recent jobs, profile health, applications, and outcome signals against curated external labor-market sources such as BLS, Indeed Hiring Lab, Lightcast/Stanford AI Index coverage, and selected role-trend reporting. The brief shows role-lane demand, skill-signal charts, cited source links, and review-only actions for search profiles, positioning, company targeting, and outreach. It does not auto-edit profiles.
+Profiles also include a weekly Market Intelligence brief. The `MARKET_INTELLIGENCE` agent compares recent jobs, profile health, applications, and outcome signals against curated external labor-market sources such as BLS, Indeed Hiring Lab, Lightcast/Stanford AI Index coverage, and selected role-trend reporting. It now fetches trusted source/index pages, discovers recent relevant articles, extracts readable text, keeps only summaries/claims/short excerpts, and uses OpenAI structured synthesis when configured. The brief shows research synthesis, role-lane demand, skill-signal charts, cited article cards, source links, and review-only actions for search profiles, positioning, company targeting, and outreach. It does not auto-edit profiles.
+
+Optional market research tuning:
+
+```bash
+MARKET_INTELLIGENCE_EXTRA_SOURCES="https://example.com/research"
+MARKET_INTELLIGENCE_MAX_ARTICLES=8
+```
 
 Scheduled job search runs are configured in `vercel.json` and call `/api/cron/job-search` daily at `14:00 UTC`. Scheduled runs only use enabled profiles where scheduling is enabled. Set `CRON_SECRET` in the deployment environment to require `Authorization: Bearer <CRON_SECRET>` on cron requests.
 

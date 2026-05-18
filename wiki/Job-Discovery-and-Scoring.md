@@ -62,7 +62,9 @@ Chrome capture also learns from selection intent. When a captured job produces z
 
 The Profiles page includes a weekly market intelligence brief. The `MARKET_INTELLIGENCE` agent compares recent matched jobs, profile health, application outcomes, skill mentions, and company patterns against curated external labor-market sources.
 
-The report is advisory. It shows lane demand, skill-signal charts, cited source links, data freshness, confidence, and review-only actions for profile tuning, positioning, company targeting, and outreach. It does not automatically create, edit, pause, or delete search profiles.
+The research layer fetches trusted source/index pages, discovers recent relevant articles, extracts readable text, and stores only metadata, claims, summaries, short excerpts, implications, and synthesis in the `AgentRun` output. When OpenAI is configured, it produces a structured cross-source synthesis; otherwise it falls back to deterministic synthesis from the same article summaries and local pipeline data.
+
+The report is advisory. It shows lane demand, skill-signal charts, research synthesis, cited article cards, data freshness, confidence, and review-only actions for profile tuning, positioning, company targeting, and outreach. It does not automatically create, edit, pause, or delete search profiles.
 
 ## Duplicate and Stale Detection
 

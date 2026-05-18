@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
   lookbackDays: z.number().int().min(7).max(180).optional(),
+  researchDepth: z.enum(["standard", "deep"]).optional(),
 }).optional();
 
 export async function POST(request: Request) {
@@ -17,6 +18,7 @@ export async function POST(request: Request) {
     const result = await runMarketIntelligenceAgent({
       userId: user?.id,
       lookbackDays: body?.lookbackDays,
+      researchDepth: body?.researchDepth,
     });
     return NextResponse.json({ ...result.output, message: "Market intelligence brief generated." });
   } catch (error) {

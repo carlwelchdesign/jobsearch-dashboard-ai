@@ -61,6 +61,19 @@ Status endpoint:
 /api/jobs/search/run/status
 ```
 
+## Market Intelligence Research
+
+The market intelligence brief runs from the Profiles page or `POST /api/market-intelligence/run`. It fetches trusted source pages, discovers relevant articles, extracts readable content, and stores only metadata, claims, summaries, short excerpts, and synthesis in `AgentRun.outputJson`.
+
+Optional configuration:
+
+```bash
+MARKET_INTELLIGENCE_EXTRA_SOURCES="https://example.com/research"
+MARKET_INTELLIGENCE_MAX_ARTICLES=8
+```
+
+`MARKET_INTELLIGENCE_EXTRA_SOURCES` is newline-separated. Keep it limited to trusted research, hiring-lab, labor-market, or role-trend sources. The app does not store full article snapshots.
+
 ## Database
 
 Default Docker Postgres URL:
