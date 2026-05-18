@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Runs | Job Search OS",
+  description: "Inspect job search runs and discovery execution history.",
+};
+
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import Box from "@mui/material/Box";

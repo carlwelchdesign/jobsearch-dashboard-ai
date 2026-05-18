@@ -23,7 +23,7 @@ type CompanySourceSettingsProps = {
 };
 
 export function CompanySourceSettings(props: CompanySourceSettingsProps) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [settings, setSettings] = useState(props);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
@@ -49,7 +49,7 @@ export function CompanySourceSettings(props: CompanySourceSettingsProps) {
         maxFetch: payload.config.maxFetch,
       });
       setNotice(payload.message ?? "Saved.");
-      router.refresh();
+      refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to save company source settings.");
     } finally {
@@ -62,7 +62,7 @@ export function CompanySourceSettings(props: CompanySourceSettingsProps) {
       {notice ? <Alert severity="success" onClose={() => setNotice("")}>{notice}</Alert> : null}
       {error ? <Alert severity="error" onClose={() => setError("")}>{error}</Alert> : null}
       <FormControlLabel
-        control={<Switch checked={settings.enabled} onChange={(event) => setSettings({ ...settings, enabled: event.target.checked })} />}
+        control={<Switch checked={settings.enabled} onChange={(event) => setSettings((previous) => ({ ...previous, enabled: event.target.checked }))} />}
         label="Use company career-page source during job searches"
       />
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(4, 1fr)" }, gap: 2 }}>
@@ -70,7 +70,7 @@ export function CompanySourceSettings(props: CompanySourceSettingsProps) {
           select
           label="Priority ceiling"
           value={settings.priorityMax}
-          onChange={(event) => setSettings({ ...settings, priorityMax: Number(event.target.value) })}
+          onChange={(event) => setSettings((previous) => ({ ...previous, priorityMax: Number(event.target.value) }))}
         >
           <MenuItem value={1}>1 only</MenuItem>
           <MenuItem value={2}>1 and 2</MenuItem>
@@ -80,21 +80,21 @@ export function CompanySourceSettings(props: CompanySourceSettingsProps) {
           type="number"
           label="Companies per run"
           value={settings.maxCompanies}
-          onChange={(event) => setSettings({ ...settings, maxCompanies: Number(event.target.value) })}
+          onChange={(event) => setSettings((previous) => ({ ...previous, maxCompanies: Number(event.target.value) }))}
           slotProps={{ htmlInput: { min: 1, max: 500 } }}
         />
         <TextField
           type="number"
           label="Jobs per company"
           value={settings.maxJobsPerCompany}
-          onChange={(event) => setSettings({ ...settings, maxJobsPerCompany: Number(event.target.value) })}
+          onChange={(event) => setSettings((previous) => ({ ...previous, maxJobsPerCompany: Number(event.target.value) }))}
           slotProps={{ htmlInput: { min: 1, max: 50 } }}
         />
         <TextField
           type="number"
           label="Max fetched roles"
           value={settings.maxFetch}
-          onChange={(event) => setSettings({ ...settings, maxFetch: Number(event.target.value) })}
+          onChange={(event) => setSettings((previous) => ({ ...previous, maxFetch: Number(event.target.value) }))}
           slotProps={{ htmlInput: { min: 10, max: 3000 } }}
         />
       </Box>

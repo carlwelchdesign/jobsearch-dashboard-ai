@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Needs Me | Job Search OS",
+  description: "Resolve open agent questions and workflow blockers.",
+};
+
 import MarkChatUnreadOutlinedIcon from "@mui/icons-material/MarkChatUnreadOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import PriorityHighOutlinedIcon from "@mui/icons-material/PriorityHighOutlined";
@@ -131,12 +136,14 @@ export default async function NeedsMePage() {
 }
 
 function prioritizeRequest<T extends { type: string; createdAt: Date }>(requests: T[]) {
-  return [...requests].sort((left, right) => {
-    const leftPriority = requestPriority(left.type);
-    const rightPriority = requestPriority(right.type);
-    if (leftPriority !== rightPriority) return leftPriority - rightPriority;
-    return left.createdAt.getTime() - right.createdAt.getTime();
-  })[0] ?? null;
+  return requests.reduce<T | null>((best, request) => {
+    if (!best) return request;
+    const requestPriorityValue = requestPriority(request.type);
+    const bestPriorityValue = requestPriority(best.type);
+    if (requestPriorityValue < bestPriorityValue) return request;
+    if (requestPriorityValue > bestPriorityValue) return best;
+    return request.createdAt < best.createdAt ? request : best;
+  }, null);
 }
 
 function requestPriority(type: string) {

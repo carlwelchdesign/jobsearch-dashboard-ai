@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export function BackfillPacketsButton({ sx }: { sx?: SxProps<Theme> }) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [running, setRunning] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -32,7 +32,7 @@ export function BackfillPacketsButton({ sx }: { sx?: SxProps<Theme> }) {
     }
 
     setNotice(body.message ?? "Application packets synced.");
-    router.refresh();
+    refresh();
   }
 
   return (

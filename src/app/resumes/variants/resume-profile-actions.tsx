@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export function SeedResumeProfilesButton() {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState("");
 
@@ -21,7 +21,7 @@ export function SeedResumeProfilesButton() {
     const payload = await response.json().catch(() => ({}));
     setNotice(payload.message ?? "Default resume variants are ready.");
     setLoading(false);
-    router.refresh();
+    refresh();
   }
 
   return (
@@ -37,7 +37,7 @@ export function SeedResumeProfilesButton() {
 }
 
 export function ResumeProfileStatusButton({ id, status }: { id: string; status: "ACTIVE" | "ARCHIVED" }) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [loading, setLoading] = useState(false);
   const nextStatus = status === "ACTIVE" ? "ARCHIVED" : "ACTIVE";
 
@@ -49,7 +49,7 @@ export function ResumeProfileStatusButton({ id, status }: { id: string; status: 
       body: JSON.stringify({ status: nextStatus }),
     });
     setLoading(false);
-    router.refresh();
+    refresh();
   }
 
   return (

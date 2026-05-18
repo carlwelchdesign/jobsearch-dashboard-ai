@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Apply Sprint | Job Search OS",
+  description: "Launch and monitor controlled application assistant workflows.",
+};
+
 import { AppShell } from "@/app/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 import Stack from "@mui/material/Stack";
@@ -12,9 +17,11 @@ import { AssistantWorkbench } from "./assistant-workbench";
 export const dynamic = "force-dynamic";
 
 export default async function ApplicationAssistantPage() {
-  await reconcileApplicationCanonicalState({ source: "apply_sprint_page" }).catch(() => null);
-  await syncRunningApplicationAutomationRunsFromLogs();
-  await recoverStaleApplicationAutomationRuns();
+  await Promise.all([
+    reconcileApplicationCanonicalState({ source: "apply_sprint_page" }).catch(() => null),
+    syncRunningApplicationAutomationRunsFromLogs(),
+    recoverStaleApplicationAutomationRuns(),
+  ]);
 
   const [applications, submittedApplications, atsBlockers] = await Promise.all([
     prisma.application.findMany({

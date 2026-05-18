@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Agents | Job Search OS",
+  description: "Review agent runs, quality warnings, and workflow recovery controls.",
+};
+
 import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
 import BuildCircleOutlinedIcon from "@mui/icons-material/BuildCircleOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
@@ -183,8 +188,8 @@ export default async function AgentReviewBoardPage() {
                 {latestDailyPlan ? (
                   <Stack spacing={1.5}>
                     <Typography color="text.secondary">{latestDailyPlan.summary ?? latestDailyPlan.rationale ?? "Latest daily plan is available."}</Typography>
-                    {(latestDailyPlan.actions ?? []).slice(0, 4).map((action, index) => (
-                      <Box key={`${action.title}-${index}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+                    {(latestDailyPlan.actions ?? []).slice(0, 4).map((action) => (
+                      <Box key={`${action.title}-${action.detail ?? "action"}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
                         <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
                           <Typography variant="body2" sx={{ fontWeight: 850 }}>{action.title}</Typography>
                           <Chip size="small" variant="outlined" label={`P${action.priority}`} />
@@ -298,8 +303,8 @@ export default async function AgentReviewBoardPage() {
                   {latestProfileOutput ? (
                     <>
                       <Typography variant="body2" color="text.secondary">{latestProfileOutput.rationale ?? "Latest optimizer run is available."}</Typography>
-                      {(latestProfileOutput.recommendedChanges ?? []).slice(0, 5).map((change, index) => (
-                        <Box key={`${change.profileName}-${index}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+                      {(latestProfileOutput.recommendedChanges ?? []).slice(0, 5).map((change) => (
+                        <Box key={`${change.profileName ?? "profile"}-${change.action ?? "review"}-${change.summary ?? ""}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
                           <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
                             <Typography variant="body2" sx={{ fontWeight: 850 }}>{change.profileName ?? "Profile"}</Typography>
                             <Chip size="small" variant="outlined" label={change.action ?? "review"} />

@@ -18,7 +18,7 @@ import { useState } from "react";
 type SourceType = "USER_INPUT" | "INTERVIEW_NOTE" | "APPLICATION_HISTORY";
 
 export function AddEvidenceNoteForm() {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [sourceType, setSourceType] = useState<SourceType>("USER_INPUT");
@@ -42,7 +42,7 @@ export function AddEvidenceNoteForm() {
       setNotice(payload.message ?? "Evidence note added.");
       setTitle("");
       setContent("");
-      router.refresh();
+      refresh();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unable to add evidence note.");
     } finally {

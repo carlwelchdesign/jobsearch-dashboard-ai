@@ -28,7 +28,7 @@ type ReviewClientProps = {
 };
 
 export function ResumeReviewClient({ upload }: ReviewClientProps) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [parsed, setParsed] = useState(upload.parsedJson);
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState("");
@@ -52,7 +52,7 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
 
     setEditing(false);
     setNotice("Parsed profile edits saved.");
-    router.refresh();
+    refresh();
   }
 
   async function approve() {
@@ -67,7 +67,7 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
     }
 
     setNotice("Candidate profile approved and saved.");
-    router.refresh();
+    refresh();
   }
 
   async function remove() {
@@ -82,7 +82,7 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
     }
 
     setNotice("Resume upload removed from review.");
-    router.refresh();
+    refresh();
   }
 
   return (
@@ -103,25 +103,25 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
                 label="Full name"
                 value={parsed.contactInfo.fullName ?? ""}
                 disabled={!editing}
-                onChange={(event) => setParsed({ ...parsed, contactInfo: { ...parsed.contactInfo, fullName: event.target.value } })}
+                onChange={(event) => setParsed((previous) => ({ ...previous, contactInfo: { ...previous.contactInfo, fullName: event.target.value } }))}
               />
               <TextField
                 label="Email"
                 value={parsed.contactInfo.email ?? ""}
                 disabled={!editing}
-                onChange={(event) => setParsed({ ...parsed, contactInfo: { ...parsed.contactInfo, email: event.target.value } })}
+                onChange={(event) => setParsed((previous) => ({ ...previous, contactInfo: { ...previous.contactInfo, email: event.target.value } }))}
               />
               <TextField
                 label="Phone"
                 value={parsed.contactInfo.phone ?? ""}
                 disabled={!editing}
-                onChange={(event) => setParsed({ ...parsed, contactInfo: { ...parsed.contactInfo, phone: event.target.value } })}
+                onChange={(event) => setParsed((previous) => ({ ...previous, contactInfo: { ...previous.contactInfo, phone: event.target.value } }))}
               />
               <TextField
                 label="Location"
                 value={parsed.contactInfo.location ?? ""}
                 disabled={!editing}
-                onChange={(event) => setParsed({ ...parsed, contactInfo: { ...parsed.contactInfo, location: event.target.value } })}
+                onChange={(event) => setParsed((previous) => ({ ...previous, contactInfo: { ...previous.contactInfo, location: event.target.value } }))}
               />
             </Box>
             <TextField
@@ -130,7 +130,7 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
               multiline
               minRows={3}
               disabled={!editing}
-              onChange={(event) => setParsed({ ...parsed, professionalSummary: event.target.value })}
+              onChange={(event) => setParsed((previous) => ({ ...previous, professionalSummary: event.target.value }))}
             />
             <TextField
               label="Core skills"
@@ -138,13 +138,16 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
               disabled={!editing}
               helperText="Comma-separated"
               onChange={(event) =>
-                setParsed({
-                  ...parsed,
+                setParsed((previous) => ({
+                  ...previous,
                   skills: {
-                    ...parsed.skills,
-                    coreSkills: event.target.value.split(",").map((skill) => skill.trim()).filter(Boolean),
+                    ...previous.skills,
+                    coreSkills: event.target.value.split(",").flatMap((skill) => {
+                      const next = skill.trim();
+                      return next ? [next] : [];
+                    }),
                   },
-                })
+                }))
               }
             />
             <Box>
@@ -152,15 +155,17 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
               <Stack spacing={1.5} sx={{ mt: 1.5 }}>
                 {parsed.experienceBullets.map((bullet, index) => (
                   <TextField
-                    key={`${bullet.sourceText}-${index}`}
+                    key={`${bullet.category}-${bullet.sourceText}-${bullet.text}`}
                     label={`${bullet.category} · ${bullet.truthLevel}`}
                     value={bullet.text}
                     multiline
                     disabled={!editing}
                     onChange={(event) => {
-                      const nextBullets = [...parsed.experienceBullets];
-                      nextBullets[index] = { ...bullet, text: event.target.value, truthLevel: "verified" };
-                      setParsed({ ...parsed, experienceBullets: nextBullets });
+                      setParsed((previous) => {
+                        const nextBullets = [...previous.experienceBullets];
+                        nextBullets[index] = { ...bullet, text: event.target.value, truthLevel: "verified" };
+                        return { ...previous, experienceBullets: nextBullets };
+                      });
                     }}
                   />
                 ))}

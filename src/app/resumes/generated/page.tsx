@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Generated Materials | Job Search OS",
+  description: "Review generated resumes, cover letters, and packet quality notes.",
+};
+
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";

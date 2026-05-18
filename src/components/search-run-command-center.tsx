@@ -81,7 +81,7 @@ type SearchRun = {
 };
 
 export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun | null }) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [run, setRun] = useState<SearchRun | null>(initialRun);
   const [agencyRun, setAgencyRun] = useState<AgencyRunStatus | null>(null);
   const [error, setError] = useState("");
@@ -118,12 +118,12 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
     const timer = window.setInterval(async () => {
       const nextRun = await refreshLatest();
       if (run?.status === "running" && nextRun?.status && nextRun.status !== "running") {
-        router.refresh();
+        refresh();
       }
     }, running ? 1200 : 5000);
 
     return () => window.clearInterval(timer);
-  }, [router, run?.status, running]);
+  }, [refresh, run?.status, running]);
 
   useEffect(() => {
     if (!linkedAgencyRunId) {
@@ -159,7 +159,7 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
       return;
     }
     await refreshAgencyRun(body.childRunId ?? agencyRun.id);
-    router.refresh();
+    refresh();
   }
 
   return (
@@ -211,7 +211,7 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
               <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, overflow: "hidden" }}>
                 {timeline.map((event, index) => (
                   <Box
-                    key={`${event.at}-${event.message}-${index}`}
+                    key={`${event.at}-${event.message}`}
                     sx={{
                       display: "grid",
                       gridTemplateColumns: { xs: "1fr", sm: "92px 1fr" },
@@ -224,7 +224,7 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
                     }}
                   >
                     <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
-                      {new Date(event.at).toLocaleTimeString()}
+                      {formatTime(event.at)}
                     </Typography>
                     <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
                       {event.message}
@@ -307,7 +307,7 @@ function AgencyHandoffPanel({
         <Box>
           <Typography sx={{ fontWeight: 850 }}>{currentMessage}</Typography>
           <Typography variant="caption" color="text.secondary">
-            {agencyRun ? `Updated ${new Date(agencyRun.updatedAt).toLocaleTimeString()}` : agencyHandoffDetail(handoff)}
+            {agencyRun ? `Updated ${formatTime(agencyRun.updatedAt)}` : agencyHandoffDetail(handoff)}
           </Typography>
           {agencyRun?.currentNode || agencyRun?.workflowVersion ? (
             <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
@@ -342,7 +342,7 @@ function AgencyHandoffPanel({
           <Stack spacing={0.6}>
             {recentEvents.map((event) => (
               <Box key={event.id} sx={{ display: "grid", gridTemplateColumns: "92px minmax(0, 1fr)", gap: 1 }}>
-                <Typography variant="caption" color="text.secondary">{new Date(event.createdAt).toLocaleTimeString()}</Typography>
+                <Typography variant="caption" color="text.secondary">{formatTime(event.createdAt)}</Typography>
                 <Typography variant="body2">{event.message}</Typography>
               </Box>
             ))}
@@ -386,4 +386,8 @@ function workflowNodeLabel(value: string | null) {
 
 function MetricChip({ label, value, color = "default" }: { label: string; value: number; color?: "default" | "error" }) {
   return <Chip size="small" color={color} variant="outlined" label={`${label}: ${value}`} />;
+}
+
+function formatTime(value: string | Date) {
+  return new Date(value).toLocaleTimeString();
 }

@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export function AnalyzeOutcomesButton() {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [running, setRunning] = useState(false);
   const [notice, setNotice] = useState("");
   const [severity, setSeverity] = useState<"success" | "error">("success");
@@ -21,7 +21,7 @@ export function AnalyzeOutcomesButton() {
       if (!response.ok) throw new Error(payload.error ?? "Unable to analyze outcomes.");
       setSeverity("success");
       setNotice(`Analyzed ${payload.sampleSize ?? 0} applications.`);
-      router.refresh();
+      refresh();
     } catch (error) {
       setSeverity("error");
       setNotice(error instanceof Error ? error.message : "Unable to analyze outcomes.");

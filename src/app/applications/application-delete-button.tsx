@@ -15,7 +15,7 @@ export function ApplicationDeleteButton({
   applicationId: string;
   label: string;
 }) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [notice, setNotice] = useState("");
   const [severity, setSeverity] = useState<"success" | "error">("success");
   const [loading, setLoading] = useState(false);
@@ -42,7 +42,7 @@ export function ApplicationDeleteButton({
           : payload.message ?? "Application removed and job marked rejected.",
       );
       setPromptOpen(false);
-      router.refresh();
+      refresh();
     } catch (error) {
       setSeverity("error");
       setNotice(error instanceof Error ? error.message : "Unable to delete application.");

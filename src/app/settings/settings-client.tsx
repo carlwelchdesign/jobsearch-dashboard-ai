@@ -190,10 +190,12 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
         body: JSON.stringify(automation),
       }),
     ]);
-    const body = await response.json();
-    const profileBody = await profileResponse.json();
-    const cronBody = await cronResponse.json();
-    const automationBody = await automationResponse.json();
+    const [body, profileBody, cronBody, automationBody] = await Promise.all([
+      response.json(),
+      profileResponse.json(),
+      cronResponse.json(),
+      automationResponse.json(),
+    ]);
     setSaving(false);
 
     if (!profileResponse.ok || !response.ok || !cronResponse.ok || !automationResponse.ok) {
@@ -245,11 +247,11 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
       return;
     }
 
-    setProfile({
-      ...profile,
+    setProfile((previous) => ({
+      ...previous,
       githubRepositoryCount: body.count,
       latestGithubSync: new Date().toLocaleString(),
-    });
+    }));
     setNotice(body.message);
   }
 
@@ -529,7 +531,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
               control={
                 <Switch
                   checked={automation.autoSubmitEnabled}
-                  onChange={(event) => setAutomation({ ...automation, autoSubmitEnabled: event.target.checked })}
+                  onChange={(event) => setAutomation((previous) => ({ ...previous, autoSubmitEnabled: event.target.checked }))}
                 />
               }
               label="Allow gated auto-submit"
@@ -539,7 +541,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                 control={
                   <Switch
                     checked={automation.requireApprovedPacket}
-                    onChange={(event) => setAutomation({ ...automation, requireApprovedPacket: event.target.checked })}
+                    onChange={(event) => setAutomation((previous) => ({ ...previous, requireApprovedPacket: event.target.checked }))}
                   />
                 }
                 label="Require approved packet"
@@ -548,7 +550,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                 control={
                   <Switch
                     checked={automation.requireNoOpenUserRequests}
-                    onChange={(event) => setAutomation({ ...automation, requireNoOpenUserRequests: event.target.checked })}
+                    onChange={(event) => setAutomation((previous) => ({ ...previous, requireNoOpenUserRequests: event.target.checked }))}
                   />
                 }
                 label="Require no open Needs Me items"
@@ -557,7 +559,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                 control={
                   <Switch
                     checked={automation.requireFreshAssistantRun}
-                    onChange={(event) => setAutomation({ ...automation, requireFreshAssistantRun: event.target.checked })}
+                    onChange={(event) => setAutomation((previous) => ({ ...previous, requireFreshAssistantRun: event.target.checked }))}
                   />
                 }
                 label="Require fresh assistant run"
@@ -566,7 +568,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                 control={
                   <Switch
                     checked={automation.allowDemographicSubmission}
-                    onChange={(event) => setAutomation({ ...automation, allowDemographicSubmission: event.target.checked })}
+                    onChange={(event) => setAutomation((previous) => ({ ...previous, allowDemographicSubmission: event.target.checked }))}
                   />
                 }
                 label="Allow submit with configured demographic answers"
@@ -576,7 +578,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                 label="Fresh run window"
                 type="number"
                 value={automation.maxRunAgeMinutes}
-                onChange={(event) => setAutomation({ ...automation, maxRunAgeMinutes: Number(event.target.value) })}
+                onChange={(event) => setAutomation((previous) => ({ ...previous, maxRunAgeMinutes: Number(event.target.value) }))}
                 helperText="Minutes. Used only when fresh assistant run is required."
               />
             </Box>
@@ -595,14 +597,14 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                   fullWidth
                   label="Company"
                   value={companyPolicyDraft.company}
-                  onChange={(event) => setCompanyPolicyDraft({ ...companyPolicyDraft, company: event.target.value })}
+                  onChange={(event) => setCompanyPolicyDraft((previous) => ({ ...previous, company: event.target.value }))}
                 />
                 <TextField
                   select
                   fullWidth
                   label="Mode"
                   value={companyPolicyDraft.autoSubmitMode}
-                  onChange={(event) => setCompanyPolicyDraft({ ...companyPolicyDraft, autoSubmitMode: event.target.value as "INHERIT" | "ALLOW" | "BLOCK" })}
+                  onChange={(event) => setCompanyPolicyDraft((previous) => ({ ...previous, autoSubmitMode: event.target.value as "INHERIT" | "ALLOW" | "BLOCK" }))}
                 >
                   <MenuItem value="BLOCK">Block</MenuItem>
                   <MenuItem value="ALLOW">Allow</MenuItem>
@@ -612,7 +614,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                   fullWidth
                   label="Notes"
                   value={companyPolicyDraft.notes}
-                  onChange={(event) => setCompanyPolicyDraft({ ...companyPolicyDraft, notes: event.target.value })}
+                  onChange={(event) => setCompanyPolicyDraft((previous) => ({ ...previous, notes: event.target.value }))}
                 />
                 <Button variant="outlined" disabled={saving || !companyPolicyDraft.company.trim()} onClick={saveCompanyPolicy}>
                   Save
@@ -771,28 +773,28 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                 label="Race / ethnicity answer"
                 placeholder="Example: Prefer not to answer"
                 value={profile.raceAnswer}
-                onChange={(event) => setProfile({ ...profile, raceAnswer: event.target.value })}
+                onChange={(event) => setProfile((previous) => ({ ...previous, raceAnswer: event.target.value }))}
               />
               <TextField
                 fullWidth
                 label="Gender answer"
                 placeholder="Example: Prefer not to answer"
                 value={profile.genderAnswer}
-                onChange={(event) => setProfile({ ...profile, genderAnswer: event.target.value })}
+                onChange={(event) => setProfile((previous) => ({ ...previous, genderAnswer: event.target.value }))}
               />
               <TextField
                 fullWidth
                 label="Veteran status answer"
                 placeholder="Example: I am not a protected veteran"
                 value={profile.veteranStatusAnswer}
-                onChange={(event) => setProfile({ ...profile, veteranStatusAnswer: event.target.value })}
+                onChange={(event) => setProfile((previous) => ({ ...previous, veteranStatusAnswer: event.target.value }))}
               />
               <TextField
                 fullWidth
                 label="Disability status answer"
                 placeholder="Example: No, I do not have a disability"
                 value={profile.disabilityAnswer}
-                onChange={(event) => setProfile({ ...profile, disabilityAnswer: event.target.value })}
+                onChange={(event) => setProfile((previous) => ({ ...previous, disabilityAnswer: event.target.value }))}
               />
             </Box>
           </Stack>
@@ -817,7 +819,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
               label="LinkedIn profile URL"
               placeholder="https://www.linkedin.com/in/your-profile"
               value={profile.linkedinUrl}
-              onChange={(event) => setProfile({ ...profile, linkedinUrl: event.target.value })}
+              onChange={(event) => setProfile((previous) => ({ ...previous, linkedinUrl: event.target.value }))}
             />
           </Stack>
         </CardContent>
@@ -840,7 +842,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
               fullWidth
               label="GitHub profile URL"
               value={profile.githubUrl}
-              onChange={(event) => setProfile({ ...profile, githubUrl: event.target.value })}
+              onChange={(event) => setProfile((previous) => ({ ...previous, githubUrl: event.target.value }))}
             />
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "center" } }}>
               <Button variant="outlined" disabled={saving || syncingGithub} onClick={syncGithub}>
@@ -913,7 +915,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                   control={
                     <Switch
                       checked={settings.emailEnabled}
-                      onChange={(event) => setSettings({ ...settings, emailEnabled: event.target.checked })}
+                      onChange={(event) => setSettings((previous) => ({ ...previous, emailEnabled: event.target.checked }))}
                     />
                   }
                   label="Email digest enabled"
@@ -924,7 +926,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                   control={
                     <Switch
                       checked={settings.pushoverEnabled}
-                      onChange={(event) => setSettings({ ...settings, pushoverEnabled: event.target.checked })}
+                      onChange={(event) => setSettings((previous) => ({ ...previous, pushoverEnabled: event.target.checked }))}
                     />
                   }
                   label="Pushover enabled when configured"
@@ -934,35 +936,35 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                 fullWidth
                 label="Email address"
                 value={settings.emailAddress}
-                onChange={(event) => setSettings({ ...settings, emailAddress: event.target.value })}
+                onChange={(event) => setSettings((previous) => ({ ...previous, emailAddress: event.target.value }))}
               />
               <TextField
                 fullWidth
                 label="Push score threshold"
                 type="number"
                 value={settings.minimumScoreForPush}
-                onChange={(event) => setSettings({ ...settings, minimumScoreForPush: Number(event.target.value) })}
+                onChange={(event) => setSettings((previous) => ({ ...previous, minimumScoreForPush: Number(event.target.value) }))}
               />
               <TextField
                 fullWidth
                 label="Pushover user key"
                 type="password"
                 value={settings.pushoverUserKey}
-                onChange={(event) => setSettings({ ...settings, pushoverUserKey: event.target.value })}
+                onChange={(event) => setSettings((previous) => ({ ...previous, pushoverUserKey: event.target.value }))}
               />
               <TextField
                 fullWidth
                 label="Pushover app token"
                 type="password"
                 value={settings.pushoverAppToken}
-                onChange={(event) => setSettings({ ...settings, pushoverAppToken: event.target.value })}
+                onChange={(event) => setSettings((previous) => ({ ...previous, pushoverAppToken: event.target.value }))}
               />
               <TextField
                 select
                 fullWidth
                 label="Digest mode"
                 value={settings.digestMode}
-                onChange={(event) => setSettings({ ...settings, digestMode: event.target.value as SettingsClientProps["initialSettings"]["digestMode"] })}
+                onChange={(event) => setSettings((previous) => ({ ...previous, digestMode: event.target.value as SettingsClientProps["initialSettings"]["digestMode"] }))}
               >
                 <MenuItem value="every_run">Every run</MenuItem>
                 <MenuItem value="daily_summary">Daily summary</MenuItem>

@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Resume Variants | Job Search OS",
+  description: "Manage reusable resume profiles and tailored positioning variants.",
+};
+
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";

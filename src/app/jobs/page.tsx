@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Jobs | Job Search OS",
+  description: "Search, review, approve, reject, and dedupe job matches.",
+};
+
 import AddIcon from "@mui/icons-material/Add";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import type { Prisma } from "@prisma/client";

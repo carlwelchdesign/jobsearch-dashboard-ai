@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Review Resume | Job Search OS",
+  description: "Review parsed resume evidence before approving it for generated materials.",
+};
+
 import Alert from "@mui/material/Alert";
 import Stack from "@mui/material/Stack";
 import { AppShell } from "@/app/app-shell";

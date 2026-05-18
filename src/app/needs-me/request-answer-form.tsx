@@ -18,7 +18,7 @@ export function RequestAnswerForm({
   question: string;
   canSaveMemory: boolean;
 }) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [answer, setAnswer] = useState("");
   const [saveMemory, setSaveMemory] = useState(false);
   const [notice, setNotice] = useState("");
@@ -58,7 +58,7 @@ export function RequestAnswerForm({
       }
 
       setNotice(saveMemory ? "Answer saved and reusable memory created." : "Answer saved.");
-      router.refresh();
+      refresh();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unable to save answer.");
     } finally {

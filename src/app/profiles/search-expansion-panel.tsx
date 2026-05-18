@@ -43,7 +43,7 @@ export type SearchExpansionPanelOutput = {
 };
 
 export function SearchExpansionPanel({ latest }: { latest: SearchExpansionPanelOutput | null }) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
 
@@ -54,7 +54,7 @@ export function SearchExpansionPanel({ latest }: { latest: SearchExpansionPanelO
       const response = await fetch("/api/profiles/expand", { method: "POST" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "Unable to expand search profiles.");
-      router.refresh();
+      refresh();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to expand search profiles.");
     } finally {

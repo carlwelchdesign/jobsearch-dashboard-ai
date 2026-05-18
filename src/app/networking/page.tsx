@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Networking | Job Search OS",
+  description: "Plan recruiter outreach and networking strategy for target roles.",
+};
+
 import ConnectWithoutContactOutlinedIcon from "@mui/icons-material/ConnectWithoutContactOutlined";
 import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";

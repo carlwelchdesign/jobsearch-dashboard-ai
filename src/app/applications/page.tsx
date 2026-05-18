@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Applications | Job Search OS",
+  description: "Track approved, ready, submitted, and outcome-bearing applications.",
+};
+
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";

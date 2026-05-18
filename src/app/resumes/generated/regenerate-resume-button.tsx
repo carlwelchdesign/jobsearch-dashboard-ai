@@ -22,7 +22,7 @@ const pendingPrefix = "resume-regeneration:";
 const staleAfterMs = 15 * 60 * 1000;
 
 export function RegenerateResumeButton({ jobId, resumeId, latestResumeCreatedAtMs }: RegenerateResumeButtonProps) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const mounted = useRef(true);
   const storageKey = `${pendingPrefix}${jobId}`;
   const [pending, setPending] = useState(false);
@@ -64,7 +64,7 @@ export function RegenerateResumeButton({ jobId, resumeId, latestResumeCreatedAtM
       setPending(false);
       setSeverity("success");
       setNotice("Resume regenerated.");
-      router.refresh();
+      refresh();
     } catch (error) {
       localStorage.removeItem(storageKey);
       if (!mounted.current) return;

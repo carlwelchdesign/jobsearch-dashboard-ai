@@ -22,7 +22,7 @@ const outcomes = [
 ];
 
 export function OutcomeForm({ applicationId }: { applicationId: string }) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -47,7 +47,7 @@ export function OutcomeForm({ applicationId }: { applicationId: string }) {
       if (!response.ok) throw new Error(payload.error ?? "Unable to record outcome.");
       setNotice(payload.message ?? "Outcome recorded.");
       event.currentTarget.reset();
-      router.refresh();
+      refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to record outcome.");
     } finally {

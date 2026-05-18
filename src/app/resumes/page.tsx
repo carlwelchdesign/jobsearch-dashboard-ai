@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Resumes | Job Search OS",
+  description: "Manage resumes, profile evidence, generated materials, and variants.",
+};
+
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";

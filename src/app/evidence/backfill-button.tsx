@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export function BackfillEvidenceButton() {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [running, setRunning] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -25,7 +25,7 @@ export function BackfillEvidenceButton() {
       return;
     }
     setNotice(body.message ?? "Evidence backfilled.");
-    router.refresh();
+    refresh();
   }
 
   return (

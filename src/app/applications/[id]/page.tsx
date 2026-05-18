@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Application Detail | Job Search OS",
+  description: "Review application status, packets, events, outcomes, and agent materials.",
+};
+
 import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import BusinessOutlinedIcon from "@mui/icons-material/BusinessOutlined";
@@ -371,7 +376,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                           <Box>
                             <Typography sx={{ fontWeight: 850 }}>{entry.question}</Typography>
                             <Typography variant="caption" color="text.secondary">
-                              {entry.generatedBy ?? "generated"}{entry.createdAt ? ` · ${new Date(entry.createdAt).toLocaleString()}` : ""}
+                              {entry.generatedBy ?? "generated"}{entry.createdAt ? ` · ${formatDateTime(entry.createdAt)}` : ""}
                             </Typography>
                           </Box>
                           {entry.id ? <DeletePacketAnswerButton applicationId={application.id} answerId={entry.id} /> : null}
@@ -1029,4 +1034,8 @@ function formatOutcome(outcome: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function formatDateTime(value: string | Date) {
+  return new Date(value).toLocaleString();
 }

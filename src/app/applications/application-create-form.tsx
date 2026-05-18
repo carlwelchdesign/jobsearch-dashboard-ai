@@ -21,7 +21,7 @@ type ApplicationCreateFormProps = {
 };
 
 export function ApplicationCreateForm({ jobs }: ApplicationCreateFormProps) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [open, setOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -55,7 +55,7 @@ export function ApplicationCreateForm({ jobs }: ApplicationCreateFormProps) {
     setNotice("Application added.");
     setOpen(false);
     event.currentTarget.reset();
-    router.refresh();
+    refresh();
   }
 
   return (

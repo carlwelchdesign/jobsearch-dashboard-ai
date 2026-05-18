@@ -39,7 +39,7 @@ type RebuildResponse = {
 };
 
 export function ProfileRebuildPanel() {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [open, setOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [running, setRunning] = useState(false);
@@ -66,7 +66,7 @@ export function ProfileRebuildPanel() {
     setResult(body);
     setOpen(false);
     setConfirmText("");
-    router.refresh();
+    refresh();
   }
 
   return (
@@ -106,8 +106,8 @@ export function ProfileRebuildPanel() {
                     </Stack>
                     {profile.rationale ? <Typography variant="body2" color="text.secondary">{profile.rationale}</Typography> : null}
                     <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
-                      {[...profile.titles.slice(0, 4), ...profile.keywordsPreferred.slice(0, 6)].map((item, index) => (
-                        <Chip key={`${profile.id}-${item}-${index}`} size="small" variant="outlined" label={item} />
+                      {[...profile.titles.slice(0, 4), ...profile.keywordsPreferred.slice(0, 6)].map((item) => (
+                        <Chip key={`${profile.id}-${item}`} size="small" variant="outlined" label={item} />
                       ))}
                     </Stack>
                   </Stack>

@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Search Profiles | Job Search OS",
+  description: "Manage search profiles, market intelligence, and discovery strategy.",
+};
+
 import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
 import ExploreOutlinedIcon from "@mui/icons-material/ExploreOutlined";
 import RocketLaunchOutlinedIcon from "@mui/icons-material/RocketLaunchOutlined";
@@ -34,36 +39,38 @@ import type { MarketIntelligenceOutput } from "@/lib/agents/market-intelligence"
 export const dynamic = "force-dynamic";
 
 export default async function ProfilesPage() {
-  const profiles = await prisma.jobSearchProfile.findMany({
-    include: {
-      performanceSnapshots: {
-        orderBy: { lastEvaluatedAt: "desc" },
-        take: 1,
+  const [profiles, latestOptimizerRun, latestExpansionRun, latestMarketRun] = await Promise.all([
+    prisma.jobSearchProfile.findMany({
+      include: {
+        performanceSnapshots: {
+          orderBy: { lastEvaluatedAt: "desc" },
+          take: 1,
+        },
       },
-    },
-    orderBy: [{ enabled: "desc" }, { name: "asc" }],
-  });
-  const latestOptimizerRun = await prisma.agentRun.findFirst({
-    where: {
-      agentType: "SEARCH_PROFILE_MANAGER",
-      status: "COMPLETED",
-    },
-    orderBy: { createdAt: "desc" },
-  });
-  const latestExpansionRun = await prisma.agentRun.findFirst({
-    where: {
-      agentType: "SEARCH_EXPANSION",
-      status: "COMPLETED",
-    },
-    orderBy: { createdAt: "desc" },
-  });
-  const latestMarketRun = await prisma.agentRun.findFirst({
-    where: {
-      agentType: "MARKET_INTELLIGENCE",
-      status: "COMPLETED",
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: [{ enabled: "desc" }, { name: "asc" }],
+    }),
+    prisma.agentRun.findFirst({
+      where: {
+        agentType: "SEARCH_PROFILE_MANAGER",
+        status: "COMPLETED",
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.agentRun.findFirst({
+      where: {
+        agentType: "SEARCH_EXPANSION",
+        status: "COMPLETED",
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.agentRun.findFirst({
+      where: {
+        agentType: "MARKET_INTELLIGENCE",
+        status: "COMPLETED",
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
   const nextAction = profileNextAction({
     profileCount: profiles.length,
     enabledCount: profiles.filter((profile) => profile.enabled).length,
@@ -130,8 +137,8 @@ export default async function ProfilesPage() {
                         {!profile.enabled ? <Chip size="small" label="Disabled" /> : null}
                       </Stack>
                       <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
-                        {jsonArray(profile.titles).slice(0, 3).map((title, index) => (
-                          <Chip key={`${profile.id}-${title}-${index}`} size="small" variant="outlined" label={title} />
+                        {jsonArray(profile.titles).slice(0, 3).map((title) => (
+                          <Chip key={`${profile.id}-${title}`} size="small" variant="outlined" label={title} />
                         ))}
                       </Stack>
                     </TableCell>

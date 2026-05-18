@@ -14,7 +14,7 @@ type AutoSubmitOverrideControlProps = {
 };
 
 export function AutoSubmitOverrideControl({ applicationId, autoSubmitOverride }: AutoSubmitOverrideControlProps) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -32,7 +32,7 @@ export function AutoSubmitOverrideControl({ applicationId, autoSubmitOverride }:
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "Unable to update auto-submit override.");
       setNotice(payload.message ?? "Auto-submit override updated.");
-      router.refresh();
+      refresh();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to update auto-submit override.");
     } finally {

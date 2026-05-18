@@ -42,7 +42,7 @@ export function ActionButton({
   loadingLabel = "Working...",
   sx,
 }: ActionButtonProps) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [notice, setNotice] = useState("");
   const [severity, setSeverity] = useState<"success" | "error" | "info">("info");
   const [loading, setLoading] = useState(false);
@@ -93,7 +93,7 @@ export function ActionButton({
             setLoading(false);
             setSeverity("success");
             setNotice(payload.message ?? "Generation completed.");
-            router.refresh();
+            refresh();
           })
           .catch((error) => {
             if (!mounted.current) return;
@@ -109,7 +109,7 @@ export function ActionButton({
       if (!response.ok) throw new Error(payload.error ?? "Action failed.");
       setSeverity("success");
       setNotice(message ?? payload.message ?? "Action completed.");
-      router.refresh();
+      refresh();
     } catch (error) {
       setSeverity("error");
       setNotice(error instanceof Error ? error.message : "Action failed.");

@@ -59,7 +59,7 @@ export function AgencyRunControl({
   showLatestOnMount = true,
   buttonSx,
 }: AgencyRunControlProps) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [run, setRun] = useState<AgencyRunStatus | null>(null);
   const [starting, setStarting] = useState(false);
   const [polling, setPolling] = useState(false);
@@ -120,7 +120,7 @@ export function AgencyRunControl({
         runIdRef.current = payload.agentRunId;
         await refreshStatus(payload.agentRunId);
       }
-      router.refresh();
+      refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Recruiting agency failed.");
     } finally {
@@ -141,7 +141,7 @@ export function AgencyRunControl({
       if (!response.ok) throw new Error(payload.error ?? "Unable to update graph run.");
       if (payload.childRunId) runIdRef.current = payload.childRunId;
       await refreshStatus(payload.childRunId ?? run.id);
-      router.refresh();
+      refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to update graph run.");
     }
@@ -158,11 +158,11 @@ export function AgencyRunControl({
           onClick={() => void startAgency()}
           sx={buttonSx}
         >
-          {running ? "Agency running..." : label}
+          {running ? "Agency running…" : label}
         </Button>
         {run ? <Chip size="small" color={run.status === "FAILED" ? "error" : run.status === "COMPLETED" ? "success" : "primary"} label={run.status.toLowerCase()} /> : null}
         {stale ? <Chip size="small" color="warning" variant="outlined" label="stale" /> : null}
-        {polling && !running ? <Typography variant="caption" color="text.secondary">Refreshing activity...</Typography> : null}
+        {polling && !running ? <Typography variant="caption" color="text.secondary">Refreshing activity…</Typography> : null}
       </Stack>
 
       {notice ? <Alert severity="warning" onClose={() => setNotice("")}>{notice}</Alert> : null}
@@ -174,7 +174,7 @@ export function AgencyRunControl({
             <Box>
               <Typography sx={{ fontWeight: 850 }}>{run.current?.message ?? statusMessage(run)}</Typography>
               <Typography variant="caption" color="text.secondary">
-                Started {new Date(run.startedAt).toLocaleString()} · Updated {new Date(run.updatedAt).toLocaleTimeString()}
+                Started {formatDateTime(run.startedAt)} · Updated {formatTime(run.updatedAt)}
               </Typography>
               {run.currentNode || run.workflowVersion ? (
                 <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
@@ -211,7 +211,7 @@ export function AgencyRunControl({
             <Stack spacing={0.75}>
               {meaningfulEvents.length ? meaningfulEvents.map((event) => (
                 <Box key={event.id} sx={{ display: "grid", gridTemplateColumns: "96px minmax(0, 1fr)", gap: 1, alignItems: "baseline" }}>
-                  <Typography variant="caption" color="text.secondary">{new Date(event.createdAt).toLocaleTimeString()}</Typography>
+                  <Typography variant="caption" color="text.secondary">{formatTime(event.createdAt)}</Typography>
                   <Typography variant="body2">{event.message}</Typography>
                 </Box>
               )) : (
@@ -241,4 +241,12 @@ function statusMessage(run: AgencyRunStatus) {
   if (run.status === "FAILED") return "Recruiting agency failed.";
   if (run.status === "COMPLETED") return "Recruiting agency completed.";
   return "Recruiting agency is checking matches and preparing packets.";
+}
+
+function formatTime(value: string | Date) {
+  return new Date(value).toLocaleTimeString();
+}
+
+function formatDateTime(value: string | Date) {
+  return new Date(value).toLocaleString();
 }

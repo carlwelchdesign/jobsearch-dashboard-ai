@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Evidence Library | Job Search OS",
+  description: "Review the verified candidate evidence used by agents and generated materials.",
+};
+
 import type { CandidateEvidenceSourceType, CandidateEvidenceType, EvidenceConfidence } from "@prisma/client";
 import AddCircleOutlineOutlinedIcon from "@mui/icons-material/AddCircleOutlineOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
@@ -33,20 +38,20 @@ export default async function EvidencePage({ searchParams }: { searchParams?: Ev
   const confidence = normalizeConfidence(searchParams?.confidence);
   const sourceType = normalizeSourceType(searchParams?.source);
   const type = normalizeType(searchParams?.type);
-  const evidence = await prisma.candidateEvidence.findMany({
-    where: {
-      ...(confidence ? { confidence } : {}),
-      ...(sourceType ? { sourceType } : {}),
-      ...(type ? { type } : {}),
-    },
-    include: {
-      candidateProfile: { select: { fullName: true } },
-      embeddings: { select: { model: true, dimensions: true, updatedAt: true }, orderBy: { updatedAt: "desc" }, take: 1 },
-    },
-    orderBy: [{ confidence: "asc" }, { updatedAt: "desc" }],
-    take: 120,
-  });
-  const [needsReviewCount, missingEmbeddingCount, usableEvidenceCount] = await Promise.all([
+  const [evidence, needsReviewCount, missingEmbeddingCount, usableEvidenceCount] = await Promise.all([
+    prisma.candidateEvidence.findMany({
+      where: {
+        ...(confidence ? { confidence } : {}),
+        ...(sourceType ? { sourceType } : {}),
+        ...(type ? { type } : {}),
+      },
+      include: {
+        candidateProfile: { select: { fullName: true } },
+        embeddings: { select: { model: true, dimensions: true, updatedAt: true }, orderBy: { updatedAt: "desc" }, take: 1 },
+      },
+      orderBy: [{ confidence: "asc" }, { updatedAt: "desc" }],
+      take: 120,
+    }),
     prisma.candidateEvidence.count({ where: { confidence: "NEEDS_REVIEW" } }),
     prisma.candidateEvidence.count({ where: { embeddings: { none: {} }, confidence: { in: ["VERIFIED", "INFERRED"] } } }),
     prisma.candidateEvidence.count({ where: { confidence: { in: ["VERIFIED", "INFERRED"] }, OR: [{ usableInResume: true }, { usableInCoverLetter: true }, { usableInRecruiterMessage: true }] } }),

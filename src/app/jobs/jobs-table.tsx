@@ -48,7 +48,7 @@ export type JobsTableMatch = {
 type StatusView = "active" | "rejected" | "archived" | "all";
 
 export function JobsTable({ matches, statusView, searchQuery = "" }: { matches: JobsTableMatch[]; statusView: StatusView; searchQuery?: string }) {
-  const router = useRouter();
+  const { push, refresh } = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState("");
@@ -83,7 +83,7 @@ export function JobsTable({ matches, statusView, searchQuery = "" }: { matches: 
     if (nextView !== "active") params.set("statusView", nextView);
     if (searchQuery) params.set("q", searchQuery);
     const query = params.toString();
-    router.push(query ? `/jobs?${query}` : "/jobs");
+    push(query ? `/jobs?${query}` : "/jobs");
   }
 
   async function updateSelected(status: "needs_review" | "approved" | "rejected" | "archived") {
@@ -96,7 +96,7 @@ export function JobsTable({ matches, statusView, searchQuery = "" }: { matches: 
     setLoading(true);
     try {
       const rejectedMatches = status === "rejected"
-        ? matches.filter((match) => selectedIds.includes(match.id)).map((match) => ({ id: match.id, jobId: match.jobId, title: match.title, company: match.company }))
+        ? matches.flatMap((match) => selectedIds.includes(match.id) ? [{ id: match.id, jobId: match.jobId, title: match.title, company: match.company }] : [])
         : [];
       const response = await fetch("/api/jobs/bulk/status", {
         method: "POST",
@@ -109,7 +109,7 @@ export function JobsTable({ matches, statusView, searchQuery = "" }: { matches: 
       setNotice(payload.message ?? "Batch update complete.");
       if (status === "rejected" && rejectedMatches.length) setPendingRejectionFeedback(rejectedMatches);
       setSelectedIds([]);
-      router.refresh();
+      refresh();
     } catch (error) {
       setSeverity("error");
       setNotice(error instanceof Error ? error.message : "Batch update failed.");
@@ -134,7 +134,7 @@ export function JobsTable({ matches, statusView, searchQuery = "" }: { matches: 
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "Unable to update job.");
       if (status === "rejected") setPendingRejectionFeedback([{ id: match.id, jobId: match.jobId, title: match.title, company: match.company }]);
-      router.refresh();
+      refresh();
     } catch (error) {
       setDismissedIds((current) => current.filter((id) => id !== match.id));
       setSeverity("error");
@@ -311,9 +311,9 @@ export function JobsTable({ matches, statusView, searchQuery = "" }: { matches: 
                       </TableCell>
                       <TableCell sx={{ verticalAlign: "top" }}>
                         <Stack direction="row" spacing={0.5} sx={{ flexWrap: "wrap", maxWidth: 156 }} useFlexGap>
-                          {match.strongestMatches.slice(0, 2).map((signal, index) => (
+                          {match.strongestMatches.slice(0, 2).map((signal) => (
                             <Chip
-                              key={`${match.id}-${signal}-${index}`}
+                              key={`${match.id}-${signal}`}
                               size="small"
                               variant="outlined"
                               label={signal}
@@ -442,8 +442,8 @@ function SwipeJobCard({ match, onAction }: { match: JobsTableMatch; onAction: (m
                 Signals
               </Typography>
               <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 0.75 }}>
-                {match.strongestMatches.slice(0, 5).map((signal, index) => (
-                  <Chip key={`${match.id}-mobile-${signal}-${index}`} size="small" variant="outlined" label={signal} />
+                {match.strongestMatches.slice(0, 5).map((signal) => (
+                  <Chip key={`${match.id}-mobile-${signal}`} size="small" variant="outlined" label={signal} />
                 ))}
               </Stack>
             </Box>
@@ -482,8 +482,10 @@ function filterByQuery(matches: JobsTableMatch[], query: string) {
   const terms = query
     .toLowerCase()
     .split(/[\s,]+/)
-    .map((term) => term.trim())
-    .filter(Boolean);
+    .flatMap((term) => {
+      const next = term.trim();
+      return next ? [next] : [];
+    });
   if (terms.length === 0) return matches;
 
   return matches.filter((match) => {

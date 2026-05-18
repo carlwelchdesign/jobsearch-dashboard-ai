@@ -54,7 +54,7 @@ const categories = [
 ];
 
 export function ResumeProfileClient({ profile, bullets }: ProfileClientProps) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [open, setOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -92,7 +92,7 @@ export function ResumeProfileClient({ profile, bullets }: ProfileClientProps) {
     setNotice("Verified bullet added to the candidate profile.");
     setOpen(false);
     event.currentTarget.reset();
-    router.refresh();
+    refresh();
   }
 
   return (

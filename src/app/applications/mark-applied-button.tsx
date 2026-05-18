@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export function MarkAppliedButton({ applicationId, size = "small" }: { applicationId: string; size?: "small" | "medium" }) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [notice, setNotice] = useState("");
   const [severity, setSeverity] = useState<"success" | "error">("success");
   const [loading, setLoading] = useState(false);
@@ -21,7 +21,7 @@ export function MarkAppliedButton({ applicationId, size = "small" }: { applicati
       if (!response.ok) throw new Error(payload.error ?? "Unable to mark application applied.");
       setSeverity("success");
       setNotice(payload.message ?? "Application marked applied.");
-      router.refresh();
+      refresh();
     } catch (error) {
       setSeverity("error");
       setNotice(error instanceof Error ? error.message : "Unable to mark application applied.");

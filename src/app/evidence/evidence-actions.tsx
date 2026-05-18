@@ -21,7 +21,7 @@ type EvidenceActionsProps = {
 };
 
 export function EvidenceActions({ evidence }: EvidenceActionsProps) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -44,7 +44,7 @@ export function EvidenceActions({ evidence }: EvidenceActionsProps) {
     }
 
     setNotice(success);
-    router.refresh();
+    refresh();
   }
 
   return (

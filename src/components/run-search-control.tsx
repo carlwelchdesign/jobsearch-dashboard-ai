@@ -35,7 +35,7 @@ type Run = {
 };
 
 export function RunSearchControl({ compact = false }: { compact?: boolean }) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [run, setRun] = useState<Run | null>(null);
   const [error, setError] = useState("");
   const running = run?.status === "running";
@@ -59,12 +59,12 @@ export function RunSearchControl({ compact = false }: { compact?: boolean }) {
       if (response.ok) {
         setRun(body.run);
         if (body.run?.status && body.run.status !== "running") {
-          router.refresh();
+          refresh();
         }
       }
     }, 1200);
     return () => window.clearInterval(timer);
-  }, [router, run?.id, running]);
+  }, [refresh, run?.id, running]);
 
   const latest = run?.progress?.slice(-6).reverse() ?? [];
 
@@ -92,7 +92,7 @@ export function RunSearchControl({ compact = false }: { compact?: boolean }) {
               <Stack spacing={0.75}>
                 {latest.map((event) => (
                   <Typography key={`${event.at}-${event.message}`} variant="body2" color="text.secondary">
-                    {new Date(event.at).toLocaleTimeString()} - {event.message}
+                    {formatTime(event.at)} - {event.message}
                   </Typography>
                 ))}
               </Stack>
@@ -116,4 +116,8 @@ function Stat({ label, value }: { label: string; value: number }) {
       <Typography sx={{ fontWeight: 850, fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
     </Box>
   );
+}
+
+function formatTime(value: string | Date) {
+  return new Date(value).toLocaleTimeString();
 }

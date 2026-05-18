@@ -23,7 +23,7 @@ export type OptimizerOutput = {
 };
 
 export function ProfileOptimizerPanel({ latest }: { latest: OptimizerOutput | null }) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
 
@@ -34,7 +34,7 @@ export function ProfileOptimizerPanel({ latest }: { latest: OptimizerOutput | nu
       const response = await fetch("/api/profiles/optimize", { method: "POST" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "Unable to optimize profiles.");
-      router.refresh();
+      refresh();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to optimize profiles.");
     } finally {

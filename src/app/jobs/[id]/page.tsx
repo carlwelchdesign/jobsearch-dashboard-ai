@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Job Detail | Job Search OS",
+  description: "Review a scored job, matching evidence, materials, and application state.",
+};
+
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import AssignmentTurnedInOutlinedIcon from "@mui/icons-material/AssignmentTurnedInOutlined";
 import ContactPageOutlinedIcon from "@mui/icons-material/ContactPageOutlined";
@@ -271,7 +276,7 @@ function SignalSection({ title, items, color }: { title: string; items: string[]
     <Box>
       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800, textTransform: "uppercase" }}>{title}</Typography>
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
-        {items.map((item, index) => <Chip key={`${title}-${item}-${index}`} size="small" color={color} variant="outlined" label={item} />)}
+        {items.map((item) => <Chip key={`${title}-${item}`} size="small" color={color} variant="outlined" label={item} />)}
       </Stack>
     </Box>
   );

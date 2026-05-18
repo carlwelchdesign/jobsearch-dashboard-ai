@@ -146,7 +146,7 @@ type AtsBlockerSummary = {
 };
 
 export function AssistantWorkbench({ applications, atsBlockers }: { applications: ReadyApplication[]; atsBlockers: AtsBlockerSummary[] }) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [selectedId, setSelectedId] = useState(applications[0]?.id ?? "");
   const [launch, setLaunch] = useState<LaunchResponse | null>(null);
   const [log, setLog] = useState("");
@@ -199,7 +199,7 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
     const response = await fetch(`/api/applications/${applicationId}/assistant-log`);
     const payload = await response.json().catch(() => ({}));
       if (response.ok) setLog(payload.log ?? "");
-      if (response.ok && payload.automationRun?.workflowStateJson) router.refresh();
+      if (response.ok && payload.automationRun?.workflowStateJson) refresh();
   }
 
   async function markApplied() {
@@ -211,7 +211,7 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "Unable to mark application applied.");
       setNotice(payload.message ?? "Application marked applied.");
-      router.refresh();
+      refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to mark application applied.");
     } finally {
@@ -231,7 +231,7 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
       setLaunch(null);
       setLog("");
       setNotice(payload.message ?? "Assistant test state reset.");
-      router.refresh();
+      refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to reset assistant state.");
     } finally {
@@ -262,7 +262,7 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
       setLaunch(null);
       setLog("");
       setNotice(payload.message ?? "Application removed and job marked rejected.");
-      router.refresh();
+      refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to delete application.");
     } finally {
@@ -302,7 +302,7 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
       if (!response.ok) throw new Error(payload.error ?? "Unable to generate answer options.");
       setQuestionHelper(payload);
       setNotice(payload.savedToPacket ? "Answer options saved to the application packet." : "Answer options generated.");
-      router.refresh();
+      refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to generate answer options.");
     } finally {
@@ -617,7 +617,7 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
             {questionHelper?.options?.length ? (
               <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(3, 1fr)" }, gap: 2 }}>
                 {questionHelper.options.map((option, index) => (
-                  <Card key={`${option.title}-${index}`} variant="outlined">
+                  <Card key={`${option.title}-${option.answer.slice(0, 40)}`} variant="outlined">
                     <CardContent>
                       <Stack spacing={1.5}>
                         <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>

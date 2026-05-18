@@ -45,7 +45,7 @@ type SuggestResponse = {
 };
 
 export function ProfileSuggestionPanel() {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState("");
   const [response, setResponse] = useState<SuggestResponse | null>(null);
@@ -110,7 +110,7 @@ export function ProfileSuggestionPanel() {
           suggestions: current.suggestions.map((item) => item.name === suggestion.name ? { ...item, alreadyExists: true } : item),
         }
       : current);
-    router.refresh();
+    refresh();
   }
 
   return (
@@ -159,8 +159,8 @@ export function ProfileSuggestionPanel() {
                       </Button>
                     </Stack>
                     <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
-                      {[...suggestion.titles.slice(0, 5), ...suggestion.keywordsPreferred.slice(0, 8)].map((item, index) => (
-                        <Chip key={`${suggestion.name}-${item}-${index}`} size="small" variant="outlined" label={item} />
+                      {[...suggestion.titles.slice(0, 5), ...suggestion.keywordsPreferred.slice(0, 8)].map((item) => (
+                        <Chip key={`${suggestion.name}-${item}`} size="small" variant="outlined" label={item} />
                       ))}
                     </Stack>
                     <Divider />
@@ -183,8 +183,8 @@ function Evidence({ title, items }: { title: string; items: string[] }) {
     <Box>
       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>{title}</Typography>
       <Stack spacing={0.5} sx={{ mt: 0.5 }}>
-        {items.slice(0, 4).map((item, index) => (
-          <Typography key={`${title}-${item}-${index}`} variant="body2" color="text.secondary">- {item}</Typography>
+        {items.slice(0, 4).map((item) => (
+          <Typography key={`${title}-${item}`} variant="body2" color="text.secondary">- {item}</Typography>
         ))}
       </Stack>
     </Box>

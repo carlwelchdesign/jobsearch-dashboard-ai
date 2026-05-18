@@ -53,7 +53,7 @@ export function JobRejectButton({
   color?: "primary" | "secondary" | "success" | "error" | "warning" | "info";
   source?: string;
 }) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [loading, setLoading] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
   const [notice, setNotice] = useState("");
@@ -72,7 +72,7 @@ export function JobRejectButton({
       setSeverity("success");
       setNotice(reasons.length || note.trim() ? "Job rejected and feedback saved for agent learning." : "Job rejected.");
       setPromptOpen(false);
-      router.refresh();
+      refresh();
     } catch (error) {
       setSeverity("error");
       setNotice(error instanceof Error ? error.message : "Unable to reject job.");

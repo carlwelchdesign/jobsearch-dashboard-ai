@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Resume Profile | Job Search OS",
+  description: "Edit the candidate profile used for generated application materials.",
+};
+
 import Alert from "@mui/material/Alert";
 import Stack from "@mui/material/Stack";
 import { AppShell } from "@/app/app-shell";

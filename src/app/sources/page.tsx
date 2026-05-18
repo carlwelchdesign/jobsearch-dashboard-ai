@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Sources | Job Search OS",
+  description: "Manage job sources, company policies, and discovery channels.",
+};
+
 import SourceOutlinedIcon from "@mui/icons-material/SourceOutlined";
 import TravelExploreOutlinedIcon from "@mui/icons-material/TravelExploreOutlined";
 import Box from "@mui/material/Box";

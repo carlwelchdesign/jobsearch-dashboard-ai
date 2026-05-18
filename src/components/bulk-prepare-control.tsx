@@ -37,7 +37,7 @@ type BulkPrepareResponse = {
 };
 
 export function BulkPrepareControl({ compact = false, defaultMinimumScore = 85, defaultLimit = 10, buttonSx }: BulkPrepareControlProps) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [minimumScore, setMinimumScore] = useState(defaultMinimumScore);
   const [limit, setLimit] = useState(defaultLimit);
   const [loading, setLoading] = useState(false);
@@ -87,7 +87,7 @@ export function BulkPrepareControl({ compact = false, defaultMinimumScore = 85, 
           }
           setSeverity(failed > 0 ? "info" : "success");
           setNotice(`Prepared ${prepared} package(s). ${failed} failed. Review them in Applications.`);
-          router.refresh();
+          refresh();
         })
         .catch((error) => {
           if (!mounted.current) return;

@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export function InterviewPrepButton({ applicationId }: { applicationId: string }) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [running, setRunning] = useState(false);
   const [notice, setNotice] = useState("");
   const [severity, setSeverity] = useState<"success" | "error">("success");
@@ -21,7 +21,7 @@ export function InterviewPrepButton({ applicationId }: { applicationId: string }
       if (!response.ok) throw new Error(payload.error ?? "Unable to generate interview prep.");
       setSeverity("success");
       setNotice(payload.message ?? "Interview prep generated.");
-      router.refresh();
+      refresh();
     } catch (error) {
       setSeverity("error");
       setNotice(error instanceof Error ? error.message : "Unable to generate interview prep.");

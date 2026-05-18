@@ -136,7 +136,7 @@ export function MarketIntelligencePanel({ latest }: { latest: MarketIntelligence
                             {article.title}
                           </Link>
                           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
-                            {article.publisher}{article.publishedAt ? ` · ${new Date(article.publishedAt).toLocaleDateString()}` : ""}
+                            {article.publisher}{article.publishedAt ? ` · ${formatDate(article.publishedAt)}` : ""}
                           </Typography>
                         </Box>
                         <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", alignItems: "flex-start" }}>
@@ -220,4 +220,8 @@ function temperatureColor(temperature: string) {
   if (temperature === "warm") return "primary";
   if (temperature === "mixed") return "warning";
   return "default";
+}
+
+function formatDate(value: string | Date) {
+  return new Date(value).toLocaleDateString();
 }

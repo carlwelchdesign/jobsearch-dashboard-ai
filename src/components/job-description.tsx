@@ -2,6 +2,7 @@ import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 
 const allowedTags = new Set(["p", "br", "strong", "b", "em", "i", "ul", "ol", "li", "h1", "h2", "h3", "h4", "a"]);
+const denseEmojiBulletRegex = /\s+([👶🩺🏝📈💸🔑🤝🏆🌎])\s+/gu;
 
 export function JobDescription({ description }: { description: string }) {
   const html = formatJobDescription(description);
@@ -45,11 +46,16 @@ function formatJobDescription(description: string) {
 function textToHtml(value: string) {
   const blocks = structurePlainText(value)
     .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
+    .flatMap((paragraph) => {
+      const next = paragraph.trim();
+      return next ? [next] : [];
+    });
 
   return blocks.map((block) => {
-    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+    const lines = block.split("\n").flatMap((line) => {
+      const next = line.trim();
+      return next ? [next] : [];
+    });
     if (lines.length === 0) return "";
     if (lines.every((line) => /^[-*•]\s+/.test(line))) {
       return `<ul>${lines.map((line) => `<li>${linkifyEscapedText(escapeHtml(line.replace(/^[-*•]\s+/, "")))}</li>`).join("")}</ul>`;
@@ -68,10 +74,10 @@ function structurePlainText(value: string) {
 
   if (isDensePlainText(text)) {
     text = text.replace(/\s+-\s+/g, "\n- ");
-    for (const heading of denseTextHeadings) {
-      text = text.replace(new RegExp(`\\s+(${escapeRegExp(heading)})(?=\\s|$)`, "gi"), "\n\n$1\n\n");
+    for (const headingRegex of denseTextHeadingRegexes) {
+      text = text.replace(headingRegex, "\n\n$1\n\n");
     }
-    text = text.replace(/\s+([👶🩺🏝📈💸🔑🤝🏆🌎])\s+/gu, "\n- $1 ");
+    text = text.replace(denseEmojiBulletRegex, "\n- $1 ");
   }
 
   const lines = text.split("\n").map((line) => line.trim());
@@ -109,6 +115,7 @@ const denseTextHeadings = [
   "Nice to have",
   "Benefits",
 ];
+const denseTextHeadingRegexes = denseTextHeadings.map((heading) => new RegExp(`\\s+(${escapeRegExp(heading)})(?=\\s|$)`, "gi"));
 
 function isPlainTextHeading(line: string) {
   const clean = stripHeadingColon(line);

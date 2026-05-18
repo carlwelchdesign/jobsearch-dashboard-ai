@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export function ProfileCreateForm() {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -31,8 +31,8 @@ export function ProfileCreateForm() {
       salaryCurrency: formData.get("salaryCurrency"),
       salaryMin: Number(formData.get("salaryMin") || 0) || null,
       minimumMatchScore: Number(formData.get("minimumMatchScore") || 75),
-      titles: String(formData.get("titles") ?? "").split(",").map((item) => item.trim()).filter(Boolean),
-      keywordsPreferred: String(formData.get("keywordsPreferred") ?? "").split(",").map((item) => item.trim()).filter(Boolean),
+      titles: splitList(String(formData.get("titles") ?? "")),
+      keywordsPreferred: splitList(String(formData.get("keywordsPreferred") ?? "")),
     };
     const response = await fetch("/api/profiles", {
       method: "POST",
@@ -50,7 +50,7 @@ export function ProfileCreateForm() {
     setNotice("Search profile created.");
     setOpen(false);
     event.currentTarget.reset();
-    router.refresh();
+    refresh();
   }
 
   return (
@@ -96,4 +96,11 @@ export function ProfileCreateForm() {
       </Collapse>
     </Stack>
   );
+}
+
+function splitList(value: string) {
+  return value.split(",").flatMap((item) => {
+    const next = item.trim();
+    return next ? [next] : [];
+  });
 }

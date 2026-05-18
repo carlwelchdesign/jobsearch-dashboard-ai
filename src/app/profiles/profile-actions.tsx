@@ -41,7 +41,7 @@ type EditableProfile = Omit<ProfileActionData, "enabled" | "titles" | "countries
 };
 
 export function ProfileActions({ profile }: { profile: ProfileActionData }) {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
@@ -70,7 +70,7 @@ export function ProfileActions({ profile }: { profile: ProfileActionData }) {
       return false;
     }
     setNotice(success);
-    router.refresh();
+    refresh();
     return true;
   }
 
@@ -103,7 +103,7 @@ export function ProfileActions({ profile }: { profile: ProfileActionData }) {
       return;
     }
     setNotice("Profile deleted.");
-    router.refresh();
+    refresh();
   }
 
   return (
@@ -131,11 +131,11 @@ export function ProfileActions({ profile }: { profile: ProfileActionData }) {
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             {error ? <Alert severity="error">{error}</Alert> : null}
-            <TextField label="Name" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-            <TextField label="Target titles" helperText="Comma-separated" value={draft.titles} onChange={(event) => setDraft({ ...draft, titles: event.target.value })} />
-            <TextField label="Countries" helperText="Comma-separated" value={draft.countries} onChange={(event) => setDraft({ ...draft, countries: event.target.value })} />
+            <TextField label="Name" value={draft.name} onChange={(event) => setDraft((previous) => ({ ...previous, name: event.target.value }))} />
+            <TextField label="Target titles" helperText="Comma-separated" value={draft.titles} onChange={(event) => setDraft((previous) => ({ ...previous, titles: event.target.value }))} />
+            <TextField label="Countries" helperText="Comma-separated" value={draft.countries} onChange={(event) => setDraft((previous) => ({ ...previous, countries: event.target.value }))} />
             <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-              <TextField select fullWidth label="Remote preference" value={draft.remotePreference} onChange={(event) => setDraft({ ...draft, remotePreference: event.target.value })}>
+              <TextField select fullWidth label="Remote preference" value={draft.remotePreference} onChange={(event) => setDraft((previous) => ({ ...previous, remotePreference: event.target.value }))}>
                 <MenuItem value="remote_us_only">Remote US only</MenuItem>
                 <MenuItem value="remote_global">Remote global</MenuItem>
                 <MenuItem value="remote_europe">Remote Europe</MenuItem>
@@ -143,7 +143,7 @@ export function ProfileActions({ profile }: { profile: ProfileActionData }) {
                 <MenuItem value="onsite_relocation">Onsite relocation</MenuItem>
                 <MenuItem value="any">Any</MenuItem>
               </TextField>
-              <TextField select fullWidth label="Currency" value={draft.salaryCurrency ?? "USD"} onChange={(event) => setDraft({ ...draft, salaryCurrency: event.target.value })}>
+              <TextField select fullWidth label="Currency" value={draft.salaryCurrency ?? "USD"} onChange={(event) => setDraft((previous) => ({ ...previous, salaryCurrency: event.target.value }))}>
                 <MenuItem value="USD">USD</MenuItem>
                 <MenuItem value="EUR">EUR</MenuItem>
                 <MenuItem value="GBP">GBP</MenuItem>
@@ -151,13 +151,13 @@ export function ProfileActions({ profile }: { profile: ProfileActionData }) {
               </TextField>
             </Stack>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-              <TextField fullWidth label="Minimum salary" type="number" value={draft.salaryMin ?? ""} onChange={(event) => setDraft({ ...draft, salaryMin: event.target.value ? Number(event.target.value) : null })} />
-              <TextField fullWidth label="Minimum match score" type="number" value={draft.minimumMatchScore} onChange={(event) => setDraft({ ...draft, minimumMatchScore: numberOrFallback(event.target.value, draft.minimumMatchScore) })} />
-              <TextField fullWidth label="Max results per run" type="number" value={draft.maxResultsPerRun} onChange={(event) => setDraft({ ...draft, maxResultsPerRun: numberOrFallback(event.target.value, draft.maxResultsPerRun) })} />
+              <TextField fullWidth label="Minimum salary" type="number" value={draft.salaryMin ?? ""} onChange={(event) => setDraft((previous) => ({ ...previous, salaryMin: event.target.value ? Number(event.target.value) : null }))} />
+              <TextField fullWidth label="Minimum match score" type="number" value={draft.minimumMatchScore} onChange={(event) => setDraft((previous) => ({ ...previous, minimumMatchScore: numberOrFallback(event.target.value, draft.minimumMatchScore) }))} />
+              <TextField fullWidth label="Max results per run" type="number" value={draft.maxResultsPerRun} onChange={(event) => setDraft((previous) => ({ ...previous, maxResultsPerRun: numberOrFallback(event.target.value, draft.maxResultsPerRun) }))} />
             </Stack>
-            <TextField label="Preferred keywords" helperText="Comma-separated" value={draft.keywordsPreferred} onChange={(event) => setDraft({ ...draft, keywordsPreferred: event.target.value })} />
-            <TextField label="Excluded keywords" helperText="Comma-separated" value={draft.keywordsExcluded} onChange={(event) => setDraft({ ...draft, keywordsExcluded: event.target.value })} />
-            <TextField label="Excluded companies" helperText="Comma-separated" value={draft.excludedCompanies} onChange={(event) => setDraft({ ...draft, excludedCompanies: event.target.value })} />
+            <TextField label="Preferred keywords" helperText="Comma-separated" value={draft.keywordsPreferred} onChange={(event) => setDraft((previous) => ({ ...previous, keywordsPreferred: event.target.value }))} />
+            <TextField label="Excluded keywords" helperText="Comma-separated" value={draft.keywordsExcluded} onChange={(event) => setDraft((previous) => ({ ...previous, keywordsExcluded: event.target.value }))} />
+            <TextField label="Excluded companies" helperText="Comma-separated" value={draft.excludedCompanies} onChange={(event) => setDraft((previous) => ({ ...previous, excludedCompanies: event.target.value }))} />
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -187,7 +187,10 @@ function toDraft(profile: ProfileActionData): EditableProfile {
 }
 
 function splitList(value: string) {
-  return value.split(",").map((item) => item.trim()).filter(Boolean);
+  return value.split(",").flatMap((item) => {
+    const next = item.trim();
+    return next ? [next] : [];
+  });
 }
 
 function numberOrFallback(value: string, fallback: number) {

@@ -360,7 +360,7 @@ export default async function DashboardPage() {
                         </Typography>
                         {dailyPlan?.generatedAt ? (
                           <Typography variant="caption" color="text.secondary">
-                            Generated {new Date(dailyPlan.generatedAt).toLocaleString()}
+                            Generated {formatDateTime(dailyPlan.generatedAt)}
                           </Typography>
                         ) : null}
                       </Box>
@@ -602,9 +602,9 @@ function SignalList({ title, items, color }: { title: string; items: string[]; c
     <Box>
       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800, textTransform: "uppercase" }}>{title}</Typography>
       <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
-        {items.length === 0 ? <Chip size="small" variant="outlined" label="None" /> : visibleItems.map((item, index) => (
+        {items.length === 0 ? <Chip size="small" variant="outlined" label="None" /> : visibleItems.map((item) => (
           <Chip
-            key={`${title}-${item}-${index}`}
+            key={`${title}-${item}`}
             size="small"
             color={color}
             variant="outlined"
@@ -620,4 +620,8 @@ function SignalList({ title, items, color }: { title: string; items: string[]; c
       </Stack>
     </Box>
   );
+}
+
+function formatDateTime(value: string | Date) {
+  return new Date(value).toLocaleString();
 }

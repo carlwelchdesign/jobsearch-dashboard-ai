@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export function EvaluateJobsControl() {
-  const router = useRouter();
+  const { refresh } = useRouter();
   const [running, setRunning] = useState(false);
   const [notice, setNotice] = useState("");
   const [severity, setSeverity] = useState<"success" | "error" | "info">("info");
@@ -25,7 +25,7 @@ export function EvaluateJobsControl() {
       if (!response.ok) throw new Error(payload.error ?? "Unable to evaluate jobs.");
       setSeverity("success");
       setNotice(payload.message ?? "Evaluation complete.");
-      router.refresh();
+      refresh();
     } catch (error) {
       setSeverity("error");
       setNotice(error instanceof Error ? error.message : "Unable to evaluate jobs.");

@@ -847,9 +847,7 @@ export default async function SettingsPage() {
             veteranStatusAnswer: user?.profile?.veteranStatusAnswer ?? "",
             disabilityAnswer: user?.profile?.disabilityAnswer ?? "",
             githubRepositoryCount: user?.profile?.githubRepositories.length ?? 0,
-            latestGithubSync: user?.profile?.githubRepositories
-              .map((repo) => repo.updatedAt)
-              .sort((a, b) => b.getTime() - a.getTime())[0]?.toLocaleString() ?? null,
+            latestGithubSync: latestDate(user?.profile?.githubRepositories.map((repo) => repo.updatedAt) ?? [])?.toLocaleString() ?? null,
           }}
           latestGithubReview={isRecord(latestGithubReviewRun?.outputJson) ? latestGithubReviewRun.outputJson as SettingsGithubReview : null}
           cronSettings={{
@@ -873,6 +871,11 @@ export default async function SettingsPage() {
       </Stack>
     </AppShell>
   );
+}
+
+function latestDate(values: Date[]) {
+  if (!values.length) return null;
+  return new Date(Math.max(...values.map((value) => value.getTime())));
 }
 
 type SettingsNextActionInput = {

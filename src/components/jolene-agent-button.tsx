@@ -75,7 +75,7 @@ type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
 export function JoleneAgentButton() {
   const pathname = usePathname();
-  const router = useRouter();
+  const { push, refresh } = useRouter();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<JoleneMessage[]>([]);
   const [context, setContext] = useState<JoleneContext | null>(null);
@@ -188,7 +188,7 @@ export function JoleneAgentButton() {
       const newMessages = payload.messages as JoleneMessage[];
       setMessages((current) => [...current, ...newMessages]);
       setContext(payload.context);
-      handleClientAction(payload.clientAction as JoleneClientAction | null | undefined, router);
+      handleClientAction(payload.clientAction as JoleneClientAction | null | undefined, { push, refresh });
 
       const assistantReply = newMessages.find((item) => item.role === "ASSISTANT");
       if ((voiceEnabled || options?.spoken) && assistantReply) {
@@ -208,7 +208,7 @@ export function JoleneAgentButton() {
       loadingRef.current = false;
       processedVoiceCommandRef.current = "";
     }
-  }, [input, pathname, router, voiceEnabled]);
+  }, [input, pathname, push, refresh, voiceEnabled]);
 
   const startHandsFreeRecognition = useCallback(() => {
     if (!speechSupported || typeof window === "undefined" || recognitionRef.current || loadingRef.current || speakingRef.current) return;
@@ -471,7 +471,7 @@ export function JoleneAgentButton() {
             {loadingHistory ? (
               <Stack spacing={1.5} sx={{ alignItems: "center", py: 6 }}>
                 <CircularProgress size={24} />
-                <Typography variant="body2" color="text.secondary">Loading Jolene history...</Typography>
+                <Typography variant="body2" color="text.secondary">Loading Jolene history…</Typography>
               </Stack>
             ) : null}
 
@@ -540,7 +540,7 @@ export function JoleneAgentButton() {
                   <Paper variant="outlined" sx={{ px: 1.5, py: 1.25, borderRadius: 2 }}>
                     <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
                       <CircularProgress size={16} />
-                      <Typography variant="body2" color="text.secondary">Jolene is checking this page...</Typography>
+                      <Typography variant="body2" color="text.secondary">Jolene is checking this page…</Typography>
                     </Stack>
                   </Paper>
                 </Box>
@@ -641,7 +641,7 @@ export function JoleneAgentButton() {
   );
 }
 
-function handleClientAction(action: JoleneClientAction | null | undefined, router: ReturnType<typeof useRouter>) {
+function handleClientAction(action: JoleneClientAction | null | undefined, router: { push: (href: string) => void; refresh: () => void }) {
   if (!action) return;
   if (action.type === "refresh") {
     router.refresh();

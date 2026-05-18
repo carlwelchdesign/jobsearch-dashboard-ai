@@ -1,3 +1,8 @@
+export const metadata = {
+  title: "Outcomes | Job Search OS",
+  description: "Analyze application outcomes and job search quality signals.",
+};
+
 import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import EditNoteOutlinedIcon from "@mui/icons-material/EditNoteOutlined";
 import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
