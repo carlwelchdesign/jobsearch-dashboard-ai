@@ -1,6 +1,7 @@
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { syncJobResponseEmail } from "@/lib/email/sync";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
+import { executeJoleneCareerCoaching, isLikelyPastedInterviewPrompt } from "@/lib/jolene/career-coach";
 import { executeJoleneRetrieval, type JoleneResultLink } from "@/lib/jolene/retrieval";
 
 export type JoleneClientAction =
@@ -17,6 +18,9 @@ export type JoleneActionResult = {
 export async function executeJoleneAction(message: string, options: { userId?: string | null } = {}): Promise<JoleneActionResult> {
   const retrieval = await executeJoleneRetrieval(message, options);
   if (retrieval.handled) return retrieval;
+
+  const coaching = await executeJoleneCareerCoaching(message, options);
+  if (coaching.handled) return coaching;
 
   const intent = parseIntent(message);
 
@@ -123,7 +127,8 @@ function parseIntent(message: string) {
   }
 
   if (
-    /\b(check|scan|sync|look|read|review|fetch|poll)\b/.test(normalized) &&
+    !isLikelyPastedInterviewPrompt(message) &&
+    /\b(check|scan|sync|fetch|poll)\b/.test(normalized) &&
     /\b(email|emails|gmail|inbox|mail|messages|responses|replies)\b/.test(normalized)
   ) {
     return "check_email";

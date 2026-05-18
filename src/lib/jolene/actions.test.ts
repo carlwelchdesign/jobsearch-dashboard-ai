@@ -18,8 +18,13 @@ vi.mock("@/lib/agents/duplicate-stale-job-detector", () => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     generatedCoverLetter: { findMany: vi.fn() },
+    candidateEvidence: { findMany: vi.fn() },
+    experienceBullet: { findMany: vi.fn() },
     application: { findMany: vi.fn() },
     jobPosting: { findMany: vi.fn() },
+    project: { findMany: vi.fn() },
+    user: { findFirst: vi.fn(), findUnique: vi.fn() },
+    workExperience: { findMany: vi.fn() },
   },
 }));
 
@@ -31,8 +36,14 @@ describe("executeJoleneAction", () => {
     vi.clearAllMocks();
     const { prisma } = await import("@/lib/prisma");
     vi.mocked(prisma.generatedCoverLetter.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.candidateEvidence.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.experienceBullet.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.application.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.jobPosting.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.project.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.user.findFirst).mockResolvedValue(null as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(null as never);
+    vi.mocked(prisma.workExperience.findMany).mockResolvedValue([] as never);
   });
 
   it("checks email when the user asks Jolene to check Gmail", async () => {
@@ -182,4 +193,102 @@ describe("executeJoleneAction", () => {
     expect(result.actionJson).toMatchObject({ action: "find_application_materials", resultCount: 1 });
     expect(result.actionJson?.resultLinks).toEqual(expect.arrayContaining([expect.objectContaining({ href: "/resumes/generated" })]));
   });
+
+  it("does not treat pasted interview guidance as an email sync command", async () => {
+    await mockCareerContext();
+
+    const result = await executeJoleneAction(`
+      I landed an interview with a company called Socure. They sent an email that says this:
+      As you plan for your interview, I wanted to share a bit more about the success profiles that we are evaluating for at Socure.
+      We look for people who take ownership, have had real-world impact, and thrive working in fast-moving, often ambiguous start-up environments.
+      During interviews, it is helpful to come prepared to discuss high-visibility projects you owned end-to-end, specific metrics quantifying how your work impacted customers or the business, hard-to-solve unclear problems, decision-making trade-offs, and how you are using AI in your workflows to maximize impact and efficiency.
+      How have you observed this applies to me?
+    `, { userId: "user_1" });
+
+    expect(syncJobResponseEmailMock).not.toHaveBeenCalled();
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({ action: "interview_coaching" });
+    expect(result.reply).toContain("Socure");
+    expect(result.reply).toContain("Interview-ready talking points");
+    expect(result.reply).toContain("AI");
+  });
+
+  it("answers direct career story requests from local context", async () => {
+    await mockCareerContext();
+
+    const result = await executeJoleneAction("Give me stories for ownership, ambiguity, metrics, and AI workflows.", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({ action: "interview_coaching" });
+    expect(result.reply).toContain("ownership");
+    expect(result.reply).toContain("Metrics to prepare");
+  });
 });
+
+async function mockCareerContext() {
+  const { prisma } = await import("@/lib/prisma");
+  vi.mocked(prisma.user.findUnique).mockResolvedValue({
+    id: "user_1",
+    profile: {
+      id: "profile_1",
+      fullName: "Carl Welch",
+      yearsExperience: 20,
+      professionalSummary: "Senior full-stack engineer building AI workflow products.",
+      masterSummary: "Full-stack product engineer.",
+      primaryRoles: ["Senior Software Engineer", "Frontend Platform Lead"],
+      coreSkills: ["React", "TypeScript", "AI workflows"],
+      technicalSkills: ["Next.js", "Postgres", "LangGraph", "RAG"],
+      industries: ["SaaS", "AI"],
+      domainExpertise: ["agentic workflows", "design systems"],
+    },
+  } as never);
+  vi.mocked(prisma.candidateEvidence.findMany).mockResolvedValue([
+    {
+      id: "ev_ownership",
+      title: "Owned AI job search operating system end to end",
+      content: "Built a full-stack agentic workflow system with Next.js, Prisma, LangGraph, RAG evidence, application automation, and quality loops.",
+      tags: ["ownership", "ai", "langgraph", "full-stack"],
+      sourceType: "USER_INPUT",
+    },
+    {
+      id: "ev_impact",
+      title: "Interview outcome from job search system",
+      content: "The workflow helped land interviews and reduced repeated manual application work through prepared packets and dedupe.",
+      tags: ["impact", "metrics", "interview"],
+      sourceType: "APPLICATION_HISTORY",
+    },
+  ] as never);
+  vi.mocked(prisma.workExperience.findMany).mockResolvedValue([
+    {
+      company: "ProgressionLab",
+      title: "Founder and Lead Engineer",
+      summary: "Owned AI SaaS architecture and launch.",
+      achievements: ["Built product end-to-end", "Designed secure subscription system"],
+      skills: ["React", "TypeScript", "AI"],
+    },
+  ] as never);
+  vi.mocked(prisma.project.findMany).mockResolvedValue([
+    {
+      name: "Agentic application system",
+      description: "AI workflow platform for job search operations.",
+      technologies: ["Next.js", "LangGraph", "Postgres"],
+      highlights: ["Human-in-the-loop automation", "Quality scoring", "App-aware assistant"],
+    },
+  ] as never);
+  vi.mocked(prisma.experienceBullet.findMany).mockResolvedValue([
+    {
+      id: "bullet_1",
+      role: "Founder",
+      company: "ProgressionLab",
+      text: "Owned ambiguous AI workflow problems and built reliable product systems with clear trade-offs.",
+      category: "ai",
+    },
+  ] as never);
+  vi.mocked(prisma.application.findMany).mockResolvedValue([
+    {
+      status: "interviewing",
+      appliedAt: new Date("2026-05-18T12:00:00.000Z"),
+      jobPosting: { company: "Socure", title: "Senior Software Engineer" },
+    },
+  ] as never);
+}

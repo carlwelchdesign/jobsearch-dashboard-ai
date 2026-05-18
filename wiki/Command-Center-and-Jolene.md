@@ -74,6 +74,18 @@ Jolene also has app-aware local retrieval tools. Before falling back to a genera
 
 When Jolene finds a match, she returns direct links to the relevant local pages and exports, including generated cover-letter text/PDF routes, generated materials, application detail, and job detail. She does not include full cover-letter bodies in default answers; she points to the stored material unless the user explicitly asks for content.
 
+## Career-Aware Coaching
+
+Jolene can answer interview and positioning questions from local career context. When a user pastes recruiter guidance or asks how a success profile applies to their background, Jolene loads compact evidence from:
+
+- candidate profile summaries, roles, skills, domains, and industries
+- approved candidate evidence
+- work experiences, projects, and experience bullets
+- application outcomes and interview-stage signals
+- recent app-building themes such as agentic workflows, RAG, LangGraph, automation, and quality loops
+
+This path is non-mutating. Pasted recruiter text containing words like "email", "review", or "interview" should not trigger email sync unless the user explicitly asks Jolene to check or sync email. Career coaching answers map prompts to evidence-backed talking points, likely gaps, and metrics to prepare.
+
 ## Jolene Persistence
 
 Jolene stores conversations in:
