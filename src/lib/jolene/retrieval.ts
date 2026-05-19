@@ -304,6 +304,7 @@ function parseRetrievalIntent(message: string): RetrievalIntent | null {
   const normalized = normalize(message);
   if (/\b(run|start|kick off|launch|begin)\b/.test(normalized) && /\b(job )?(search|discovery)\b/.test(normalized)) return null;
   if (/\b(check|detect|scan|clean up|dedupe|deduplicate)\b/.test(normalized) && /\b(duplicate|duplicates|dedupe|deduplication)\b/.test(normalized)) return null;
+  if (/\b(why|how|diagnose|explain|improve|better|quality|stuck|blocked)\b/.test(normalized)) return null;
   const lookup = /\b(where|find|show|open|locate|pull up|get|search)\b/.test(normalized);
   if (!lookup) return null;
   if (/\bcover letter|coverletter\b/.test(normalized)) return "cover_letter";

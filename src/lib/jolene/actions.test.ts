@@ -29,10 +29,18 @@ vi.mock("@/lib/prisma", () => ({
     generatedCoverLetter: { findMany: vi.fn() },
     candidateEvidence: { findMany: vi.fn() },
     experienceBullet: { findMany: vi.fn() },
-    application: { findMany: vi.fn() },
-    jobProfileMatch: { findMany: vi.fn() },
-    jobPosting: { findMany: vi.fn() },
+    application: { findMany: vi.fn(), groupBy: vi.fn() },
+    applicationOutcome: { findMany: vi.fn(), groupBy: vi.fn() },
+    applicationPacket: { count: vi.fn() },
+    agentRun: { count: vi.fn(), findMany: vi.fn() },
+    agentUserRequest: { count: vi.fn() },
+    jobProfileMatch: { findMany: vi.fn(), groupBy: vi.fn() },
+    jobPosting: { findMany: vi.fn(), groupBy: vi.fn() },
+    jobSearchProfile: { findMany: vi.fn() },
+    jobSearchRun: { findFirst: vi.fn() },
+    jobSuppression: { count: vi.fn() },
     project: { findMany: vi.fn() },
+    skillFeedback: { count: vi.fn(), findMany: vi.fn() },
     user: { findFirst: vi.fn(), findUnique: vi.fn() },
     workExperience: { findMany: vi.fn() },
   },
@@ -50,9 +58,23 @@ describe("executeJoleneAction", () => {
     vi.mocked(prisma.candidateEvidence.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.experienceBullet.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.application.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.application.groupBy).mockResolvedValue([] as never);
+    vi.mocked(prisma.applicationOutcome.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.applicationOutcome.groupBy).mockResolvedValue([] as never);
+    vi.mocked(prisma.applicationPacket.count).mockResolvedValue(0 as never);
+    vi.mocked(prisma.agentRun.count).mockResolvedValue(0 as never);
+    vi.mocked(prisma.agentRun.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.agentUserRequest.count).mockResolvedValue(0 as never);
     vi.mocked(prisma.jobProfileMatch.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.jobProfileMatch.groupBy).mockResolvedValue([] as never);
     vi.mocked(prisma.jobPosting.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.jobPosting.groupBy).mockResolvedValue([] as never);
+    vi.mocked(prisma.jobSearchProfile.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.jobSearchRun.findFirst).mockResolvedValue(null as never);
+    vi.mocked(prisma.jobSuppression.count).mockResolvedValue(0 as never);
     vi.mocked(prisma.project.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.skillFeedback.count).mockResolvedValue(0 as never);
+    vi.mocked(prisma.skillFeedback.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.user.findFirst).mockResolvedValue(null as never);
     vi.mocked(prisma.user.findUnique).mockResolvedValue(null as never);
     vi.mocked(prisma.workExperience.findMany).mockResolvedValue([] as never);
@@ -303,6 +325,72 @@ describe("executeJoleneAction", () => {
     expect(result.actionJson).toMatchObject({ action: "jolene_adk_operator" });
     expect(result.reply).toContain("sync issue");
     expect(result.actionJson?.diagnostics).toMatchObject({ recommendedAction: "run_application_integrity_repair" });
+  });
+
+  it("grounds broad job-quality questions in app-wide sources", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.jobProfileMatch.groupBy).mockResolvedValue([
+      { status: "needs_review", _count: { _all: 12 } },
+      { status: "rejected", _count: { _all: 30 } },
+    ] as never);
+    vi.mocked(prisma.application.groupBy).mockResolvedValue([
+      { status: "approved", _count: { _all: 2 } },
+      { status: "applied", _count: { _all: 4 } },
+    ] as never);
+    vi.mocked(prisma.agentUserRequest.count).mockResolvedValue(1 as never);
+    vi.mocked(prisma.applicationPacket.count).mockResolvedValue(2 as never);
+    vi.mocked(prisma.jobSearchProfile.findMany).mockResolvedValue([
+      {
+        id: "profile_1",
+        name: "AI Product Frontend",
+        enabled: true,
+        scheduleEnabled: true,
+        minimumMatchScore: 85,
+        titles: ["Staff Frontend Engineer"],
+        keywordsRequired: ["React", "TypeScript"],
+        keywordsPreferred: ["AI", "agents"],
+        keywordsExcluded: ["WordPress"],
+        countries: ["US"],
+        remotePreference: "remote_us_only",
+      },
+    ] as never);
+    vi.mocked(prisma.jobSearchRun.findFirst).mockResolvedValue({
+      id: "run_1",
+      status: "completed",
+      jobsFetched: 100,
+      jobsAfterDedupe: 80,
+      jobsSaved: 0,
+      errors: [],
+      startedAt: new Date("2026-05-18T12:00:00.000Z"),
+      finishedAt: new Date("2026-05-18T12:05:00.000Z"),
+    } as never);
+    vi.mocked(prisma.jobPosting.groupBy).mockResolvedValue([{ duplicateGroupId: "dup_1", _count: { _all: 3 } }] as never);
+    vi.mocked(prisma.jobSuppression.count).mockResolvedValue(0 as never);
+    vi.mocked(prisma.jobProfileMatch.findMany).mockResolvedValue([
+      {
+        id: "match_1",
+        status: "rejected",
+        overallScore: 88,
+        recommendedAction: "REJECT",
+        strongestMatches: ["React", "TypeScript"],
+        concerns: ["No AI product signal"],
+        missingKeywords: ["agents"],
+        jobPosting: { id: "job_1", company: "Acme", title: "Frontend Engineer", duplicateGroupId: null, staleScore: 0 },
+        jobSearchProfile: { id: "profile_1", name: "AI Product Frontend" },
+      },
+    ] as never);
+
+    const result = await executeJoleneAction("Why am I not getting better jobs from search?", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({
+      action: "jolene_grounded_answer",
+      checkedSources: expect.arrayContaining(["search_profiles", "search_runs", "jobs"]),
+      retrievedItems: expect.arrayContaining([expect.objectContaining({ type: "search_profiles", title: "AI Product Frontend" })]),
+    });
+    expect(result.reply).toContain("I checked");
+    expect(result.reply).toContain("Latest search run completed");
+    expect(result.reply).toContain("/profiles");
   });
 });
 

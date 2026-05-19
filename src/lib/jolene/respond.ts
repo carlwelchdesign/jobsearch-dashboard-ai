@@ -1,6 +1,7 @@
 import type { JoleneMessageRole } from "@prisma/client";
 import { createTextResponse, isOpenAiConfigured } from "@/lib/ai/openai";
 import { formatJoleneContextForPrompt, type JolenePageContext } from "@/lib/jolene/context";
+import type { JoleneGlobalContext, JoleneKnowledgeItem } from "@/lib/jolene/knowledge";
 
 type JoleneHistoryMessage = {
   role: JoleneMessageRole;
@@ -10,11 +11,15 @@ type JoleneHistoryMessage = {
 export async function generateJoleneReply({
   message,
   context,
+  globalContext,
   history,
+  retrievedItems = [],
 }: {
   message: string;
   context: JolenePageContext;
+  globalContext?: JoleneGlobalContext;
   history: JoleneHistoryMessage[];
+  retrievedItems?: JoleneKnowledgeItem[];
 }) {
   if (isOpenAiConfigured()) {
     const response = await createTextResponse({
@@ -32,6 +37,8 @@ export async function generateJoleneReply({
         {
           userMessage: message,
           pageContext: JSON.parse(formatJoleneContextForPrompt(context)),
+          globalContext: globalContext ?? null,
+          retrievedItems,
           recentConversation: history.slice(-10).map((item) => ({ role: item.role, content: item.content })),
         },
         null,

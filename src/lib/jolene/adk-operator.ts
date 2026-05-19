@@ -158,7 +158,7 @@ function guardedActionPlan(normalized: string) {
 }
 
 function isDuplicateApplicationDiagnostic(normalized: string) {
-  return /\b(why|still|showing|visible|duplicate|duplicates|sync|state)\b/.test(normalized)
+  return /\b(ready to apply|applied|still showing|showing|visible|duplicate|duplicates|sync|state drift)\b/.test(normalized)
     && /\b(application|applications|ready to apply|applied|approved|job|jobs)\b/.test(normalized);
 }
 

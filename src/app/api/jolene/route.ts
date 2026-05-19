@@ -4,6 +4,7 @@ import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { executeJoleneAction } from "@/lib/jolene/actions";
 import { buildJolenePageContext } from "@/lib/jolene/context";
+import { buildJoleneGlobalContext, retrieveJoleneKnowledge } from "@/lib/jolene/knowledge";
 import { generateJoleneReply } from "@/lib/jolene/respond";
 import { prisma } from "@/lib/prisma";
 import { captureSkillFeedback, isSkillFeedbackIntent } from "@/lib/skills/learning";
@@ -80,6 +81,8 @@ export async function POST(request: Request) {
       handled: false,
     } as Awaited<ReturnType<typeof executeJoleneAction>>;
     let reply: string | undefined;
+    let fallbackGlobalContext: Awaited<ReturnType<typeof buildJoleneGlobalContext>> | null = null;
+    let fallbackRetrievedItems: Awaited<ReturnType<typeof retrieveJoleneKnowledge>> = [];
 
     if (isSkillFeedbackIntent(body.message)) {
       const feedback = await captureSkillFeedback({
@@ -122,10 +125,16 @@ export async function POST(request: Request) {
         orderBy: { createdAt: "asc" },
         take: 40,
       });
+      [fallbackGlobalContext, fallbackRetrievedItems] = await Promise.all([
+        buildJoleneGlobalContext(user.id),
+        retrieveJoleneKnowledge(body.message, user.id),
+      ]);
 
       reply = await generateJoleneReply({
         message: body.message,
         context,
+        globalContext: fallbackGlobalContext,
+        retrievedItems: fallbackRetrievedItems,
         history: history.map((message) => ({ role: message.role, content: message.content })),
       });
     }
@@ -140,9 +149,12 @@ export async function POST(request: Request) {
           contextPath: context.contextPath,
           summary: context.summary,
           data: context.data,
+          globalContext: fallbackGlobalContext,
         }),
         actionJson: toJsonInput({
           suggestedActions: context.suggestedActions,
+          checkedSources: fallbackGlobalContext?.checkedSources ?? actionResult.actionJson?.checkedSources ?? [],
+          retrievedItems: fallbackRetrievedItems.length ? fallbackRetrievedItems : actionResult.actionJson?.retrievedItems ?? [],
           requiresConfirmation: actionResult.requiresConfirmation ?? false,
           plannedActions: actionResult.plannedActions ?? [],
           executedActions: actionResult.executedActions ?? [],

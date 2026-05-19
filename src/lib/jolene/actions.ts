@@ -3,6 +3,12 @@ import { syncJobResponseEmail } from "@/lib/email/sync";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
 import { executeJoleneAdkOperator, type JoleneOperatorAction } from "@/lib/jolene/adk-operator";
 import { executeJoleneCareerCoaching, isLikelyPastedInterviewPrompt } from "@/lib/jolene/career-coach";
+import {
+  buildJoleneGlobalContext,
+  retrieveJoleneKnowledge,
+  shouldUseJoleneGroundedAnswer,
+  synthesizeJoleneGroundedAnswer,
+} from "@/lib/jolene/knowledge";
 import { executeJoleneRetrieval, type JoleneResultLink } from "@/lib/jolene/retrieval";
 
 export type JoleneClientAction =
@@ -35,6 +41,24 @@ export async function executeJoleneAction(message: string, options: { userId?: s
 
   const coaching = await executeJoleneCareerCoaching(message, options);
   if (coaching.handled) return coaching;
+
+  if (options.userId && shouldUseJoleneGroundedAnswer(message)) {
+    const [globalContext, retrievedItems] = await Promise.all([
+      buildJoleneGlobalContext(options.userId),
+      retrieveJoleneKnowledge(message, options.userId),
+    ]);
+    const grounded = synthesizeJoleneGroundedAnswer({
+      message,
+      globalContext,
+      retrievedItems,
+    });
+
+    return {
+      handled: true,
+      reply: grounded.reply,
+      actionJson: grounded.actionJson,
+    };
+  }
 
   const intent = parseIntent(message);
 
