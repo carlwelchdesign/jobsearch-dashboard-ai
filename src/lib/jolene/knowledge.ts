@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { careerMissionSummary, getOrCreateCareerMission, serializeCareerMission, type CareerMissionSnapshot } from "@/lib/jolene/career-mission";
 
 export type JoleneKnowledgeSource =
   | "pipeline"
@@ -26,6 +27,7 @@ export type JoleneKnowledgeItem = {
 
 export type JoleneGlobalContext = {
   checkedSources: JoleneKnowledgeSource[];
+  mission?: CareerMissionSnapshot;
   pipeline: {
     jobsByStatus: Record<string, number>;
     applicationsByStatus: Record<string, number>;
@@ -73,6 +75,7 @@ export type JoleneGroundedAnswer = {
 
 export async function buildJoleneGlobalContext(userId: string): Promise<JoleneGlobalContext> {
   const [
+    mission,
     jobCounts,
     applicationCounts,
     openBlockers,
@@ -85,6 +88,7 @@ export async function buildJoleneGlobalContext(userId: string): Promise<JoleneGl
     recentFeedback,
     outcomes,
   ] = await Promise.all([
+    getOrCreateCareerMission(userId).then(serializeCareerMission),
     prisma.jobProfileMatch.groupBy({
       by: ["status"],
       where: { jobSearchProfile: { userId } },
@@ -132,6 +136,7 @@ export async function buildJoleneGlobalContext(userId: string): Promise<JoleneGl
       "outcomes",
       "feedback",
     ],
+    mission,
     pipeline: {
       jobsByStatus: countsByStatus(jobCounts),
       applicationsByStatus,
@@ -372,6 +377,7 @@ export function synthesizeJoleneGroundedAnswer({
 
 function knownFacts(globalContext: JoleneGlobalContext, retrievedItems: JoleneKnowledgeItem[]) {
   const facts = [
+    globalContext.mission ? `Career mission: ${careerMissionSummary(globalContext.mission)}` : "Career mission is not set.",
     `${globalContext.pipeline.openBlockers} open blocker(s), ${globalContext.pipeline.packetsNeedingReview} packet(s) needing review, ${globalContext.pipeline.activeApplications} active pre-submit application(s), and ${globalContext.pipeline.submittedApplications} submitted or outcome-bearing application(s).`,
     `${globalContext.search.enabledProfiles} enabled search profile(s), ${globalContext.search.disabledProfiles} disabled profile(s), and ${globalContext.search.scheduledProfiles} scheduled profile(s).`,
     globalContext.search.latestRun
@@ -402,6 +408,10 @@ function likelyCauses(normalized: string, globalContext: JoleneGlobalContext, re
     if (globalContext.search.latestRun && globalContext.search.latestRun.jobsSaved === 0) causes.push("The latest search run did not save jobs, which points to source, filter, or dedupe pressure.");
     if (profileItems.length) causes.push("Relevant search profiles should be reviewed for title, keyword, location, and minimum-score targeting.");
   }
+  if (/\b(income|salary|compensation|money|offer|career|urgent|urgency)\b/.test(normalized)) {
+    if (!globalContext.mission?.targetCompensationMin) causes.push("The career mission has no compensation floor, so Jolene cannot enforce income-first prioritization cleanly.");
+    if (globalContext.search.enabledProfiles > 0 && globalContext.mission?.targetCompensationMin) causes.push("Income outcomes depend on enabled profiles honoring the mission salary floor and rejecting low-leverage roles.");
+  }
   if (/\b(stuck|blocked|not moving|why.*apply|application)\b/.test(normalized)) {
     if (globalContext.pipeline.openBlockers > 0) causes.push("Open blocker questions can stop application or automation workflows.");
     if (globalContext.pipeline.packetsNeedingReview > 0) causes.push("Draft or needs-review packets can hold applications before submission.");
@@ -420,6 +430,10 @@ function recommendedActions(normalized: string, globalContext: JoleneGlobalConte
   if (/\b(not finding|not getting|better jobs|bad jobs|quality|fit|search)\b/.test(normalized)) {
     actions.push("Review /profiles for enabled profiles, minimum match scores, required keywords, excluded titles, countries, and remote preference.");
     actions.push("Refresh market intelligence from /profiles before broadening sources or lowering score thresholds.");
+  }
+  if (/\b(income|salary|compensation|money|offer|career|urgent|urgency)\b/.test(normalized)) {
+    actions.push("Ask Jolene for a Career CEO brief to rank today’s top money moves against the mission.");
+    actions.push("Review salary floors on enabled profiles and raise or narrow them where they conflict with the sprint target.");
   }
   if (globalContext.search.latestRun?.status === "failed") actions.push("Open /agents or /dashboard and inspect the latest failed search run error before running another search.");
   if (retrievedItems.some((item) => item.href)) actions.push("Open the cited records above and make the smallest state change after verifying the exact job/application.");

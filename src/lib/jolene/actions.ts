@@ -3,6 +3,7 @@ import { syncJobResponseEmail } from "@/lib/email/sync";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
 import { executeJoleneAdkOperator, type JoleneOperatorAction } from "@/lib/jolene/adk-operator";
 import { executeJoleneCareerCoaching, isLikelyPastedInterviewPrompt } from "@/lib/jolene/career-coach";
+import { buildCareerCeoBrief, formatCareerCeoBrief } from "@/lib/jolene/career-ceo";
 import {
   buildJoleneGlobalContext,
   retrieveJoleneKnowledge,
@@ -41,6 +42,23 @@ export async function executeJoleneAction(message: string, options: { userId?: s
 
   const coaching = await executeJoleneCareerCoaching(message, options);
   if (coaching.handled) return coaching;
+
+  if (options.userId && isCareerCeoBriefIntent(message)) {
+    const brief = await buildCareerCeoBrief(options.userId);
+    return {
+      handled: true,
+      reply: formatCareerCeoBrief(brief),
+      actionJson: {
+        action: "career_ceo_brief",
+        missionContext: brief.mission,
+        moneyMoves: brief.moneyMoves,
+        incomeRisks: brief.incomeRisks,
+        pipelineLeverage: brief.pipelineLeverage,
+        recommendedSprintActions: brief.recommendedSprintActions,
+        confidence: brief.confidence,
+      },
+    };
+  }
 
   if (options.userId && shouldUseJoleneGroundedAnswer(message)) {
     const [globalContext, retrievedItems] = await Promise.all([
@@ -145,6 +163,11 @@ export async function executeJoleneAction(message: string, options: { userId?: s
   }
 
   return { handled: false };
+}
+
+function isCareerCeoBriefIntent(message: string) {
+  const normalized = normalize(message);
+  return /\b(career ceo|ceo brief|career brief|money moves|income sprint|high income sprint|maximize income|career mission)\b/.test(normalized);
 }
 
 function parseIntent(message: string) {

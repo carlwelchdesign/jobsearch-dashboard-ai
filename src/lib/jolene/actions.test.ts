@@ -34,6 +34,7 @@ vi.mock("@/lib/prisma", () => ({
     applicationPacket: { count: vi.fn() },
     agentRun: { count: vi.fn(), findMany: vi.fn() },
     agentUserRequest: { count: vi.fn() },
+    careerMission: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     jobProfileMatch: { findMany: vi.fn(), groupBy: vi.fn() },
     jobPosting: { findMany: vi.fn(), groupBy: vi.fn() },
     jobSearchProfile: { findMany: vi.fn() },
@@ -65,6 +66,26 @@ describe("executeJoleneAction", () => {
     vi.mocked(prisma.agentRun.count).mockResolvedValue(0 as never);
     vi.mocked(prisma.agentRun.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.agentUserRequest.count).mockResolvedValue(0 as never);
+    vi.mocked(prisma.careerMission.findUnique).mockResolvedValue({
+      id: "mission_1",
+      userId: "user_1",
+      targetCompensationMin: 180000,
+      targetCompensationIdeal: 240000,
+      currency: "USD",
+      horizonDays: 30,
+      urgencyMode: "HIGH_INCOME_SPRINT",
+      tradeoffPolicy: "AGGRESSIVE_BUT_TRUTHFUL",
+      roleTracks: ["AI product engineer"],
+      dealbreakers: ["unsupported claims"],
+      acceptableFallbacks: ["contract"],
+      dailyCapacityMinutes: 120,
+      energyNotes: null,
+      tonePreferences: { directness: "high" },
+      createdAt: new Date("2026-05-19T12:00:00.000Z"),
+      updatedAt: new Date("2026-05-19T12:00:00.000Z"),
+    } as never);
+    vi.mocked(prisma.careerMission.create).mockResolvedValue({} as never);
+    vi.mocked(prisma.careerMission.update).mockResolvedValue({} as never);
     vi.mocked(prisma.jobProfileMatch.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.jobProfileMatch.groupBy).mockResolvedValue([] as never);
     vi.mocked(prisma.jobPosting.findMany).mockResolvedValue([] as never);
@@ -416,6 +437,59 @@ describe("executeJoleneAction", () => {
     expect(result.reply).toContain("I checked");
     expect(result.reply).toContain("Latest search run completed");
     expect(result.reply).toContain("/profiles");
+  });
+
+  it("returns a Career CEO brief for high-income sprint requests", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.application.findMany)
+      .mockResolvedValueOnce([
+        {
+          id: "app_ready",
+          status: "ready_to_apply",
+          updatedAt: new Date("2026-05-19T12:00:00.000Z"),
+          jobPosting: {
+            id: "job_ready",
+            company: "Acme AI",
+            title: "Staff AI Product Engineer",
+            salaryMin: 200000,
+            salaryMax: 260000,
+          },
+          jobProfileMatch: { overallScore: 92 },
+        },
+      ] as never)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([] as never);
+    vi.mocked(prisma.jobProfileMatch.findMany).mockResolvedValue([
+      {
+        id: "match_1",
+        status: "needs_review",
+        overallScore: 91,
+        updatedAt: new Date("2026-05-19T12:00:00.000Z"),
+        jobPosting: {
+          id: "job_1",
+          company: "Vercel",
+          title: "Staff Frontend Engineer",
+          salaryMin: null,
+          salaryMax: null,
+        },
+        jobSearchProfile: { name: "Staff Frontend", salaryMin: 180000, salaryCurrency: "USD" },
+      },
+    ] as never);
+    vi.mocked(prisma.jobSearchProfile.findMany).mockResolvedValue([
+      { id: "profile_1", name: "Staff Frontend", salaryMin: 180000, salaryMax: 260000, salaryCurrency: "USD", minimumMatchScore: 85 },
+    ] as never);
+
+    const result = await executeJoleneAction("Give me the Career CEO brief and money moves.", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({
+      action: "career_ceo_brief",
+      missionContext: expect.objectContaining({ urgencyMode: "HIGH_INCOME_SPRINT" }),
+      moneyMoves: expect.arrayContaining([expect.objectContaining({ title: expect.stringContaining("Acme AI") })]),
+      pipelineLeverage: expect.objectContaining({ readyApplications: 1 }),
+    });
+    expect(result.reply).toContain("Career CEO brief");
+    expect(result.reply).toContain("Money moves");
   });
 });
 

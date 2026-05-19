@@ -93,6 +93,18 @@ Jolene is the persistent in-app operating assistant. In addition to route contex
 
 Jolene confirmation cards execute only app-local internal repairs after explicit user confirmation. The current allowlist includes application integrity repair, duplicate/stale detection, job-response email sync, Daily Command Center refresh, Market Intelligence refresh, and graph-backed agent run repair/retry/cancel when a run id is present. Confirmed actions post to `POST /api/jolene/confirm`, update the source Jolene message, append an execution result message, and may navigate/refresh the related app surface. Jolene does not execute external application submission, email/outreach sending, employer-system interactions, or broad approve/reject/archive mutations; those remain manual or page-routed.
 
+Jolene also has Career CEO mode for urgent, income-focused search execution. The persistent `CareerMission` stores the 30-day high-income sprint mandate, compensation floor and ideal target, role tracks, dealbreakers, fallback paths, capacity notes, and tone preferences. Ask Jolene for a "Career CEO brief" or "money moves" to get the top income-relevant actions from current interviews, ready applications, high-score jobs, follow-ups, blockers, salary gaps, and enabled profiles. The default policy is aggressive but truthful: widen toward credible high-income opportunities, preserve evidence grounding, and keep external actions manual or explicitly confirmed.
+
+Career CEO endpoints:
+
+```bash
+curl http://localhost:3000/api/jolene/mission
+curl -X PATCH http://localhost:3000/api/jolene/mission \
+  -H "content-type: application/json" \
+  -d '{"targetCompensationMin":200000,"targetCompensationIdeal":260000,"horizonDays":30}'
+curl -X POST http://localhost:3000/api/jolene/career-brief
+```
+
 With `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY`, the app emits redacted metadata traces for agent runs, OpenAI helper calls, the application assistant workflow, and graph-backed recruiting agency runs. Tracing is optional and fail-open: if LangSmith is unavailable, the app continues without tracing. The default trace payload masks resume text, cover letters, raw application answers, prompts, secrets, emails, phone numbers, and full field values while preserving useful debugging metadata such as workflow step, field label, field type, command type, result, status, model, and counts.
 
 ADK is available as an opt-in TypeScript agent control plane with `ADK_ENABLED=true`. In this phase it supervises selected low-risk agents such as Daily Command Center and Market Intelligence by registering their allowed read-only tools, recording ADK runtime metadata on `AgentRun.observabilityJson`, and emitting ADK control-plane events into the normal agent activity feed. Jolene is registered as a guarded ADK app operator and records planned, confirmed, skipped, failed, and executed tool activity in chat `actionJson`. ADK does not replace LangGraph for the application assistant or recruiting agency; those workflows still own durable state, resume, repair, and browser/process coordination.

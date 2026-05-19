@@ -118,6 +118,32 @@ Jolene can answer interview and positioning questions from local career context.
 
 This path is non-mutating. Pasted recruiter text containing words like "email", "review", or "interview" should not trigger email sync unless the user explicitly asks Jolene to check or sync email. Career coaching answers map prompts to evidence-backed talking points, likely gaps, and metrics to prepare.
 
+## Career CEO Mode
+
+Jolene can operate from a persistent `CareerMission` that describes the user's current hiring mandate. The default mission is a 30-day high-income sprint with an aggressive-but-truthful policy: maximize interviews, recruiter conversations, compensation leverage, and offers while keeping claims evidence-backed and external actions gated.
+
+The mission stores:
+
+- target minimum and ideal compensation
+- currency and sprint horizon
+- urgency mode and tradeoff policy
+- role tracks, dealbreakers, and acceptable fallback paths
+- daily capacity, energy notes, and tone preferences
+
+Ask for a "Career CEO brief" or "money moves" to have Jolene rank the current sprint queue by income relevance and urgency. The brief reads ready applications, interview-stage applications, high-score jobs, follow-ups, blockers, enabled profiles, salary gaps, and mission targets. It returns:
+
+- top income-relevant actions with app links
+- compensation and salary-data risks
+- current pipeline leverage
+- recommended sprint actions
+- confidence in the brief
+
+Mission APIs:
+
+- `GET /api/jolene/mission`
+- `PATCH /api/jolene/mission`
+- `POST /api/jolene/career-brief`
+
 ## Jolene Persistence
 
 Jolene stores conversations in:

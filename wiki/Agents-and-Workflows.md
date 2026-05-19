@@ -10,6 +10,8 @@ ADK is available as an opt-in TypeScript control plane for selected agents. It i
 
 Jolene's ADK operator can now render inline confirmation cards for app-local repair plans. Confirmed execution is bounded to internal maintenance actions such as application integrity repair, duplicate/stale detection, email sync, Daily Command Center refresh, Market Intelligence refresh, and graph-run repair/retry/cancel. External submissions, email/outreach sending, employer-system interaction, and broad approve/reject/archive mutations remain outside Jolene's executable boundary.
 
+Career CEO mode adds a persistent hiring mandate for Jolene. `CareerMission` stores the 30-day high-income sprint target, compensation floor, ideal target, role tracks, dealbreakers, fallback paths, daily capacity, and tone preferences. Jolene's Career CEO brief ranks the current pipeline by income relevance using interviews, ready applications, high-score jobs, follow-ups, blockers, enabled profiles, salary gaps, and mission targets.
+
 ## Agent Run Observability
 
 `AgentRun` stores:
