@@ -1,7 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { runDailyCommandCenterAgent } from "@/lib/agents/daily-command-center";
 import { syncJobResponseEmail } from "@/lib/email/sync";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
 import { executeJoleneAction } from "@/lib/jolene/actions";
+
+vi.mock("@/lib/agents/daily-command-center", () => ({
+  runDailyCommandCenterAgent: vi.fn(),
+}));
+
+vi.mock("@/lib/agents/market-intelligence", () => ({
+  runMarketIntelligenceAgent: vi.fn(),
+}));
 
 vi.mock("@/lib/email/sync", () => ({
   syncJobResponseEmail: vi.fn(),
@@ -21,6 +30,7 @@ vi.mock("@/lib/prisma", () => ({
     candidateEvidence: { findMany: vi.fn() },
     experienceBullet: { findMany: vi.fn() },
     application: { findMany: vi.fn() },
+    jobProfileMatch: { findMany: vi.fn() },
     jobPosting: { findMany: vi.fn() },
     project: { findMany: vi.fn() },
     user: { findFirst: vi.fn(), findUnique: vi.fn() },
@@ -30,6 +40,7 @@ vi.mock("@/lib/prisma", () => ({
 
 const syncJobResponseEmailMock = vi.mocked(syncJobResponseEmail);
 const startJobSearchRunMock = vi.mocked(startJobSearchRun);
+const runDailyCommandCenterAgentMock = vi.mocked(runDailyCommandCenterAgent);
 
 describe("executeJoleneAction", () => {
   beforeEach(async () => {
@@ -39,6 +50,7 @@ describe("executeJoleneAction", () => {
     vi.mocked(prisma.candidateEvidence.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.experienceBullet.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.application.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.jobProfileMatch.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.jobPosting.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.project.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.user.findFirst).mockResolvedValue(null as never);
@@ -88,9 +100,9 @@ describe("executeJoleneAction", () => {
 
     expect(syncJobResponseEmailMock).toHaveBeenCalled();
     expect(result.handled).toBe(true);
-    expect(result.reply).toContain("against 1 active application");
-    expect(result.reply).toContain("Application receipts recorded for: Acme");
-    expect(result.actionJson).toMatchObject({ action: "check_email", scanned: 3, ingested: 2, watchedApplications: 1 });
+    expect(result.reply).toContain("job-response email");
+    expect(result.actionJson).toMatchObject({ action: "jolene_adk_operator" });
+    expect(result.executedActions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "sync_email" })]));
     expect(result.clientAction).toEqual({ type: "navigate", href: "/applications", refresh: true });
   });
 
@@ -106,7 +118,8 @@ describe("executeJoleneAction", () => {
 
     expect(startJobSearchRunMock).toHaveBeenCalledWith("manual");
     expect(result.handled).toBe(true);
-    expect(result.actionJson).toMatchObject({ action: "run_job_search", runId: "run_1" });
+    expect(result.actionJson).toMatchObject({ action: "jolene_adk_operator" });
+    expect(result.executedActions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "run_job_search" })]));
   });
 
   it("finds a generated cover letter by company", async () => {
@@ -222,6 +235,74 @@ describe("executeJoleneAction", () => {
     expect(result.actionJson).toMatchObject({ action: "interview_coaching" });
     expect(result.reply).toContain("ownership");
     expect(result.reply).toContain("Metrics to prepare");
+  });
+
+  it("executes multiple safe app-operator actions directly", async () => {
+    startJobSearchRunMock.mockResolvedValue({
+      started: true,
+      skipped: false,
+      reason: null,
+      run: { id: "search_1" },
+    } as never);
+    const { runDuplicateStaleJobDetectorAgent } = await import("@/lib/agents/duplicate-stale-job-detector");
+    vi.mocked(runDuplicateStaleJobDetectorAgent).mockResolvedValue({
+      output: { analyzedJobs: 10, duplicateGroups: [{ id: "dup_1" }], updatedJobs: 2 },
+    } as never);
+    runDailyCommandCenterAgentMock.mockResolvedValue({
+      output: { summary: "Today, submit prepared applications.", actions: [{ title: "Submit", priority: 1 }] },
+    } as never);
+
+    const result = await executeJoleneAction("Run a fresh job search, check duplicates, and refresh the daily command center.", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({ action: "jolene_adk_operator" });
+    expect(result.executedActions?.map((action) => action.id)).toEqual(["run_job_search", "check_duplicates", "run_daily_command_center"]);
+    expect(result.reply).toContain("ADK app-operator tools");
+    expect(result.requiresConfirmation).toBeFalsy();
+  });
+
+  it("requires confirmation for guarded job mutations", async () => {
+    const result = await executeJoleneAction("Approve the top 5 jobs if they look good.", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.requiresConfirmation).toBe(true);
+    expect(result.plannedActions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "guarded_app_mutation", risk: "guarded_mutation" })]));
+    expect(startJobSearchRunMock).not.toHaveBeenCalled();
+  });
+
+  it("diagnoses why an applied role is still visible in active application state", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.application.findMany).mockResolvedValue([
+      {
+        id: "app_ready",
+        status: "ready_to_apply",
+        jobPosting: { id: "job_1", company: "Linear", title: "Senior / Staff Fullstack Engineer", duplicateGroupId: "dup_1" },
+      },
+      {
+        id: "app_applied",
+        status: "applied",
+        jobPosting: { id: "job_2", company: "Linear", title: "Senior / Staff Fullstack Engineer", duplicateGroupId: "dup_1" },
+      },
+    ] as never);
+    vi.mocked(prisma.jobProfileMatch.findMany).mockResolvedValue([
+      {
+        id: "match_1",
+        status: "approved",
+        overallScore: 95,
+        jobPosting: { id: "job_1", company: "Linear", title: "Senior / Staff Fullstack Engineer", duplicateGroupId: "dup_1" },
+        jobSearchProfile: { name: "AI Product Frontend" },
+      },
+    ] as never);
+    vi.mocked(prisma.jobPosting.findMany).mockResolvedValue([
+      { id: "job_1", company: "Linear", title: "Senior / Staff Fullstack Engineer", duplicateGroupId: "dup_1", updatedAt: new Date() },
+    ] as never);
+
+    const result = await executeJoleneAction("Why is Linear still showing in ready to apply if I already applied?", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({ action: "jolene_adk_operator" });
+    expect(result.reply).toContain("sync issue");
+    expect(result.actionJson?.diagnostics).toMatchObject({ recommendedAction: "run_application_integrity_repair" });
   });
 });
 

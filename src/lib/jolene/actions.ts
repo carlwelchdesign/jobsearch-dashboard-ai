@@ -1,6 +1,7 @@
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { syncJobResponseEmail } from "@/lib/email/sync";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
+import { executeJoleneAdkOperator, type JoleneOperatorAction } from "@/lib/jolene/adk-operator";
 import { executeJoleneCareerCoaching, isLikelyPastedInterviewPrompt } from "@/lib/jolene/career-coach";
 import { executeJoleneRetrieval, type JoleneResultLink } from "@/lib/jolene/retrieval";
 
@@ -12,12 +13,25 @@ export type JoleneActionResult = {
   handled: boolean;
   reply?: string;
   actionJson?: Record<string, unknown> & { resultLinks?: JoleneResultLink[] };
+  requiresConfirmation?: boolean;
+  plannedActions?: JoleneOperatorAction[];
+  executedActions?: JoleneOperatorAction[];
   clientAction?: JoleneClientAction;
 };
 
 export async function executeJoleneAction(message: string, options: { userId?: string | null } = {}): Promise<JoleneActionResult> {
   const retrieval = await executeJoleneRetrieval(message, options);
   if (retrieval.handled) return retrieval;
+
+  const operator = await executeJoleneAdkOperator(message, options);
+  if (operator.handled) {
+    return {
+      ...operator,
+      requiresConfirmation: operator.actionJson?.requiresConfirmation,
+      plannedActions: operator.actionJson?.plannedActions,
+      executedActions: operator.actionJson?.executedActions,
+    };
+  }
 
   const coaching = await executeJoleneCareerCoaching(message, options);
   if (coaching.handled) return coaching;

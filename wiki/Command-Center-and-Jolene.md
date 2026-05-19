@@ -74,6 +74,27 @@ Jolene also has app-aware local retrieval tools. Before falling back to a genera
 
 When Jolene finds a match, she returns direct links to the relevant local pages and exports, including generated cover-letter text/PDF routes, generated materials, application detail, and job detail. She does not include full cover-letter bodies in default answers; she points to the stored material unless the user explicitly asks for content.
 
+## ADK App Operator
+
+Jolene has an ADK-backed app-operator layer for broader app operations. Exact lookups and career coaching still run through deterministic tools first, but operational requests can now be planned as ADK tool activity.
+
+Jolene can directly run safe internal actions:
+
+- run a fresh job search
+- check duplicate and stale jobs
+- sync job-response email
+- refresh the Daily Command Center
+- refresh Market Intelligence
+- diagnose cross-page state drift such as applied jobs still appearing in ready-to-apply queues
+
+Jolene must ask for confirmation before guarded actions:
+
+- approving, rejecting, archiving, deleting, or bulk-changing jobs or applications
+- repairing state, retrying/cancelling agent runs, or disabling learned rules
+- sending email/outreach, submitting applications, or interacting with external employer systems
+
+Operator activity is stored on Jolene messages as planned/executed actions so the UI and future agent-review surfaces can show what Jolene did, what she skipped, and what requires confirmation.
+
 ## Career-Aware Coaching
 
 Jolene can answer interview and positioning questions from local career context. When a user pastes recruiter guidance or asks how a success profile applies to their background, Jolene loads compact evidence from:

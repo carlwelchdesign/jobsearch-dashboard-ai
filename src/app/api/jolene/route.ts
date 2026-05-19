@@ -143,6 +143,9 @@ export async function POST(request: Request) {
         }),
         actionJson: toJsonInput({
           suggestedActions: context.suggestedActions,
+          requiresConfirmation: actionResult.requiresConfirmation ?? false,
+          plannedActions: actionResult.plannedActions ?? [],
+          executedActions: actionResult.executedActions ?? [],
           ...(actionResult.actionJson ?? {}),
         }),
       },

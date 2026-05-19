@@ -14,6 +14,10 @@ export type AdkAgentRegistration = {
   description: string;
 };
 
+export type AdkOperatorRegistration = Omit<AdkAgentRegistration, "agentType"> & {
+  operatorType: "jolene";
+};
+
 const adkManagedAgents: AdkAgentRegistration[] = [
   {
     id: "daily-command-center",
@@ -32,6 +36,18 @@ const adkManagedAgents: AdkAgentRegistration[] = [
     risk: "read_only",
     tools: ["market_intelligence_context", "job_pipeline_state", "candidate_profile_context"],
     description: "Synthesizes market and local pipeline signals into review-only recommendations.",
+  },
+];
+
+const adkManagedOperators: AdkOperatorRegistration[] = [
+  {
+    id: "jolene-app-operator",
+    displayName: "Jolene App Operator",
+    operatorType: "jolene",
+    runtime: "adk",
+    risk: "guarded_mutation",
+    tools: ["jolene_app_search", "jolene_safe_workflow_runner", "jolene_guarded_mutation_planner"],
+    description: "Plans and executes app-aware Jolene operations with confirmation gates for risky changes.",
   },
 ];
 
@@ -76,8 +92,16 @@ export function listAdkAgentRegistrations() {
   return adkManagedAgents;
 }
 
+export function getAdkJoleneOperatorRegistration() {
+  return adkManagedOperators.find((operator) => operator.operatorType === "jolene") ?? null;
+}
+
+export function listAdkOperatorRegistrations() {
+  return adkManagedOperators;
+}
+
 export function validateAdkAgentRegistry() {
-  return adkManagedAgents.flatMap((agent) => {
+  return [...adkManagedAgents, ...adkManagedOperators].flatMap((agent) => {
     const errors: string[] = [];
     for (const toolId of agent.tools) {
       const tool = getAdkToolRegistration(toolId);

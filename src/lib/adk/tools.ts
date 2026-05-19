@@ -38,6 +38,24 @@ const adkTools: AdkToolRegistration[] = [
     risk: "read_only",
     description: "Reads local market-intelligence inputs and review-only recommendations.",
   },
+  {
+    id: "jolene_app_search",
+    displayName: "Jolene App Search",
+    risk: "read_only",
+    description: "Lets Jolene inspect app records across jobs, applications, generated materials, blockers, and agent runs.",
+  },
+  {
+    id: "jolene_safe_workflow_runner",
+    displayName: "Jolene Safe Workflow Runner",
+    risk: "guarded_mutation",
+    description: "Lets Jolene start safe internal workflows such as search, dedupe, email sync, command center, and market intelligence.",
+  },
+  {
+    id: "jolene_guarded_mutation_planner",
+    displayName: "Jolene Guarded Mutation Planner",
+    risk: "guarded_mutation",
+    description: "Lets Jolene plan approvals, rejections, repairs, retries, and bulk changes that require confirmation before execution.",
+  },
 ];
 
 export function listAdkToolRegistrations() {

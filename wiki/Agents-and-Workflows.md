@@ -6,7 +6,7 @@ LangGraph is used selectively where durable state-machine behavior is useful. Th
 
 LangGraph is not used as a general replacement for every deterministic service. Most agents remain plain typed services because they are easier to test, reason about, and run synchronously.
 
-ADK is available as an opt-in TypeScript control plane for selected low-risk agents. It is enabled with `ADK_ENABLED=true` and starts with Daily Command Center and Market Intelligence. ADK-managed runs still use the app's `AgentRun` and `AgentRunEvent` records, but their observability metadata includes an `adk` object with agent id, model, allowed tools, and risk level. ADK is not used for durable browser workflows in this phase; LangGraph remains responsible for assistant and recruiting-agency state machines.
+ADK is available as an opt-in TypeScript control plane for selected agents. It is enabled with `ADK_ENABLED=true` and starts with Daily Command Center, Market Intelligence, and Jolene's guarded app-operator layer. ADK-managed agent runs still use the app's `AgentRun` and `AgentRunEvent` records, while Jolene stores planned/executed operator actions in chat `actionJson`. ADK is not used for durable browser workflows in this phase; LangGraph remains responsible for assistant and recruiting-agency state machines.
 
 ## Agent Run Observability
 
