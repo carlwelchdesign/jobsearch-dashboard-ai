@@ -5,6 +5,7 @@ export const metadata = {
 
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
+import ContactPageOutlinedIcon from "@mui/icons-material/ContactPageOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import FileUploadOutlinedIcon from "@mui/icons-material/FileUploadOutlined";
 import GradingOutlinedIcon from "@mui/icons-material/GradingOutlined";
@@ -45,6 +46,12 @@ const sections = [
     href: "/resumes/generated",
     icon: ArticleOutlinedIcon,
     description: "Review ATS checks, plain text, and exported resumes tied to jobs.",
+  },
+  {
+    title: "Custom Opportunity",
+    href: "/resumes/custom-opportunity",
+    icon: ContactPageOutlinedIcon,
+    description: "Paste a recruiter brief and generate a tailored resume for that custom opportunity.",
   },
   {
     title: "Resume Variants",
@@ -91,7 +98,7 @@ export default async function ResumesPage() {
             </Stack>
           </CardContent>
         </Card>
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)", xl: "repeat(5, 1fr)" }, gap: 2 }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)", xl: "repeat(3, 1fr)" }, gap: 2 }}>
           {sections.map((section) => {
             const Icon = section.icon;
             return (

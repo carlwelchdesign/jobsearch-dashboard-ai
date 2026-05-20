@@ -123,6 +123,14 @@ Writing rules:
 - no obvious AI phrasing
 - no generic "excited to apply" openings
 
+## Custom Recruiter Opportunities
+
+The `/resumes/custom-opportunity` page handles recruiter outreach that arrives as a short brief instead of a saved job posting. It extracts editable opportunity details from the pasted text, saves the brief as a `Recruiter Opportunity` job source, ensures the role has a usable profile match, and generates a resume-only tailored material.
+
+Custom opportunity resumes use the same truthfulness path as normal job resumes: approved candidate profile data, verified experience bullets, projects, GitHub context, resume strategy, ATS checks, and application QA notes. They appear in Generated Materials and export through the standard text and PDF resume endpoints.
+
+The workflow intentionally does not create an application tracker, cover letter, or packet. If the opportunity becomes an active application, open the saved job and use the normal package workflow.
+
 ## Resume Profiles
 
 Resume profiles are controlled variants, not random one-off resumes.
