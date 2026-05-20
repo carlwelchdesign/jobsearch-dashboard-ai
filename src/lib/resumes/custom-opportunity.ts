@@ -197,7 +197,9 @@ async function createGeneratedResumeForMatch(jobPostingId: string, jobProfileMat
     ? user.profile.experienceBullets.filter((bullet) => bullet.sourceResumeUploadId === latestUploadId)
     : [];
   const parsedUpload = user.profile.resumeUploads[0]?.parsedJson as { education?: string[]; certifications?: string[] } | undefined;
-  const bullets = uploadBullets.length >= 8 ? uploadBullets : user.profile.experienceBullets;
+  const bullets = uploadBullets.length >= 8
+    ? mergeVerifiedBullets(uploadBullets, user.profile.experienceBullets.filter((bullet) => !bullet.sourceResumeUploadId))
+    : user.profile.experienceBullets;
   const emphasis = buildCustomOpportunityEmphasis({
     description: job.description,
     profileText: [
@@ -216,7 +218,7 @@ async function createGeneratedResumeForMatch(jobPostingId: string, jobProfileMat
     job,
     bullets,
     projects: user.profile.projects,
-    workExperiences: user.profile.workExperiences.filter((work) => !latestUploadId || work.sourceResumeUploadId === latestUploadId),
+    workExperiences: user.profile.workExperiences,
     githubRepositories: user.profile.githubRepositories,
     education: Array.isArray(parsedUpload?.education) ? parsedUpload.education : [],
     certifications: Array.isArray(parsedUpload?.certifications) ? parsedUpload.certifications : [],
@@ -329,6 +331,16 @@ function warningStrings(notes: Prisma.JsonValue): string[] {
     ...stringArray(values.warnings),
     ...stringArray(values.unsupportedClaimsDetected).map((item) => `Unsupported claim: ${item}`),
   ];
+}
+
+function mergeVerifiedBullets<T extends { text: string }>(primary: T[], supplemental: T[]) {
+  const seen = new Set<string>();
+  return [...primary, ...supplemental].filter((bullet) => {
+    const key = bullet.text.toLowerCase().replace(/\s+/g, " ").trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function buildCustomOpportunityEmphasis({ description, profileText }: { description: string; profileText: string }) {

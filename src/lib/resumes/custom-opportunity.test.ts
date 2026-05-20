@@ -262,4 +262,84 @@ describe("custom opportunity resumes", () => {
       textUrl: "/api/resumes/generated/resume_1/plain-text",
     });
   });
+
+  it("includes verified user-added bullets even when latest resume upload has enough parsed bullets", async () => {
+    const job = {
+      id: "job_1",
+      company: "Prosum Client",
+      title: "Sr. Integration Engineer",
+      description: "Set up and implement Model Context Protocol and integrate Salesforce systems.",
+      location: "Austin",
+    };
+    const match = { id: "match_1", jobPostingId: "job_1", jobSearchProfileId: "profile_1", overallScore: 84 };
+    const uploadBullets = Array.from({ length: 8 }, (_, index) => ({
+      id: `upload_bullet_${index}`,
+      text: `Uploaded parsed bullet ${index}`,
+      sourceResumeUploadId: "upload_1",
+    }));
+    const manualRevenueBullet = {
+      id: "manual_revenue_salesforce",
+      text: "Handled and developed Salesforce integrations for Revenue.io, a Salesforce-native revenue orchestration platform.",
+      sourceResumeUploadId: null,
+    };
+    captureManualJobMock.mockResolvedValue({ job, matches: [match], created: true } as unknown as Awaited<ReturnType<typeof captureManualJob>>);
+    vi.mocked(prisma.jobProfileMatch.findFirst).mockResolvedValue(match as Awaited<ReturnType<typeof prisma.jobProfileMatch.findFirst>>);
+    vi.mocked(prisma.jobPosting.findUnique).mockResolvedValue(job as Awaited<ReturnType<typeof prisma.jobPosting.findUnique>>);
+    vi.mocked(prisma.user.findFirst).mockResolvedValue({
+      id: "user_1",
+      profile: {
+        masterSummary: "Product engineer.",
+        professionalSummary: "Product engineer.",
+        coreSkills: [],
+        technicalSkills: [],
+        experienceBullets: [...uploadBullets, manualRevenueBullet],
+        projects: [],
+        githubRepositories: [],
+        resumeUploads: [{ id: "upload_1", parsedJson: {} }],
+        workExperiences: [{ id: "work_1", company: "Revenue.io", title: "Senior Software Engineer", sourceResumeUploadId: null }],
+      },
+    } as unknown as Awaited<ReturnType<typeof prisma.user.findFirst>>);
+    tailorResumeForJobMock.mockResolvedValue({
+      tailoredSummary: "Tailored summary.",
+      selectedSkills: [],
+      markdownResume: "# Carl\n\n## Summary\nSenior engineer.\n\n## Skills\nReact\n\n## Professional Experience\n- Built systems.",
+      plainTextResume: "Carl\n\nSummary\nSenior engineer.\n\nSkills\nReact\n\nProfessional Experience\n- Built systems.",
+      selectedExperienceBullets: [],
+      projectSelections: [],
+      keywordAlignment: {},
+      warnings: [],
+      unsupportedClaimsDetected: [],
+      validation: null,
+      generatedBy: "deterministic_fallback",
+    } as unknown as Awaited<ReturnType<typeof tailorResumeForJob>>);
+    vi.mocked(prisma.generatedResume.create).mockResolvedValue({
+      id: "resume_1",
+      plainText: "Generated",
+      markdown: "Generated",
+      generationNotes: {},
+    } as unknown as Awaited<ReturnType<typeof prisma.generatedResume.create>>);
+    vi.mocked(prisma.generatedResume.update).mockResolvedValue({
+      id: "resume_1",
+      plainText: "Generated",
+      markdown: "Generated",
+      generationNotes: {},
+    } as unknown as Awaited<ReturnType<typeof prisma.generatedResume.update>>);
+    vi.mocked(prisma.jobProfileMatch.update).mockResolvedValue(match as Awaited<ReturnType<typeof prisma.jobProfileMatch.update>>);
+
+    await generateCustomOpportunityResume({
+      description: job.description,
+      company: job.company,
+      title: job.title,
+      remoteType: "hybrid",
+    });
+
+    expect(tailorResumeForJobMock).toHaveBeenCalledWith(expect.objectContaining({
+      bullets: expect.arrayContaining([
+        expect.objectContaining({ id: "manual_revenue_salesforce" }),
+      ]),
+      workExperiences: expect.arrayContaining([
+        expect.objectContaining({ company: "Revenue.io" }),
+      ]),
+    }));
+  });
 });
