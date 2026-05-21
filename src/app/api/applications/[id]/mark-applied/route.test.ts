@@ -14,6 +14,9 @@ vi.mock("@/lib/observability/quality", () => ({
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    application: {
+      update: vi.fn(),
+    },
     applicationOutcome: {
       findFirst: vi.fn(),
     },
@@ -24,6 +27,7 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 const findOutcomeMock = vi.mocked(prisma.applicationOutcome.findFirst);
+const updateApplicationMock = vi.mocked(prisma.application.update);
 const findAutomationRunMock = vi.mocked(prisma.applicationAutomationRun.findFirst);
 const recordApplicationOutcomeMock = vi.mocked(recordApplicationOutcome);
 const createQualityExampleMock = vi.mocked(createQualityExampleFromAutomationRun);
@@ -31,6 +35,7 @@ const createQualityExampleMock = vi.mocked(createQualityExampleFromAutomationRun
 describe("POST /api/applications/[id]/mark-applied", () => {
   beforeEach(() => {
     findOutcomeMock.mockReset();
+    updateApplicationMock.mockReset();
     findAutomationRunMock.mockReset();
     recordApplicationOutcomeMock.mockReset();
     createQualityExampleMock.mockReset();

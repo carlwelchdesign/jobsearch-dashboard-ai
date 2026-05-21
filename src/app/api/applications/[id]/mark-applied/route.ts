@@ -15,6 +15,13 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       },
     });
     if (existing) {
+      await prisma.application.update({
+        where: { id: params.id },
+        data: {
+          status: "applied",
+          appliedAt: existing.occurredAt,
+        },
+      });
       await reconcileApplicationCanonicalState({ applicationId: params.id, source: "mark_applied_existing" }).catch(() => null);
       return Response.json({
         outcome: existing,

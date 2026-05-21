@@ -3,6 +3,7 @@ import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
 import { createCanonicalJobKeys, createJobContentHash, hasSameCanonicalJob } from "@/lib/job-search/dedupe";
 import { scoreJobForProfile } from "@/lib/job-search/scoring";
+import { isJobSuppressed, loadJobSuppressionState } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 
 export type ManualJobCaptureInput = {
@@ -66,7 +67,22 @@ export async function captureManualJob(input: ManualJobCaptureInput) {
     where: { enabled: true },
   });
   const user = await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });
-  const matches = [];
+  const matches: unknown[] = [];
+  const suppressionState = user ? await loadJobSuppressionState(user.id) : null;
+  if (suppressionState && isJobSuppressed({
+    company: job.company,
+    title: job.title,
+    location: job.location,
+    applicationUrl: job.applicationUrl,
+    duplicateGroupId: job.duplicateGroupId,
+  }, suppressionState)) {
+    return {
+      job,
+      matches,
+      created: !existing,
+      suppressed: true,
+    };
+  }
   await runDuplicateStaleJobDetectorAgent({ jobPostingId: job.id, userId: user?.id }).catch(() => null);
 
   for (const profile of profiles) {

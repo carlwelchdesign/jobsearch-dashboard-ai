@@ -5,6 +5,8 @@ type JobIdentity = {
   company: string;
   title: string;
   location: string | null;
+  applicationUrl?: string | null;
+  duplicateGroupId?: string | null;
   lastSeenAt?: Date;
 };
 
@@ -26,6 +28,21 @@ export const submittedApplicationStatuses: JobMatchStatus[] = [
 export const suppressedJobMatchStatuses: JobMatchStatus[] = [
   JobMatchStatus.rejected,
   JobMatchStatus.archived,
+  JobMatchStatus.ready_to_apply,
+  JobMatchStatus.applied,
+  JobMatchStatus.follow_up_due,
+  JobMatchStatus.screening,
+  JobMatchStatus.interviewing,
+  JobMatchStatus.rejected_by_company,
+  JobMatchStatus.offer,
+];
+
+export const trackedApplicationStatuses: JobMatchStatus[] = [
+  JobMatchStatus.approved,
+  JobMatchStatus.resume_generated,
+  JobMatchStatus.cover_letter_generated,
+  JobMatchStatus.ready_to_apply,
+  ...submittedApplicationStatuses,
 ];
 
 export function applicationJobKeySet(applications: ApplicationJobRecord[]) {

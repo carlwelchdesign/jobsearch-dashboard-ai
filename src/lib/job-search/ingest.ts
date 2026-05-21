@@ -314,11 +314,12 @@ export async function autoRunAgencyAfterSearch(input: {
   }
 }
 
-function jobIdentity(job: Pick<NormalizedJobPosting, "company" | "title" | "location">) {
+function jobIdentity(job: Pick<NormalizedJobPosting, "company" | "title" | "location" | "applicationUrl">) {
   return {
     company: job.company,
     title: job.title,
     location: job.location ?? null,
+    applicationUrl: job.applicationUrl ?? null,
   };
 }
 

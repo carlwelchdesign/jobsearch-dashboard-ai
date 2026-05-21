@@ -78,6 +78,8 @@ The Duplicate/Stale Job Detector looks for:
 
 Duplicates and stale roles are down-ranked or grouped so the user does not waste review time.
 
+Active job queues also use strict suppression. Jobs that are already applied, rejected, archived, or represented by a ready-to-apply application are blocked from active search results, recruiting-agency promotion, bulk packet preparation, manual capture scoring, and Apply Sprint. The suppression gate matches canonical company/title/location keys, normalized ATS wrapper names, `Title @ Company` captures, duplicate-group siblings, and application URL variants across Greenhouse, Lever, Ashby, and company-site sources. Historical records remain available in rejected, archived, and all views for audit or manual recovery.
+
 ## Scoring
 
 The scoring model separates three ideas:

@@ -51,4 +51,51 @@ describe("job dedupe keys", () => {
       location: "US Remote",
     })).toContain("example|staff fullstack engineer 2|remote");
   });
+
+  it("matches ATS application wrapper company names to the real company and title", () => {
+    expect(hasSameCanonicalJob(
+      {
+        company: "Job Application for Senior Full Stack Engineer, Autopilot at Rocket Money",
+        title: "Senior Full Stack Engineer, Autopilot",
+        location: "Remote - US",
+      },
+      {
+        company: "Rocket Money",
+        title: "Senior Full Stack Engineer, Autopilot",
+        location: "United States",
+      },
+    )).toBe(true);
+  });
+
+  it("matches captured title-at-company text to normalized company and title fields", () => {
+    expect(hasSameCanonicalJob(
+      {
+        company: "Staff Full Stack Engineer, Mobile Platform @ Bubble",
+        title: "Staff Full Stack Engineer, Mobile Platform",
+        location: "Remote",
+      },
+      {
+        company: "Bubble",
+        title: "Staff Full Stack Engineer, Mobile Platform",
+        location: "Global Remote",
+      },
+    )).toBe(true);
+  });
+
+  it("matches application URL variants without query strings or apply suffixes", () => {
+    expect(hasSameCanonicalJob(
+      {
+        company: "Different shell",
+        title: "Different title",
+        location: "Remote",
+        applicationUrl: "https://jobs.ashbyhq.com/acme/abc-123/application?utm_source=board",
+      },
+      {
+        company: "Acme",
+        title: "Senior Frontend Engineer",
+        location: "Remote",
+        applicationUrl: "https://jobs.ashbyhq.com/acme/abc-123",
+      },
+    )).toBe(true);
+  });
 });

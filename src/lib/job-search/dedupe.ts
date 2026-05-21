@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import type { NormalizedJobPosting } from "./source-adapter";
 
-type CanonicalJobParts = Pick<NormalizedJobPosting, "company" | "title"> & { location?: string | null };
+type CanonicalJobParts = Pick<NormalizedJobPosting, "company" | "title"> & { location?: string | null; applicationUrl?: string | null };
 
 export function createJobContentHash(
   job: Pick<NormalizedJobPosting, "title" | "company" | "description" | "applicationUrl">,
@@ -18,30 +18,38 @@ export function createCanonicalJobKey(job: CanonicalJobParts) {
 }
 
 export function createCanonicalJobKeys(job: CanonicalJobParts) {
-  const company = normalizeCompany(job.company);
-  const title = normalizeTitle(job.title);
-  const titleFamily = normalizeTitleFamily(job.title);
+  const normalizedIdentity = normalizeJobIdentity(job);
+  const company = normalizeCompany(normalizedIdentity.company);
+  const title = normalizeTitle(normalizedIdentity.title);
+  const titleFamily = normalizeTitleFamily(normalizedIdentity.title);
   const location = normalizeLocation(job.location);
   const locationFamily = normalizeLocationFamily(job.location);
+  const applicationUrl = canonicalizeApplicationUrl(job.applicationUrl);
 
   return uniqueStrings([
+    applicationUrl ? `url|${applicationUrl}` : "",
     [company, title, location].join("|"),
     [company, title, locationFamily].join("|"),
     [company, titleFamily, locationFamily].join("|"),
-  ].filter((key) => !key.includes("||")));
+    [company, titleFamily].join("|"),
+  ].filter((key) => key && !key.includes("||")));
 }
 
 export function createCanonicalJobParts(job: CanonicalJobParts) {
+  const normalizedIdentity = normalizeJobIdentity(job);
   return {
-    companyKey: normalizeCompany(job.company),
-    titleKey: normalizeTitle(job.title),
-    titleFamilyKey: normalizeTitleFamily(job.title),
+    companyKey: normalizeCompany(normalizedIdentity.company),
+    titleKey: normalizeTitle(normalizedIdentity.title),
+    titleFamilyKey: normalizeTitleFamily(normalizedIdentity.title),
     locationKey: normalizeLocation(job.location),
     locationFamilyKey: normalizeLocationFamily(job.location),
   };
 }
 
 export function hasSameCanonicalJob(a: CanonicalJobParts, b: CanonicalJobParts) {
+  const leftUrl = canonicalizeApplicationUrl(a.applicationUrl);
+  const rightUrl = canonicalizeApplicationUrl(b.applicationUrl);
+  if (leftUrl && rightUrl && leftUrl === rightUrl) return true;
   const leftKeys = new Set(createCanonicalJobKeys(a));
   return createCanonicalJobKeys(b).some((key) => leftKeys.has(key));
 }
@@ -58,6 +66,46 @@ function normalizeCompany(value: string) {
     .replace(/\b(inc|incorporated|llc|ltd|limited|corp|corporation|company|co|plc|gmbh|ag|sa|sas|holdings|group)\b/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeJobIdentity(job: CanonicalJobParts) {
+  const titleCompany = splitTitleAtCompany(job.title);
+  const companyFieldTitleCompany = splitTitleAtCompany(job.company);
+  const applicationWrapper = splitApplicationWrapper(job.company);
+  return {
+    company: applicationWrapper?.company ?? titleCompany?.company ?? companyFieldTitleCompany?.company ?? job.company,
+    title: applicationWrapper?.title ?? titleCompany?.title ?? companyFieldTitleCompany?.title ?? job.title,
+  };
+}
+
+function splitTitleAtCompany(title: string) {
+  const match = title.match(/^\s*(.+?)\s+@\s+(.+?)\s*$/);
+  if (!match) return null;
+  return { title: match[1], company: match[2] };
+}
+
+function splitApplicationWrapper(company: string) {
+  const match = company.match(/^\s*job application for\s+(.+?)\s+at\s+(.+?)\s*$/i);
+  if (!match) return null;
+  return { title: match[1], company: match[2] };
+}
+
+export function canonicalizeApplicationUrl(value: string | null | undefined) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    url.search = "";
+    const host = url.hostname.replace(/^www\./, "").toLowerCase();
+    const pathname = url.pathname
+      .replace(/\/application\/?$/i, "")
+      .replace(/\/apply\/?$/i, "")
+      .replace(/\/$/, "")
+      .toLowerCase();
+    return `${host}${pathname}`;
+  } catch {
+    return value.trim().toLowerCase().split(/[?#]/)[0]?.replace(/\/$/, "") || null;
+  }
 }
 
 function normalizeTitle(value: string) {

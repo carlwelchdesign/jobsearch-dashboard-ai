@@ -3,7 +3,6 @@ import { createCanonicalJobKeys, createCanonicalJobParts } from "@/lib/job-searc
 import { prisma } from "@/lib/prisma";
 import {
   applicationJobKeySet,
-  submittedApplicationStatuses,
   suppressedJobKeySet,
   suppressedJobMatchStatuses,
 } from "@/lib/applications/job-filters";
@@ -13,11 +12,13 @@ export type JobSuppressionIdentity = {
   company: string;
   title: string;
   location: string | null;
+  applicationUrl?: string | null;
   duplicateGroupId?: string | null;
 };
 
 export type JobSuppressionState = {
   canonicalKeys: Set<string>;
+  duplicateGroupIds: Set<string>;
   cooldowns: Array<{
     companyKey: string;
     titleFamilyKey: string;
@@ -47,14 +48,15 @@ const ACTIVE_MATCH_STATUSES: JobMatchStatus[] = [
 ];
 
 export function createEmptyJobSuppressionState(): JobSuppressionState {
-  return { canonicalKeys: new Set(), cooldowns: [] };
+  return { canonicalKeys: new Set(), duplicateGroupIds: new Set(), cooldowns: [] };
 }
 
 export function jobSuppressionStateFromKeys(keys: Set<string>): JobSuppressionState {
-  return { canonicalKeys: keys, cooldowns: [] };
+  return { canonicalKeys: keys, duplicateGroupIds: new Set(), cooldowns: [] };
 }
 
 export function isJobSuppressed(job: JobSuppressionIdentity, state: JobSuppressionState) {
+  if (job.duplicateGroupId && state.duplicateGroupIds.has(job.duplicateGroupId)) return true;
   if (createCanonicalJobKeys(job).some((key) => state.canonicalKeys.has(key))) return true;
   const parts = createCanonicalJobParts(job);
   const now = Date.now();
@@ -86,13 +88,14 @@ export async function loadJobSuppressionStatesByUserIds(userIds: string[]) {
           companyKey: true,
           titleFamilyKey: true,
           expiresAt: true,
+          duplicateGroupId: true,
         },
       }) ?? Promise.resolve([]),
       prisma.application.findMany({
-        where: { userId, status: { in: submittedApplicationStatuses } },
+        where: { userId },
         select: {
           status: true,
-          jobPosting: { select: { company: true, title: true, location: true, lastSeenAt: true } },
+          jobPosting: { select: { company: true, title: true, location: true, applicationUrl: true, duplicateGroupId: true, lastSeenAt: true } },
         },
       }),
       prisma.jobProfileMatch.findMany({
@@ -102,16 +105,24 @@ export async function loadJobSuppressionStatesByUserIds(userIds: string[]) {
         },
         select: {
           status: true,
-          jobPosting: { select: { company: true, title: true, location: true, lastSeenAt: true } },
+          jobPosting: { select: { company: true, title: true, location: true, applicationUrl: true, duplicateGroupId: true, lastSeenAt: true } },
         },
       }),
     ]);
     const canonicalKeys = new Set<string>();
+    const duplicateGroupIds = new Set<string>();
     for (const key of applicationJobKeySet(applications)) canonicalKeys.add(key);
     for (const key of suppressedJobKeySet(rejectedMatches)) canonicalKeys.add(key);
+    for (const application of applications) {
+      if (application.jobPosting.duplicateGroupId) duplicateGroupIds.add(application.jobPosting.duplicateGroupId);
+    }
+    for (const match of rejectedMatches) {
+      if (match.jobPosting.duplicateGroupId) duplicateGroupIds.add(match.jobPosting.duplicateGroupId);
+    }
     for (const suppression of suppressions) {
       if (suppression.kind === JobSuppressionKind.COMPANY_COOLDOWN) continue;
       canonicalKeys.add(suppression.canonicalKey);
+      if (suppression.duplicateGroupId) duplicateGroupIds.add(suppression.duplicateGroupId);
     }
     const cooldowns = suppressions
       .filter((suppression) => suppression.kind === JobSuppressionKind.COMPANY_COOLDOWN)
@@ -121,7 +132,7 @@ export async function loadJobSuppressionStatesByUserIds(userIds: string[]) {
         expiresAt: suppression.expiresAt,
       }));
 
-    return [userId, { canonicalKeys, cooldowns }] as const;
+    return [userId, { canonicalKeys, duplicateGroupIds, cooldowns }] as const;
   }));
 
   return new Map(entries);

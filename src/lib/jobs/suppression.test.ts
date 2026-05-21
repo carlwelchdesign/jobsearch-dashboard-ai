@@ -26,6 +26,7 @@ describe("job suppression", () => {
     });
     const state = {
       canonicalKeys: new Set<string>(),
+      duplicateGroupIds: new Set<string>(),
       cooldowns: [{
         companyKey: parts.companyKey,
         titleFamilyKey: parts.titleFamilyKey,
@@ -48,6 +49,7 @@ describe("job suppression", () => {
   it("suppresses all roles at a company during a company-wide cooldown", () => {
     const state = {
       canonicalKeys: new Set<string>(),
+      duplicateGroupIds: new Set<string>(),
       cooldowns: [{
         companyKey: "mistral",
         titleFamilyKey: "*",
@@ -59,6 +61,35 @@ describe("job suppression", () => {
       company: "Mistral",
       title: "Software Engineer, DevEx",
       location: "Paris",
+    }, state)).toBe(true);
+  });
+
+  it("suppresses jobs in a duplicate group with a tracked sibling", () => {
+    const state = {
+      canonicalKeys: new Set<string>(),
+      duplicateGroupIds: new Set(["dup_123"]),
+      cooldowns: [],
+    };
+
+    expect(isJobSuppressed({
+      company: "Acme",
+      title: "Senior Frontend Engineer",
+      location: "Remote",
+      duplicateGroupId: "dup_123",
+    }, state)).toBe(true);
+  });
+
+  it("suppresses ready-to-apply equivalents through canonical keys", () => {
+    const state = jobSuppressionStateFromKeys(new Set(createCanonicalJobKeys({
+      company: "Airtable",
+      title: "Senior Solutions Architect",
+      location: "Remote - US",
+    })));
+
+    expect(isJobSuppressed({
+      company: "Airtable Inc.",
+      title: "Senior Solutions Architect",
+      location: "United States",
     }, state)).toBe(true);
   });
 });

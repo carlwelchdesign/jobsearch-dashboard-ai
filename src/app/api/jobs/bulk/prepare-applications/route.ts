@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
+import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
+import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -27,17 +29,17 @@ export async function POST(request: Request) {
         },
       },
       include: {
-        jobPosting: { select: { id: true, company: true, title: true } },
-        jobSearchProfile: { select: { id: true, name: true } },
+        jobPosting: { select: { id: true, company: true, title: true, location: true, applicationUrl: true, duplicateGroupId: true, lastSeenAt: true } },
+        jobSearchProfile: { select: { id: true, name: true, userId: true } },
       },
       orderBy: [{ overallScore: "desc" }, { createdAt: "desc" }],
       take: input.limit * 4,
     });
-    const seenJobIds = new Set<string>();
-    const matches = rawMatches
+    const suppressionStates = await loadJobSuppressionStatesByUserIds(rawMatches.map((match) => match.jobSearchProfile.userId));
+    const matches = uniqueMatchesByCanonicalJob(rawMatches)
       .filter((match) => {
-        if (seenJobIds.has(match.jobPostingId)) return false;
-        seenJobIds.add(match.jobPostingId);
+        const suppressionState = suppressionStates.get(match.jobSearchProfile.userId);
+        if (suppressionState && isJobSuppressed(match.jobPosting, suppressionState)) return false;
         return true;
       })
       .slice(0, input.limit);
