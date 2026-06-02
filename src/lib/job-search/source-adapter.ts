@@ -8,6 +8,15 @@ export type RawJobPosting = {
   description: string;
   applicationUrl?: string;
   rawData?: unknown;
+  listingReview?: {
+    url: string;
+    reason: string;
+    sourceTitle?: string;
+    sourceDescription?: string;
+    provider?: string;
+    query?: string;
+    blocked?: boolean;
+  };
 };
 
 export type NormalizedJobPosting = {
@@ -42,4 +51,8 @@ export interface JobSourceAdapter {
   name: string;
   fetchJobs(profile: JobSearchProfile, source: JobSource): Promise<RawJobPosting[]>;
   normalize(raw: RawJobPosting): Promise<NormalizedJobPosting>;
+}
+
+export function isListingReviewPosting(raw: RawJobPosting) {
+  return Boolean(raw.listingReview);
 }

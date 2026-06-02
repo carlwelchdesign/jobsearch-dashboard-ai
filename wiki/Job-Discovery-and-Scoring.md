@@ -60,6 +60,8 @@ The `/sources` roadmap labels are operational metadata, not all runtime toggles.
 
 The Search Query Backlog stores targeted open-web searches such as ATS-specific React/TypeScript remote queries. It now covers the prior planned roadmap sources, including Workday, SmartRecruiters, iCIMS, Jobvite, BambooHR, Workable, Recruitee, Teamtailor, Personio, Remote.co, Remotive, NoDesk, Himalayas, Working Nomads, Wellfound, YC, Built In, Levels.fyi, TrueUp, Dice, Hacker News, VC portfolio boards, and USAJOBS. It runs through Brave Search only when `BRAVE_SEARCH_API_KEY` is configured and the `Search Query Backlog` source is enabled; otherwise it remains visible as provider-missing.
 
+Search-query results are conservatively screened for list/search pages before they enter scoring. Known expandable pages, such as Built In job lists, are parsed into individual job postings. Strong listing signals, such as filtered job-board URLs with `page`, `sort`, `jobTitle`, or similar query parameters, are never saved as ordinary jobs when they cannot be expanded; they are recorded in search-run progress for review.
+
 JobFront board sources can be added from `/sources` with a board URL such as `https://jobs.frontdoordefense.com/`. The connector uses the board's public job-card endpoint and treats the result as a lower-friction niche-board source, not as a final employer ATS source.
 
 ## Manual Job Capture

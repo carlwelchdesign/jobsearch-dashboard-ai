@@ -80,6 +80,8 @@ Without `BRAVE_SEARCH_API_KEY`, the search-query adapter returns no jobs and `/s
 
 The search-query source carries roadmap coverage for the former planned sources. It uses targeted source/site queries rather than dedicated scrapers for high-friction ATS, remote-board, startup-board, VC-portfolio, Hacker News, USAJOBS, and tech-board sources.
 
+The search-query adapter suppresses likely list/search result pages before scoring. If a listing page can be expanded into individual job URLs, those jobs continue through normal scoring. If expansion is blocked or no individual jobs are parseable, the listing URL is recorded in `JobSearchRun.progress` with `listingPagesSuppressed` stats and is not saved as an active job.
+
 ## Chrome Extension
 
 The Chrome extension uses `POST /api/jobs/capture` for saving job pages and `POST /api/jobs/:id/apply-now` for the saved-job Apply Now flow. Both endpoints honor `BROWSER_EXTENSION_TOKEN` when configured. Apply Now uses the active Chrome tab URL as the final application URL before preparing materials and launching the local assistant.

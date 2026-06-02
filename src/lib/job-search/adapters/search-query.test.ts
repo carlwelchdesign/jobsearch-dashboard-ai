@@ -56,7 +56,163 @@ describe("searchQueryAdapter", () => {
       atsProvider: "ashby",
     });
   });
+
+  it("expands Built In listing results into individual jobs", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Best Remote Front End Developer Jobs 2026 | Built In",
+                url: "https://builtin.com/jobs/remote/dev-engineering/front-end",
+                description: "Remote frontend job search results",
+                profile: { name: "Built In" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => builtInListingHtml,
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:builtin.com "Frontend Engineer" "remote"'] }));
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(jobs).toHaveLength(2);
+    expect(jobs.map((job) => job.applicationUrl)).toEqual([
+      "https://builtin.com/job/senior-fullstack-frontend-engineer/8896228",
+      "https://builtin.com/job/staff-frontend-engineer/8991269",
+    ]);
+    expect(jobs[0]).toMatchObject({
+      company: "Affirm",
+      title: "Senior Fullstack Frontend Engineer",
+      location: "Remote",
+    });
+    expect(jobs[0]?.description).toContain("Expanded from: https://builtin.com/jobs/remote/dev-engineering/front-end");
+    expect(jobs[0]?.rawData).toMatchObject({
+      provider: "brave",
+      expansionProvider: "builtin",
+      expandedFrom: "https://builtin.com/jobs/remote/dev-engineering/front-end",
+    });
+    expect(jobs).not.toContainEqual(expect.objectContaining({
+      applicationUrl: "https://builtin.com/jobs/remote/dev-engineering/front-end",
+    }));
+  });
+
+  it("returns a listing-review record for blocked Remote Rocketship search pages", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Senior Frontend Engineer Jobs - Remote Rocketship",
+                url: "https://www.remoterocketship.com/jobs/senior-frontend-engineer/?page=1&sort=DateAdded&jobTitle=Frontend+Engineer&seniority=senior",
+                description: "1,410 total jobs for Senior Frontend Engineer. Search remote jobs.",
+                profile: { name: "Remote Rocketship" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['"Senior Frontend Engineer" "remote"'] }));
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      company: "Remote Rocketship",
+      title: "Senior Frontend Engineer Jobs - Remote Rocketship",
+      applicationUrl: "https://www.remoterocketship.com/jobs/senior-frontend-engineer/?page=1&sort=DateAdded&jobTitle=Frontend+Engineer&seniority=senior",
+      listingReview: {
+        blocked: true,
+        provider: "brave",
+        reason: "generic-listing listing page returned HTTP 403.",
+      },
+    });
+  });
+
+  it("returns a listing-review record for generic filtered listing pages that cannot be expanded", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Remote frontend jobs search results",
+                url: "https://example-board.test/jobs/search?page=1&sort=date&query=frontend",
+                description: "Search results for remote frontend engineer jobs.",
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => "<html><body><a href=\"/jobs/search?page=2\">Next</a></body></html>",
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['"Frontend Engineer" "remote"'] }));
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.listingReview).toMatchObject({
+      blocked: false,
+      reason: "generic-listing listing page had no parseable individual job links.",
+      url: "https://example-board.test/jobs/search?page=1&sort=date&query=frontend",
+    });
+  });
 });
+
+const builtInListingHtml = `
+  <html>
+    <head>
+      <script type="application/ld&#x2B;json">
+        {
+          "@graph": [
+            {
+              "@type": "ItemList",
+              "itemListElement": [
+                {
+                  "position": 1,
+                  "name": "Senior Fullstack Frontend Engineer",
+                  "url": "https://builtin.com/job/senior-fullstack-frontend-engineer/8896228",
+                  "description": "React &amp; TypeScript role"
+                },
+                {
+                  "position": 2,
+                  "name": "Staff Frontend Engineer",
+                  "url": "https://builtin.com/job/staff-frontend-engineer/8991269",
+                  "description": "Remote platform role"
+                }
+              ]
+            }
+          ]
+        }
+      </script>
+    </head>
+    <body>
+      <main>
+        <div id="job-card-8896228">
+          <a data-id="company-title"><span>Affirm</span></a>
+          <a href="/job/senior-fullstack-frontend-engineer/8896228" data-id="job-card-title">Senior Fullstack Frontend Engineer</a>
+        </div>
+        <div id="job-card-8991269">
+          <a data-id="company-title"><span>Built In</span></a>
+          <a href="/job/staff-frontend-engineer/8991269" data-id="job-card-title">Staff Frontend Engineer</a>
+        </div>
+      </main>
+    </body>
+  </html>
+`;
 
 function profile(input: Partial<JobSearchProfile> = {}) {
   return {

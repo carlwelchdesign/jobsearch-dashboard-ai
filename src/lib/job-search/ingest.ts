@@ -4,8 +4,8 @@ import { runRecruitingAgency } from "@/lib/applications/recruiting-agency";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
 import { createCanonicalJobKeys, createJobContentHash, hasSameCanonicalJob } from "@/lib/job-search/dedupe";
 import { getAdapterForSource } from "@/lib/job-search/adapters";
-import { scoreJobForProfile } from "@/lib/job-search/scoring";
-import type { NormalizedJobPosting } from "@/lib/job-search/source-adapter";
+import { classifyJobSearchTitle, scoreJobForProfile } from "@/lib/job-search/scoring";
+import { isListingReviewPosting, type NormalizedJobPosting } from "@/lib/job-search/source-adapter";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { sendNotification } from "@/lib/notifications/send";
 import { prisma } from "@/lib/prisma";
@@ -13,8 +13,26 @@ import { prisma } from "@/lib/prisma";
 type ProgressEvent = {
   at: string;
   message: string;
-  stats?: Record<string, number>;
+  stats?: JobSearchStats;
   agencyHandoff?: AgencyHandoffProgress;
+};
+
+type JobSearchStats = {
+  jobsFetched: number;
+  jobsAfterDedupe: number;
+  jobsAfterFilters: number;
+  jobsSaved: number;
+  jobsScored?: number;
+  jobsSuppressed?: number;
+  listingPagesSuppressed?: number;
+  jobsBelowThreshold?: number;
+  frontendTitles?: number;
+  fullStackTitles?: number;
+  staffPrincipalLeadTitles?: number;
+  managementTitles?: number;
+  backendDataPlatformTitles?: number;
+  nonTargetTitles?: number;
+  genericSoftwareTitles?: number;
 };
 
 type AgencyHandoffProgress = {
@@ -76,6 +94,17 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
     jobsAfterDedupe: 0,
     jobsAfterFilters: 0,
     jobsSaved: 0,
+    jobsScored: 0,
+    jobsSuppressed: 0,
+    listingPagesSuppressed: 0,
+    jobsBelowThreshold: 0,
+    frontendTitles: 0,
+    fullStackTitles: 0,
+    staffPrincipalLeadTitles: 0,
+    managementTitles: 0,
+    backendDataPlatformTitles: 0,
+    nonTargetTitles: 0,
+    genericSoftwareTitles: 0,
   };
   const errors: Array<{ source: string; profile: string; message: string }> = [];
   const newMatches: Array<{ score: number; title: string; company: string; profile: string }> = [];
@@ -98,13 +127,25 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
           `${source.name} fetch timed out after ${Math.round(sourceFetchTimeoutMs / 60_000)} minutes.`,
         );
         stats.jobsFetched += rawJobs.length;
+        const listingReviews = rawJobs.filter(isListingReviewPosting);
+        if (listingReviews.length > 0) {
+          stats.listingPagesSuppressed += listingReviews.length;
+          for (const listing of listingReviews.slice(0, 20)) {
+            await appendProgress(run.id, listingReviewMessage(listing), stats);
+          }
+        }
+        const jobCandidates = rawJobs.filter((rawJob) => !isListingReviewPosting(rawJob));
         await updateRunStats(run.id, stats, `Fetched ${rawJobs.length} jobs from ${source.name}.`);
 
-        const rankedJobs = (await Promise.all(rawJobs.map(async (rawJob) => {
+        const rankedJobs = (await Promise.all(jobCandidates.map(async (rawJob) => {
           const normalized = await adapter.normalize(rawJob);
-          return { normalized, score: scoreJobForProfile(normalized, profile) };
+          const score = scoreJobForProfile(normalized, profile);
+          const classification = classifyJobSearchTitle(normalized.title, normalized.description);
+          recordSearchDiagnostics(stats, classification);
+          return { normalized, score, classification };
         }))).sort((a, b) => b.score.overallScore - a.score.overallScore);
-        const jobsToScore = rankedJobs.slice(0, Math.min(rankedJobs.length, Math.max(profile.maxResultsPerRun * 4, 80), 240));
+        stats.jobsScored += rankedJobs.length;
+        const jobsToScore = rankedJobs.slice(0, Math.min(rankedJobs.length, Math.max(profile.maxResultsPerRun * 8, 160), 600));
         await appendProgress(run.id, `Scoring ${jobsToScore.length} ${source.name} jobs for ${profile.name}.`, stats);
 
         for (const [index, rankedJob] of jobsToScore.entries()) {
@@ -113,11 +154,13 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
           const { normalized, score } = rankedJob;
           const suppressionState = suppressionStateByUserId.get(profile.userId);
           if (suppressionState && isJobSuppressed(jobIdentity(normalized), suppressionState)) {
+            stats.jobsSuppressed += 1;
             continue;
           }
 
           const { job, isNew } = await upsertDedupedJob(normalized, source.id);
           if (suppressionState && isJobSuppressed(job, suppressionState)) {
+            stats.jobsSuppressed += 1;
             continue;
           }
           if (isNew) stats.jobsAfterDedupe += 1;
@@ -163,6 +206,8 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
               newMatches.push({ score: score.overallScore, title: job.title, company: job.company, profile: profile.name });
               await updateRunStats(run.id, stats, `Saved match: ${score.overallScore} - ${job.title} at ${job.company}.`);
             }
+          } else {
+            stats.jobsBelowThreshold += 1;
           }
           if ((index + 1) % 50 === 0) {
             await updateRunStats(run.id, stats, `Scored ${index + 1}/${jobsToScore.length} ${source.name} jobs for ${profile.name}.`);
@@ -184,7 +229,10 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
   const updatedRun = await prisma.jobSearchRun.update({
     where: { id: run.id },
     data: {
-      ...stats,
+      jobsFetched: stats.jobsFetched,
+      jobsAfterDedupe: stats.jobsAfterDedupe,
+      jobsAfterFilters: stats.jobsAfterFilters,
+      jobsSaved: stats.jobsSaved,
       status,
       errors: errors as Prisma.InputJsonValue,
       finishedAt: new Date(),
@@ -214,7 +262,7 @@ export async function autoRunAgencyAfterSearch(input: {
   userId?: string | null;
   status: "completed" | "partial" | "failed";
   jobsSaved: number;
-  stats: { jobsFetched: number; jobsAfterDedupe: number; jobsAfterFilters: number; jobsSaved: number };
+  stats: JobSearchStats;
 }) {
   if (!["completed", "partial"].includes(input.status)) {
     await appendProgress(input.runId, "Recruiting agency skipped because the search did not finish successfully.", input.stats, {
@@ -323,12 +371,34 @@ function jobIdentity(job: Pick<NormalizedJobPosting, "company" | "title" | "loca
   };
 }
 
-async function updateRunStats(runId: string, stats: { jobsFetched: number; jobsAfterDedupe: number; jobsAfterFilters: number; jobsSaved: number }, message?: string) {
+function recordSearchDiagnostics(stats: JobSearchStats, classification: ReturnType<typeof classifyJobSearchTitle>) {
+  if (classification.frontend) stats.frontendTitles = (stats.frontendTitles ?? 0) + 1;
+  if (classification.fullStack) stats.fullStackTitles = (stats.fullStackTitles ?? 0) + 1;
+  if (classification.overSenior) stats.staffPrincipalLeadTitles = (stats.staffPrincipalLeadTitles ?? 0) + 1;
+  if (classification.management) stats.managementTitles = (stats.managementTitles ?? 0) + 1;
+  if (classification.backendDataPlatformOnly) stats.backendDataPlatformTitles = (stats.backendDataPlatformTitles ?? 0) + 1;
+  if (classification.nonTarget) stats.nonTargetTitles = (stats.nonTargetTitles ?? 0) + 1;
+  if (classification.genericSoftwareWithoutFrontend) stats.genericSoftwareTitles = (stats.genericSoftwareTitles ?? 0) + 1;
+}
+
+function listingReviewMessage(raw: { listingReview?: { url: string; reason: string; sourceTitle?: string; query?: string; blocked?: boolean } }) {
+  const listing = raw.listingReview;
+  if (!listing) return "Suppressed a search listing page before scoring.";
+  const blocked = listing.blocked ? " Fetch was blocked or unavailable." : "";
+  const query = listing.query ? ` Query: ${listing.query}.` : "";
+  const title = listing.sourceTitle ? ` Title: ${listing.sourceTitle}.` : "";
+  return `Suppressed search listing page before scoring: ${listing.url}. Reason: ${listing.reason}.${blocked}${title}${query}`;
+}
+
+async function updateRunStats(runId: string, stats: JobSearchStats, message?: string) {
   const progress = message ? await nextProgress(runId, progressEvent(message, stats)) : undefined;
   await prisma.jobSearchRun.update({
     where: { id: runId },
     data: {
-      ...stats,
+      jobsFetched: stats.jobsFetched,
+      jobsAfterDedupe: stats.jobsAfterDedupe,
+      jobsAfterFilters: stats.jobsAfterFilters,
+      jobsSaved: stats.jobsSaved,
       ...(progress ? { progress: progress as Prisma.InputJsonValue } : {}),
     },
   });
@@ -337,7 +407,7 @@ async function updateRunStats(runId: string, stats: { jobsFetched: number; jobsA
 async function appendProgress(
   runId: string,
   message: string,
-  stats?: { jobsFetched: number; jobsAfterDedupe: number; jobsAfterFilters: number; jobsSaved: number },
+  stats?: JobSearchStats,
   agencyHandoff?: AgencyHandoffProgress,
 ) {
   const progress = await nextProgress(runId, progressEvent(message, stats, agencyHandoff));
@@ -360,7 +430,7 @@ async function nextProgress(runId: string, event: ProgressEvent) {
 
 function progressEvent(
   message: string,
-  stats?: { jobsFetched: number; jobsAfterDedupe: number; jobsAfterFilters: number; jobsSaved: number },
+  stats?: JobSearchStats,
   agencyHandoff?: AgencyHandoffProgress,
 ): ProgressEvent {
   return {
