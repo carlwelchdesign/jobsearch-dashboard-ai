@@ -275,6 +275,18 @@ async function main() {
         maxFetch: Number(process.env.SEARCH_QUERY_MAX_RESULTS ?? 80),
       },
     },
+    {
+      name: "Defense Tech Jobs",
+      type: "jobfront",
+      baseUrl: "https://jobs.frontdoordefense.com",
+      enabled: true,
+      config: {
+        qualityTier: "jobfront_board",
+        boardUrl: "https://jobs.frontdoordefense.com",
+        organizationId: "ODefenseTechJobsfMgO449pvH",
+        maxFetch: 160,
+      },
+    },
     { name: "RemoteOK", type: "remoteok", baseUrl: "https://remoteok.com", enabled: false, config: { qualityTier: "blocked_job_board", reason: "paywalled/apply friction", maxFetch: 0 } },
     { name: "We Work Remotely", type: "weworkremotely", baseUrl: "https://weworkremotely.com", enabled: false, config: { qualityTier: "intermediary_job_board", reason: "job-board listings, Cloudflare friction, not final ATS forms", maxFetch: 0 } },
   ] as const;

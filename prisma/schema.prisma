@@ -49,6 +49,7 @@ enum JobSourceType {
   weworkremotely
   company_site
   search_query
+  jobfront
   manual
 }
 

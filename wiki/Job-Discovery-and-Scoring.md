@@ -50,6 +50,7 @@ The app supports job ingestion from:
 - Lever
 - Ashby
 - Brave Search-backed search queries
+- JobFront-powered niche boards
 - manual capture
 - selected job boards where appropriate
 
@@ -58,6 +59,8 @@ The source configuration can store company slugs and adapter settings.
 The `/sources` roadmap labels are operational metadata, not all runtime toggles. `Implemented` entries have working adapters or manual workflows, `enabled` database sources are included in search runs, `planned` entries are future connector candidates, `manual` entries require human/account handling, and `P1` indicates priority-one coverage regardless of implementation status.
 
 The Search Query Backlog stores targeted open-web searches such as ATS-specific React/TypeScript remote queries. It runs through Brave Search only when `BRAVE_SEARCH_API_KEY` is configured and the `Search Query Backlog` source is enabled; otherwise it remains visible as provider-missing.
+
+JobFront board sources can be added from `/sources` with a board URL such as `https://jobs.frontdoordefense.com/`. The connector uses the board's public job-card endpoint and treats the result as a lower-friction niche-board source, not as a final employer ATS source.
 
 ## Manual Job Capture
 

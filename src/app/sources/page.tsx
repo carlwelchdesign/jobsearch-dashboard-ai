@@ -21,6 +21,7 @@ import { configToPrismaJson, defaultCompanySourceConfig, normalizeCompanySourceC
 import { searchQueryTemplates, sourceCatalog } from "@/lib/job-search/source-catalog";
 import { prisma } from "@/lib/prisma";
 import { AddCompanySourceForm } from "./add-company-source-form";
+import { AddJobSourceForm } from "./add-job-source-form";
 import { CompanySourceSettings } from "./company-source-settings";
 
 export const dynamic = "force-dynamic";
@@ -214,6 +215,20 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
                 maxJobsPerCompany={config.maxJobsPerCompany}
                 maxFetch={config.maxFetch}
               />
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent>
+            <Stack spacing={2}>
+              <Box>
+                <Typography variant="h3">Add job board source</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Add supported niche job boards such as JobFront-powered defense, startup, or portfolio boards.
+                </Typography>
+              </Box>
+              <AddJobSourceForm />
             </Stack>
           </CardContent>
         </Card>

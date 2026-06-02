@@ -65,6 +65,8 @@ Status endpoint:
 
 Manage direct company sources from `/sources`. The add-company form writes to the `Company Source List` config and accepts a company name, priority, categories, and optional Greenhouse, Lever, and Ashby slugs. When slugs are blank, generated ATS slug variants are used.
 
+The add job-board form supports JobFront-powered boards. Paste the board URL, for example `https://jobs.frontdoordefense.com/`; the app detects the board name and organization id when possible and stores an enabled `jobfront` source.
+
 The source roadmap separates implemented connector coverage from enabled runtime sources. Planned sources are not run automatically, and manual sources require human/account workflow until an explicit connector exists.
 
 Optional Brave Search configuration enables the Search Query Backlog source:

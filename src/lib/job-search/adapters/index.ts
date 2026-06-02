@@ -3,6 +3,7 @@ import type { JobSourceAdapter } from "@/lib/job-search/source-adapter";
 import { ashbyAdapter } from "./ashby";
 import { companySiteAdapter } from "./company-site";
 import { greenhouseAdapter } from "./greenhouse";
+import { jobfrontAdapter } from "./jobfront";
 import { leverAdapter } from "./lever";
 import { remoteOkAdapter } from "./remoteok";
 import { searchQueryAdapter } from "./search-query";
@@ -16,6 +17,7 @@ const adapters: Partial<Record<JobSourceType, JobSourceAdapter>> = {
   weworkremotely: weWorkRemotelyAdapter,
   company_site: companySiteAdapter,
   search_query: searchQueryAdapter,
+  jobfront: jobfrontAdapter,
 };
 
 export function getAdapterForSource(type: JobSourceType) {

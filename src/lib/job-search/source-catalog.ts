@@ -89,6 +89,7 @@ export const sourceCatalog: SourceCatalogItem[] = [
   source("Glassdoor", "general_job_board", 4, "manual", "manual_review", global, seniorEngineeringRoles, true, true, "blocked", "weekly", "High noise and auth friction."),
 
   source("Targeted ATS search queries", "search_engine_query", 1, "active", "search_query", global, seniorEngineeringRoles, true, false, "medium", "daily", "Brave Search-backed connector runs configured query patterns when the provider key is available."),
+  source("JobFront Boards", "industry_niche_board", 1, "active", "html", global, seniorEngineeringRoles, true, false, "medium", "daily", "Public JobFront board connector supports niche boards such as Defense Tech Jobs."),
   source("VC portfolio discovery queries", "search_engine_query", 2, "planned", "search_query", global, seniorEngineeringRoles, true, false, "medium", "weekly", "Find portfolio career pages, then add companies to direct ATS probing."),
   source("Reactiflux / Frontend communities", "community", 4, "manual", "manual_review", global, ["frontend", "react", "typescript"], true, true, "blocked", "weekly", "Human-review community source."),
   source("TLDR Jobs / newsletter feeds", "newsletter", 4, "manual", "manual_review", global, seniorEngineeringRoles, true, false, "medium", "weekly", "Useful as manual/email ingestion source later."),
