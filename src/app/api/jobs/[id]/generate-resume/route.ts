@@ -5,6 +5,11 @@ import { attachResumeQa, createResumeStrategy } from "@/lib/applications/materia
 import { prisma } from "@/lib/prisma";
 import { tailorResumeForJob } from "@/lib/ai/resume";
 import { checkAtsReadability } from "@/lib/resumes/ats";
+import {
+  selectResumeSourceBullets,
+  selectResumeSourceWorkExperiences,
+  summarizeResumeSourceBullets,
+} from "@/lib/resumes/source-materials";
 
 export const dynamic = "force-dynamic";
 
@@ -39,17 +44,15 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       userId: user.id,
     });
     const latestUploadId = user.profile.resumeUploads[0]?.id;
-    const uploadBullets = latestUploadId
-      ? user.profile.experienceBullets.filter((bullet) => bullet.sourceResumeUploadId === latestUploadId)
-      : [];
     const parsedUpload = user.profile.resumeUploads[0]?.parsedJson as { education?: string[]; certifications?: string[] } | undefined;
-    const bullets = uploadBullets.length >= 8 ? uploadBullets : user.profile.experienceBullets;
+    const bullets = selectResumeSourceBullets(user.profile.experienceBullets, latestUploadId);
+    const sourceMaterialSummary = summarizeResumeSourceBullets(bullets, latestUploadId);
     const tailored = await tailorResumeForJob({
       userProfile: user.profile,
       job,
       bullets,
       projects: user.profile.projects,
-      workExperiences: user.profile.workExperiences.filter((work) => !latestUploadId || work.sourceResumeUploadId === latestUploadId),
+      workExperiences: selectResumeSourceWorkExperiences(user.profile.workExperiences, latestUploadId),
       githubRepositories: user.profile.githubRepositories,
       education: Array.isArray(parsedUpload?.education) ? parsedUpload.education : [],
       certifications: Array.isArray(parsedUpload?.certifications) ? parsedUpload.certifications : [],
@@ -76,6 +79,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
           selectedExperienceBullets: tailored.selectedExperienceBullets,
           projectSelections: tailored.projectSelections,
           resumeStrategy: strategy,
+          sourceMaterialSummary,
         } as Prisma.InputJsonValue,
         atsChecks: atsChecks as Prisma.InputJsonValue,
       },

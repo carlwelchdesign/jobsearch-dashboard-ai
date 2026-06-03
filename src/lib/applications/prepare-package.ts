@@ -2,8 +2,14 @@ import { Prisma } from "@prisma/client";
 import { generateCoverLetterForJob, tailorResumeForJob } from "@/lib/ai/resume";
 import { syncApplicationPacket } from "@/lib/applications/application-packets";
 import { attachCoverLetterQa, attachResumeQa, createResumeStrategy } from "@/lib/applications/material-agents";
+import { activeApplicationMaterialGuidance } from "@/lib/applications/material-guidance";
 import { prisma } from "@/lib/prisma";
 import { checkAtsReadability } from "@/lib/resumes/ats";
+import {
+  selectResumeSourceBullets,
+  selectResumeSourceWorkExperiences,
+  summarizeResumeSourceBullets,
+} from "@/lib/resumes/source-materials";
 
 export async function prepareApplicationPackage(jobId: string) {
   const job = await prisma.jobPosting.findUnique({
@@ -37,16 +43,15 @@ export async function prepareApplicationPackage(jobId: string) {
   let resume = job.resumes[0] ?? null;
   let coverLetter = job.coverLetters[0] ?? null;
   const latestUploadId = user.profile.resumeUploads[0]?.id;
-  const uploadBullets = latestUploadId
-    ? user.profile.experienceBullets.filter((bullet) => bullet.sourceResumeUploadId === latestUploadId)
-    : [];
-  const sourceBullets = uploadBullets.length >= 8 ? uploadBullets : user.profile.experienceBullets;
+  const sourceBullets = selectResumeSourceBullets(user.profile.experienceBullets, latestUploadId);
+  const sourceMaterialSummary = summarizeResumeSourceBullets(sourceBullets, latestUploadId);
   const parsedUpload = user.profile.resumeUploads[0]?.parsedJson as { education?: string[]; certifications?: string[] } | undefined;
   const strategy = await createResumeStrategy({
     jobPostingId: job.id,
     jobSearchProfileId: match.jobSearchProfileId,
     userId: user.id,
   });
+  const writingGuidance = await activeApplicationMaterialGuidance(user.id);
 
   if (!resume) {
     const tailored = await tailorResumeForJob({
@@ -54,7 +59,7 @@ export async function prepareApplicationPackage(jobId: string) {
       job,
       bullets: sourceBullets,
       projects: user.profile.projects,
-      workExperiences: user.profile.workExperiences.filter((work) => !latestUploadId || work.sourceResumeUploadId === latestUploadId),
+      workExperiences: selectResumeSourceWorkExperiences(user.profile.workExperiences, latestUploadId),
       githubRepositories: user.profile.githubRepositories,
       education: Array.isArray(parsedUpload?.education) ? parsedUpload.education : [],
       certifications: Array.isArray(parsedUpload?.certifications) ? parsedUpload.certifications : [],
@@ -78,6 +83,7 @@ export async function prepareApplicationPackage(jobId: string) {
           selectedExperienceBullets: tailored.selectedExperienceBullets,
           projectSelections: tailored.projectSelections,
           resumeStrategy: strategy,
+          sourceMaterialSummary,
           preparedApplicationPackage: true,
         } as Prisma.InputJsonValue,
         atsChecks: atsChecks as Prisma.InputJsonValue,
@@ -98,6 +104,7 @@ export async function prepareApplicationPackage(jobId: string) {
       projects: user.profile.projects,
       githubRepositories: user.profile.githubRepositories,
       tailoredResumeMarkdown: resume.markdown,
+      writingGuidance,
     });
     coverLetter = await prisma.generatedCoverLetter.create({
       data: {
@@ -112,6 +119,7 @@ export async function prepareApplicationPackage(jobId: string) {
           unsupportedClaimsDetected: generated.unsupportedClaimsDetected,
           resumeId: resume.id,
           resumeStrategy: strategy,
+          writingGuidance,
           preparedApplicationPackage: true,
         } as Prisma.InputJsonValue,
       },
