@@ -17,7 +17,7 @@ type RemoteOkJob = {
 export const remoteOkAdapter: JobSourceAdapter = {
   name: "RemoteOK",
   async fetchJobs(profile: JobSearchProfile, source: JobSource) {
-    const limit = Math.min(profile.maxResultsPerRun || 50, readNumber(source.config, "maxFetch", 80));
+    const limit = Math.max(profile.maxResultsPerRun * 8 || 160, readNumber(source.config, "maxFetch", 240));
     const response = await fetch("https://remoteok.com/api", {
       headers: {
         "User-Agent": "JobSearchOS/1.0 (+local personal job search dashboard)",
@@ -40,7 +40,7 @@ export const remoteOkAdapter: JobSourceAdapter = {
         applicationUrl: item.apply_url ?? item.url,
         rawData: item,
       }))
-      .slice(0, limit);
+      .slice(0, Math.min(limit, 600));
   },
   async normalize(raw: RawJobPosting): Promise<NormalizedJobPosting> {
     const rawData = raw.rawData as RemoteOkJob | undefined;

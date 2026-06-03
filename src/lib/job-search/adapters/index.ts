@@ -2,6 +2,7 @@ import type { JobSourceType } from "@prisma/client";
 import type { JobSourceAdapter } from "@/lib/job-search/source-adapter";
 import { ashbyAdapter } from "./ashby";
 import { companySiteAdapter } from "./company-site";
+import { eightfoldAdapter } from "./eightfold";
 import { greenhouseAdapter } from "./greenhouse";
 import { jobfrontAdapter } from "./jobfront";
 import { leverAdapter } from "./lever";
@@ -18,6 +19,7 @@ const adapters: Partial<Record<JobSourceType, JobSourceAdapter>> = {
   company_site: companySiteAdapter,
   search_query: searchQueryAdapter,
   jobfront: jobfrontAdapter,
+  eightfold: eightfoldAdapter,
 };
 
 export function getAdapterForSource(type: JobSourceType) {

@@ -51,6 +51,7 @@ The app supports job ingestion from:
 - Ashby
 - Brave Search-backed search queries
 - JobFront-powered niche boards
+- Eightfold-powered company career pages such as Netflix Careers
 - manual capture
 - selected job boards where appropriate
 
@@ -63,6 +64,8 @@ The Search Query Backlog stores targeted open-web searches such as ATS-specific 
 Search-query results are conservatively screened for list/search pages before they enter scoring. Known expandable pages, such as Built In job lists, are parsed into individual job postings. Strong listing signals, such as filtered job-board URLs with `page`, `sort`, `jobTitle`, or similar query parameters, are never saved as ordinary jobs when they cannot be expanded; they are recorded in search-run progress for review.
 
 JobFront board sources can be added from `/sources` with a board URL such as `https://jobs.frontdoordefense.com/`. The connector uses the board's public job-card endpoint and treats the result as a lower-friction niche-board source, not as a final employer ATS source.
+
+Eightfold career sources read the public jobs endpoint when a domain is configured, with embedded `smartApplyData` as a fallback. Netflix Careers is seeded as an enabled source at `https://explore.jobs.netflix.net/careers`, so search runs can ingest its public postings without relying on Brave Search.
 
 ## Manual Job Capture
 

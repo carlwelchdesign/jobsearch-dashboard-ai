@@ -50,6 +50,7 @@ enum JobSourceType {
   company_site
   search_query
   jobfront
+  eightfold
   manual
 }
 

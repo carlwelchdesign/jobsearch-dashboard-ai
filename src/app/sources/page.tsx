@@ -81,6 +81,7 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
     priorityOne: sourceCatalog.filter((item) => item.priority === 1).length,
   };
   const hasBraveSearchKey = Boolean(process.env.BRAVE_SEARCH_API_KEY);
+  const searchQueryConfigured = searchQuerySource.enabled && hasBraveSearchKey;
   const visibleCatalog = sourceCatalog
     .slice()
     .sort((left, right) => left.priority - right.priority || statusRank(left.status) - statusRank(right.status) || left.name.localeCompare(right.name));
@@ -182,11 +183,17 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
               <Box>
                 <Typography variant="h3">Search-query backlog</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Targeted open-web queries now run through the Brave Search connector when the `Search Query Backlog` source is enabled and `BRAVE_SEARCH_API_KEY` is configured.
+                  {searchQueryConfigured
+                    ? "Targeted open-web queries are active and will run through the Brave Search connector during search runs."
+                    : hasBraveSearchKey
+                      ? "BRAVE_SEARCH_API_KEY is configured, but the `Search Query Backlog` source is disabled."
+                      : searchQuerySource.enabled
+                        ? "The `Search Query Backlog` source is enabled, but BRAVE_SEARCH_API_KEY is not configured for the running server."
+                        : "Targeted open-web queries require the `Search Query Backlog` source to be enabled and BRAVE_SEARCH_API_KEY to be configured."}
                 </Typography>
               </Box>
               <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
-                <StatusChip status={searchQuerySource.enabled && hasBraveSearchKey ? "configured" : "provider_missing"} />
+                <StatusChip status={searchQueryConfigured ? "configured" : "provider_missing"} />
                 <Chip variant="outlined" label={hasBraveSearchKey ? "Brave key configured" : "Brave key missing"} />
                 <Chip variant="outlined" label={searchQuerySource.enabled ? "Source enabled" : "Source disabled"} />
               </Stack>
