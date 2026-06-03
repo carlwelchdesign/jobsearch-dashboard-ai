@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
-import { startApplicationAssistantWorkflow } from "@/lib/applications/assistant-workflow-graph";
 import { isLocalAssistantRequest, LOCAL_ASSISTANT_ERROR } from "@/lib/applications/local-assistant-origin";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +15,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       );
     }
 
+    const { startApplicationAssistantWorkflow } = await import("@/lib/applications/assistant-workflow-graph");
     const result = await startApplicationAssistantWorkflow(params.id, url.origin);
     return NextResponse.json(result);
   } catch (error) {

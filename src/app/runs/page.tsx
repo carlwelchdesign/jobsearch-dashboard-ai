@@ -76,13 +76,14 @@ export default async function RunsPage() {
                 <TableCell>After dedupe</TableCell>
                 <TableCell>Matched</TableCell>
                 <TableCell>Saved</TableCell>
+                <TableCell>Diagnostics</TableCell>
                 <TableCell>Latest update</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {runs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7}>
+                  <TableCell colSpan={8}>
                     <EmptyState title="No runs yet" body="Run a search to fetch, dedupe, score, and save matching jobs." />
                   </TableCell>
                 </TableRow>
@@ -95,6 +96,7 @@ export default async function RunsPage() {
                     <TableCell sx={{ fontVariantNumeric: "tabular-nums" }}>{run.jobsAfterDedupe}</TableCell>
                     <TableCell sx={{ fontVariantNumeric: "tabular-nums" }}>{run.jobsAfterFilters}</TableCell>
                     <TableCell sx={{ fontVariantNumeric: "tabular-nums", fontWeight: 800 }}>{run.jobsSaved}</TableCell>
+                    <TableCell>{latestDiagnostics(run.progress)}</TableCell>
                     <TableCell>{latestProgress(run.progress)}</TableCell>
                   </TableRow>
                 ))
@@ -164,4 +166,30 @@ function latestProgress(progress: unknown) {
   if (!Array.isArray(progress) || progress.length === 0) return "No updates";
   const latest = progress[progress.length - 1] as { message?: string };
   return latest.message ?? "No updates";
+}
+
+function latestDiagnostics(progress: unknown) {
+  if (!Array.isArray(progress) || progress.length === 0) return <Typography variant="caption" color="text.secondary">No diagnostics</Typography>;
+  const latestWithStats = [...progress].reverse().find((item): item is { stats: Record<string, number> } => {
+    return Boolean(item && typeof item === "object" && "stats" in item && typeof (item as { stats?: unknown }).stats === "object");
+  });
+  const stats = latestWithStats?.stats;
+  if (!stats) return <Typography variant="caption" color="text.secondary">No diagnostics</Typography>;
+  const chips = [
+    ["Frontend", stats.frontendTitles],
+    ["Full-stack", stats.fullStackTitles],
+    ["Staff/lead", stats.staffPrincipalLeadTitles],
+    ["Mgmt", stats.managementTitles],
+    ["Backend/data", stats.backendDataPlatformTitles],
+    ["Non-target", stats.nonTargetTitles],
+    ["Suppressed", stats.jobsSuppressed],
+  ].filter(([, value]) => typeof value === "number" && value > 0);
+  if (chips.length === 0) return <Typography variant="caption" color="text.secondary">No diagnostics</Typography>;
+  return (
+    <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: "wrap", minWidth: 220 }}>
+      {chips.slice(0, 5).map(([label, value]) => (
+        <Chip key={label} size="small" variant="outlined" label={`${label}: ${value}`} />
+      ))}
+    </Stack>
+  );
 }

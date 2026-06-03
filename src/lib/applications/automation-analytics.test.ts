@@ -17,7 +17,6 @@ describe("automation analytics", () => {
       blockedRuns: 2,
       failedRuns: 1,
       blockerTypes: [
-        { type: "captcha", count: 1 },
         { type: "assistant_error", count: 1 },
       ],
     });

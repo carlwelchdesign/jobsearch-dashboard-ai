@@ -598,7 +598,7 @@ async function ensureNextCommand(
       required: field.required,
       status: field.status,
     },
-    () => decideCommandForField(run, field),
+    () => decideCommandForField(run, field, state.fields),
   );
   return {
     ...state,
@@ -622,6 +622,7 @@ async function ensureNextCommand(
 async function decideCommandForField(
   run: Awaited<ReturnType<typeof latestWorkflowRun>>,
   field: AssistantWorkflowField,
+  fields: AssistantWorkflowField[] = [field],
 ) {
   const application = await prisma.application.findUnique({
     where: { id: run.applicationId },
@@ -633,7 +634,7 @@ async function decideCommandForField(
   });
   if (!application) throw new Error("Application not found.");
 
-  const value = valueForKnownField(field, application);
+  const value = valueForKnownField(field, application, fields);
   if (value) {
     return {
       currentNode: "resolveKnownField",
@@ -737,11 +738,12 @@ async function decideCommandForField(
   };
 }
 
-function valueForKnownField(field: AssistantWorkflowField, application: KnownFieldApplication) {
+function valueForKnownField(field: AssistantWorkflowField, application: KnownFieldApplication, fields: AssistantWorkflowField[] = [field]) {
   const profile = application.user.profile;
   const fullName = profile?.fullName ?? application.user.name ?? "";
   const [firstName, ...lastNameParts] = fullName.split(/\s+/).filter(Boolean);
   const label = `${field.category} ${field.label}`.toLowerCase();
+  const hasGithubField = fields.some((candidate) => /\bgithub\b/i.test(`${candidate.category} ${candidate.label}`));
   if (/\b(first name|given name)\b/.test(label)) return firstName;
   if (/\b(last name|family name|surname)\b/.test(label)) return lastNameParts.join(" ");
   if (/\b(full name|name)\b/.test(label)) return fullName;
@@ -749,10 +751,15 @@ function valueForKnownField(field: AssistantWorkflowField, application: KnownFie
   if (/\b(phone|mobile)\b/.test(label)) return profile?.phone ?? "";
   if (/\b(linkedin)\b/.test(label)) return profile?.linkedinUrl ?? "";
   if (/\b(github)\b/.test(label)) return profile?.githubUrl ?? "";
+  if (websiteOnlyField(label) && !hasGithubField) return profile?.githubUrl ?? profile?.portfolioUrl ?? "";
   if (/\b(portfolio|website|personal site)\b/.test(label)) return profile?.portfolioUrl ?? "";
   if (/\b(location|city|address)\b/.test(label)) return profile?.location ?? "";
   if (/\bcover letter|why.*join|why.*team|why.*company|tell us why/i.test(label)) return application.coverLetter?.body ?? "";
   return "";
+}
+
+function websiteOnlyField(label: string) {
+  return /\b(web\s*site|website|homepage)\b/i.test(label) && !/\b(github|portfolio|personal site|linkedin)\b/i.test(label);
 }
 
 function normalizeWorkflowFields(fields: AssistantWorkflowBrowserField[]) {

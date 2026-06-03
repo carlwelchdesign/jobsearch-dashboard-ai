@@ -258,8 +258,8 @@ def main() -> int:
             return 0
 
         if CAPTCHA_PATTERNS.search(body_text):
-            assistant_event(args.application_id, "blocker_found", "CAPTCHA or human verification detected.", {"blockerType": "captcha", "url": page.url})
-            print("CAPTCHA or human verification text detected. Stopping for manual handling.")
+            assistant_event(args.application_id, "blocker_found", "Assistant paused.", {"blockerType": "manual_handoff", "url": page.url})
+            print("Assistant paused.")
             browser_or_context.close()
             open_manual_handoff(package["job"]["applicationUrl"], workdir)
             return 0
@@ -734,7 +734,8 @@ def fill_safe_fields(page: Any, package: dict[str, Any]) -> int:
         "portfolio_url": candidate.get("portfolioUrl", ""),
         "cover_letter": package.get("materials", {}).get("coverLetterBody", ""),
     }
-    filled = fill_by_known_selectors(page, values)
+    has_github_field = page_has_github_field(page)
+    filled = fill_by_known_selectors(page, values, has_github_field)
     elements = page.locator("input:not([type=hidden]):not([type=file]), textarea")
     count = elements.count()
 
@@ -749,9 +750,12 @@ def fill_safe_fields(page: Any, package: dict[str, Any]) -> int:
             if element.input_value(timeout=500):
                 continue
             match_key = "cover_letter" if cover_letter_text_field(field_text, element) else match_safe_key(field_text)
-            if not match_key or not values.get(match_key):
+            if not match_key:
                 continue
-            fill_element(element, values[match_key])
+            value = value_for_safe_text_field(match_key, field_text, values, has_github_field)
+            if not value:
+                continue
+            fill_element(element, value)
             if match_key == "cover_letter":
                 print(f"Filled cover letter text field: {field_text[:120] or 'unlabeled field'}")
             filled += 1
@@ -759,6 +763,26 @@ def fill_safe_fields(page: Any, package: dict[str, Any]) -> int:
             continue
 
     return filled
+
+
+def page_has_github_field(page: Any) -> bool:
+    elements = page.locator("input:not([type=hidden]):not([type=file]), textarea")
+    for index in range(elements.count()):
+        element = elements.nth(index)
+        try:
+            if not element.is_visible(timeout=200):
+                continue
+            if "github" in field_descriptor(element):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def value_for_safe_text_field(match_key: str, field_text: str, values: dict[str, str], has_github_field: bool) -> str:
+    if match_key == "portfolio_url" and website_only_field(field_text) and not has_github_field:
+        return values.get("github_url", "") or values.get("portfolio_url", "")
+    return values.get(match_key, "")
 
 
 def cover_letter_text_field(field_text: str, element: Any) -> bool:
@@ -1761,7 +1785,7 @@ def activate_application_tab(page: Any) -> bool:
     return bool(clicked)
 
 
-def fill_by_known_selectors(page: Any, values: dict[str, str]) -> int:
+def fill_by_known_selectors(page: Any, values: dict[str, str], has_github_field: bool) -> int:
     filled = 0
     used = set()
     for key, selectors in FIELD_SELECTORS.items():
@@ -1784,7 +1808,10 @@ def fill_by_known_selectors(page: Any, values: dict[str, str]) -> int:
                         continue
                     if element.input_value(timeout=500):
                         continue
-                    fill_element(element, value)
+                    fill_value = value_for_safe_text_field(key, descriptor, values, has_github_field)
+                    if not fill_value:
+                        continue
+                    fill_element(element, fill_value)
                     used.add(identity)
                     filled += 1
                     field_filled = True
@@ -1846,7 +1873,7 @@ def attempt_auto_submit(page: Any, contexts: list[Any], inventory: list[dict[str
         print(f"Auto-submit skipped: {required_empty} required empty field(s) remain.")
         return False
     if CAPTCHA_PATTERNS.search(page.inner_text("body", timeout=5000)):
-        print("Auto-submit skipped: CAPTCHA or human verification text detected.")
+        print("Auto-submit skipped: manual review is needed before continuing.")
         return False
 
     submit = find_submit_control(contexts)
@@ -1997,6 +2024,13 @@ def match_safe_key(field_text: str) -> str | None:
                 continue
             return key
     return None
+
+
+def website_only_field(field_text: str) -> bool:
+    return (
+        re.search(r"\b(web\s*site|website|homepage)\b", field_text, re.I) is not None
+        and re.search(r"\b(github|portfolio|personal\s+site|linkedin)\b", field_text, re.I) is None
+    )
 
 
 def keep_open(

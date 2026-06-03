@@ -5,6 +5,7 @@ import PlayCircleOutlineOutlinedIcon from "@mui/icons-material/PlayCircleOutline
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
+import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -145,9 +146,20 @@ type AtsBlockerSummary = {
   }>;
 };
 
-export function AssistantWorkbench({ applications, atsBlockers }: { applications: ReadyApplication[]; atsBlockers: AtsBlockerSummary[] }) {
+export function AssistantWorkbench({
+  applications,
+  atsBlockers,
+  initialApplicationId,
+}: {
+  applications: ReadyApplication[];
+  atsBlockers: AtsBlockerSummary[];
+  initialApplicationId?: string;
+}) {
   const { refresh } = useRouter();
-  const [selectedId, setSelectedId] = useState(applications[0]?.id ?? "");
+  const initialSelectedId = applications.some((application) => application.id === initialApplicationId)
+    ? initialApplicationId!
+    : applications[0]?.id ?? "";
+  const [selectedId, setSelectedId] = useState(initialSelectedId);
   const [launch, setLaunch] = useState<LaunchResponse | null>(null);
   const [log, setLog] = useState("");
   const [loading, setLoading] = useState(false);
@@ -159,7 +171,8 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
   const [questionLoading, setQuestionLoading] = useState(false);
   const [questionHelper, setQuestionHelper] = useState<QuestionHelperResponse | null>(null);
   const [savingMemoryIndex, setSavingMemoryIndex] = useState<number | null>(null);
-  const [pendingRejectionFeedback, setPendingRejectionFeedback] = useState<Pick<ReadyApplication, "jobPostingId" | "jobProfileMatchId" | "company" | "title"> | null>(null);
+  const [copyingCoverLetterId, setCopyingCoverLetterId] = useState<string | null>(null);
+  const [pendingRejectionFeedback, setPendingRejectionFeedback] = useState<Pick<ReadyApplication, "id" | "company" | "title"> | null>(null);
   const [notice, setNotice] = useState("");
   const visibleApplications = useMemo(
     () => applications.filter((application) => !deletedIds.includes(application.id)),
@@ -239,29 +252,40 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
     }
   }
 
-  async function deleteSelected() {
+  function openRejectDialog() {
     if (!selected) return;
-    if (!window.confirm(`Reject ${selected.company} - ${selected.title} and remove it from Apply Sprint? The agency will remember this as a not-good-fit signal.`)) return;
+    setPendingRejectionFeedback({
+      id: selected.id,
+      company: selected.company,
+      title: selected.title,
+    });
+  }
 
+  async function deleteApplication(application: Pick<ReadyApplication, "id" | "company" | "title">, reasons: RejectionReasonCode[] = [], note = "") {
     setDeleting(true);
     try {
-      const response = await fetch(`/api/applications/${selected.id}`, { method: "DELETE" });
+      const response = await fetch(`/api/applications/${application.id}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          reasons,
+          note,
+          source: "apply_sprint_rejection_reason_prompt",
+        }),
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "Unable to delete application.");
-      const remaining = visibleApplications.filter((application) => application.id !== selected.id);
-      setDeletedIds((current) => [...current, selected.id]);
-      if (selected.jobProfileMatchId) {
-        setPendingRejectionFeedback({
-          jobPostingId: selected.jobPostingId,
-          jobProfileMatchId: selected.jobProfileMatchId,
-          company: selected.company,
-          title: selected.title,
-        });
-      }
+      const remaining = visibleApplications.filter((item) => item.id !== application.id);
+      setDeletedIds((current) => [...current, application.id]);
+      setPendingRejectionFeedback(null);
       setSelectedId(remaining[0]?.id ?? "");
       setLaunch(null);
       setLog("");
-      setNotice(payload.message ?? "Application removed and job marked rejected.");
+      setNotice(
+        reasons.length || note.trim()
+          ? "Application removed, job rejected, and feedback saved for agent learning."
+          : payload.message ?? "Application removed and job marked rejected.",
+      );
       refresh();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to delete application.");
@@ -271,22 +295,8 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
   }
 
   async function submitRejectionFeedback(reasons: RejectionReasonCode[], note: string) {
-    if (!pendingRejectionFeedback?.jobProfileMatchId) return;
-    const response = await fetch("/api/jobs/rejection-feedback", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        matchId: pendingRejectionFeedback.jobProfileMatchId,
-        jobPostingId: pendingRejectionFeedback.jobPostingId,
-        reasons,
-        note,
-        source: "apply_sprint_rejection_reason_prompt",
-      }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error ?? "Unable to save rejection feedback.");
-    setPendingRejectionFeedback(null);
-    setNotice(payload.message ?? "Rejection feedback saved for agent learning.");
+    if (!pendingRejectionFeedback) return;
+    await deleteApplication(pendingRejectionFeedback, reasons, note);
   }
 
   async function generateQuestionOptions() {
@@ -307,6 +317,21 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
       setNotice(error instanceof Error ? error.message : "Unable to generate answer options.");
     } finally {
       setQuestionLoading(false);
+    }
+  }
+
+  async function copyCoverLetter(coverLetterId: string) {
+    setCopyingCoverLetterId(coverLetterId);
+    try {
+      const response = await fetch(`/api/cover-letters/${coverLetterId}/plain-text`);
+      const text = await response.text();
+      if (!response.ok) throw new Error(text || "Unable to load cover letter.");
+      await navigator.clipboard.writeText(text);
+      setNotice("Cover letter copied to clipboard.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to copy cover letter.");
+    } finally {
+      setCopyingCoverLetterId(null);
     }
   }
 
@@ -374,6 +399,19 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
                     {selected.blocker ? <Chip size="small" color="warning" label="Needs answer" /> : null}
                     {selected.score ? <Chip size="small" label={`${selected.score} score`} /> : null}
                   </Stack>
+                  {selected.coverLetterId ? (
+                    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<ContentCopyOutlinedIcon />}
+                        disabled={copyingCoverLetterId === selected.coverLetterId}
+                        onClick={() => void copyCoverLetter(selected.coverLetterId!)}
+                      >
+                        {copyingCoverLetterId === selected.coverLetterId ? "Copying..." : "Copy cover letter"}
+                      </Button>
+                    </Stack>
+                  ) : null}
                 </Stack>
               ) : (
                 <Alert severity="info">No ready applications. Run search so the recruiting agency can approve strong matches and prepare packets.</Alert>
@@ -394,13 +432,6 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
               {selectedRunState?.running ? (
                 <Alert severity="info">
                   Assistant is running in the background. You can leave this page and return here to refresh the log.
-                </Alert>
-              ) : selectedRunState?.message ? (
-                <Alert severity={selectedRunState.alert}>{selectedRunState.message}</Alert>
-              ) : null}
-              {selectedWorkflow?.latestEvent ? (
-                <Alert severity="info">
-                  {selectedWorkflow.latestEvent.message}
                 </Alert>
               ) : null}
               {selectedWorkflow?.pendingCommand ? (
@@ -456,17 +487,15 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
                     color="error"
                     startIcon={<DeleteOutlineOutlinedIcon />}
                     disabled={!selected || deleting || loading || resetting}
-                    onClick={() => void deleteSelected()}
+                    onClick={openRejectDialog}
                   >
                     {deleting ? "Rejecting..." : "Reject from queue"}
                   </Button>
                 </Stack>
               </Box>
-              <Alert severity="warning">
-                {selectedBlocker
-                  ? "Resolve the open blocker before launching this application again."
-                  : "Employer forms cannot be safely embedded and controlled inside this app because they are cross-origin. The assistant opens a local browser, fills/uploads, then stops before submit."}
-              </Alert>
+              {selectedBlocker ? (
+                <Alert severity="warning">Resolve the open blocker before launching this application again.</Alert>
+              ) : null}
               {queueProgress.length ? (
                 <>
                   <Divider />
@@ -704,7 +733,9 @@ export function AssistantWorkbench({ applications, atsBlockers }: { applications
         open={Boolean(pendingRejectionFeedback)}
         title={pendingRejectionFeedback ? `Why reject ${pendingRejectionFeedback.company} - ${pendingRejectionFeedback.title}?` : "Why reject this job?"}
         onClose={() => setPendingRejectionFeedback(null)}
+        onSkip={() => pendingRejectionFeedback ? deleteApplication(pendingRejectionFeedback, [], "") : undefined}
         onSubmit={submitRejectionFeedback}
+        submitLabel="Reject application"
       />
     </>
   );
@@ -778,11 +809,9 @@ function automationRunState(run: NonNullable<ReadyApplication["automationRun"]>)
   color: "primary" | "success" | "warning" | "error" | "info";
   variant: "filled" | "outlined";
   running: boolean;
-  alert: "info" | "success" | "warning" | "error";
-  message?: string;
 } {
   if (run.status === "RUNNING") {
-    return { label: "Running", color: "primary", variant: "filled", running: true, alert: "info" };
+    return { label: "Running", color: "primary", variant: "filled", running: true };
   }
   if (run.status === "READY_TO_SUBMIT") {
     return {
@@ -790,8 +819,6 @@ function automationRunState(run: NonNullable<ReadyApplication["automationRun"]>)
       color: "success",
       variant: "outlined",
       running: false,
-      alert: "success",
-      message: "Assistant finished filling known fields. Review the browser form, submit manually, then mark applied.",
     };
   }
   if (run.status === "SUBMITTED") {
@@ -800,8 +827,6 @@ function automationRunState(run: NonNullable<ReadyApplication["automationRun"]>)
       color: "success",
       variant: "filled",
       running: false,
-      alert: "success",
-      message: "Assistant recorded a submitted run. Confirm the outcome is tracked.",
     };
   }
   if (run.status === "FAILED") {
@@ -810,8 +835,6 @@ function automationRunState(run: NonNullable<ReadyApplication["automationRun"]>)
       color: "error",
       variant: "filled",
       running: false,
-      alert: "error",
-      message: run.blockerMessage ?? "Assistant run failed. Review the log before trying again.",
     };
   }
   return {
@@ -819,8 +842,6 @@ function automationRunState(run: NonNullable<ReadyApplication["automationRun"]>)
     color: "warning",
     variant: "filled",
     running: false,
-    alert: "warning",
-    message: run.blockerMessage ?? "Assistant run is blocked and needs review.",
   };
 }
 

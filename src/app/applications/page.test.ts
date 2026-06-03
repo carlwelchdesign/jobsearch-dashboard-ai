@@ -9,7 +9,8 @@ describe("/applications page agency workflow", () => {
     expect(pageSource).toContain("Agency command center");
     expect(pageSource).toContain("Primary workflow");
     expect(pageSource).toContain("Application operations");
-    expect(pageSource).toContain("Prepare approved packets");
+    expect(pageSource).toContain("Move approved applications into Apply Sprint");
+    expect(pageSource).toContain("Prepare high-score approved matches");
     expect(pageSource).toContain("/api/applications/agency/run");
     expect(pageSource).toContain("/api/applications/next-ready/launch-assistant");
     expect(pageSource).toContain("/applications/assistant");

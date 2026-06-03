@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
-import { startApplicationAssistantWorkflow } from "@/lib/applications/assistant-workflow-graph";
 import { isLocalAssistantRequest, LOCAL_ASSISTANT_ERROR } from "@/lib/applications/local-assistant-origin";
 import { prisma } from "@/lib/prisma";
 
@@ -54,6 +53,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No unlaunched ready_to_apply application with generated materials is available." }, { status: 404 });
     }
 
+    const { startApplicationAssistantWorkflow } = await import("@/lib/applications/assistant-workflow-graph");
     const result = await startApplicationAssistantWorkflow(application.id, url.origin);
     return NextResponse.json({
       ...result,

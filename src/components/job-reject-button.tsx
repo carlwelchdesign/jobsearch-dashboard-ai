@@ -21,6 +21,7 @@ export type RejectionReasonCode =
   | "compensation_location"
   | "company_industry"
   | "weak_fit"
+  | "already_applied_duplicate"
   | "duplicate_stale"
   | "low_quality_posting"
   | "not_interested";
@@ -31,6 +32,7 @@ const rejectionReasons: Array<{ code: RejectionReasonCode; label: string }> = [
   { code: "compensation_location", label: "Comp/location" },
   { code: "company_industry", label: "Company/industry" },
   { code: "weak_fit", label: "Weak fit" },
+  { code: "already_applied_duplicate", label: "Already applied/dupe" },
   { code: "duplicate_stale", label: "Duplicate/stale" },
   { code: "low_quality_posting", label: "Low quality" },
   { code: "not_interested", label: "Not interested" },

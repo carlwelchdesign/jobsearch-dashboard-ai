@@ -30,6 +30,7 @@ vi.mock("@/lib/prisma", () => ({
     candidateEvidence: { findMany: vi.fn() },
     experienceBullet: { findMany: vi.fn() },
     application: { findMany: vi.fn(), groupBy: vi.fn() },
+    applicationAnswerMemory: { findMany: vi.fn(), update: vi.fn() },
     applicationOutcome: { findMany: vi.fn(), groupBy: vi.fn() },
     applicationPacket: { count: vi.fn() },
     agentRun: { count: vi.fn(), findMany: vi.fn() },
@@ -61,6 +62,8 @@ describe("executeJoleneAction", () => {
     vi.mocked(prisma.experienceBullet.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.application.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.application.groupBy).mockResolvedValue([] as never);
+    vi.mocked(prisma.applicationAnswerMemory.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.applicationAnswerMemory.update).mockResolvedValue({} as never);
     vi.mocked(prisma.applicationOutcome.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.applicationOutcome.groupBy).mockResolvedValue([] as never);
     vi.mocked(prisma.applicationPacket.count).mockResolvedValue(0 as never);
@@ -150,6 +153,42 @@ describe("executeJoleneAction", () => {
     expect(result.actionJson).toMatchObject({ action: "jolene_adk_operator" });
     expect(result.executedActions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "sync_email" })]));
     expect(result.clientAction).toEqual({ type: "navigate", href: "/applications", refresh: true });
+  });
+
+  it("pulls a saved application answer before broad coaching", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.applicationAnswerMemory.findMany).mockResolvedValue([
+      {
+        id: "memory_1",
+        userId: "user_1",
+        questionCanonical: "how hear about job",
+        questionText: "How did you hear about this position?",
+        answer: "I found it through a curated job search workflow that tracks roles on company career pages.",
+        sensitivity: "LOW",
+        reusePolicy: "AUTO_USE",
+        sourceApplicationId: null,
+        sourceRequestId: null,
+        useCount: 2,
+        lastUsedAt: new Date("2026-05-18T12:00:00.000Z"),
+        createdAt: new Date("2026-05-17T12:00:00.000Z"),
+        updatedAt: new Date("2026-05-18T12:00:00.000Z"),
+      },
+    ] as never);
+
+    const result = await executeJoleneAction('pull up the latest answer I gave for "How did you hear about this position?"', { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({ action: "answer_memory_lookup" });
+    expect(result.reply).toContain("How did you hear about this position?");
+    expect(result.reply).toContain("curated job search workflow");
+    expect(result.reply).not.toContain("Interview-ready talking points");
+    expect(prisma.applicationAnswerMemory.update).toHaveBeenCalledWith({
+      where: { id: "memory_1" },
+      data: {
+        useCount: { increment: 1 },
+        lastUsedAt: expect.any(Date),
+      },
+    });
   });
 
   it("still starts job search requests", async () => {

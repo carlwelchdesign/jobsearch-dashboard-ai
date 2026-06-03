@@ -224,7 +224,18 @@ export default async function JobDetailPage({ params }: { params: { id: string }
           <Card>
             <CardContent>
               <Stack spacing={1.5}>
-                <Typography variant="h3">Latest cover letter</Typography>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
+                  <Box>
+                    <Typography variant="h3">Latest cover letter</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Version {job.coverLetters[0].version} generated {job.coverLetters[0].createdAt.toLocaleString()}.
+                    </Typography>
+                  </Box>
+                  <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                    <ActionButton href={`/api/cover-letters/${job.coverLetters[0].id}/plain-text`} variant="outlined" startIcon={<ArticleOutlinedIcon />}>Download text</ActionButton>
+                    <ActionButton href={`/api/cover-letters/${job.coverLetters[0].id}/pdf`} variant="outlined" startIcon={<DownloadOutlinedIcon />}>Download PDF</ActionButton>
+                  </Stack>
+                </Stack>
                 <Typography component="pre" sx={{ whiteSpace: "pre-wrap", fontFamily: "inherit", m: 0, color: "text.secondary" }}>
                   {job.coverLetters[0].body}
                 </Typography>

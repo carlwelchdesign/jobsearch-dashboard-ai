@@ -7,6 +7,7 @@ export const rejectionReasonCodes = [
   "compensation_location",
   "company_industry",
   "weak_fit",
+  "already_applied_duplicate",
   "duplicate_stale",
   "low_quality_posting",
   "not_interested",
@@ -144,6 +145,7 @@ async function createFeedbackWithGuidance(input: {
 }
 
 function labelForReason(reason: RejectionReasonCode) {
+  if (reason === "already_applied_duplicate") return "Already applied/duplicate";
   return reason.replace(/_/g, " ");
 }
 

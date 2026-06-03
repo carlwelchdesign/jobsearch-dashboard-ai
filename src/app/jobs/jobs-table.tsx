@@ -40,6 +40,11 @@ export type JobsTableMatch = {
   company: string;
   location: string;
   status: string;
+  applicationState: {
+    id: string;
+    status: string;
+    appliedAt: string | null;
+  } | null;
   profileName: string;
   sourceName: string;
   strongestMatches: string[];
@@ -300,11 +305,24 @@ export function JobsTable({ matches, statusView, searchQuery = "" }: { matches: 
                           {match.company} · {match.location}
                         </Typography>
                         <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 0.75 }}>
+                          {match.applicationState ? (
+                            <Chip
+                              size="small"
+                              color="success"
+                              variant="filled"
+                              label={`Application ${formatStatus(match.applicationState.status)}`}
+                            />
+                          ) : null}
                           {match.duplicateGroupId ? <Chip size="small" color="warning" variant="outlined" label="Duplicate group" /> : null}
                           {match.staleScore >= 45 ? <Chip size="small" color="warning" variant="outlined" label={`Stale ${match.staleScore}`} /> : null}
                         </Stack>
                       </TableCell>
-                      <TableCell><StatusChip status={match.status} /></TableCell>
+                      <TableCell>
+                        <Stack spacing={0.75}>
+                          <StatusChip status={match.status} />
+                          {match.applicationState ? <StatusChip status={match.applicationState.status} /> : null}
+                        </Stack>
+                      </TableCell>
                       <TableCell>
                         <Typography variant="body2" sx={{ fontWeight: 700 }}>{match.profileName}</Typography>
                         <Typography variant="caption" color="text.secondary">{match.sourceName}</Typography>
@@ -330,8 +348,16 @@ export function JobsTable({ matches, statusView, searchQuery = "" }: { matches: 
                       <TableCell align="right">
                         <Stack direction="row" spacing={0.5} sx={{ justifyContent: "flex-end", minWidth: 224 }}>
                           <ActionButton href={`/jobs/${match.jobId}`} size="small" endIcon={<OpenInNewIcon />}>Open</ActionButton>
-                          <ActionButton postTo={`/api/jobs/${match.jobId}/approve`} body={{ matchId: match.id }} size="small" color="success">Approve</ActionButton>
-                          <JobRejectButton jobId={match.jobId} matchId={match.id} label={`${match.company} - ${match.title}`} />
+                          {match.applicationState ? (
+                            <ActionButton href={`/applications/${match.applicationState.id}`} size="small" color="success">
+                              Application
+                            </ActionButton>
+                          ) : (
+                            <>
+                              <ActionButton postTo={`/api/jobs/${match.jobId}/approve`} body={{ matchId: match.id }} size="small" color="success">Approve</ActionButton>
+                              <JobRejectButton jobId={match.jobId} matchId={match.id} label={`${match.company} - ${match.title}`} />
+                            </>
+                          )}
                         </Stack>
                       </TableCell>
                     </TableRow>
@@ -367,6 +393,7 @@ function SwipeJobCard({ match, onAction }: { match: JobsTableMatch; onAction: (m
   const actionColor = deltaX > 36 ? "success.main" : deltaX < -36 ? "error.main" : "transparent";
 
   function pointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (match.applicationState) return;
     setStartX(event.clientX);
     setDeltaX(0);
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -430,6 +457,7 @@ function SwipeJobCard({ match, onAction }: { match: JobsTableMatch; onAction: (m
 
             <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
               <StatusChip status={match.status} />
+              {match.applicationState ? <StatusChip status={match.applicationState.status} /> : null}
               <Chip size="small" variant="outlined" label={match.profileName} />
               {match.opportunityScore === null ? null : <Chip size="small" variant="outlined" label={`Opportunity ${match.opportunityScore}`} />}
               {match.action ? <Chip size="small" color="primary" variant="outlined" label={formatAction(match.action)} /> : null}
@@ -449,8 +477,15 @@ function SwipeJobCard({ match, onAction }: { match: JobsTableMatch; onAction: (m
             </Box>
 
             <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
-              <Typography variant="caption" color="text.secondary">Swipe right to approve. Swipe left to reject.</Typography>
-              <ActionButton href={`/jobs/${match.jobId}`} size="small" endIcon={<OpenInNewIcon />}>Open</ActionButton>
+              <Typography variant="caption" color="text.secondary">
+                {match.applicationState ? `Tracked as ${formatStatus(match.applicationState.status)}.` : "Swipe right to approve. Swipe left to reject."}
+              </Typography>
+              <Stack direction="row" spacing={0.75}>
+                <ActionButton href={`/jobs/${match.jobId}`} size="small" endIcon={<OpenInNewIcon />}>Open</ActionButton>
+                {match.applicationState ? (
+                  <ActionButton href={`/applications/${match.applicationState.id}`} size="small" color="success">Application</ActionButton>
+                ) : null}
+              </Stack>
             </Stack>
           </Stack>
         </CardContent>
@@ -504,7 +539,11 @@ function filterByQuery(matches: JobsTableMatch[], query: string) {
 }
 
 function formatAction(action: string) {
-  return action
+  return formatStatus(action);
+}
+
+function formatStatus(status: string) {
+  return status
     .toLowerCase()
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))

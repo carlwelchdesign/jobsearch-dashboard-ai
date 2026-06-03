@@ -67,6 +67,8 @@ Manage direct company sources from `/sources`. The add-company form writes to th
 
 The add job-board form supports JobFront-powered boards. Paste the board URL, for example `https://jobs.frontdoordefense.com/`; the app detects the board name and organization id when possible and stores an enabled `jobfront` source.
 
+Netflix Careers is seeded as an enabled `eightfold` source using `https://explore.jobs.netflix.net/careers` and domain `netflix.com`. Eightfold sources read public career-page job data and do not require provider credentials.
+
 The source roadmap separates implemented connector coverage from enabled runtime sources. Planned sources are not run automatically, and manual sources require human/account workflow until an explicit connector exists.
 
 Optional Brave Search configuration enables the Search Query Backlog source:

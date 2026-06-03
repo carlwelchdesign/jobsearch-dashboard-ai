@@ -1,22 +1,13 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { captureJobRejectionLearning, rejectionReasonCodes } from "@/lib/jobs/rejection-learning";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-const requestSchema = z.object({
-  matchId: z.string(),
-  jobPostingId: z.string().optional(),
-  reasons: z.array(z.enum(rejectionReasonCodes)).default([]),
-  note: z.string().max(1000).optional(),
-  source: z.string().max(80).default("rejection_reason_prompt"),
-});
-
 export async function POST(request: Request) {
   try {
-    const input = requestSchema.parse(await request.json());
+    const input = parseRequest(await request.json().catch(() => ({})));
     const match = await prisma.jobProfileMatch?.findUnique({
       where: { id: input.matchId },
       select: { jobSearchProfile: { select: { userId: true } } },
@@ -42,4 +33,26 @@ export async function POST(request: Request) {
   } catch (error) {
     return apiError(error, 400);
   }
+}
+
+function parseRequest(payload: unknown) {
+  const body = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? payload as Record<string, unknown>
+    : {};
+  const matchId = typeof body.matchId === "string" ? body.matchId.trim() : "";
+  if (!matchId) throw new Error("matchId is required.");
+  const allowedReasons = new Set<string>(rejectionReasonCodes);
+  const rawReasons = Array.isArray(body.reasons) ? body.reasons : [];
+  const reasons = Array.from(new Set(rawReasons.filter((reason): reason is typeof rejectionReasonCodes[number] => (
+    typeof reason === "string" && allowedReasons.has(reason)
+  ))));
+  const note = typeof body.note === "string" ? body.note.trim().slice(0, 1000) : undefined;
+  const source = typeof body.source === "string" && body.source.trim()
+    ? body.source.trim().slice(0, 80)
+    : "rejection_reason_prompt";
+  const jobPostingId = typeof body.jobPostingId === "string" && body.jobPostingId.trim()
+    ? body.jobPostingId.trim()
+    : undefined;
+
+  return { matchId, jobPostingId, reasons, note, source };
 }
