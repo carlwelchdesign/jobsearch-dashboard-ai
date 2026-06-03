@@ -43,6 +43,7 @@ import { OutcomeForm } from "./outcome-form";
 import { PortfolioMatchButton } from "./portfolio-match-button";
 import { RecruiterOutreachButton } from "./recruiter-outreach-button";
 import { SelectPacketAnswerOptionButton } from "./select-packet-answer-option-button";
+import { ThankYouDraftsSection } from "./thank-you-drafts-section";
 import { MarkAppliedButton } from "../mark-applied-button";
 
 export const dynamic = "force-dynamic";
@@ -139,6 +140,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
         coverLetter: true,
         events: { orderBy: { createdAt: "desc" }, take: 8 },
         interviewPrepTasks: { orderBy: [{ status: "asc" }, { priority: "asc" }, { createdAt: "asc" }] },
+        thankYouDrafts: { orderBy: { createdAt: "desc" }, take: 8 },
         applicationPackets: { orderBy: { updatedAt: "desc" }, take: 1 },
         jobPosting: {
           include: {
@@ -492,6 +494,8 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
             </Stack>
           </CardContent>
         </Card>
+
+        <ThankYouDraftsSection applicationId={application.id} drafts={application.thankYouDrafts} />
 
         <Card>
           <CardContent>

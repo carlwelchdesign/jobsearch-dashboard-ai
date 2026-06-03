@@ -39,6 +39,20 @@ Packets can be:
 - submitted
 - archived
 
+## Thank-You Drafts
+
+Application detail pages can create draft-only thank-you messages after recruiter screens, hiring-manager conversations, technical interviews, panel/onsite rounds, final interviews, informational conversations, or custom stages.
+
+The form captures stage, interviewer name/title, LinkedIn URL, interview date, tone, and conversation notes. The app saves a `ThankYouDraft` with:
+
+- email subject and body
+- short LinkedIn message
+- interviewer snapshot
+- evidence references
+- quality review warnings
+
+These drafts are manual-send artifacts. Creating one does not send email or LinkedIn messages, create contacts, record outcomes, update application status, or schedule follow-ups automatically.
+
 ## Application Answer Memory
 
 The system stores reusable answers to application questions with reuse policy and sensitivity level.

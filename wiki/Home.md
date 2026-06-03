@@ -23,7 +23,7 @@ The product is not a blind mass-apply bot. It is designed around verified candid
 - Candidate evidence library with confidence labels and source references.
 - RAG retrieval over approved evidence using Postgres, pgvector, chunking, metadata, and embeddings.
 - Resume profiles and generated application packets.
-- Cover letters, recruiter messages, hiring manager messages, company briefs, and application answers.
+- Cover letters, recruiter messages, hiring manager messages, interview thank-you drafts, company briefs, and application answers.
 - QA checks for unsupported claims, generic writing, fake metrics, style issues, and missing evidence.
 - Email response ingestion through IMAP and OAuth foundation for Gmail/Outlook.
 - Outcome tracking, canonical application reconciliation, application state integrity repair, and outcome-learning recommendations.
