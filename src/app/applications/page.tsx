@@ -323,7 +323,7 @@ function applicationsNextAction({ approvedCount, readyCount, agencyCandidateCoun
       detail: "Strong 90+ matches are waiting. Let the agency approve them, create trackers, and generate application packets.",
       label: "Run agency",
       postTo: "/api/applications/agency/run",
-      body: { minimumScore: 90, limit: 10, triggeredBy: "manual" },
+      body: { minimumScore: 90, limit: 50, triggeredBy: "manual" },
       runInBackground: true,
       loadingLabel: "Agency running...",
       color: "primary" as const,

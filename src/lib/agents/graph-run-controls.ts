@@ -166,7 +166,7 @@ function recruitingAgencyInputFromRun(run: Pick<AgentRun, "inputJson">) {
   const input = objectJson(run.inputJson);
   return {
     minimumScore: typeof input.minimumScore === "number" ? input.minimumScore : 90,
-    limit: typeof input.limit === "number" ? input.limit : 10,
+    limit: typeof input.limit === "number" ? input.limit : 50,
   };
 }
 

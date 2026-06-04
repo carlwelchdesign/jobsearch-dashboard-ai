@@ -204,7 +204,7 @@ export const skillRegistry = {
     riskLevel: "HIGH",
     inputSchema: z.object({
       minimumScore: z.number().int().min(0).max(100).optional(),
-      limit: z.number().int().min(1).max(25).optional(),
+      limit: z.number().int().min(1).max(100).optional(),
       triggeredBy: z.enum(["manual", "cron"]).optional(),
     }),
     outputSchema: anyOutput,

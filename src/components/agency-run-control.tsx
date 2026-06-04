@@ -12,6 +12,7 @@ import type { SxProps, Theme } from "@mui/material/styles";
 import Typography from "@mui/material/Typography";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DEFAULT_RECRUITING_AGENCY_LIMIT } from "@/lib/applications/recruiting-agency-constants";
 
 type AgencyRunStatus = {
   id: string;
@@ -53,7 +54,7 @@ type AgencyRunControlProps = {
 export function AgencyRunControl({
   label = "Run recruiting agency",
   minimumScore = 90,
-  limit = 10,
+  limit = DEFAULT_RECRUITING_AGENCY_LIMIT,
   color = "primary",
   variant = "contained",
   showLatestOnMount = true,

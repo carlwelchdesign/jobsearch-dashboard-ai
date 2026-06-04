@@ -6,6 +6,7 @@ import { langSmithTraceMetadata, traceWorkflowStep } from "@/lib/observability/l
 import { createQualityExampleFromAgentRun } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
 import { runSkill } from "@/lib/skills/run-skill";
+import { DEFAULT_RECRUITING_AGENCY_LIMIT, MAX_RECRUITING_AGENCY_LIMIT } from "@/lib/applications/recruiting-agency-constants";
 
 const WORKFLOW_VERSION = "recruiting-agency-graph-v1";
 export type RecruitingAgencyTrigger = "manual" | "cron" | "search_auto";
@@ -62,7 +63,7 @@ let agencyGraphPromise: Promise<any> | null = null;
 
 export async function runRecruitingAgency(input: RecruitingAgencyRunInput = {}): Promise<RecruitingAgencyRunResult> {
   const minimumScore = input.minimumScore ?? 90;
-  const limit = Math.min(Math.max(input.limit ?? 10, 1), 25);
+  const limit = Math.min(Math.max(input.limit ?? DEFAULT_RECRUITING_AGENCY_LIMIT, 1), MAX_RECRUITING_AGENCY_LIMIT);
   const triggeredBy = input.triggeredBy ?? "manual";
   const parentRunId = input.parentRunId;
   const user = await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });

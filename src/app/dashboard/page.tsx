@@ -545,7 +545,7 @@ function getNextAction({
       title: "Run the recruiting agency",
       detail: "Strong 90+ matches are waiting. Let the agents approve them, create trackers, and generate packets.",
       postTo: "/api/applications/agency/run",
-      body: { minimumScore: 90, limit: 10, triggeredBy: "manual" },
+      body: { minimumScore: 90, limit: 50, triggeredBy: "manual" },
       runInBackground: true,
       loadingLabel: "Agency running...",
       icon: <AutoAwesomeOutlinedIcon />,
