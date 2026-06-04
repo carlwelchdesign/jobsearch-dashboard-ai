@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
@@ -9,6 +10,80 @@ import { captureJobRejectionLearning, rejectionReasonCodes, type RejectionReason
 export const dynamic = "force-dynamic";
 
 const deletableStatuses = new Set(["approved", "ready_to_apply"]);
+
+const updateApplicationSchema = z.object({
+  applicationUrl: z.string().trim().max(2048),
+});
+
+export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+  try {
+    const body = updateApplicationSchema.parse(await request.json());
+    const applicationUrl = normalizeApplicationUrl(body.applicationUrl);
+    const application = await prisma.application.findUnique({
+      where: { id: params.id },
+      select: {
+        id: true,
+        jobPostingId: true,
+        jobPosting: {
+          select: {
+            id: true,
+            applicationUrl: true,
+            rawData: true,
+          },
+        },
+      },
+    });
+
+    if (!application) {
+      return NextResponse.json({ error: "Application not found." }, { status: 404 });
+    }
+
+    const previousUrl = application.jobPosting.applicationUrl;
+    const rawData = isRecord(application.jobPosting.rawData) ? application.jobPosting.rawData : {};
+
+    const [jobPosting] = await prisma.$transaction([
+      prisma.jobPosting.update({
+        where: { id: application.jobPostingId },
+        data: {
+          applicationUrl,
+          rawData: {
+            ...rawData,
+            manualApplicationUrlCorrection: {
+              previousUrl,
+              applicationUrl,
+              correctedAt: new Date().toISOString(),
+              source: "application_detail_page",
+            },
+          } as Prisma.InputJsonValue,
+        },
+        select: {
+          id: true,
+          applicationUrl: true,
+        },
+      }),
+      prisma.applicationEvent.create({
+        data: {
+          applicationId: application.id,
+          type: "note_added",
+          payload: {
+            source: "application_url_editor",
+            previousUrl,
+            applicationUrl,
+            note: applicationUrl ? "Application URL manually updated." : "Application URL manually cleared.",
+          } as Prisma.InputJsonValue,
+        },
+      }),
+    ]);
+
+    return NextResponse.json({
+      jobPosting,
+      applicationUrl: jobPosting.applicationUrl,
+      message: applicationUrl ? "Application URL updated." : "Application URL cleared.",
+    });
+  } catch (error) {
+    return apiError(error, 400);
+  }
+}
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   try {
@@ -133,4 +208,17 @@ async function parseDeleteInput(request: Request): Promise<{ reasons: RejectionR
     note: typeof payload?.note === "string" && payload.note.trim() ? payload.note.trim().slice(0, 1000) : null,
     source: typeof payload?.source === "string" && payload.source.trim() ? payload.source.trim().slice(0, 80) : "apply_sprint_delete",
   };
+}
+
+function normalizeApplicationUrl(value: string) {
+  if (!value) return null;
+  const parsed = new URL(value);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Application URL must use http or https.");
+  }
+  return parsed.toString();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

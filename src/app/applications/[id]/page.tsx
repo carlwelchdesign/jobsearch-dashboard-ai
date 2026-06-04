@@ -33,6 +33,7 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { applicationAnswerEntries, packetApprovalChecklist, packetApprovalState } from "@/lib/applications/application-packets";
+import { ApplicationUrlEditor } from "./application-url-editor";
 import { ApprovePacketButton } from "./approve-packet-button";
 import { AutoSubmitOverrideControl } from "./auto-submit-override-control";
 import { DeletePacketAnswerButton } from "./delete-packet-answer-button";
@@ -276,6 +277,20 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
           <Metric label="QA" value={qa ? <ScoreChip score={qa.score ?? 0} label={qa.status === "PASS" ? "Pass" : "Review"} /> : "pending"} helper={qaIssues.length ? `${qaIssues.length} review items` : "No issues saved"} />
           <Metric label="Packet" value={packet ? <StatusChip status={packet.status} /> : "pending"} helper={packet ? `Updated ${packet.updatedAt.toLocaleString()}` : "Prepare package to persist"} />
         </Box>
+
+        <Card>
+          <CardContent>
+            <Stack spacing={1.5}>
+              <Box>
+                <Typography variant="h3">Application link</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Replace intermediary or blocked job-board links with the final employer application page.
+                </Typography>
+              </Box>
+              <ApplicationUrlEditor applicationId={application.id} initialUrl={application.jobPosting.applicationUrl} />
+            </Stack>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardContent>

@@ -1,13 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { captureJobRejectionLearning } from "@/lib/jobs/rejection-learning";
-import { DELETE } from "./route";
+import { DELETE, PATCH } from "./route";
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     application: {
       findUnique: vi.fn(),
       delete: vi.fn(),
+    },
+    jobPosting: {
+      update: vi.fn(),
+    },
+    applicationEvent: {
+      create: vi.fn(),
     },
     jobProfileMatch: {
       update: vi.fn(),
@@ -34,6 +40,8 @@ vi.mock("@/lib/observability/outcome-calibration", () => ({
 
 const findApplicationMock = vi.mocked(prisma.application.findUnique);
 const deleteApplicationMock = vi.mocked(prisma.application.delete);
+const updateJobPostingMock = vi.mocked(prisma.jobPosting.update);
+const createApplicationEventMock = vi.mocked(prisma.applicationEvent.create);
 const updateMatchMock = vi.mocked(prisma.jobProfileMatch.update);
 const createSkillFeedbackMock = vi.mocked(prisma.skillFeedback.create);
 const transactionMock = vi.mocked(prisma.$transaction);
@@ -43,11 +51,15 @@ describe("DELETE /api/applications/[id]", () => {
   beforeEach(() => {
     findApplicationMock.mockReset();
     deleteApplicationMock.mockReset();
+    updateJobPostingMock.mockReset();
+    createApplicationEventMock.mockReset();
     updateMatchMock.mockReset();
     createSkillFeedbackMock.mockReset();
     captureJobRejectionLearningMock.mockReset();
     transactionMock.mockClear();
     deleteApplicationMock.mockResolvedValue({ id: "app_1" } as Awaited<ReturnType<typeof prisma.application.delete>>);
+    updateJobPostingMock.mockResolvedValue({ id: "job_1", applicationUrl: "https://jobs.acme.example/apply" } as Awaited<ReturnType<typeof prisma.jobPosting.update>>);
+    createApplicationEventMock.mockResolvedValue({ id: "event_1" } as Awaited<ReturnType<typeof prisma.applicationEvent.create>>);
     updateMatchMock.mockResolvedValue({ id: "match_1", status: "rejected" } as Awaited<ReturnType<typeof prisma.jobProfileMatch.update>>);
     createSkillFeedbackMock.mockResolvedValue({ id: "feedback_1" } as Awaited<ReturnType<typeof prisma.skillFeedback.create>>);
     captureJobRejectionLearningMock.mockResolvedValue({ created: 1 });
@@ -107,5 +119,87 @@ describe("DELETE /api/applications/[id]", () => {
     expect(deleteApplicationMock).toHaveBeenCalledWith({ where: { id: "app_1" } });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ deleted: true, rejected: true });
+  });
+
+  it("updates the linked job posting application URL", async () => {
+    updateJobPostingMock.mockResolvedValue({ id: "job_1", applicationUrl: "https://jobs.acme.example/apply?job=123" } as Awaited<ReturnType<typeof prisma.jobPosting.update>>);
+    findApplicationMock.mockResolvedValue({
+      id: "app_1",
+      jobPostingId: "job_1",
+      jobPosting: {
+        id: "job_1",
+        applicationUrl: "https://jobboard.example/intermediary",
+        rawData: { source: "search_query" },
+      },
+    } as unknown as Awaited<ReturnType<typeof prisma.application.findUnique>>);
+
+    const response = await PATCH(new Request("http://localhost/api/applications/app_1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ applicationUrl: "https://jobs.acme.example/apply?job=123" }),
+    }), { params: { id: "app_1" } });
+
+    expect(updateJobPostingMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "job_1" },
+      data: expect.objectContaining({
+        applicationUrl: "https://jobs.acme.example/apply?job=123",
+        rawData: expect.objectContaining({
+          source: "search_query",
+          manualApplicationUrlCorrection: expect.objectContaining({
+            previousUrl: "https://jobboard.example/intermediary",
+            applicationUrl: "https://jobs.acme.example/apply?job=123",
+            source: "application_detail_page",
+          }),
+        }),
+      }),
+    }));
+    expect(createApplicationEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        applicationId: "app_1",
+        type: "note_added",
+        payload: expect.objectContaining({
+          previousUrl: "https://jobboard.example/intermediary",
+          applicationUrl: "https://jobs.acme.example/apply?job=123",
+        }),
+      }),
+    }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ applicationUrl: "https://jobs.acme.example/apply?job=123" });
+  });
+
+  it("allows clearing the application URL", async () => {
+    findApplicationMock.mockResolvedValue({
+      id: "app_1",
+      jobPostingId: "job_1",
+      jobPosting: {
+        id: "job_1",
+        applicationUrl: "https://jobboard.example/intermediary",
+        rawData: {},
+      },
+    } as unknown as Awaited<ReturnType<typeof prisma.application.findUnique>>);
+    updateJobPostingMock.mockResolvedValue({ id: "job_1", applicationUrl: null } as Awaited<ReturnType<typeof prisma.jobPosting.update>>);
+
+    const response = await PATCH(new Request("http://localhost/api/applications/app_1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ applicationUrl: "   " }),
+    }), { params: { id: "app_1" } });
+
+    expect(updateJobPostingMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ applicationUrl: null }),
+    }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ applicationUrl: null });
+  });
+
+  it("rejects non-http application URLs", async () => {
+    const response = await PATCH(new Request("http://localhost/api/applications/app_1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ applicationUrl: "javascript:alert(1)" }),
+    }), { params: { id: "app_1" } });
+
+    expect(updateJobPostingMock).not.toHaveBeenCalled();
+    expect(response.status).toBe(400);
   });
 });
