@@ -40,6 +40,8 @@ export default async function ResumeProfilePage() {
               role: bullet.role,
               category: bullet.category,
               text: bullet.text,
+              keywords: Array.isArray(bullet.keywords) ? bullet.keywords.filter((keyword): keyword is string => typeof keyword === "string") : [],
+              sourceText: bullet.sourceText,
               truthLevel: bullet.truthLevel,
             }))}
           />

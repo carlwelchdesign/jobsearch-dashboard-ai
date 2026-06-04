@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
-import { runRecruitingAgency } from "@/lib/applications/recruiting-agency";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +14,7 @@ export async function POST(request: Request) {
   try {
     const body = request.headers.get("content-type")?.includes("application/json") ? await request.json() : {};
     const input = requestSchema.parse(body);
+    const { runRecruitingAgency } = await import("@/lib/applications/recruiting-agency");
     const result = await runRecruitingAgency(input);
 
     return NextResponse.json(result);

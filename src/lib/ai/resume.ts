@@ -22,6 +22,7 @@ type TailorResumeInput = {
 
 type GenerateCoverLetterInput = TailorResumeInput & {
   tailoredResumeMarkdown?: string | null;
+  writingGuidance?: string[];
 };
 
 export async function parseUploadedResume(extractedText: string): Promise<ParsedResume> {
@@ -62,6 +63,7 @@ export async function tailorResumeForJob({ userProfile, job, bullets, projects, 
         "Compose the resume like a premium editorial document: exact section hierarchy, concise high-signal bullets, clean role/date lines, and no filler. " +
         "Use these sections in this order when supported by the source data: Summary, Skills, Professional Experience, Projects, Education, Certifications. " +
         "Professional Experience role lines must follow 'Company - Role | Date range' when dates are available, then 3-5 concise bullets focused on outcomes, scope, tools, and measurable evidence already present in source data. " +
+        "Verified bullets marked as profile updates or role-description digest evidence are recently approved user profile data. Give them strong consideration when they align with the job, even if older uploaded-resume bullets also match. " +
         "Keep the Summary to 2 polished sentences and the Skills section to a selective comma-separated list rather than a dense keyword dump. " +
         "In the contact line, list values only — no labels like 'Email:', 'Phone:', 'LinkedIn:'. Separate with ' | '. Use only the root GitHub profile URL (e.g. github.com/username) — never individual repository URLs. Include the LinkedIn URL if provided. " +
         "In the Projects section: write a concrete one-sentence description of what each project does, followed by the full technology stack (language, frameworks, libraries, services) drawn from the project's technologies, topics, and language fields — list every relevant technology, not just the primary language. Never copy placeholder text like 'Portfolio project referenced in uploaded resume.' " +
@@ -77,6 +79,22 @@ export async function tailorResumeForJob({ userProfile, job, bullets, projects, 
           text: bullet.text,
           keywords: bullet.keywords,
           sourceText: bullet.sourceText,
+          source: bullet.sourceResumeUploadId ? "resume_upload" : "profile_update",
+          isRoleDescriptionDigest: isRoleDescriptionDigestBullet(bullet),
+          createdAt: bullet.createdAt,
+        })),
+        workExperiences: workExperiences.map((work) => ({
+          id: work.id,
+          company: work.company,
+          title: work.title,
+          location: work.location,
+          startDate: work.startDate,
+          endDate: work.endDate,
+          isCurrent: work.isCurrent,
+          summary: work.summary,
+          skills: work.skills,
+          achievements: work.achievements,
+          source: work.sourceResumeUploadId ? "resume_upload" : "profile_update",
         })),
         projects: cleanProjects.map((project) => ({
           id: project.id,
@@ -141,8 +159,9 @@ export async function generateCoverLetterForJob({
   projects,
   githubRepositories = [],
   tailoredResumeMarkdown,
+  writingGuidance = [],
 }: GenerateCoverLetterInput) {
-  const fallback = buildFallbackCoverLetter({ userProfile, job, bullets });
+  const fallback = buildFallbackCoverLetter({ userProfile, job, bullets, writingGuidance });
 
   try {
     const generated = await parseStructuredOutput({
@@ -150,6 +169,9 @@ export async function generateCoverLetterForJob({
       schemaName: "generate_cover_letter",
       system:
         "Generate a concise, credible cover letter for this job. Use only the supplied approved candidate profile, verified bullets, projects, and tailored resume. " +
+        "Follow supplied writing guidance unless it conflicts with truthfulness or the job data. " +
+        "When referring to the user's job-search application generally, call it an Agentic job search assistant. " +
+        "For AI-related roles, if mentioning that application, describe it as using agentic workflows, RAG, MCP, LangGraph, LangSmith-style observability, browser automation, email outcome tracking, application state reconciliation, duplicate detection, and learned feedback loops. " +
         "Do not fabricate experience, metrics, credentials, employers, dates, or domain claims. Avoid hype, cliches, em dashes, and obvious AI phrasing.",
       input: {
         company: job.company,
@@ -186,6 +208,7 @@ export async function generateCoverLetterForJob({
           pushedAt: repo.pushedAt,
         })),
         tailoredResumeMarkdown,
+        writingGuidance,
       },
     });
 
@@ -337,6 +360,16 @@ function uniqueBullets(bullets: ExperienceBullet[]) {
   });
 }
 
+function isRoleDescriptionDigestBullet(bullet: ExperienceBullet) {
+  return Boolean(
+    bullet.metrics &&
+      typeof bullet.metrics === "object" &&
+      !Array.isArray(bullet.metrics) &&
+      "source" in bullet.metrics &&
+      bullet.metrics.source === "role_description_digest",
+  );
+}
+
 function formatExperience(bullets: ExperienceBullet[], workExperiences: WorkExperience[]) {
   const chronologicalWork = sortWorkExperiences(workExperiences);
   const workByKey = new Map(chronologicalWork.map((work) => [workKey(work.company, work.title), work]));
@@ -425,7 +458,7 @@ function titleCase(value: string) {
   return value.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function buildFallbackCoverLetter({ userProfile, job, bullets }: Pick<GenerateCoverLetterInput, "userProfile" | "job" | "bullets">) {
+function buildFallbackCoverLetter({ userProfile, job, bullets, writingGuidance = [] }: Pick<GenerateCoverLetterInput, "userProfile" | "job" | "bullets" | "writingGuidance">) {
   const strongestBullets = bullets.slice(0, 3).map((bullet) => bullet.text);
   const skills = [
     ...jsonStringArray(userProfile.coreSkills),
@@ -439,6 +472,9 @@ function buildFallbackCoverLetter({ userProfile, job, bullets }: Pick<GenerateCo
     strongestBullets.length
       ? `Relevant examples from my approved profile include: ${strongestBullets.join(" ")}`
       : userProfile.professionalSummary ?? userProfile.masterSummary,
+    aiRelatedJob(job) && writingGuidance.some((guidance) => /agentic job search assistant|agentic workflows|rag|mcp|langgraph/i.test(guidance))
+      ? "\nOne relevant example is my Agentic job search assistant, which uses agentic workflows, RAG, MCP, LangGraph, LangSmith-style observability, browser automation, email outcome tracking, application state reconciliation, duplicate detection, and learned feedback loops to review jobs against my actual experience, prepare tailored materials, track decisions, and surface better-fit opportunities over time."
+      : "",
     "",
     `I would welcome a conversation about how this experience maps to ${job.company}'s needs for this role.`,
     "",
@@ -453,6 +489,15 @@ function buildFallbackCoverLetter({ userProfile, job, bullets }: Pick<GenerateCo
     unsupportedClaimsDetected: [],
     generatedBy: "deterministic_fallback",
   };
+}
+
+function aiRelatedJob(job: JobPosting) {
+  return /\b(ai|artificial intelligence|machine learning|ml|llm|agentic|rag|langchain|langgraph|automation)\b/i.test([
+    job.title,
+    job.description,
+    job.requirements,
+    job.niceToHaves,
+  ].filter(Boolean).join(" "));
 }
 
 function deduplicateByName<T extends { name: string }>(items: T[]): T[] {

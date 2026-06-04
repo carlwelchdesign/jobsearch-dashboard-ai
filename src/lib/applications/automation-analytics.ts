@@ -60,8 +60,8 @@ export function summarizeAutomationBlockerRuns(runs: AutomationRunWithJob[]): At
     if (run.status === "FAILED") group.failedRuns += 1;
     if (run.status === "READY_TO_SUBMIT") group.readyRuns += 1;
     if (run.status === "SUBMITTED") group.submittedRuns += 1;
-    if (run.blockerType) incrementBlockerType(group.blockerTypes, run.blockerType);
-    if ((run.blockerType || run.blockerMessage) && group.examples.length < 3) {
+    if (run.blockerType && run.blockerType !== "captcha") incrementBlockerType(group.blockerTypes, run.blockerType);
+    if ((run.blockerType || run.blockerMessage) && run.blockerType !== "captcha" && group.examples.length < 3) {
       group.examples.push({
         applicationId: run.applicationId,
         company: run.jobPosting.company,

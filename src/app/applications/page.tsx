@@ -30,6 +30,7 @@ import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/s
 import { prisma } from "@/lib/prisma";
 import { ApplicationDeleteButton } from "./application-delete-button";
 import { BackfillPacketsButton } from "./backfill-packets-button";
+import { BulkMoveToSprintControl } from "./bulk-move-to-sprint-control";
 import { MarkAppliedButton } from "./mark-applied-button";
 
 export const dynamic = "force-dynamic";
@@ -168,7 +169,13 @@ export default async function ApplicationsPage() {
                     <Box sx={{ display: "grid", gridTemplateColumns: "1fr", gap: 1.25 }}>
                       <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
                         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-                          Prepare approved packets
+                          Move approved applications into Apply Sprint
+                        </Typography>
+                        <BulkMoveToSprintControl buttonSx={commandButtonSx} />
+                      </Box>
+                      <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                          Prepare high-score approved matches
                         </Typography>
                         <BulkPrepareControl compact defaultMinimumScore={90} defaultLimit={10} buttonSx={commandButtonSx} />
                       </Box>
@@ -223,6 +230,20 @@ export default async function ApplicationsPage() {
                               Review packet
                             </ActionButton>
                           </Box>
+                          {application.status === "ready_to_apply" && application.resume && application.coverLetter ? (
+                            <Box sx={{ mt: 1 }}>
+                              <Button
+                                component={Link}
+                                href={`/applications/assistant?applicationId=${application.id}`}
+                                size="small"
+                                variant="contained"
+                                color="success"
+                                startIcon={<BoltOutlinedIcon />}
+                              >
+                                Open in Apply Sprint
+                              </Button>
+                            </Box>
+                          ) : null}
                           {application.jobPosting.applicationUrl ? (
                             <Button
                               component={Link}
@@ -312,12 +333,15 @@ function applicationsNextAction({ approvedCount, readyCount, agencyCandidateCoun
   }
   if (approvedCount > 0) {
     return {
-      title: "Prepare application packets",
-      detail: "Approved applications need tailored materials before they can move into Apply Sprint.",
-      label: "Prepare packets",
-      postTo: "/api/applications/packets/backfill",
+      title: "Move approved applications to Apply Sprint",
+      detail: "Approved applications need packets and ready status before the assistant can work them.",
+      label: "Bulk move to sprint",
+      postTo: "/api/applications/bulk-move-to-sprint",
+      body: { limit: Math.min(Math.max(approvedCount, 1), 50) },
+      runInBackground: true,
+      loadingLabel: "Moving...",
       color: "primary" as const,
-      icon: <FactCheckOutlinedIcon />,
+      icon: <BoltOutlinedIcon />,
       count: approvedCount,
     };
   }

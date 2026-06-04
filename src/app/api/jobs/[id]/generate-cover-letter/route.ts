@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
 import { generateCoverLetterForJob } from "@/lib/ai/resume";
 import { attachCoverLetterQa, createResumeStrategy } from "@/lib/applications/material-agents";
+import { activeApplicationMaterialGuidance } from "@/lib/applications/material-guidance";
 import { prisma } from "@/lib/prisma";
+import { selectResumeSourceBullets, summarizeResumeSourceBullets } from "@/lib/resumes/source-materials";
 
 export const dynamic = "force-dynamic";
 
@@ -42,16 +44,17 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       userId: user.id,
     });
     const latestUploadId = user.profile.resumeUploads[0]?.id;
-    const uploadBullets = latestUploadId
-      ? user.profile.experienceBullets.filter((bullet) => bullet.sourceResumeUploadId === latestUploadId)
-      : [];
+    const sourceBullets = selectResumeSourceBullets(user.profile.experienceBullets, latestUploadId);
+    const sourceMaterialSummary = summarizeResumeSourceBullets(sourceBullets, latestUploadId);
+    const writingGuidance = await activeApplicationMaterialGuidance(user.id);
     const generated = await generateCoverLetterForJob({
       userProfile: user.profile,
       job,
-      bullets: uploadBullets.length >= 8 ? uploadBullets : user.profile.experienceBullets,
+      bullets: sourceBullets,
       projects: user.profile.projects,
       githubRepositories: user.profile.githubRepositories,
       tailoredResumeMarkdown: job.resumes[0]?.markdown,
+      writingGuidance,
     });
 
     const coverLetter = await prisma.generatedCoverLetter.create({
@@ -67,25 +70,28 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
           unsupportedClaimsDetected: generated.unsupportedClaimsDetected,
           resumeId: job.resumes[0]?.id ?? null,
           resumeStrategy: strategy,
+          writingGuidance,
+          sourceMaterialSummary,
         } as Prisma.InputJsonValue,
       },
     });
-    const coverLetterQa = await attachCoverLetterQa({
+    attachCoverLetterQa({
       coverLetter,
       resumeMarkdown: job.resumes[0]?.markdown,
       userId: user.id,
       strategy,
-    });
-    const reviewedCoverLetter = await prisma.generatedCoverLetter.update({
+    }).then((coverLetterQa) => prisma.generatedCoverLetter.update({
       where: { id: coverLetter.id },
       data: { generationNotes: coverLetterQa.notes },
+    })).catch((error) => {
+      console.warn("Cover letter QA update failed after generation.", error);
     });
     await prisma.jobProfileMatch.update({
       where: { id: match.id },
       data: { status: "cover_letter_generated" },
     });
 
-    return NextResponse.json({ coverLetter: reviewedCoverLetter });
+    return NextResponse.json({ coverLetter });
   } catch (error) {
     return apiError(error, 400);
   }

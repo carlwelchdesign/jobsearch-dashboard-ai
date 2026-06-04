@@ -56,9 +56,9 @@ playwright._impl._errors.Error: Locator.count: Frame was detached
   });
 
   it("classifies assistant blockers", () => {
-    expect(classifyAssistantLog("CAPTCHA or human verification text detected. Stopping for manual handling.")).toMatchObject({
+    expect(classifyAssistantLog("Assistant paused.")).toMatchObject({
       status: "BLOCKED",
-      blockerType: "captcha",
+      blockerType: "manual_handoff",
     });
     expect(classifyAssistantLog("This application page appears to be closed, removed, or unavailable.")).toMatchObject({
       status: "BLOCKED",

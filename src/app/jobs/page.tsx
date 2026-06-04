@@ -23,6 +23,7 @@ import { EvaluateJobsControl } from "@/components/evaluate-jobs-control";
 import { PageHeader } from "@/components/ui/page-header";
 import { RunSearchControl } from "@/components/run-search-control";
 import { submittedApplicationStatuses } from "@/lib/applications/job-filters";
+import { createApplicationCanonicalJobKeys, reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
 import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
@@ -34,21 +35,48 @@ export const dynamic = "force-dynamic";
 type StatusView = "active" | "rejected" | "archived" | "all";
 
 export default async function JobsPage({ searchParams }: { searchParams?: { statusView?: string; q?: string; company?: string } }) {
+  await reconcileApplicationCanonicalState({ source: "jobs_page" }).catch(() => null);
   const statusView = normalizeStatusView(searchParams?.statusView);
   const searchQuery = normalizeSearchQuery(searchParams?.q ?? searchParams?.company);
-  const matches = await prisma.jobProfileMatch.findMany({
-    where: statusWhere(statusView, searchQuery),
-    include: {
-      jobPosting: {
-        include: { source: true },
+  const [matches, submittedApplications] = await Promise.all([
+    prisma.jobProfileMatch.findMany({
+      where: statusWhere(statusView, searchQuery),
+      include: {
+        jobPosting: {
+          include: { source: true },
+        },
+        jobSearchProfile: {
+          select: { name: true, userId: true },
+        },
       },
-      jobSearchProfile: {
-        select: { name: true, userId: true },
+      orderBy: [{ status: "asc" }, { overallScore: "desc" }, { createdAt: "desc" }],
+      take: 250,
+    }),
+    prisma.application.findMany({
+      where: { status: { in: submittedApplicationStatuses } },
+      select: {
+        id: true,
+        status: true,
+        appliedAt: true,
+        updatedAt: true,
+        jobPosting: {
+          select: {
+            company: true,
+            title: true,
+            location: true,
+            lastSeenAt: true,
+          },
+        },
       },
-    },
-    orderBy: [{ status: "asc" }, { overallScore: "desc" }, { createdAt: "desc" }],
-    take: 250,
-  });
+      orderBy: [{ appliedAt: "desc" }, { updatedAt: "desc" }],
+    }),
+  ]);
+  const submittedApplicationByJobKey = new Map<string, typeof submittedApplications[number]>();
+  for (const application of submittedApplications) {
+    for (const key of createApplicationCanonicalJobKeys(application.jobPosting)) {
+      if (!submittedApplicationByJobKey.has(key)) submittedApplicationByJobKey.set(key, application);
+    }
+  }
   const suppressionStates = await loadJobSuppressionStatesByUserIds(matches.map((match) => match.jobSearchProfile.userId));
   const reviewableMatches = statusView === "active"
     ? matches.filter((match) => {
@@ -186,6 +214,18 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
               profileName: match.jobSearchProfile.name,
               sourceName: match.jobPosting.source?.name ?? "Manual",
               strongestMatches: jsonArray(match.strongestMatches),
+              applicationState: (() => {
+                const application = createApplicationCanonicalJobKeys(match.jobPosting)
+                .map((key) => submittedApplicationByJobKey.get(key))
+                  .find(Boolean);
+                return application
+                  ? {
+                      id: application.id,
+                      status: application.status,
+                      appliedAt: application.appliedAt?.toISOString() ?? null,
+                    }
+                  : null;
+              })(),
             };
           })}
         />

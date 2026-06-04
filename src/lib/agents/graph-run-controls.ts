@@ -1,5 +1,4 @@
 import type { AgentRun, AgentRunEvent, Prisma } from "@prisma/client";
-import { runRecruitingAgency } from "@/lib/applications/recruiting-agency";
 import { createQualityExampleFromAgentRun } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
 
@@ -132,6 +131,7 @@ async function retryGraphRun(run: GraphRunWithEvents, failureCategory: string): 
   await createQualityExampleFromAgentRun(run.id, "RECRUITING_AGENCY", failureCategory).catch(() => null);
 
   const retryInput = recruitingAgencyInputFromRun(run);
+  const { runRecruitingAgency } = await import("@/lib/applications/recruiting-agency");
   const child = await runRecruitingAgency({
     ...retryInput,
     triggeredBy: "manual",

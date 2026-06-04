@@ -138,3 +138,9 @@ Interview prep output can include:
 - prep tasks
 
 The app does not claim external research facts unless they are available from saved context or explicitly researched and stored.
+
+## Thank-You Follow-Up Drafts
+
+After an interview or recruiter conversation, open the application detail page and use the Thank-you drafts card. The generator creates a concise email and a shorter LinkedIn variant from the saved application, role, interviewer details, interview stage, conversation notes, and approved candidate evidence.
+
+Supported stages are recruiter screen, hiring manager, technical, panel/onsite, final, informational, and custom. Drafts are saved for review and copying only. They do not send messages, create contacts, record interview outcomes, or change the tracker automatically.

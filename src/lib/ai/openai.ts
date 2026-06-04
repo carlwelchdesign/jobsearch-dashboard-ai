@@ -5,6 +5,7 @@ import { traceAgentOperation } from "@/lib/observability/langsmith";
 
 const DEFAULT_MODEL = "gpt-4.1-mini";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
+const DEFAULT_OPENAI_TIMEOUT_MS = 25_000;
 
 let client: OpenAI | null = null;
 
@@ -28,7 +29,7 @@ export async function parseStructuredOutput<TSchema extends z.ZodTypeAny>({
   client ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const model = process.env.OPENAI_MODEL ?? DEFAULT_MODEL;
-  const response = await traceAgentOperation(
+  const response = await withTimeout(traceAgentOperation(
     `openai.structured.${schemaName}`,
     {
       provider: "openai",
@@ -47,7 +48,7 @@ export async function parseStructuredOutput<TSchema extends z.ZodTypeAny>({
         format: zodTextFormat(schema, schemaName),
       },
     }),
-  );
+  ), openAiTimeoutMs(), `OpenAI structured output (${schemaName})`);
 
   return response.output_parsed;
 }
@@ -58,7 +59,7 @@ export async function createEmbedding(input: string) {
   client ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const model = process.env.OPENAI_EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODEL;
-  const response = await traceAgentOperation(
+  const response = await withTimeout(traceAgentOperation(
     "openai.embedding",
     {
       provider: "openai",
@@ -71,7 +72,7 @@ export async function createEmbedding(input: string) {
       model,
       input: input.slice(0, 8000),
     }),
-  );
+  ), openAiTimeoutMs(), "OpenAI embedding");
 
   return {
     model: response.model,
@@ -91,7 +92,7 @@ export async function createTextResponse({
   client ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const model = process.env.OPENAI_MODEL ?? DEFAULT_MODEL;
-  const response = await traceAgentOperation(
+  const response = await withTimeout(traceAgentOperation(
     "openai.text_response",
     {
       provider: "openai",
@@ -106,7 +107,26 @@ export async function createTextResponse({
         { role: "user", content: input },
       ],
     }),
-  );
+  ), openAiTimeoutMs(), "OpenAI text response");
 
   return response.output_text?.trim() || null;
+}
+
+function openAiTimeoutMs() {
+  const value = Number(process.env.OPENAI_TIMEOUT_MS);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_OPENAI_TIMEOUT_MS;
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms.`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

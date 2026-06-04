@@ -50,6 +50,7 @@ enum JobSourceType {
   company_site
   search_query
   jobfront
+  eightfold
   manual
 }
 
@@ -450,6 +451,7 @@ model User {
   searchProfiles       JobSearchProfile[]
   skillAdjustments      SkillAdjustment[]
   skillFeedback         SkillFeedback[]
+  thankYouDrafts        ThankYouDraft[]
   jobSuppressions       JobSuppression[]
 }
 
@@ -790,6 +792,7 @@ model JobPosting {
   resumes            GeneratedResume[]
   skillFeedback       SkillFeedback[]
   suppressions         JobSuppression[]
+  thankYouDrafts      ThankYouDraft[]
   source             JobSource?             @relation(fields: [sourceId], references: [id], onDelete: SetNull)
 
   @@index([company, title])
@@ -883,6 +886,7 @@ model Application {
   outcomes           ApplicationOutcome[]
   skillFeedback       SkillFeedback[]
   suppressions         JobSuppression[]
+  thankYouDrafts      ThankYouDraft[]
   coverLetter        GeneratedCoverLetter? @relation(fields: [coverLetterId], references: [id])
   jobPosting         JobPosting            @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
   jobProfileMatch    JobProfileMatch?      @relation(fields: [jobProfileMatchId], references: [id], onDelete: SetNull)
@@ -1562,6 +1566,36 @@ model ApplicationOutcome {
   @@index([userId, occurredAt])
   @@index([applicationId, occurredAt])
   @@index([jobPostingId, outcome])
+}
+
+model ThankYouDraft {
+  id                  String      @id @default(cuid())
+  userId              String
+  applicationId       String
+  jobPostingId        String
+  stage               String
+  interviewerName     String
+  interviewerTitle    String?
+  interviewerCompany  String?
+  interviewerLinkedin String?
+  interviewDate       DateTime?
+  tone                String      @default("professional")
+  notes               String?
+  emailSubject        String
+  emailBody           String
+  linkedinBody        String
+  status              String      @default("DRAFT")
+  evidenceRefs        Json        @default("[]")
+  qualityReview       Json        @default("{}")
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  application         Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  jobPosting          JobPosting  @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  user                User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+  @@index([userId, status])
+  @@index([jobPostingId, createdAt])
 }
 
 model Contact {

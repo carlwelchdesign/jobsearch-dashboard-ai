@@ -33,6 +33,7 @@ export function isSkillFeedbackIntent(message: string) {
   return (
     /\b(that|this|it|you|jolene|agency|agent|skill)\b.*\b(wrong|incorrect|bad|mistake|failed|broke|not right)\b/.test(normalized) ||
     /\b(learn|remember|do not|don't|never|stop)\b.*\b(again|next time|from this|that)\b/.test(normalized) ||
+    /\b(i want|from now on|going forward|when mentioning|when applying|refer(?:red)? to as)\b.*\b(cover letter|coverletter|resume|application|app|agent|jolene|roles?)\b/.test(normalized) ||
     /\b(the agency|the agent|the skill)\b.*\b(made a mistake|messed up|picked wrong|scored wrong)\b/.test(normalized)
   );
 }
@@ -138,6 +139,7 @@ function inferSkillId(message: string, contextPath: string): SkillId {
   if (contextPath.startsWith("/applications/") && /recruiter|outreach|message/.test(normalized)) return "recruiter_intelligence";
   if (contextPath.startsWith("/applications/") && /compensation|salary|remote/.test(normalized)) return "compensation_opportunity";
   if (contextPath.startsWith("/applications/") && /portfolio|github|project/.test(normalized)) return "portfolio_match";
+  if (/cover letter|coverletter/.test(normalized)) return "cover_letter_writer";
   if (contextPath.startsWith("/applications") || /agency|packet|application|cover letter|resume/.test(normalized)) return "prepare_application_packet";
   if (contextPath.startsWith("/jobs") || /score|match|job|fit|approve|reject/.test(normalized)) return "job_fit_scorer";
   if (contextPath.startsWith("/profiles") || /profile|search lane|keywords/.test(normalized)) return "search_profile_manager";

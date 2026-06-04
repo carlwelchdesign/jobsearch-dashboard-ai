@@ -5,6 +5,7 @@ import { isSkillFeedbackIntent } from "@/lib/skills/learning";
 describe("skill learning", () => {
   it("detects explicit mistake reports for Jolene", () => {
     expect(isSkillFeedbackIntent("That was wrong, do not approve jobs like that again")).toBe(true);
+    expect(isSkillFeedbackIntent("When mentioning the app in general, I want it referred to as an Agentic job search assistant. When applying to AI roles, mention agentic workflows in the coverletter.")).toBe(true);
     expect(isSkillFeedbackIntent("Please open the applications page")).toBe(false);
   });
 

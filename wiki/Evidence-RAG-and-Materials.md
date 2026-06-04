@@ -123,6 +123,12 @@ Writing rules:
 - no obvious AI phrasing
 - no generic "excited to apply" openings
 
+## Resume Bullet Digest
+
+The `/resumes/profile` page includes a role-description digest panel. Paste source text for a specific past role, including LinkedIn-style blocks with title, company, dates, location, paragraphs, and bullets, and the app proposes resume-ready experience bullets. Company, role, and category can be inferred from the pasted block or overridden manually.
+
+Digest output is saved as `needs_review` experience bullets. Existing verified bullets are not replaced or deleted, and generated resumes continue to use verified source data by default. The digest uses structured AI output when configured and a deterministic fallback otherwise; both paths must avoid unsupported metrics or claims.
+
 ## Custom Recruiter Opportunities
 
 The `/resumes/custom-opportunity` page handles recruiter outreach that arrives as a short brief instead of a saved job posting. It extracts editable opportunity details from the pasted text, saves the brief as a `Recruiter Opportunity` job source, ensures the role has a usable profile match, and generates a resume-only tailored material.

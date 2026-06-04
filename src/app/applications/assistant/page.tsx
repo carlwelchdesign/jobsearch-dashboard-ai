@@ -5,18 +5,19 @@ export const metadata = {
 
 import { AppShell } from "@/app/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
+import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { summarizeAutomationBlockers } from "@/lib/applications/automation-analytics";
 import { recoverStaleApplicationAutomationRuns, syncRunningApplicationAutomationRunsFromLogs } from "@/lib/applications/automation-runs";
 import { hasApplicationForJob, submittedApplicationJobKeySet, submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from "@/lib/applications/reconciliation";
-import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { AssistantWorkbench } from "./assistant-workbench";
 
 export const dynamic = "force-dynamic";
 
-export default async function ApplicationAssistantPage() {
+export default async function ApplicationAssistantPage({ searchParams }: { searchParams?: { applicationId?: string } }) {
   await Promise.all([
     reconcileApplicationCanonicalState({ source: "apply_sprint_page" }).catch(() => null),
     syncRunningApplicationAutomationRunsFromLogs(),
@@ -62,7 +63,7 @@ export default async function ApplicationAssistantPage() {
       { jobProfileMatch: { overallScore: "desc" } },
       { updatedAt: "desc" },
     ],
-    take: 50,
+    take: 200,
     }),
     prisma.application.findMany({
       where: { status: { in: submittedApplicationStatuses } },
@@ -80,12 +81,10 @@ export default async function ApplicationAssistantPage() {
     }),
     summarizeAutomationBlockers(200),
   ]);
-  const suppressionStates = await loadJobSuppressionStatesByUserIds(applications.map((application) => application.userId));
   const submittedJobKeys = submittedApplicationJobKeySet(submittedApplications);
   const canonicalApplications = visibleCanonicalApplications(applications);
   const visibleApplications = canonicalApplications.filter((application) => (
     !hasApplicationForJob(application.jobPosting, submittedJobKeys)
-    && (!suppressionStates.get(application.userId) || !isJobSuppressed(application.jobPosting, suppressionStates.get(application.userId)!))
   ));
 
   return (
@@ -95,8 +94,14 @@ export default async function ApplicationAssistantPage() {
           eyebrow="Application assistant"
           title="Apply Sprint"
           description="Run the local application assistant on ready packets. It fills known fields, stops for blockers, respects auto-submit gates, and records what happened."
+          actions={(
+            <Button component={Link} href="/applications/field-learning" variant="outlined">
+              Review field learning
+            </Button>
+          )}
         />
         <AssistantWorkbench
+          initialApplicationId={searchParams?.applicationId}
           atsBlockers={atsBlockers}
           applications={visibleApplications.map((application) => ({
             id: application.id,

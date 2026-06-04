@@ -8,6 +8,17 @@ export type ScoreInput = {
   salaryMin?: number | null;
 };
 
+export type JobSearchTitleClassification = {
+  frontend: boolean;
+  fullStack: boolean;
+  seniorIc: boolean;
+  overSenior: boolean;
+  management: boolean;
+  backendDataPlatformOnly: boolean;
+  nonTarget: boolean;
+  genericSoftwareWithoutFrontend: boolean;
+};
+
 export function scoreJobForProfile(job: ScoreInput, profile: JobSearchProfile) {
   const haystack = [job.title, job.company, job.location ?? "", job.description].join(" ").toLowerCase();
   const titleHaystack = job.title.toLowerCase();
@@ -25,16 +36,23 @@ export function scoreJobForProfile(job: ScoreInput, profile: JobSearchProfile) {
   const preferredMatches = preferred.filter((keyword) => includesTerm(haystack, keyword));
   const requiredMatches = required.filter((keyword) => includesTerm(haystack, keyword));
   const industryMatches = industries.filter((industry) => includesTerm(haystack, industry));
-  const excludedMatches = [...excluded, ...excludedTitles].filter((keyword) => includesTerm(haystack, keyword));
+  const excludedKeywordMatches = excluded.filter((keyword) => includesTerm(haystack, keyword));
+  const excludedTitleMatches = excludedTitles.filter((keyword) => includesTerm(job.title, keyword));
+  const excludedMatches = [...excludedKeywordMatches, ...excludedTitleMatches];
   const isBlockedCompany = companyExcludedMatches.length > 0;
   const roleFit = calculateRoleFit(titleHaystack, titles);
+  const profileText = [...titles, ...required, ...preferred].join(" ").toLowerCase();
+  const wantsFrontend = wantsFrontendProfile(profileText);
+  const classification = classifyJobSearchTitle(job.title, job.description);
   const lowLevelMismatch = hasLowLevelSystemsMismatch(haystack, titles, required, preferred);
+  const explicitTitleMatch = titles.some((title) => includesTerm(job.title, title));
   const requiredCoverage = required.length ? requiredMatches.length / required.length : 1;
   const missingRequiredPenalty = required.length ? Math.min(18, Math.round((1 - requiredCoverage) * 18)) : 0;
+  const profileMismatchPenalty = calculateProfileMismatchPenalty(classification, wantsFrontend, profileText, titleHaystack, explicitTitleMatch);
 
-  const titleFit = isBlockedCompany ? 0 : clamp(25 + roleFit * 0.55 + adjacentTitleMatches.length * 12 + (isSenior(job.title) ? 10 : 0) - excludedMatches.length * 25);
-  const skillFit = clamp(56 + preferredMatches.length * 5 + requiredMatches.length * 7 + requiredCoverage * 16 - missingRequiredPenalty);
-  const seniorityFit = clamp(isSenior(job.title) ? 88 : 58);
+  const titleFit = isBlockedCompany ? 0 : clamp(25 + roleFit * 0.55 + adjacentTitleMatches.length * 12 + (classification.seniorIc ? 10 : 0) - (classification.overSenior ? 14 : 0) - excludedMatches.length * 25);
+  const skillFit = clamp(56 + preferredMatches.length * 5 + requiredMatches.length * 7 + requiredCoverage * 16 - missingRequiredPenalty - (classification.nonTarget ? 18 : 0));
+  const seniorityFit = clamp(classification.seniorIc ? 90 : classification.overSenior ? 35 : 58);
   const industryFit = clamp(55 + industryMatches.length * 12);
   const compensationFit = clamp(job.salaryMin || profile.includeUnknownSalary ? 78 : 45);
   const remoteFit = clamp(remoteScore(haystack, profile.remotePreference));
@@ -53,6 +71,7 @@ export function scoreJobForProfile(job: ScoreInput, profile: JobSearchProfile) {
         relocationFit * 0.05 -
         excludedMatches.length * 20 -
         rolePenalty -
+        profileMismatchPenalty -
         (lowLevelMismatch ? 45 : 0),
     ),
   );
@@ -62,6 +81,11 @@ export function scoreJobForProfile(job: ScoreInput, profile: JobSearchProfile) {
     ...(companyExcludedMatches.length ? [`Excluded company detected: ${companyExcludedMatches.join(", ")}`] : []),
     ...(roleFit < 35 ? ["Title does not look like a target software, frontend, full-stack, platform, product, AI, or developer-tools role."] : []),
     ...(lowLevelMismatch ? ["Low-level C++, embedded, robotics, or autonomy role does not match the target web/frontend/full-stack profile."] : []),
+    ...(classification.overSenior && wantsFrontend && !allowsStaffTitle(profileText, titleHaystack) ? ["Staff, principal, lead, manager, director, or architect seniority is outside the Senior Frontend IC target."] : []),
+    ...(classification.management ? ["Management or leadership title is outside the Senior Frontend IC target."] : []),
+    ...(classification.backendDataPlatformOnly && wantsFrontend ? ["Backend, data, infrastructure, or platform-only title lacks clear frontend/UI scope."] : []),
+    ...(classification.nonTarget ? ["Developer advocacy, curriculum, transformation, support, or solutions role is outside the frontend IC target."] : []),
+    ...(classification.genericSoftwareWithoutFrontend && wantsFrontend ? ["Generic software title lacks clear frontend/UI evidence."] : []),
     ...(excludedMatches.length ? [`Excluded terms detected: ${excludedMatches.join(", ")}`] : []),
     ...(job.salaryMin || profile.includeUnknownSalary ? [] : ["Salary is unknown and this profile excludes unknown salary."]),
     ...(required.length && requiredCoverage < 0.35 ? [`Missing most target keywords: ${required.filter((keyword) => !requiredMatches.includes(keyword)).join(", ")}`] : []),
@@ -100,24 +124,69 @@ function includesTerm(value: string, term: string) {
   return aliases.some((alias) => haystack.includes(alias));
 }
 
-function isSenior(title: string) {
-  return /\b(senior|staff|principal|lead|architect|manager)\b/i.test(title);
+export function classifyJobSearchTitle(title: string, description = ""): JobSearchTitleClassification {
+  const normalizedTitle = normalizeTerm(title);
+  const haystack = normalizeTerm(`${title} ${description}`);
+  const frontend = frontendPattern().test(haystack);
+  const frontendTitle = frontendPattern().test(normalizedTitle);
+  const fullStack = /\b(full stack|fullstack|full-stack)\b/i.test(title);
+  const management = /\b(manager|director|head of|vp|vice president|chief|cto)\b/i.test(title);
+  const overSenior = /\b(staff|principal|principle|lead|architect|manager|director|head of)\b/i.test(title);
+  const seniorIc = /\b(senior|sr)\b/i.test(title) && !overSenior;
+  const backendDataPlatform = /\b(backend|back end|data engineer|data platform|analytics engineer|infrastructure|devops|sre|site reliability|compute platform|monetization platform|distributed systems|systems engineer|security platform)\b/i.test(title);
+  const backendDataPlatformOnly = backendDataPlatform && !frontendTitle && !fullStack;
+  const nonTarget = isClearlyNonTargetTitle(normalizedTitle) || /\b(developer advocate|devrel|developer relations|curriculum|instructor|support engineer|customer support|solutions engineer|solutions architect|solution architect|transformation manager|applied ai transformation|forward deployed|sales engineer|integration engineer)\b/i.test(title);
+  const genericSoftwareWithoutFrontend = /\bsoftware engineer\b/i.test(title) && !frontendTitle && !fullStack;
+
+  return {
+    frontend,
+    fullStack,
+    seniorIc,
+    overSenior,
+    management,
+    backendDataPlatformOnly,
+    nonTarget,
+    genericSoftwareWithoutFrontend,
+  };
 }
 
 function calculateRoleFit(title: string, profileTitles: string[]) {
   if (isClearlyNonTargetTitle(title)) return 8;
   if (lowLevelOrHardwarePattern().test(title)) return 18;
   const profileText = profileTitles.join(" ").toLowerCase();
-  const wantsFrontend = /\b(frontend|front-end|ui|web|react|typescript|design systems?)\b/i.test(profileText);
+  const wantsFrontend = wantsFrontendProfile(profileText);
   const wantsFullStack = /\b(full.?stack|software engineer|product engineer)\b/i.test(profileText);
+  const classification = classifyJobSearchTitle(title);
+  if (wantsFrontend && classification.management) return 12;
+  if (wantsFrontend && classification.nonTarget) return 14;
+  if (wantsFrontend && classification.backendDataPlatformOnly) return 28;
   if (wantsFrontend && /\b(backend|ios|android|mobile|devops|sre|infrastructure)\b/i.test(title) && !/\b(frontend|front-end|full.?stack|web|ui|react)\b/i.test(title)) return 38;
   if (!wantsFullStack && /\b(backend|infrastructure|devops|sre)\b/i.test(title) && !/\b(frontend|front-end|full.?stack|web|ui|react|product)\b/i.test(title)) return 42;
   if (profileTitles.some((profileTitle) => includesTerm(title, profileTitle))) return 96;
-  if (/\b(frontend|front-end|ui engineer|web engineer|full.?stack|product engineer|design systems?|frontend platform|react|typescript|next\.?js)\b/i.test(title)) return 88;
-  if (/\b(staff|senior|principal|lead)?\s*(software engineer|developer|platform engineer|devex|developer experience|developer tools?|api platform|systems engineer|application engineer)\b/i.test(title)) return 76;
-  if (/\b(applied ai|ai engineer|forward deployed engineer|solutions architect|technical lead|documentation engineer)\b/i.test(title)) return 64;
-  if (/\b(engineer|developer|architect|platform|infrastructure|devops|sre|security engineer)\b/i.test(title)) return 52;
+  if (wantsFrontend && classification.overSenior && !frontendPattern().test(title)) return 24;
+  if (frontendPattern().test(title) || /\b(product engineer|design systems?|frontend platform|next\.?js)\b/i.test(title)) return 92;
+  if (classification.fullStack) return wantsFrontend ? 78 : 86;
+  if (wantsFrontend && classification.genericSoftwareWithoutFrontend) return 48;
+  if (/\b(senior)?\s*(software engineer|developer|platform engineer|devex|developer experience|developer tools?|api platform|systems engineer|application engineer)\b/i.test(title)) return 68;
+  if (/\b(applied ai|ai engineer|forward deployed engineer|solutions architect|technical lead|documentation engineer)\b/i.test(title)) return wantsFrontend ? 34 : 60;
+  if (/\b(engineer|developer|architect|platform|infrastructure|devops|sre|security engineer)\b/i.test(title)) return wantsFrontend ? 36 : 52;
   return 20;
+}
+
+function calculateProfileMismatchPenalty(classification: JobSearchTitleClassification, wantsFrontend: boolean, profileText: string, title: string, explicitTitleMatch: boolean) {
+  if (!wantsFrontend) return classification.management ? 24 : classification.nonTarget ? 18 : 0;
+  let penalty = 0;
+  if (classification.management) penalty += 42;
+  if (classification.overSenior) penalty += allowsStaffTitle(profileText, title) ? 6 : 28;
+  if (classification.backendDataPlatformOnly) penalty += 30;
+  if (classification.nonTarget) penalty += 38;
+  if (classification.genericSoftwareWithoutFrontend && !explicitTitleMatch) penalty += 18;
+  if (classification.fullStack && !classification.frontend) penalty += 34;
+  return Math.min(65, penalty);
+}
+
+function allowsStaffTitle(profileText: string, title: string) {
+  return /\bstaff\b/i.test(profileText) && /\bstaff\b/i.test(title) && !/\b(principal|principle|lead|manager|director|architect|head of)\b/i.test(title);
 }
 
 function hasLowLevelSystemsMismatch(haystack: string, profileTitles: string[], required: string[], preferred: string[]) {
@@ -130,15 +199,23 @@ function hasLowLevelSystemsMismatch(haystack: string, profileTitles: string[], r
 function hasAdjacentTitleMatch(title: string, profileTitle: string) {
   const normalized = normalizeTerm(profileTitle);
   if (normalized.includes("frontend") && /\b(frontend|front-end|ui|web|react|typescript|next\.?js)\b/i.test(title)) return true;
-  if (normalized.includes("full stack") && /\b(full.?stack|software engineer|product engineer|developer)\b/i.test(title)) return true;
-  if (normalized.includes("software engineer") && /\b(software engineer|developer|platform engineer|product engineer|systems engineer)\b/i.test(title)) return true;
+  if (normalized.includes("full stack") && /\b(full.?stack|product engineer)\b/i.test(title)) return true;
+  if (normalized.includes("software engineer") && /\b(software engineer|developer|product engineer)\b/i.test(title) && frontendPattern().test(title)) return true;
   if (normalized.includes("developer tools") && /\b(devex|developer|platform|api|sdk|tools?)\b/i.test(title)) return true;
   if (normalized.includes("ai") && /\b(ai|llm|machine learning|ml|applied)\b/i.test(title)) return true;
   return false;
 }
 
 function isClearlyNonTargetTitle(title: string) {
-  return /\b(intern|new grad|early career|account executive|account manager|sales|recruiter|talent|people partner|customer success|marketing|communications manager|finance|accountant|accounts payable|legal counsel|designer|product manager|program manager|project manager|business development|operations manager|office manager|general manager|market manager|solutions manager|technical account manager|electrical engineering|electrical engineer|mechanical engineer|hardware engineer|systems safety engineer|aerospace engineer|avionics engineer)\b/i.test(title);
+  return /\b(intern|new grad|early career|account executive|account manager|sales|recruiter|talent|people partner|customer success|customer support|support engineer|marketing|communications manager|finance|accountant|accounts payable|legal counsel|designer|product manager|program manager|project manager|business development|operations manager|office manager|general manager|market manager|solutions manager|solutions engineer|solutions architect|solution architect|technical account manager|developer advocate|developer relations|devrel|curriculum developer|instructor|transformation manager|applied ai transformation|forward deployed|electrical engineering|electrical engineer|mechanical engineer|hardware engineer|systems safety engineer|aerospace engineer|avionics engineer)\b/i.test(title);
+}
+
+function wantsFrontendProfile(profileText: string) {
+  return /\b(frontend|front end|front-end|ui|web|react|typescript|design systems?)\b/i.test(profileText);
+}
+
+function frontendPattern() {
+  return /\b(frontend|front end|front-end|ui|web|react|typescript|javascript|next\.?js|design systems?|component library|storybook|dashboard|data visualization|admin console|product ui|user interface)\b/i;
 }
 
 function lowLevelOrHardwarePattern() {

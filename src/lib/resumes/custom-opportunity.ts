@@ -8,6 +8,7 @@ import { scoreJobForProfile } from "@/lib/job-search/scoring";
 import { captureManualJob } from "@/lib/jobs/manual-capture";
 import { prisma } from "@/lib/prisma";
 import { checkAtsReadability } from "@/lib/resumes/ats";
+import { selectResumeSourceBullets, summarizeResumeSourceBullets } from "@/lib/resumes/source-materials";
 
 const sourceName = "Recruiter Opportunity";
 const integrationSignalPattern = /\b(mcp|model context protocol|integration|integrate|systems?|api|salesforce|gong|zoominfo|ironclad|clm|legal workflow|harvey|simplelegal|logikcull|airtable|snowflake|data platform|workflow|automation)\b/i;
@@ -193,13 +194,9 @@ async function createGeneratedResumeForMatch(jobPostingId: string, jobProfileMat
     userId: user.id,
   });
   const latestUploadId = user.profile.resumeUploads[0]?.id;
-  const uploadBullets = latestUploadId
-    ? user.profile.experienceBullets.filter((bullet) => bullet.sourceResumeUploadId === latestUploadId)
-    : [];
   const parsedUpload = user.profile.resumeUploads[0]?.parsedJson as { education?: string[]; certifications?: string[] } | undefined;
-  const bullets = uploadBullets.length >= 8
-    ? mergeVerifiedBullets(uploadBullets, user.profile.experienceBullets.filter((bullet) => !bullet.sourceResumeUploadId))
-    : user.profile.experienceBullets;
+  const bullets = selectResumeSourceBullets(user.profile.experienceBullets, latestUploadId);
+  const sourceMaterialSummary = summarizeResumeSourceBullets(bullets, latestUploadId);
   const emphasis = buildCustomOpportunityEmphasis({
     description: job.description,
     profileText: [
@@ -243,6 +240,7 @@ async function createGeneratedResumeForMatch(jobPostingId: string, jobProfileMat
         validation: emphasized.validation,
         selectedExperienceBullets: emphasized.selectedExperienceBullets,
         projectSelections: emphasized.projectSelections,
+        sourceMaterialSummary,
         customOpportunityEmphasis: emphasis.enabled ? {
           focus: emphasis.focus,
           supportedStackTerms: emphasis.supportedStackTerms,
@@ -331,16 +329,6 @@ function warningStrings(notes: Prisma.JsonValue): string[] {
     ...stringArray(values.warnings),
     ...stringArray(values.unsupportedClaimsDetected).map((item) => `Unsupported claim: ${item}`),
   ];
-}
-
-function mergeVerifiedBullets<T extends { text: string }>(primary: T[], supplemental: T[]) {
-  const seen = new Set<string>();
-  return [...primary, ...supplemental].filter((bullet) => {
-    const key = bullet.text.toLowerCase().replace(/\s+/g, " ").trim();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
 function buildCustomOpportunityEmphasis({ description, profileText }: { description: string; profileText: string }) {

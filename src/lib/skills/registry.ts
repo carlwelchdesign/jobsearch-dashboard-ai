@@ -1,24 +1,6 @@
 import { JobMatchStatus, Prisma, type SkillAdjustment } from "@prisma/client";
 import { z } from "zod";
-import { runApplicationQaAgent } from "@/lib/agents/application-qa";
-import { runCandidateIntelligenceAgent } from "@/lib/agents/candidate-intelligence";
-import { runCompanyResearchAgent } from "@/lib/agents/company-research";
-import { runCompensationOpportunityAgent } from "@/lib/agents/compensation-opportunity";
-import { runDailyCommandCenterAgent } from "@/lib/agents/daily-command-center";
-import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
-import { runGithubPortfolioReviewAgent } from "@/lib/agents/github-portfolio-review";
-import { runInterviewPrepAgent } from "@/lib/agents/interview-prep";
-import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
-import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
-import { runNetworkingStrategyAgent } from "@/lib/agents/networking-strategy";
-import { runOutcomeLearningAgent } from "@/lib/agents/outcome-learning";
-import { runPortfolioMatchAgent } from "@/lib/agents/portfolio-match";
-import { runRecruiterIntelligenceAgent } from "@/lib/agents/recruiter-intelligence";
-import { runResumeStrategyAgent } from "@/lib/agents/resume-strategy";
-import { runSearchExpansionAgent } from "@/lib/agents/search-expansion";
-import { runSearchProfileManagerAgent } from "@/lib/agents/search-profile-manager";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
-import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { isJobSuppressed, loadJobSuppressionState } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 import { applyNumericThresholdAdjustments, applyQualityProposalRuleAdjustments } from "@/lib/skills/adjustments";
@@ -63,7 +45,7 @@ export const skillRegistry = {
     }),
     outputSchema: anyOutput,
     defaultPolicy: localMutationPolicy,
-    execute: async (input: any) => (await runCandidateIntelligenceAgent(input)).output,
+    execute: async (input: any) => (await (await import("@/lib/agents/candidate-intelligence")).runCandidateIntelligenceAgent(input)).output,
   },
   resume_strategy: {
     id: "resume_strategy",
@@ -73,7 +55,7 @@ export const skillRegistry = {
     inputSchema: jobProfileInput,
     outputSchema: anyOutput,
     defaultPolicy: lowRiskPolicy,
-    execute: async (input: any) => (await runResumeStrategyAgent(input)).output,
+    execute: async (input: any) => (await (await import("@/lib/agents/resume-strategy")).runResumeStrategyAgent(input)).output,
   },
   cover_letter_writer: {
     id: "cover_letter_writer",
@@ -83,7 +65,7 @@ export const skillRegistry = {
     inputSchema: z.object({ jobPostingId: z.string(), ...optionalUser }),
     outputSchema: anyOutput,
     defaultPolicy: manualSubmitPolicy,
-    execute: async (input: any) => prepareApplicationPackage(input.jobPostingId),
+    execute: async (input: any) => (await import("@/lib/applications/prepare-package")).prepareApplicationPackage(input.jobPostingId),
   },
   job_fit_scorer: {
     id: "job_fit_scorer",
@@ -94,7 +76,7 @@ export const skillRegistry = {
     outputSchema: anyOutput,
     defaultPolicy: localMutationPolicy,
     applyAdjustments: (input: any, adjustments: SkillAdjustment[]) => applyQualityProposalRuleAdjustments(input, adjustments),
-    execute: async (input: any) => (await runJobFitScoringAgent(input)).output,
+    execute: async (input: any) => (await (await import("@/lib/agents/job-fit-scorer")).runJobFitScoringAgent(input)).output,
   },
   search_profile_manager: {
     id: "search_profile_manager",
@@ -105,7 +87,7 @@ export const skillRegistry = {
     outputSchema: anyOutput,
     defaultPolicy: localMutationPolicy,
     applyAdjustments: (input: any, adjustments: SkillAdjustment[]) => applyQualityProposalRuleAdjustments(input, adjustments),
-    execute: async (input: any) => (await runSearchProfileManagerAgent(input)).output,
+    execute: async (input: any) => (await (await import("@/lib/agents/search-profile-manager")).runSearchProfileManagerAgent(input)).output,
   },
   recruiter_intelligence: {
     id: "recruiter_intelligence",
@@ -115,9 +97,9 @@ export const skillRegistry = {
     inputSchema: z.object({ applicationId: z.string().optional(), jobPostingId: z.string().optional(), contactId: z.string().optional(), ...optionalUser }),
     outputSchema: anyOutput,
     defaultPolicy: { ...localMutationPolicy, externalAction: "draft_only" as const },
-    execute: async (input: any) => (await runRecruiterIntelligenceAgent(input)).output,
+    execute: async (input: any) => (await (await import("@/lib/agents/recruiter-intelligence")).runRecruiterIntelligenceAgent(input)).output,
   },
-  portfolio_match: skillForApplication("portfolio_match", "Portfolio Match", "PORTFOLIO_MATCH", runPortfolioMatchAgent),
+  portfolio_match: skillForApplication("portfolio_match", "Portfolio Match", "PORTFOLIO_MATCH", async (input) => (await import("@/lib/agents/portfolio-match")).runPortfolioMatchAgent(input)),
   github_portfolio_review: {
     id: "github_portfolio_review",
     label: "GitHub Portfolio Review",
@@ -126,7 +108,7 @@ export const skillRegistry = {
     inputSchema: z.object(optionalUser),
     outputSchema: anyOutput,
     defaultPolicy: lowRiskPolicy,
-    execute: async (input: any) => (await runGithubPortfolioReviewAgent(input)).output,
+    execute: async (input: any) => (await (await import("@/lib/agents/github-portfolio-review")).runGithubPortfolioReviewAgent(input)).output,
   },
   application_qa: {
     id: "application_qa",
@@ -143,9 +125,9 @@ export const skillRegistry = {
     outputSchema: anyOutput,
     defaultPolicy: lowRiskPolicy,
     applyAdjustments: (input: any, adjustments: SkillAdjustment[]) => applyQualityProposalRuleAdjustments(input, adjustments),
-    execute: async (input: any) => (await runApplicationQaAgent(input)).output,
+    execute: async (input: any) => (await (await import("@/lib/agents/application-qa")).runApplicationQaAgent(input)).output,
   },
-  interview_prep: skillForApplication("interview_prep", "Interview Prep", "INTERVIEW_PREP", runInterviewPrepAgent),
+  interview_prep: skillForApplication("interview_prep", "Interview Prep", "INTERVIEW_PREP", async (input) => (await import("@/lib/agents/interview-prep")).runInterviewPrepAgent(input)),
   outcome_learning: {
     id: "outcome_learning",
     label: "Outcome Learning",
@@ -154,9 +136,9 @@ export const skillRegistry = {
     inputSchema: z.object(optionalUser),
     outputSchema: anyOutput,
     defaultPolicy: lowRiskPolicy,
-    execute: async (input: any) => (await runOutcomeLearningAgent(input)).output,
+    execute: async (input: any) => (await (await import("@/lib/agents/outcome-learning")).runOutcomeLearningAgent(input)).output,
   },
-  compensation_opportunity: skillForApplication("compensation_opportunity", "Compensation Opportunity", "COMPENSATION_OPPORTUNITY", runCompensationOpportunityAgent),
+  compensation_opportunity: skillForApplication("compensation_opportunity", "Compensation Opportunity", "COMPENSATION_OPPORTUNITY", async (input) => (await import("@/lib/agents/compensation-opportunity")).runCompensationOpportunityAgent(input)),
   networking_strategy: {
     id: "networking_strategy",
     label: "Networking Strategy",
@@ -165,9 +147,9 @@ export const skillRegistry = {
     inputSchema: z.object(optionalUser),
     outputSchema: anyOutput,
     defaultPolicy: lowRiskPolicy,
-    execute: async (input: any) => (await runNetworkingStrategyAgent(input)).output,
+    execute: async (input: any) => (await (await import("@/lib/agents/networking-strategy")).runNetworkingStrategyAgent(input)).output,
   },
-  company_research: skillForApplication("company_research", "Company Research", "COMPANY_RESEARCH", runCompanyResearchAgent),
+  company_research: skillForApplication("company_research", "Company Research", "COMPANY_RESEARCH", async (input) => (await import("@/lib/agents/company-research")).runCompanyResearchAgent(input)),
   anti_generic_writing: {
     id: "anti_generic_writing",
     label: "Anti-Generic Writing",
@@ -182,7 +164,7 @@ export const skillRegistry = {
     }),
     outputSchema: anyOutput,
     defaultPolicy: lowRiskPolicy,
-    execute: async (input: any) => (await runApplicationQaAgent(input)).output,
+    execute: async (input: any) => (await (await import("@/lib/agents/application-qa")).runApplicationQaAgent(input)).output,
   },
   duplicate_stale_job_detector: {
     id: "duplicate_stale_job_detector",
@@ -193,7 +175,7 @@ export const skillRegistry = {
     outputSchema: anyOutput,
     defaultPolicy: localMutationPolicy,
     applyAdjustments: (input: any, adjustments: SkillAdjustment[]) => applyQualityProposalRuleAdjustments(input, adjustments),
-    execute: async (input: any) => (await runDuplicateStaleJobDetectorAgent(input)).output,
+    execute: async (input: any) => (await (await import("@/lib/agents/duplicate-stale-job-detector")).runDuplicateStaleJobDetectorAgent(input)).output,
   },
   search_expansion: {
     id: "search_expansion",
@@ -203,7 +185,7 @@ export const skillRegistry = {
     inputSchema: z.object(optionalUser),
     outputSchema: anyOutput,
     defaultPolicy: lowRiskPolicy,
-    execute: async (input: any) => (await runSearchExpansionAgent(input)).output,
+    execute: async (input: any) => (await (await import("@/lib/agents/search-expansion")).runSearchExpansionAgent(input)).output,
   },
   daily_command_center: {
     id: "daily_command_center",
@@ -213,7 +195,7 @@ export const skillRegistry = {
     inputSchema: z.object(optionalUser),
     outputSchema: anyOutput,
     defaultPolicy: lowRiskPolicy,
-    execute: async (input: any) => (await runDailyCommandCenterAgent(input)).output,
+    execute: async (input: any) => (await (await import("@/lib/agents/daily-command-center")).runDailyCommandCenterAgent(input)).output,
   },
   recruiting_agency: {
     id: "recruiting_agency",
@@ -237,7 +219,7 @@ export const skillRegistry = {
     inputSchema: z.object({ userId: z.string().optional(), lookbackDays: z.number().int().min(7).max(180).optional() }),
     outputSchema: anyOutput,
     defaultPolicy: lowRiskPolicy,
-    execute: async (input: any) => (await runMarketIntelligenceAgent(input)).output,
+    execute: async (input: any) => (await (await import("@/lib/agents/market-intelligence")).runMarketIntelligenceAgent(input)).output,
   },
   prepare_application_packet: {
     id: "prepare_application_packet",
@@ -246,7 +228,7 @@ export const skillRegistry = {
     inputSchema: z.object({ jobPostingId: z.string(), userId: z.string().optional() }),
     outputSchema: anyOutput,
     defaultPolicy: manualSubmitPolicy,
-    execute: async (input: any) => prepareApplicationPackage(input.jobPostingId),
+    execute: async (input: any) => (await import("@/lib/applications/prepare-package")).prepareApplicationPackage(input.jobPostingId),
   },
   approve_agency_match: {
     id: "approve_agency_match",

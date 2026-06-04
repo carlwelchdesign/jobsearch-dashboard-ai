@@ -1,4 +1,5 @@
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
+import { findReusableAnswerMemories, markAnswerMemoryUsed } from "@/lib/application-answer-memory";
 import { syncJobResponseEmail } from "@/lib/email/sync";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
 import { executeJoleneAdkOperator, type JoleneOperatorAction } from "@/lib/jolene/adk-operator";
@@ -28,6 +29,45 @@ export type JoleneActionResult = {
 };
 
 export async function executeJoleneAction(message: string, options: { userId?: string | null } = {}): Promise<JoleneActionResult> {
+  if (options.userId && isAnswerMemoryLookupIntent(message)) {
+    const question = extractAnswerMemoryQuestion(message);
+    if (!question) {
+      return {
+        handled: true,
+        reply: "Tell me the exact application question in quotes and I will pull the latest saved answer for it.",
+        actionJson: { action: "answer_memory_lookup", matches: [] },
+      };
+    }
+
+    const matches = await findReusableAnswerMemories(options.userId, question, 3);
+    const best = matches[0];
+    if (!best) {
+      return {
+        handled: true,
+        reply: `I do not have a saved answer for: "${question}".`,
+        actionJson: { action: "answer_memory_lookup", question, matches: [] },
+      };
+    }
+
+    await markAnswerMemoryUsed(best.id).catch(() => null);
+    return {
+      handled: true,
+      reply: [
+        `Latest saved answer for: "${best.questionText}"`,
+        "",
+        best.answer,
+        "",
+        `Match: ${best.matchScore}%. Reuse policy: ${best.reusePolicy.replace(/_/g, " ").toLowerCase()}. Sensitivity: ${best.sensitivity.toLowerCase()}.`,
+      ].join("\n"),
+      actionJson: {
+        action: "answer_memory_lookup",
+        question,
+        answerMemory: best,
+        matches,
+      },
+    };
+  }
+
   const retrieval = await executeJoleneRetrieval(message, options);
   if (retrieval.handled) return retrieval;
 
@@ -191,6 +231,24 @@ function isCareerCeoBriefIntent(message: string) {
 function isCareerStandupIntent(message: string) {
   const normalized = normalize(message);
   return /\b(career standup|ceo standup|daily standup|sprint score|income momentum|attention debt|closed loop)\b/.test(normalized);
+}
+
+function isAnswerMemoryLookupIntent(message: string) {
+  const normalized = normalize(message);
+  return (
+    /\b(pull up|show|get|find|retrieve|what was|what did i)\b/.test(normalized) &&
+    /\b(latest|last|saved|previous|prior|gave|used|answered|answer)\b/.test(normalized) &&
+    /\b(answer|application question|field|question)\b/.test(normalized)
+  ) || /\b(latest|last|saved|previous|prior)\s+answer\s+(i\s+)?(gave|used|answered)\b/.test(normalized);
+}
+
+function extractAnswerMemoryQuestion(message: string) {
+  const quoted = message.match(/["“”']([^"“”']{4,500})["“”']/);
+  if (quoted?.[1]) return quoted[1].trim();
+
+  const normalized = message.replace(/\s+/g, " ").trim();
+  const forMatch = normalized.match(/\b(?:for|to|about)\s+(.{4,500})$/i);
+  return forMatch?.[1]?.replace(/[?.!]+$/, "").trim() ?? null;
 }
 
 function parseIntent(message: string) {

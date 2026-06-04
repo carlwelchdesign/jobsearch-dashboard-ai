@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
-import { runRecruitingAgency } from "@/lib/applications/recruiting-agency";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,6 +15,7 @@ export async function GET(request: NextRequest) {
     }
 
     const url = new URL(request.url);
+    const { runRecruitingAgency } = await import("@/lib/applications/recruiting-agency");
     const result = await runRecruitingAgency({
       minimumScore: numberParam(url.searchParams.get("minimumScore")),
       limit: numberParam(url.searchParams.get("limit")),
