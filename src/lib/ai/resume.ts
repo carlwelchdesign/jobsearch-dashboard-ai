@@ -63,6 +63,7 @@ export async function tailorResumeForJob({ userProfile, job, bullets, projects, 
         "Compose the resume like a premium editorial document: exact section hierarchy, concise high-signal bullets, clean role/date lines, and no filler. " +
         "Use these sections in this order when supported by the source data: Summary, Skills, Professional Experience, Projects, Education, Certifications. " +
         "Professional Experience role lines must follow 'Company - Role | Date range' when dates are available, then 3-5 concise bullets focused on outcomes, scope, tools, and measurable evidence already present in source data. " +
+        "Do not omit any supplied workExperiences from Professional Experience. If a role is less relevant, keep the entry compact with 1-2 truthful bullets rather than creating an employment-date gap. " +
         "Verified bullets marked as profile updates or role-description digest evidence are recently approved user profile data. Give them strong consideration when they align with the job, even if older uploaded-resume bullets also match. " +
         "Keep the Summary to 2 polished sentences and the Skills section to a selective comma-separated list rather than a dense keyword dump. " +
         "In the contact line, list values only — no labels like 'Email:', 'Phone:', 'LinkedIn:'. Separate with ' | '. Use only the root GitHub profile URL (e.g. github.com/username) — never individual repository URLs. Include the LinkedIn URL if provided. " +
@@ -126,6 +127,15 @@ export async function tailorResumeForJob({ userProfile, job, bullets, projects, 
     if (!tailored || !passesResumeQualityGate(tailored.plainTextResume)) return fallback;
     tailored.plainTextResume = stripResumeMetadata(tailored.plainTextResume);
     tailored.markdownResume = stripResumeMetadata(tailored.markdownResume);
+    const continuity = enforceWorkHistoryContinuity(tailored.markdownResume, workExperiences, bullets);
+    tailored.markdownResume = continuity.markdownResume;
+    tailored.plainTextResume = continuity.markdownResume.replace(/^#+\s/gm, "");
+    if (continuity.addedEntries.length) {
+      tailored.warnings = [
+        ...tailored.warnings,
+        `Added compact Professional Experience entries for omitted employers: ${continuity.addedEntries.join(", ")}.`,
+      ];
+    }
 
     const validation = await parseStructuredOutput({
       schema: validateGeneratedResumeSchema,
@@ -379,6 +389,11 @@ function formatExperience(bullets: ExperienceBullet[], workExperiences: WorkExpe
     groups.set(key, [...(groups.get(key) ?? []), bullet]);
   }
 
+  for (const work of chronologicalWork) {
+    const key = workKey(work.company, work.title);
+    if (!groups.has(key)) groups.set(key, []);
+  }
+
   const groupEntries = Array.from(groups.entries()).sort(([leftKey], [rightKey]) => {
     const leftWork = workByKey.get(leftKey);
     const rightWork = workByKey.get(rightKey);
@@ -392,8 +407,54 @@ function formatExperience(bullets: ExperienceBullet[], workExperiences: WorkExpe
     const work = workByKey.get(key);
     const [company, role] = work ? [work.company, work.title] : displayKeyParts(key);
     const dates = work?.startDate || work?.endDate ? ` | ${[work.startDate, work.endDate].filter(Boolean).join(" - ")}` : "";
-    return [`### ${company} - ${role}${dates}`, ...group.map((bullet) => `- ${bullet.text}`), ""];
+    const bulletsForRole = group.length ? group.map((bullet) => bullet.text) : fallbackWorkBullets(work);
+    return [`### ${company} - ${role}${dates}`, ...bulletsForRole.map((bullet) => `- ${bullet}`), ""];
   });
+}
+
+function enforceWorkHistoryContinuity(markdownResume: string, workExperiences: WorkExperience[], bullets: ExperienceBullet[]) {
+  const chronologicalWork = sortWorkExperiences(workExperiences);
+  if (!chronologicalWork.length) return { markdownResume, addedEntries: [] as string[] };
+
+  const existingText = normalizeWorkKey(markdownResume);
+  const missingWork = chronologicalWork.filter((work) => !existingText.includes(normalizeWorkKey(work.company)));
+  if (!missingWork.length) return { markdownResume, addedEntries: [] as string[] };
+
+  const sourceBulletsByKey = new Map<string, ExperienceBullet[]>();
+  for (const bullet of uniqueBullets(bullets)) {
+    const key = workKey(bullet.company, bullet.role);
+    sourceBulletsByKey.set(key, [...(sourceBulletsByKey.get(key) ?? []), bullet]);
+  }
+
+  const additions = missingWork.flatMap((work) => {
+    const dates = work.startDate || work.endDate ? ` | ${[work.startDate, work.endDate].filter(Boolean).join(" - ")}` : "";
+    const roleBullets = sourceBulletsByKey.get(workKey(work.company, work.title))?.map((bullet) => bullet.text) ?? fallbackWorkBullets(work);
+    return [`### ${work.company} - ${work.title}${dates}`, ...roleBullets.slice(0, 2).map((bullet) => `- ${bullet}`), ""];
+  });
+
+  return {
+    markdownResume: appendToProfessionalExperience(markdownResume, additions),
+    addedEntries: missingWork.map((work) => work.company),
+  };
+}
+
+function appendToProfessionalExperience(markdownResume: string, additions: string[]) {
+  const lines = markdownResume.split("\n");
+  const start = lines.findIndex((line) => /^##\s+Professional Experience\s*$/i.test(line.trim()));
+  if (start === -1) return [markdownResume.trimEnd(), "", "## Professional Experience", ...additions].join("\n");
+  const nextSection = lines.findIndex((line, index) => index > start && /^##\s+\S/.test(line.trim()));
+  const insertAt = nextSection === -1 ? lines.length : nextSection;
+  return [...lines.slice(0, insertAt), ...additions, ...lines.slice(insertAt)].join("\n").trimEnd();
+}
+
+function fallbackWorkBullets(work: WorkExperience | undefined) {
+  if (!work) return ["Held a verified role in the candidate's employment history."];
+  const achievements = jsonStringArray(work.achievements).filter(Boolean);
+  if (achievements.length) return achievements.slice(0, 2);
+  if (work.summary?.trim()) return [work.summary.trim()];
+  const skills = jsonStringArray(work.skills).slice(0, 6);
+  if (skills.length) return [`Worked across ${skills.join(", ")} in this verified role.`];
+  return ["Verified role included for employment-history continuity."];
 }
 
 function sortWorkExperiences(workExperiences: WorkExperience[]) {
