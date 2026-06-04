@@ -324,9 +324,10 @@ function inferCategory(text: string) {
   return "frontend";
 }
 
-function extractMetrics(text: string) {
-  const metrics = text.match(/\b\d+[%\d,]*(?:\s*(?:users|teams|applications|countries|files|datasets))?\b/g) ?? [];
-  return metrics.length ? { metrics } : {};
+function extractMetrics(text: string): Record<string, string | number | boolean> {
+  const matches = text.match(/\b\d+[%\d,]*(?:\s*(?:users|teams|applications|countries|files|datasets))?\b/g) ?? [];
+  if (!matches.length) return {};
+  return Object.fromEntries(matches.map((value, index) => [`metric_${index}`, value]));
 }
 
 function unique(values: string[]) {
