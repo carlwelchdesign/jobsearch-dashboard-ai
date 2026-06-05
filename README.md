@@ -10,6 +10,16 @@ Install dependencies:
 npm install
 ```
 
+Start the local database, run migrations and seed data, then launch the app:
+
+```bash
+npm run dev:local
+```
+
+Open `http://localhost:3000`.
+
+Or run each step manually:
+
 Start the Docker PostgreSQL database:
 
 ```bash
@@ -28,8 +38,6 @@ Start the app:
 ```bash
 npm run dev
 ```
-
-Open `http://localhost:3000`.
 
 Run the full local Docker stack instead:
 

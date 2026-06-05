@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:local": "docker compose up -d --wait postgres && DATABASE_URL=\"postgresql://postgres:postgres@localhost:5433/job_search_os?schema=public\" prisma migrate deploy && DATABASE_URL=\"postgresql://postgres:postgres@localhost:5433/job_search_os?schema=public\" prisma db seed && DATABASE_URL=\"postgresql://postgres:postgres@localhost:5433/job_search_os?schema=public\" next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
