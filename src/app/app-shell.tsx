@@ -7,6 +7,7 @@ import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import BoltOutlinedIcon from "@mui/icons-material/BoltOutlined";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import MarkChatUnreadOutlinedIcon from "@mui/icons-material/MarkChatUnreadOutlined";
+import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
 import PsychologyOutlinedIcon from "@mui/icons-material/PsychologyOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
@@ -35,6 +36,7 @@ const navItems = [
   { href: "/applications/field-learning", label: "Field Learning", eyebrow: "Review autofill", icon: PsychologyOutlinedIcon },
   { href: "/applications", label: "Applications", eyebrow: "Track outcomes", icon: AssignmentTurnedInOutlinedIcon },
   { href: "/settings", label: "Settings", eyebrow: "Configure", icon: SettingsOutlinedIcon },
+  { href: "/guide", label: "User Guide", eyebrow: "How to use this", icon: MenuBookOutlinedIcon },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
