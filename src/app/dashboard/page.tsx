@@ -28,6 +28,8 @@ import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
+import { getServiceFallbacks } from "@/lib/service-fallbacks";
+import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
 import { RunDailyPlanButton } from "./daily-plan-card";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +51,7 @@ type DailyPlanOutput = {
 };
 
 export default async function DashboardPage() {
-  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, trackedApplicationsForAgency, agencyCandidateMatches, latestDailyPlanRun, agentUserRequests, integrityReport] = await Promise.all([
+  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, trackedApplicationsForAgency, agencyCandidateMatches, latestDailyPlanRun, agentUserRequests, integrityReport, notificationSettings] = await Promise.all([
     prisma.jobSearchProfile.findMany({ where: { enabled: true }, orderBy: { name: "asc" } }),
     prisma.jobSearchRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.application.groupBy({ by: ["status"], _count: { status: true } }),
@@ -104,6 +106,7 @@ export default async function DashboardPage() {
     }),
     listOpenAgentUserRequests(5),
     auditApplicationIntegrity().catch(() => null),
+    prisma.user.findFirst({ select: { notificationSettings: true } }),
   ]);
   const suppressionStates = await loadJobSuppressionStatesByUserIds([
     ...needsReview.map((match) => match.jobSearchProfile.userId),
@@ -139,6 +142,12 @@ export default async function DashboardPage() {
     latestRunStartedAt: latestRun?.startedAt ?? null,
   });
 
+  const ns = notificationSettings as { pushoverEnabled?: boolean; emailEnabled?: boolean } | null;
+  const anyNotificationConfigured = Boolean(ns?.pushoverEnabled || ns?.emailEnabled);
+  const fallbacks = getServiceFallbacks(["openai", "brave", "notifications"], {
+    anyNotificationConfigured,
+  });
+
   return (
     <AppShell>
       <Stack spacing={3}>
@@ -152,6 +161,7 @@ export default async function DashboardPage() {
             </>
           }
         />
+        <ServiceFallbackBanners items={fallbacks} />
 
         <Card sx={{ borderColor: nextAction.color === "warning" ? "warning.main" : "primary.main", bgcolor: nextAction.color === "warning" ? "rgba(245, 158, 11, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
           <CardContent>

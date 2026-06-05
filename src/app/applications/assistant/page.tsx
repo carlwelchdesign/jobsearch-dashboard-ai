@@ -14,6 +14,8 @@ import { recoverStaleApplicationAutomationRuns, syncRunningApplicationAutomation
 import { hasApplicationForJob, submittedApplicationJobKeySet, submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from "@/lib/applications/reconciliation";
 import { AssistantWorkbench } from "./assistant-workbench";
+import { getServiceFallbacks } from "@/lib/service-fallbacks";
+import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
 
 export const dynamic = "force-dynamic";
 
@@ -87,6 +89,8 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
     !hasApplicationForJob(application.jobPosting, submittedJobKeys)
   ));
 
+  const fallbacks = getServiceFallbacks(["openai", "playwright"]);
+
   return (
     <AppShell>
       <Stack spacing={3}>
@@ -100,6 +104,7 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
             </Button>
           )}
         />
+        <ServiceFallbackBanners items={fallbacks} />
         <AssistantWorkbench
           initialApplicationId={searchParams?.applicationId}
           atsBlockers={atsBlockers}

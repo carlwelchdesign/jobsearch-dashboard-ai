@@ -6,6 +6,7 @@ import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import SettingsSuggestOutlinedIcon from "@mui/icons-material/SettingsSuggestOutlined";
 import SourceOutlinedIcon from "@mui/icons-material/SourceOutlined";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
@@ -20,10 +21,11 @@ import { getLearningRollbackAudit } from "@/lib/observability/rollback-audit";
 import { prisma } from "@/lib/prisma";
 import { FieldMemoryDisableButton } from "./field-memory-disable-button";
 import { SettingsClient } from "./settings-client";
+import type { ServiceHealthSettings, ServiceStatus } from "./service-health-panel";
 
 export const dynamic = "force-dynamic";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({ searchParams }: { searchParams?: { highlight?: string } }) {
   const user = await prisma.user.findFirst({
     include: { automationSettings: true, notificationSettings: true, profile: { include: { githubRepositories: true } } },
     orderBy: { createdAt: "asc" },
@@ -128,6 +130,103 @@ export default async function SettingsPage() {
   const outcomeRegressionTriage = user ? await getOutcomeRegressionTriage(user.id) : [];
   const learningImpact = user ? await getLearningImpact(user.id) : [];
   const rollbackAudit = user ? await getLearningRollbackAudit(user.id) : [];
+  const imapConfigured = Boolean(process.env.JOB_EMAIL_IMAP_HOST && process.env.JOB_EMAIL_IMAP_USER && process.env.JOB_EMAIL_IMAP_PASSWORD);
+  const emailSyncSecretConfigured = Boolean(process.env.EMAIL_SYNC_SECRET);
+  const cronSecretConfigured = Boolean(process.env.CRON_SECRET);
+  const pushoverEnvConfigured = Boolean(process.env.PUSHOVER_USER_KEY && process.env.PUSHOVER_APP_TOKEN);
+  const pushoverDbConfigured = Boolean(settings?.pushoverUserKey && settings?.pushoverAppToken);
+  const cronEnabled = searchProfiles.some((profile) => profile.enabled && profile.scheduleEnabled);
+  const latestGithubSyncDate = latestDate(user?.profile?.githubRepositories.map((repo) => repo.updatedAt) ?? []);
+  const githubRepoCount = user?.profile?.githubRepositories.length ?? 0;
+
+  const serviceStatuses: Record<string, ServiceStatus> = {
+    openai: process.env.OPENAI_API_KEY ? "active" : "not_configured",
+    langsmith:
+      process.env.LANGSMITH_TRACING === "true" && Boolean(process.env.LANGSMITH_API_KEY)
+        ? "active"
+        : "not_configured",
+    brave: Boolean(process.env.BRAVE_SEARCH_API_KEY) ? "active" : "not_configured",
+    resend: Boolean(process.env.RESEND_API_KEY) ? "active" : "not_configured",
+    postmark: Boolean(process.env.POSTMARK_SERVER_TOKEN) ? "active" : "not_configured",
+    pushover: pushoverEnvConfigured || pushoverDbConfigured ? "active" : "not_configured",
+    imap: imapConfigured
+      ? emailSyncSecretConfigured
+        ? "active"
+        : "warning"
+      : "not_configured",
+    gmail: Boolean(process.env.GMAIL_OAUTH_CLIENT_ID && process.env.GMAIL_OAUTH_CLIENT_SECRET)
+      ? "active"
+      : "not_configured",
+    outlook: Boolean(process.env.OUTLOOK_OAUTH_CLIENT_ID && process.env.OUTLOOK_OAUTH_CLIENT_SECRET)
+      ? "active"
+      : "not_configured",
+    github_token: Boolean(process.env.GITHUB_TOKEN) ? "active" : "not_configured",
+    cron_secret: cronSecretConfigured
+      ? "active"
+      : cronEnabled
+      ? "warning"
+      : "not_configured",
+    extension_token: Boolean(process.env.BROWSER_EXTENSION_TOKEN) ? "active" : "not_configured",
+    adk: process.env.ADK_ENABLED === "true" ? "active" : "not_configured",
+    redis: Boolean(process.env.REDIS_URL) ? "active" : "not_configured",
+    playwright: Boolean(process.env.ENABLE_LOCAL_ASSISTANT) ? "active" : "not_configured",
+  };
+
+  const inferredSilentFailures: Array<{ service: string; message: string }> = [];
+
+  for (const conn of emailOAuthConnections) {
+    if (conn.status !== "CONNECTED") {
+      inferredSilentFailures.push({
+        service: conn.provider === "gmail" ? "Gmail OAuth" : "Outlook OAuth",
+        message: `OAuth connection status is ${conn.status.toLowerCase()} — reconnect to restore email sync`,
+      });
+    }
+  }
+
+  if (imapConfigured && !emailSyncSecretConfigured) {
+    inferredSilentFailures.push({
+      service: "IMAP",
+      message: "EMAIL_SYNC_SECRET is not set — the IMAP sync endpoint accepts unauthenticated requests",
+    });
+  }
+
+  if (cronEnabled && !cronSecretConfigured) {
+    inferredSilentFailures.push({
+      service: "Vercel Cron",
+      message: "CRON_SECRET is not set — Vercel cannot authenticate scheduled search runs",
+    });
+  }
+
+  if (githubRepoCount > 0 && latestGithubSyncDate) {
+    const daysSinceSync = Math.floor((Date.now() - latestGithubSyncDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysSinceSync > 30) {
+      inferredSilentFailures.push({
+        service: "GitHub",
+        message: `Repository context last synced ${daysSinceSync} days ago — re-sync to keep resume context fresh`,
+      });
+    }
+  }
+
+  if (settings?.emailEnabled && !process.env.RESEND_API_KEY && !process.env.POSTMARK_SERVER_TOKEN) {
+    inferredSilentFailures.push({
+      service: "Email notifications",
+      message: "Email notifications are enabled in settings but neither RESEND_API_KEY nor POSTMARK_SERVER_TOKEN is configured",
+    });
+  }
+
+  if (settings?.pushoverEnabled && !pushoverEnvConfigured && !pushoverDbConfigured) {
+    inferredSilentFailures.push({
+      service: "Pushover",
+      message: "Pushover notifications are enabled but no credentials are configured",
+    });
+  }
+
+  const serviceHealthSettings: ServiceHealthSettings = {
+    statuses: serviceStatuses,
+    silentFailures: inferredSilentFailures,
+    highlight: searchParams?.highlight,
+  };
+
   const nextAction = getSettingsNextAction({
     hasUser: Boolean(user),
     aiConfigured: Boolean(process.env.OPENAI_API_KEY),
@@ -155,6 +254,7 @@ export default async function SettingsPage() {
           title="Settings"
           description="Configure email sync, notifications, scheduled search, profile links, company source discovery, and application automation policy."
         />
+        <SettingsJumpNav />
         <Card
           sx={{
             borderColor: nextAction.color === "warning" ? "warning.main" : nextAction.color === "success" ? "success.main" : "primary.main",
@@ -846,8 +946,8 @@ export default async function SettingsPage() {
             genderAnswer: user?.profile?.genderAnswer ?? "",
             veteranStatusAnswer: user?.profile?.veteranStatusAnswer ?? "",
             disabilityAnswer: user?.profile?.disabilityAnswer ?? "",
-            githubRepositoryCount: user?.profile?.githubRepositories.length ?? 0,
-            latestGithubSync: latestDate(user?.profile?.githubRepositories.map((repo) => repo.updatedAt) ?? [])?.toLocaleString() ?? null,
+            githubRepositoryCount: githubRepoCount,
+            latestGithubSync: latestGithubSyncDate?.toLocaleString() ?? null,
           }}
           latestGithubReview={isRecord(latestGithubReviewRun?.outputJson) ? latestGithubReviewRun.outputJson as SettingsGithubReview : null}
           cronSettings={{
@@ -867,6 +967,7 @@ export default async function SettingsPage() {
             allowDemographicSubmission: user?.automationSettings?.allowDemographicSubmission ?? false,
           }}
           companyAutomationPolicies={companyAutomationPolicies}
+          serviceHealthSettings={serviceHealthSettings}
         />
       </Stack>
     </AppShell>
@@ -1180,4 +1281,49 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function missingEnv(names: string[]) {
   return names.filter((name) => !process.env[name]?.trim());
+}
+
+const SETTINGS_SECTIONS = [
+  { href: "#settings-service-health", label: "Service health" },
+  { href: "#settings-ai", label: "AI provider" },
+  { href: "#settings-email-sync", label: "Email sync" },
+  { href: "#settings-notifications", label: "Notifications" },
+  { href: "#settings-cron", label: "Scheduled search" },
+  { href: "#settings-automation", label: "Automation" },
+  { href: "#settings-company-sources", label: "Company sources" },
+  { href: "#settings-github", label: "GitHub" },
+  { href: "#settings-profile-links", label: "Profile links" },
+  { href: "#settings-demographics", label: "Application answers" },
+  { href: "#settings-agent-quality", label: "Agent quality" },
+  { href: "#settings-outcome-calibration", label: "Outcome calibration" },
+  { href: "#settings-learning-impact", label: "Learning impact" },
+  { href: "#settings-field-learning", label: "Field memories" },
+  { href: "#settings-skill-learning", label: "Skill learning" },
+  { href: "#settings-tools", label: "Admin tools" },
+] as const;
+
+function SettingsJumpNav() {
+  return (
+    <Card variant="outlined" sx={{ bgcolor: "background.default" }}>
+      <CardContent sx={{ py: "10px !important" }}>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, mr: 0.5, whiteSpace: "nowrap" }}>
+            Jump to:
+          </Typography>
+          {SETTINGS_SECTIONS.map((section) => (
+            <Button
+              key={section.href}
+              component="a"
+              href={section.href}
+              size="small"
+              variant="text"
+              sx={{ fontSize: "0.75rem", py: 0.25, px: 0.75, minWidth: 0, color: "text.secondary", "&:hover": { color: "primary.main" } }}
+            >
+              {section.label}
+            </Button>
+          ))}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
 }

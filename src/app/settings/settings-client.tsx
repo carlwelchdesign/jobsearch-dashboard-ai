@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { ServiceHealthPanel } from "./service-health-panel";
+import type { ServiceHealthSettings } from "./service-health-panel";
 import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsActiveOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import MarkEmailReadOutlinedIcon from "@mui/icons-material/MarkEmailReadOutlined";
@@ -127,9 +129,10 @@ type SettingsClientProps = {
     autoSubmitMode: "INHERIT" | "ALLOW" | "BLOCK";
     notes: string | null;
   }>;
+  serviceHealthSettings: ServiceHealthSettings;
 };
 
-export function SettingsClient({ initialSettings, aiSettings, langSmithSettings, emailSyncSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings, automationSettings, companyAutomationPolicies: initialCompanyAutomationPolicies }: SettingsClientProps) {
+export function SettingsClient({ initialSettings, aiSettings, langSmithSettings, emailSyncSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings, automationSettings, companyAutomationPolicies: initialCompanyAutomationPolicies, serviceHealthSettings }: SettingsClientProps) {
   const [settings, setSettings] = useState(initialSettings);
   const [profile, setProfile] = useState(profileSettings);
   const [cron, setCron] = useState(cronSettings);
@@ -403,6 +406,8 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           </Stack>
         </CardContent>
       </Card>
+
+      <ServiceHealthPanel serviceHealthSettings={serviceHealthSettings} />
 
       <Card id="settings-tools">
         <CardContent>
