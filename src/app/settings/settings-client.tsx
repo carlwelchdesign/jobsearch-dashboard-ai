@@ -424,6 +424,7 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                 { href: "/networking", label: "Networking" },
                 { href: "/outcomes", label: "Outcome analytics" },
                 { href: "/runs", label: "Search runs" },
+                { href: "/guide", label: "User guide" },
               ].map((tool) => (
                 <Button key={tool.href} component={Link} href={tool.href} variant="outlined" size="small">
                   {tool.label}
