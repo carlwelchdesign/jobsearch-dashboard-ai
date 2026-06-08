@@ -28,6 +28,8 @@ import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
+import { getServiceFallbacks } from "@/lib/service-fallbacks";
+import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
 import { ApplicationDeleteButton } from "./application-delete-button";
 import { BackfillPacketsButton } from "./backfill-packets-button";
 import { BulkMoveToSprintControl } from "./bulk-move-to-sprint-control";
@@ -45,7 +47,7 @@ const commandButtonSx = {
 
 export default async function ApplicationsPage() {
   await reconcileApplicationCanonicalState({ source: "applications_page" }).catch(() => null);
-  const [applications, rawAgencyMatches] = await Promise.all([
+  const [applications, rawAgencyMatches, emailConnection] = await Promise.all([
     prisma.application.findMany({
       include: {
         jobPosting: true,
@@ -72,6 +74,7 @@ export default async function ApplicationsPage() {
       orderBy: [{ overallScore: "desc" }, { updatedAt: "desc" }],
       take: 250,
     }),
+    prisma.emailOAuthConnection.findFirst({ select: { id: true } }),
   ]);
   const visibleApplications = visibleCanonicalApplications(applications);
   const suppressionStates = await loadJobSuppressionStatesByUserIds(rawAgencyMatches.map((match) => match.jobSearchProfile.userId));
@@ -88,6 +91,10 @@ export default async function ApplicationsPage() {
     agencyCandidateCount: agencyCandidates.length,
   });
 
+  const fallbacks = getServiceFallbacks(["openai", "email_sync"], {
+    anyEmailSyncConnected: Boolean(emailConnection),
+  });
+
   return (
     <AppShell>
       <Stack spacing={3}>
@@ -96,6 +103,7 @@ export default async function ApplicationsPage() {
           title="Apply Sprint"
           description="Work the applications the agency has approved and prepared. The assistant helps fill forms, but final submission stays under your control."
         />
+        <ServiceFallbackBanners items={fallbacks} />
         <Card sx={{ borderColor: nextAction.color === "success" ? "success.main" : "primary.main", bgcolor: nextAction.color === "success" ? "rgba(16, 185, 129, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
           <CardContent>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>

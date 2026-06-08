@@ -28,6 +28,8 @@ import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
+import { getServiceFallbacks } from "@/lib/service-fallbacks";
+import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
 import { JobsTable } from "./jobs-table";
 
 export const dynamic = "force-dynamic";
@@ -99,6 +101,8 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
   const topReviewMatch = visibleMatches.find((match) => match.status === "needs_review") ?? null;
   const approvedForPrep = visibleMatches.filter((match) => ["approved", "resume_generated", "cover_letter_generated"].includes(match.status));
 
+  const fallbacks = getServiceFallbacks(["openai", "brave"]);
+
   return (
     <AppShell>
       <Stack spacing={3}>
@@ -115,6 +119,7 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
             </>
           }
         />
+        <ServiceFallbackBanners items={fallbacks} />
 
         <Card sx={{ borderColor: topReviewMatch ? "primary.main" : approvedForPrep.length ? "success.main" : "divider", bgcolor: topReviewMatch ? "rgba(37, 99, 235, 0.08)" : approvedForPrep.length ? "rgba(16, 185, 129, 0.08)" : "background.paper" }}>
           <CardContent>

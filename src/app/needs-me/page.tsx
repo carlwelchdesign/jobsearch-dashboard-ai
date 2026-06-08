@@ -17,14 +17,28 @@ import { ActionButton } from "@/components/action-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { agentUserRequestHref, agentUserRequestTypeLabel, listOpenAgentUserRequests } from "@/lib/agent-user-requests";
+import { prisma } from "@/lib/prisma";
+import { getServiceFallbacks } from "@/lib/service-fallbacks";
+import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
 import { NeedsMeLiveRefresh } from "./needs-me-live-refresh";
 import { RequestAnswerForm } from "./request-answer-form";
 
 export const dynamic = "force-dynamic";
 
 export default async function NeedsMePage() {
-  const requests = await listOpenAgentUserRequests(80);
+  const [requests, emailConnection, userWithNotifications] = await Promise.all([
+    listOpenAgentUserRequests(80),
+    prisma.emailOAuthConnection.findFirst({ select: { id: true } }),
+    prisma.user.findFirst({ select: { notificationSettings: true } }),
+  ]);
   const nextRequest = prioritizeRequest(requests);
+
+  const ns = userWithNotifications?.notificationSettings as { pushoverEnabled?: boolean; emailEnabled?: boolean } | null;
+  const anyNotificationConfigured = Boolean(ns?.pushoverEnabled || ns?.emailEnabled);
+  const fallbacks = getServiceFallbacks(["email_sync", "notifications"], {
+    anyEmailSyncConnected: Boolean(emailConnection),
+    anyNotificationConfigured,
+  });
 
   return (
     <AppShell>
@@ -34,6 +48,7 @@ export default async function NeedsMePage() {
           title="Needs Me"
           description="Questions and blockers agents cannot resolve safely on their own. Answer or dismiss these to keep workflows moving."
         />
+        <ServiceFallbackBanners items={fallbacks} />
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
           <NeedsMeLiveRefresh />
         </Stack>

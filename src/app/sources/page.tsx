@@ -23,6 +23,8 @@ import { prisma } from "@/lib/prisma";
 import { AddCompanySourceForm } from "./add-company-source-form";
 import { AddJobSourceForm } from "./add-job-source-form";
 import { CompanySourceSettings } from "./company-source-settings";
+import { getServiceFallbacks } from "@/lib/service-fallbacks";
+import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +93,8 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
     priorityOneCount: priorityCounts[0]?.count ?? 0,
   });
 
+  const fallbacks = getServiceFallbacks(["brave"]);
+
   return (
     <AppShell>
       <Stack spacing={3}>
@@ -99,6 +103,7 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
           title="Company Sources"
           description="Manage the curated company source list used to probe direct careers pages and ATS feeds. This is a source list, not a claim that each company is currently hiring."
         />
+        <ServiceFallbackBanners items={fallbacks} />
 
         <Card sx={{ borderColor: nextAction.color === "warning" ? "warning.main" : "primary.main", bgcolor: nextAction.color === "warning" ? "rgba(245, 158, 11, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
           <CardContent>

@@ -28,6 +28,8 @@ import { ScoreChip } from "@/components/ui/score-chip";
 import { StatusChip, formatStatus } from "@/components/ui/status-chip";
 import { prisma } from "@/lib/prisma";
 import { AnalyzeOutcomesButton } from "./analyze-outcomes-button";
+import { getServiceFallbacks } from "@/lib/service-fallbacks";
+import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +70,7 @@ type OutcomeOutput = {
 };
 
 export default async function OutcomeAnalyticsPage() {
-  const [latestRun, liveStatusCounts, applicationCount, recentOutcomes] = await Promise.all([
+  const [latestRun, liveStatusCounts, applicationCount, recentOutcomes, emailConnection] = await Promise.all([
     prisma.agentRun.findFirst({
       where: { agentType: "OUTCOME_LEARNING", status: "COMPLETED" },
       orderBy: { createdAt: "desc" },
@@ -82,6 +84,7 @@ export default async function OutcomeAnalyticsPage() {
       orderBy: { occurredAt: "desc" },
       take: 12,
     }),
+    prisma.emailOAuthConnection.findFirst({ select: { id: true } }),
   ]);
   const output = outcomeOutput(latestRun?.outputJson);
   const statusCounts = output?.statusCounts ?? Object.fromEntries(liveStatusCounts.map((count) => [count.status, count._count.status]));
@@ -93,6 +96,10 @@ export default async function OutcomeAnalyticsPage() {
     latestAnalysisAt: latestRun?.createdAt ?? null,
   });
 
+  const fallbacks = getServiceFallbacks(["openai", "email_sync"], {
+    anyEmailSyncConnected: Boolean(emailConnection),
+  });
+
   return (
     <AppShell>
       <Stack spacing={3}>
@@ -102,6 +109,7 @@ export default async function OutcomeAnalyticsPage() {
           description="Use actual application outcomes to tune profiles, sources, and resume positioning. Recommendations stay advisory until you approve changes elsewhere."
           actions={<AnalyzeOutcomesButton />}
         />
+        <ServiceFallbackBanners items={fallbacks} />
 
         <Card sx={{ borderColor: nextAction.color === "success" ? "success.main" : "primary.main", bgcolor: nextAction.color === "success" ? "rgba(16, 185, 129, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
           <CardContent>
