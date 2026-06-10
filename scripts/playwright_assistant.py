@@ -149,6 +149,13 @@ ASHBY_SPAM_BLOCK_PATTERNS = re.compile(
     r"google.?s recaptcha technology|to protect against spam and bots|submit your application again",
     re.I,
 )
+ASHBY_SALARY_PATTERN = re.compile(r"salary|compensation|pay|expected comp|desired comp|base range|rate", re.I)
+ASHBY_RELOCATION_PATTERN = re.compile(r"relocat|move to|willing to move", re.I)
+ASHBY_ONSITE_PATTERN = re.compile(r"onsite|on-site|hybrid|in office|office days|commute", re.I)
+ASHBY_LOCATION_PATTERN = re.compile(r"location|where are you based|country|state|city|timezone|time zone", re.I)
+ASHBY_EXPERIENCE_PATTERN = re.compile(r"years of experience|yrs of experience|how many years|minimum experience", re.I)
+ASHBY_SKILL_PATTERN = re.compile(r"react|typescript|javascript|graphql|node|aws|python|design system|accessibility|security|saas", re.I)
+ASHBY_CUSTOM_PATTERN = re.compile(r"do you have|have you|experience with|describe your experience|tell us about|required qualification", re.I)
 SUBMIT_CONFIRMATION_PATTERNS = re.compile(
     r"application (has been )?(submitted|received)|"
     r"thank you for (applying|your application)|"
@@ -269,6 +276,7 @@ def main() -> int:
         inventory_before = detect_fields_in_contexts(form_contexts)
         assistant_event(args.application_id, "fields_detected", "Application fields detected before filling.", {"fieldCount": len(inventory_before), "url": page.url})
         print_field_inventory("Detected fields before filling", inventory_before)
+        report_ashby_knockout_risks(args, page, package, inventory_before, "before filling")
 
         if package.get("workflow", {}).get("fieldByFieldCommands"):
             filled = sum(fill_safe_fields(context, package) for context in form_contexts)
@@ -281,6 +289,7 @@ def main() -> int:
             uploads = sum(upload_materials(context, resume_pdf, cover_letter_pdf) for context in form_contexts)
             inventory_after_legacy_fill = detect_fields_in_contexts(form_contexts)
             print_field_inventory("Detected fields after package, learned memory, and upload fill", inventory_after_legacy_fill)
+            report_ashby_knockout_risks(args, page, package, inventory_after_legacy_fill, "after filling")
             print()
             print(f"Filled {filled} safe text fields.")
             print(f"Filled {learned_filled} learned recurring field(s).")
@@ -341,6 +350,7 @@ def main() -> int:
                 protect_submit_buttons(context)
         inventory_after = detect_fields_in_contexts(form_contexts)
         print_field_inventory("Detected fields after filling", inventory_after)
+        report_ashby_knockout_risks(args, page, package, inventory_after, "after filling")
         learning_baseline = snapshot_fields_in_contexts(form_contexts)
 
         print()
@@ -1018,6 +1028,80 @@ def print_field_inventory(title: str, fields: list[dict[str, str]]) -> None:
         context = f" | {field['context']}" if field.get("context") else ""
         selector = f" | selector: {field['selector']}" if field.get("selector") else ""
         print(f"- {field['category']}: {field['status']} | {field['type']}{context}{selector} | {field['label']}")
+
+
+def report_ashby_knockout_risks(args: argparse.Namespace, page: Any, package: dict[str, Any], fields: list[dict[str, str]], phase: str) -> list[dict[str, str]]:
+    if not is_ashby_application(page.url, package):
+        return []
+    risks: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for field in fields:
+        label = str(field.get("label") or "")
+        classified = classify_ashby_knockout_field(label)
+        if not classified:
+            continue
+        key = f"{classified['category']}:{normalize_for_match(label)}"
+        if key in seen:
+            continue
+        seen.add(key)
+        risk = {
+            **classified,
+            "label": label[:180],
+            "status": str(field.get("status") or "unknown"),
+            "phase": phase,
+        }
+        risks.append(risk)
+
+    if not risks:
+        return []
+
+    high_risk = [risk for risk in risks if risk["riskLevel"] == "high_risk" and risk["status"] != "filled"]
+    review_risk = [risk for risk in risks if risk["riskLevel"] != "ready" and risk["status"] != "filled"]
+    print()
+    print("Ashby pre-submit knockout review:")
+    for risk in risks:
+        suggestion = f" | suggested: {risk['suggestedAnswer']}" if risk.get("suggestedAnswer") else ""
+        print(f"- {risk['riskLevel']} | {risk['category']} | {risk['status']}{suggestion} | {risk['label']}")
+    if review_risk:
+        print("Review these Ashby fields before clicking submit. Do not leave risky required fields blank.")
+
+    assistant_event(args.application_id, "ashby_knockout_review", "Ashby knockout-risk fields detected.", {
+        "url": page.url,
+        "phase": phase,
+        "riskCount": len(risks),
+        "highRiskCount": len(high_risk),
+        "reviewCount": len(review_risk),
+        "risks": risks[:12],
+    })
+    if high_risk:
+        assistant_event(args.application_id, "blocker_found", "Ashby high-risk knockout field needs manual review before submit.", {
+            "blockerType": "ashby_knockout_review",
+            "url": page.url,
+            "risks": high_risk[:8],
+        })
+    return risks
+
+
+def classify_ashby_knockout_field(label: str) -> dict[str, str] | None:
+    if WORK_AUTHORIZATION_ELIGIBILITY_PATTERN.search(label):
+        return {"category": "work_authorization", "riskLevel": "ready", "suggestedAnswer": "Yes", "autoFillSafe": "true"}
+    if WORK_AUTHORIZATION_SPONSORSHIP_PATTERN.search(label):
+        return {"category": "sponsorship", "riskLevel": "ready", "suggestedAnswer": "No", "autoFillSafe": "true"}
+    if ASHBY_SALARY_PATTERN.search(label):
+        return {"category": "salary", "riskLevel": "high_risk", "autoFillSafe": "false"}
+    if ASHBY_RELOCATION_PATTERN.search(label):
+        return {"category": "relocation", "riskLevel": "high_risk", "autoFillSafe": "false"}
+    if ASHBY_ONSITE_PATTERN.search(label):
+        return {"category": "onsite_hybrid", "riskLevel": "needs_review", "autoFillSafe": "false"}
+    if ASHBY_EXPERIENCE_PATTERN.search(label):
+        return {"category": "required_experience", "riskLevel": "needs_review", "autoFillSafe": "false"}
+    if ASHBY_SKILL_PATTERN.search(label):
+        return {"category": "must_have_skill", "riskLevel": "needs_review", "autoFillSafe": "false"}
+    if ASHBY_LOCATION_PATTERN.search(label):
+        return {"category": "location", "riskLevel": "needs_review", "autoFillSafe": "false"}
+    if ASHBY_CUSTOM_PATTERN.search(label):
+        return {"category": "custom", "riskLevel": "high_risk", "autoFillSafe": "false"}
+    return None
 
 
 def stable_field_selector(element: Any) -> str:
