@@ -27,6 +27,7 @@ import { ScoreChip } from "@/components/ui/score-chip";
 import { StatusChip } from "@/components/ui/status-chip";
 
 type SettingsClientProps = {
+  group: "system" | "search" | "application" | "admin";
   initialSettings: {
     emailEnabled: boolean;
     emailAddress: string;
@@ -132,7 +133,7 @@ type SettingsClientProps = {
   serviceHealthSettings: ServiceHealthSettings;
 };
 
-export function SettingsClient({ initialSettings, aiSettings, langSmithSettings, emailSyncSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings, automationSettings, companyAutomationPolicies: initialCompanyAutomationPolicies, serviceHealthSettings }: SettingsClientProps) {
+export function SettingsClient({ group, initialSettings, aiSettings, langSmithSettings, emailSyncSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings, automationSettings, companyAutomationPolicies: initialCompanyAutomationPolicies, serviceHealthSettings }: SettingsClientProps) {
   const [settings, setSettings] = useState(initialSettings);
   const [profile, setProfile] = useState(profileSettings);
   const [cron, setCron] = useState(cronSettings);
@@ -157,7 +158,9 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
     setSaving(true);
     setNotice("");
     setError("");
-    const [profileResponse, response, cronResponse, automationResponse] = await Promise.all([
+    const requests: Array<Promise<Response>> = [];
+    if (showApplication) {
+      requests.push(
       fetch("/api/settings/profile", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -170,11 +173,19 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           disabilityAnswer: profile.disabilityAnswer,
         }),
       }),
+      );
+    }
+    if (showSystem) {
+      requests.push(
       fetch("/api/settings/notifications", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(settings),
       }),
+      );
+    }
+    if (showSearch) {
+      requests.push(
       fetch("/api/settings/job-search-cron", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -187,40 +198,52 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           })),
         }),
       }),
+      );
+    }
+    if (showApplication) {
+      requests.push(
       fetch("/api/settings/application-automation", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(automation),
       }),
-    ]);
-    const [body, profileBody, cronBody, automationBody] = await Promise.all([
-      response.json(),
-      profileResponse.json(),
-      cronResponse.json(),
-      automationResponse.json(),
-    ]);
+      );
+    }
+    const responses = await Promise.all(requests);
+    const bodies = await Promise.all(responses.map((response) => response.json()));
     setSaving(false);
 
-    if (!profileResponse.ok || !response.ok || !cronResponse.ok || !automationResponse.ok) {
-      setError(profileBody.error ?? body.error ?? cronBody.error ?? automationBody.error ?? "Unable to save settings.");
+    const failedIndex = responses.findIndex((response) => !response.ok);
+    if (failedIndex >= 0) {
+      setError(bodies[failedIndex]?.error ?? "Unable to save settings.");
       return;
     }
 
-    setCron((current) => ({
-      ...current,
-      enabled: cronBody.enabled,
-      cronExpression: cronBody.cronExpression,
-      profiles: cronBody.profiles,
-    }));
-    setCronDirty(false);
-    setAutomation({
-      autoSubmitEnabled: automationBody.settings.autoSubmitEnabled,
-      requireApprovedPacket: automationBody.settings.requireApprovedPacket,
-      requireNoOpenUserRequests: automationBody.settings.requireNoOpenUserRequests,
-      requireFreshAssistantRun: automationBody.settings.requireFreshAssistantRun,
-      maxRunAgeMinutes: automationBody.settings.maxRunAgeMinutes,
-      allowDemographicSubmission: automationBody.settings.allowDemographicSubmission,
-    });
+    if (showSearch) {
+      const cronBody = bodies.find((body) => Array.isArray(body?.profiles));
+      if (cronBody) {
+        setCron((current) => ({
+          ...current,
+          enabled: cronBody.enabled,
+          cronExpression: cronBody.cronExpression,
+          profiles: cronBody.profiles,
+        }));
+        setCronDirty(false);
+      }
+    }
+    if (showApplication) {
+      const automationBody = bodies.find((body) => body?.settings);
+      if (automationBody?.settings) {
+        setAutomation({
+          autoSubmitEnabled: automationBody.settings.autoSubmitEnabled,
+          requireApprovedPacket: automationBody.settings.requireApprovedPacket,
+          requireNoOpenUserRequests: automationBody.settings.requireNoOpenUserRequests,
+          requireFreshAssistantRun: automationBody.settings.requireFreshAssistantRun,
+          maxRunAgeMinutes: automationBody.settings.maxRunAgeMinutes,
+          allowDemographicSubmission: automationBody.settings.allowDemographicSubmission,
+        });
+      }
+    }
     setNotice("Settings saved.");
   }
 
@@ -373,8 +396,16 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
     });
   }
 
+  const showSystem = group === "system";
+  const showSearch = group === "search";
+  const showApplication = group === "application";
+  const showAdmin = group === "admin";
+
   return (
     <Stack spacing={2}>
+      {notice ? <Alert severity="success">{notice}</Alert> : null}
+      {error ? <Alert severity="error">{error}</Alert> : null}
+      {showSystem ? (
       <Card id="settings-ai">
         <CardContent>
           <Stack spacing={2}>
@@ -406,9 +437,11 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           </Stack>
         </CardContent>
       </Card>
+      ) : null}
 
-      <ServiceHealthPanel serviceHealthSettings={serviceHealthSettings} />
+      {showSystem ? <ServiceHealthPanel serviceHealthSettings={serviceHealthSettings} /> : null}
 
+      {showAdmin ? (
       <Card id="settings-tools">
         <CardContent>
           <Stack spacing={2}>
@@ -439,7 +472,9 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           </Stack>
         </CardContent>
       </Card>
+      ) : null}
 
+      {showSystem ? (
       <Card id="settings-email-sync">
         <CardContent>
           <Stack spacing={2}>
@@ -517,7 +552,9 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           </Stack>
         </CardContent>
       </Card>
+      ) : null}
 
+      {showApplication ? (
       <Card id="settings-automation">
         <CardContent>
           <Stack spacing={2}>
@@ -644,7 +681,9 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           </Stack>
         </CardContent>
       </Card>
+      ) : null}
 
+      {showSearch ? (
       <Card id="settings-company-sources">
         <CardContent>
           <Stack spacing={2}>
@@ -675,7 +714,9 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           </Stack>
         </CardContent>
       </Card>
+      ) : null}
 
+      {showSearch ? (
       <Card id="settings-cron">
         <CardContent>
           <Stack spacing={2}>
@@ -738,6 +779,9 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
                 <Typography color="text.secondary">Create a search profile before enabling scheduled searches.</Typography>
               )}
             </Stack>
+            <Button variant="outlined" disabled={saving} onClick={save} sx={{ alignSelf: "flex-start" }}>
+              {saving ? "Saving..." : "Save schedule"}
+            </Button>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "center" } }}>
               <Button
                 variant="outlined"
@@ -759,7 +803,9 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           </Stack>
         </CardContent>
       </Card>
+      ) : null}
 
+      {showApplication ? (
       <Card id="settings-demographics">
         <CardContent>
           <Stack spacing={2}>
@@ -806,7 +852,9 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           </Stack>
         </CardContent>
       </Card>
+      ) : null}
 
+      {showApplication ? (
       <Card id="settings-profile-links">
         <CardContent>
           <Stack spacing={2}>
@@ -830,7 +878,9 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           </Stack>
         </CardContent>
       </Card>
+      ) : null}
 
+      {showApplication ? (
       <Card id="settings-github">
         <CardContent>
           <Stack spacing={2}>
@@ -905,7 +955,9 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           </Stack>
         </CardContent>
       </Card>
+      ) : null}
 
+      {showSystem ? (
       <Card id="settings-notifications">
         <CardContent>
           <Stack spacing={3}>
@@ -913,8 +965,6 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
               <NotificationsActiveOutlinedIcon color="primary" />
               <Typography variant="h3">Notifications</Typography>
             </Stack>
-            {notice ? <Alert severity="success">{notice}</Alert> : null}
-            {error ? <Alert severity="error">{error}</Alert> : null}
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)" }, gap: 2 }}>
               <Box>
                 <FormControlLabel
@@ -988,6 +1038,12 @@ export function SettingsClient({ initialSettings, aiSettings, langSmithSettings,
           </Stack>
         </CardContent>
       </Card>
+      ) : null}
+      {showApplication ? (
+        <Button variant="outlined" disabled={saving} onClick={save} sx={{ alignSelf: "flex-start" }}>
+          {saving ? "Saving..." : "Save application settings"}
+        </Button>
+      ) : null}
     </Stack>
   );
 }
