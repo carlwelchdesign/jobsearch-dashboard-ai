@@ -25,4 +25,11 @@ describe("/applications page agency workflow", () => {
     expect(buttonSource).toContain("onSkip={() => remove([], \"\")}");
     expect(buttonSource).not.toContain("window.confirm");
   });
+
+  it("offers job unavailable as a structured rejection reason", () => {
+    const dialogSource = readFileSync(fileURLToPath(new URL("../../components/job-reject-button.tsx", import.meta.url)), "utf8");
+
+    expect(dialogSource).toContain('"job_unavailable"');
+    expect(dialogSource).toContain('label: "Job unavailable"');
+  });
 });

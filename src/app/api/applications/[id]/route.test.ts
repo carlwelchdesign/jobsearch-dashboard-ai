@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { captureJobRejectionLearning } from "@/lib/jobs/rejection-learning";
+import { recordRejectedJobSuppression } from "@/lib/jobs/suppression";
 import { DELETE, PATCH } from "./route";
 
 vi.mock("@/lib/prisma", () => ({
@@ -46,6 +47,7 @@ const updateMatchMock = vi.mocked(prisma.jobProfileMatch.update);
 const createSkillFeedbackMock = vi.mocked(prisma.skillFeedback.create);
 const transactionMock = vi.mocked(prisma.$transaction);
 const captureJobRejectionLearningMock = vi.mocked(captureJobRejectionLearning);
+const recordRejectedJobSuppressionMock = vi.mocked(recordRejectedJobSuppression);
 
 describe("DELETE /api/applications/[id]", () => {
   beforeEach(() => {
@@ -56,6 +58,7 @@ describe("DELETE /api/applications/[id]", () => {
     updateMatchMock.mockReset();
     createSkillFeedbackMock.mockReset();
     captureJobRejectionLearningMock.mockReset();
+    recordRejectedJobSuppressionMock.mockReset();
     transactionMock.mockClear();
     deleteApplicationMock.mockResolvedValue({ id: "app_1" } as Awaited<ReturnType<typeof prisma.application.delete>>);
     updateJobPostingMock.mockResolvedValue({ id: "job_1", applicationUrl: "https://jobs.acme.example/apply" } as Awaited<ReturnType<typeof prisma.jobPosting.update>>);
@@ -83,7 +86,7 @@ describe("DELETE /api/applications/[id]", () => {
       method: "DELETE",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        reasons: ["wrong_tech_stack"],
+        reasons: ["job_unavailable"],
         note: "Too much legacy Java.",
         source: "applications_rejection_reason_prompt",
       }),
@@ -96,9 +99,9 @@ describe("DELETE /api/applications/[id]", () => {
         applicationId: "app_1",
         jobPostingId: "job_1",
         problemSummary: expect.stringContaining("not a good fit"),
-        rawMessage: expect.stringContaining("wrong tech stack"),
+        rawMessage: expect.stringContaining("job unavailable"),
         contextJson: expect.objectContaining({
-          reasons: ["wrong_tech_stack"],
+          reasons: ["job_unavailable"],
           note: "Too much legacy Java.",
           source: "applications_rejection_reason_prompt",
         }),
@@ -111,10 +114,14 @@ describe("DELETE /api/applications/[id]", () => {
     expect(captureJobRejectionLearningMock).toHaveBeenCalledWith(expect.objectContaining({
       matchId: "match_1",
       jobPostingId: "job_1",
-      reasons: ["wrong_tech_stack"],
+      reasons: ["job_unavailable"],
       note: "Too much legacy Java.",
       source: "applications_rejection_reason_prompt",
       previousStatus: "ready_to_apply",
+    }));
+    expect(recordRejectedJobSuppressionMock).toHaveBeenCalledWith(expect.objectContaining({
+      source: "applications_rejection_reason_prompt",
+      reason: expect.stringContaining("job unavailable"),
     }));
     expect(deleteApplicationMock).toHaveBeenCalledWith({ where: { id: "app_1" } });
     expect(response.status).toBe(200);

@@ -9,6 +9,7 @@ export const rejectionReasonCodes = [
   "weak_fit",
   "already_applied_duplicate",
   "duplicate_stale",
+  "job_unavailable",
   "low_quality_posting",
   "not_interested",
 ] as const;

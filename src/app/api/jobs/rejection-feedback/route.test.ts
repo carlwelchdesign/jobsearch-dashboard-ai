@@ -34,8 +34,8 @@ describe("POST /api/jobs/rejection-feedback", () => {
       body: JSON.stringify({
         matchId: "match_1",
         jobPostingId: "job_1",
-        reasons: ["wrong_seniority"],
-        note: "Too junior.",
+        reasons: ["job_unavailable"],
+        note: "Posting is closed.",
       }),
     }));
 
@@ -43,8 +43,8 @@ describe("POST /api/jobs/rejection-feedback", () => {
       userId: "user_1",
       matchId: "match_1",
       jobPostingId: "job_1",
-      reasons: ["wrong_seniority"],
-      note: "Too junior.",
+      reasons: ["job_unavailable"],
+      note: "Posting is closed.",
       previousStatus: "rejected",
     }));
     expect(response.status).toBe(200);
