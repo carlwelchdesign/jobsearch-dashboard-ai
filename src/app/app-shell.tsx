@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import AssignmentTurnedInOutlinedIcon from "@mui/icons-material/AssignmentTurnedInOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import BoltOutlinedIcon from "@mui/icons-material/BoltOutlined";
@@ -39,8 +40,18 @@ const navItems = [
   { href: "/guide", label: "User Guide", eyebrow: "How to use this", icon: MenuBookOutlinedIcon },
 ];
 
+const settingsSubItems = [
+  { href: "/settings/system", label: "System" },
+  { href: "/settings/search", label: "Search" },
+  { href: "/settings/application", label: "Application" },
+  { href: "/settings/learning", label: "Learning" },
+  { href: "/settings/admin", label: "Admin" },
+];
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
+  const [settingsExpanded, setSettingsExpanded] = useState(settingsActive);
 
   return (
     <Box
@@ -93,13 +104,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {navItems.map((item) => {
             const selected = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
+            const isSettings = item.href === "/settings";
+            const showSettingsChildren = isSettings && (settingsExpanded || settingsActive);
 
             return (
+              <Box key={item.href}>
               <ListItemButton
-                key={item.href}
                 component={Link}
                 href={item.href}
                 selected={selected}
+                onClick={() => {
+                  if (isSettings) setSettingsExpanded(true);
+                  else setSettingsExpanded(false);
+                }}
                 sx={{
                   mb: 0.5,
                   minHeight: 44,
@@ -122,18 +139,47 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <Icon fontSize="small" />
                 </ListItemIcon>
                 <ListItemText
-                  primary={
-                    <Stack spacing={0.1}>
-                      <Typography component="span" sx={{ fontSize: 14, fontWeight: 800, lineHeight: 1.25 }}>
-                        {item.label}
-                      </Typography>
-                      <Typography component="span" variant="caption" color={selected ? "primary.dark" : "text.secondary"} sx={{ lineHeight: 1.2 }}>
-                        {item.eyebrow}
-                      </Typography>
-                    </Stack>
-                  }
+                  primary={item.label}
+                  secondary={item.eyebrow}
+                  sx={{
+                    "& .MuiListItemText-primary": { fontSize: 14, fontWeight: 800, lineHeight: 1.25 },
+                    "& .MuiListItemText-secondary": { color: selected ? "primary.dark" : "text.secondary", lineHeight: 1.2 },
+                  }}
                 />
               </ListItemButton>
+              {showSettingsChildren ? (
+                <Stack spacing={0.25} sx={{ mb: 0.75, ml: 5 }}>
+                  {settingsSubItems.map((subItem) => {
+                    const subSelected = pathname === subItem.href || pathname.startsWith(`${subItem.href}/`);
+                    return (
+                      <ListItemButton
+                        key={subItem.href}
+                        component={Link}
+                        href={subItem.href}
+                        selected={subSelected}
+                        sx={{
+                          minHeight: 32,
+                          py: 0.5,
+                          px: 1,
+                          borderRadius: 1,
+                          color: subSelected ? "primary.dark" : "text.secondary",
+                          "&.Mui-selected": {
+                            bgcolor: "#e6f5f3",
+                            color: "primary.dark",
+                            "&:hover": { bgcolor: "#d9efec" },
+                          },
+                        }}
+                      >
+                        <ListItemText
+                          primary={subItem.label}
+                          sx={{ "& .MuiListItemText-primary": { fontSize: 13, fontWeight: 800, lineHeight: 1.2 } }}
+                        />
+                      </ListItemButton>
+                    );
+                  })}
+                </Stack>
+              ) : null}
+              </Box>
             );
           })}
         </List>

@@ -52,7 +52,7 @@ export async function GET(request: Request, { params }: { params: { provider: st
       emailAddress: user.email,
     });
 
-    const response = NextResponse.redirect(new URL("/settings#settings-email-sync", url.origin));
+    const response = NextResponse.redirect(new URL("/settings/system#settings-email-sync", url.origin));
     response.cookies.delete(`email_oauth_state_${provider}`);
     return response;
   } catch (error) {

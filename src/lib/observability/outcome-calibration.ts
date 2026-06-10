@@ -1350,7 +1350,7 @@ function triageForRegressionCandidate(candidate: RegressionCandidate): Regressio
     return {
       priority: "medium",
       ownerArea: "Job search",
-      reviewHref: "/settings#settings-outcome-calibration",
+      reviewHref: "/settings/learning#settings-outcome-calibration",
       reason: "Job search workflow score dropped, so review sources, profiles, and saved-result yield before changing schedules.",
       signalType: "search_quality",
     };
@@ -1358,7 +1358,7 @@ function triageForRegressionCandidate(candidate: RegressionCandidate): Regressio
   return {
     priority: "low",
     ownerArea: candidate.target.toLowerCase().replace(/_/g, " "),
-    reviewHref: "/settings#settings-outcome-calibration",
+    reviewHref: "/settings/learning#settings-outcome-calibration",
     reason: "A regression was detected, but it needs review before any behavior changes are considered.",
     signalType: "workflow_quality",
   };
