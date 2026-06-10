@@ -23,6 +23,7 @@ import Typography from "@mui/material/Typography";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { RejectionReasonDialog, type RejectionReasonCode } from "@/components/job-reject-button";
+import type { AshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 
 type ReadyApplication = {
   id: string;
@@ -31,6 +32,7 @@ type ReadyApplication = {
   company: string;
   title: string;
   applicationUrl: string | null;
+  atsProvider?: string | null;
   score: number | null;
   resumeId: string | null;
   coverLetterId: string | null;
@@ -50,6 +52,7 @@ type ReadyApplication = {
     question: string;
   } | null;
   assistantLaunched: boolean;
+  ashbyRisk?: AshbyRiskAssessment | null;
 };
 
 type LaunchResponse = {
@@ -398,7 +401,16 @@ export function AssistantWorkbench({
                     {selected.assistantLaunched ? <Chip size="small" color="warning" variant="outlined" label="Assistant launched" /> : null}
                     {selected.blocker ? <Chip size="small" color="warning" label="Needs answer" /> : null}
                     {selected.score ? <Chip size="small" label={`${selected.score} score`} /> : null}
+                    {selected.ashbyRisk?.enabled ? (
+                      <Chip
+                        size="small"
+                        color={selected.ashbyRisk.riskLevel === "ready" ? "success" : selected.ashbyRisk.riskLevel === "high_risk" ? "error" : "warning"}
+                        variant="outlined"
+                        label={`Ashby: ${selected.ashbyRisk.riskLevel.replace(/_/g, " ")}`}
+                      />
+                    ) : null}
                   </Stack>
+                  {selected.ashbyRisk?.enabled ? <AshbyRiskPanel assessment={selected.ashbyRisk} /> : null}
                   {selected.coverLetterId ? (
                     <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
                       <Button
@@ -751,6 +763,39 @@ export function AssistantWorkbench({
         submitLabel="Reject application"
       />
     </>
+  );
+}
+
+function AshbyRiskPanel({ assessment }: { assessment: AshbyRiskAssessment }) {
+  const severity = assessment.riskLevel === "ready" ? "success" : assessment.riskLevel === "high_risk" ? "error" : "warning";
+  const openItems = assessment.checklist.filter((item) => item.status !== "ready");
+
+  return (
+    <Alert severity={severity}>
+      <Stack spacing={1}>
+        <Typography sx={{ fontWeight: 850 }}>Ashby pre-submit checklist</Typography>
+        <Typography variant="body2">
+          {assessment.riskLevel === "ready"
+            ? "Known knockout-risk checks look ready. Still review every field before submitting."
+            : "Review these Ashby knockout-risk items before clicking submit."}
+        </Typography>
+        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+          {(openItems.length ? openItems : assessment.checklist.slice(0, 4)).map((item) => (
+            <Chip
+              key={`${item.category}-${item.label}`}
+              size="small"
+              color={item.status === "ready" ? "success" : item.status === "high_risk" ? "error" : "warning"}
+              variant="outlined"
+              label={`${item.label}${item.suggestedAnswer ? `: ${item.suggestedAnswer}` : ""}`}
+              title={item.detail}
+            />
+          ))}
+        </Stack>
+        {assessment.recommendedActions[0] ? (
+          <Typography variant="caption" color="text.secondary">{assessment.recommendedActions[0]}</Typography>
+        ) : null}
+      </Stack>
+    </Alert>
   );
 }
 

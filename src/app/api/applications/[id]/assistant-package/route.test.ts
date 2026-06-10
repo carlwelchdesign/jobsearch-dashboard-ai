@@ -154,6 +154,7 @@ describe("GET /api/applications/[id]/assistant-package", () => {
     expect(body.application.packetId).toBe("packet_1");
     expect(body.job.applicationHost).toBe("linear.app");
     expect(body.learning.fieldMemories).toEqual([]);
+    expect(body.ashbyRisk).toBeNull();
     expect(findFieldMemoriesMock).toHaveBeenCalledWith(expect.objectContaining({
       atsProvider: "greenhouse",
       host: "linear.app",
@@ -198,10 +199,31 @@ describe("GET /api/applications/[id]/assistant-package", () => {
         title: "Frontend Engineer",
         applicationUrl: "https://jobs.ashbyhq.com/acme/123",
         atsProvider: "ashby",
+        description: "Build React and TypeScript product interfaces. 8+ years of experience preferred.",
+        location: "Remote US",
+        country: "United States",
+        remoteType: "remote",
       },
-      resume: { id: "resume_1" },
+      resume: { id: "resume_1", plainText: "Senior Frontend Engineer with React, TypeScript, SaaS, and dashboards.", markdown: "" },
       coverLetter: { id: "letter_1", body: "Cover letter body." },
-      user: { email: "candidate@example.com", name: "Carl Welch", profile: null },
+      user: {
+        email: "candidate@example.com",
+        name: "Carl Welch",
+        profile: {
+          fullName: "Carl Welch",
+          email: "candidate@example.com",
+          phone: "",
+          location: "Los Angeles, CA, United States",
+          linkedinUrl: "",
+          githubUrl: "",
+          portfolioUrl: "",
+          raceAnswer: "",
+          genderAnswer: "",
+          veteranStatusAnswer: "",
+          disabilityAnswer: "",
+          yearsExperience: 20,
+        },
+      },
       applicationPackets: [],
     } as unknown as Awaited<ReturnType<typeof prisma.application.findUnique>>);
 
@@ -217,5 +239,14 @@ describe("GET /api/applications/[id]/assistant-package", () => {
     expect(body.safety.autoSubmitReasons).toEqual([
       "Ashby applications use normal Chrome assisted fill with manual final submit to avoid anti-fraud friction.",
     ]);
+    expect(body.ashbyRisk).toMatchObject({
+      enabled: true,
+      atsProvider: "ashby",
+      checklist: expect.arrayContaining([
+        expect.objectContaining({ category: "work_authorization", status: "ready", suggestedAnswer: "Yes" }),
+        expect.objectContaining({ category: "sponsorship", status: "ready", suggestedAnswer: "No" }),
+        expect.objectContaining({ category: "required_experience", status: "ready", suggestedAnswer: "20" }),
+      ]),
+    });
   });
 });

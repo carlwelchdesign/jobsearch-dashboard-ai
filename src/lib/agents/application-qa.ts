@@ -1,5 +1,6 @@
 import type { JobPosting } from "@prisma/client";
 import { runAgent } from "@/lib/agents/run-agent";
+import { evaluateAshbyCriteriaVisibility, isAshbyApplication, type AshbyCriteriaVisibility } from "@/lib/applications/ashby-risk";
 import { prisma } from "@/lib/prisma";
 import type { QualityProposalLearningRules } from "@/lib/skills/adjustments";
 
@@ -23,6 +24,7 @@ export type ApplicationQaOutput = {
   reasoningSummary: string;
   confidence: number;
   appliedLearning?: string[];
+  ashbyCriteriaVisibility?: AshbyCriteriaVisibility;
 };
 
 export async function runApplicationQaAgent(input: ApplicationQaInput) {
@@ -51,7 +53,7 @@ export function reviewApplicationMaterials({
   evidenceRefs,
   learningRules,
 }: {
-  job: Pick<JobPosting, "title" | "company" | "description">;
+  job: Pick<JobPosting, "title" | "company" | "description"> & Partial<Pick<JobPosting, "atsProvider" | "applicationUrl">>;
   resumeMarkdown?: string | null;
   coverLetterBody?: string | null;
   evidenceRefs: string[];
@@ -77,6 +79,13 @@ export function reviewApplicationMaterials({
   if (learningRules?.fieldClassificationQa) {
     warnings.push("Active learning: field-classification mistakes have been reported, so manually review unknown required fields before submit.");
   }
+  const ashbyCriteriaVisibility = resume && isAshbyApplication({ atsProvider: job.atsProvider, applicationUrl: job.applicationUrl })
+    ? evaluateAshbyCriteriaVisibility({ jobTitle: job.title, jobDescription: job.description, resumeText: resume })
+    : undefined;
+  if (ashbyCriteriaVisibility?.warnings.length) {
+    warnings.push(...ashbyCriteriaVisibility.warnings);
+    suggestedEdits.push(...ashbyCriteriaVisibility.suggestedEdits);
+  }
 
   if (/[—–]/.test(combined)) {
     styleViolations.push("Uses em dash or en dash punctuation.");
@@ -99,7 +108,7 @@ export function reviewApplicationMaterials({
 
   const penalty = warnings.length * 8 + unsupportedClaims.length * 18 + styleViolations.length * 10;
   const score = Math.max(0, Math.min(100, 100 - penalty));
-  const status = unsupportedClaims.length || styleViolations.length || score < 78 ? "NEEDS_REVIEW" : "PASS";
+  const status = unsupportedClaims.length || styleViolations.length || score < 78 || ashbyCriteriaVisibility?.status !== "ready" ? "NEEDS_REVIEW" : "PASS";
 
   return {
     status,
@@ -112,6 +121,7 @@ export function reviewApplicationMaterials({
     reasoningSummary: `Reviewed generated materials for ${job.company}'s ${job.title} role against truthfulness and style rules.`,
     confidence: combined.length > 1500 && evidenceRefs.length > 0 ? 0.84 : 0.62,
     appliedLearning: learningRules?.appliedCategories?.length ? learningRules.appliedCategories : undefined,
+    ashbyCriteriaVisibility,
   };
 }
 

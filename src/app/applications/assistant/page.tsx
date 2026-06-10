@@ -11,6 +11,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { summarizeAutomationBlockers } from "@/lib/applications/automation-analytics";
 import { recoverStaleApplicationAutomationRuns, syncRunningApplicationAutomationRunsFromLogs } from "@/lib/applications/automation-runs";
+import { buildAshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 import { hasApplicationForJob, submittedApplicationJobKeySet, submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from "@/lib/applications/reconciliation";
 import { AssistantWorkbench } from "./assistant-workbench";
@@ -59,6 +60,8 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
         take: 10,
       },
       jobPosting: true,
+      resume: { select: { plainText: true, markdown: true } },
+      user: { include: { profile: true } },
       jobProfileMatch: true,
     },
     orderBy: [
@@ -115,9 +118,27 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
             company: application.jobPosting.company,
             title: application.jobPosting.title,
             applicationUrl: application.jobPosting.applicationUrl,
+            atsProvider: application.jobPosting.atsProvider,
             score: application.jobProfileMatch?.overallScore ?? null,
             resumeId: application.resumeId,
             coverLetterId: application.coverLetterId,
+            ashbyRisk: buildAshbyRiskAssessment({
+              atsProvider: application.jobPosting.atsProvider,
+              applicationUrl: application.jobPosting.applicationUrl,
+              job: {
+                title: application.jobPosting.title,
+                company: application.jobPosting.company,
+                description: application.jobPosting.description,
+                location: application.jobPosting.location,
+                country: application.jobPosting.country,
+                remoteType: application.jobPosting.remoteType,
+              },
+              candidate: {
+                location: application.user.profile?.location,
+                yearsExperience: application.user.profile?.yearsExperience,
+              },
+              resumeText: application.resume?.plainText ?? application.resume?.markdown,
+            }),
             automationRun: application.automationRuns[0]
               ? {
                   id: application.automationRuns[0].id,

@@ -33,6 +33,7 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { applicationAnswerEntries, packetApprovalChecklist, packetApprovalState } from "@/lib/applications/application-packets";
+import { buildAshbyRiskAssessment, type AshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 import { ApplicationUrlEditor } from "./application-url-editor";
 import { ApprovePacketButton } from "./approve-packet-button";
 import { AutoSubmitOverrideControl } from "./auto-submit-override-control";
@@ -219,6 +220,27 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
   const approvalState = packet ? packetApprovalState(packet) : null;
   const approvalChecklist = packetApprovalChecklist(packet);
   const savedAnswers = applicationAnswerEntries(packet?.applicationAnswersJson);
+  const ashbyRisk = buildAshbyRiskAssessment({
+    atsProvider: application.jobPosting.atsProvider,
+    applicationUrl: application.jobPosting.applicationUrl,
+    job: {
+      title: application.jobPosting.title,
+      company: application.jobPosting.company,
+      description: application.jobPosting.description,
+      location: application.jobPosting.location,
+      country: application.jobPosting.country,
+      remoteType: application.jobPosting.remoteType,
+    },
+    candidate: {
+      location: application.user.profile?.location,
+      yearsExperience: application.user.profile?.yearsExperience,
+    },
+    resumeText: application.resume?.plainText ?? application.resume?.markdown,
+    selectedAnswers: savedAnswers.flatMap((entry) => {
+      const option = typeof entry.selectedOptionIndex === "number" ? entry.options[entry.selectedOptionIndex] : null;
+      return option ? [{ question: entry.question, answer: option.answer }] : [];
+    }),
+  });
   const latestOutreach = await prisma.recruiterOutreach.findFirst({
     where: {
       userId: application.userId,
@@ -269,6 +291,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
         />
 
         <ApplicationProgressCard steps={workflowProgress.steps} nextAction={workflowProgress.nextAction} />
+        {ashbyRisk?.enabled ? <AshbyRiskCard assessment={ashbyRisk} /> : null}
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(5, 1fr)" }, gap: 2 }}>
           <Metric label="Status" value={<StatusChip status={application.status} />} helper="Application workflow" />
@@ -788,6 +811,50 @@ function ApplicationProgressCard({ steps, nextAction }: { steps: WorkflowStep[];
               </Box>
             ))}
           </Box>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AshbyRiskCard({ assessment }: { assessment: AshbyRiskAssessment }) {
+  const severity = assessment.riskLevel === "ready" ? "success" : assessment.riskLevel === "high_risk" ? "error" : "warning";
+  const criteria = assessment.criteriaVisibility;
+
+  return (
+    <Card sx={{ borderColor: severity === "success" ? "success.main" : severity === "error" ? "error.main" : "warning.main" }}>
+      <CardContent>
+        <Stack spacing={2}>
+          <Box>
+            <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+              <Chip size="small" color={severity} label={`Ashby ${assessment.riskLevel.replace(/_/g, " ")}`} />
+              <Chip size="small" variant="outlined" label="Manual submit required" />
+            </Stack>
+            <Typography variant="h3">Ashby pre-submit checklist</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+              Ashby can auto-archive applications from configured form-answer rules at submit time. Review these items before final submit.
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+            {assessment.checklist.map((item) => (
+              <Chip
+                key={item.category}
+                color={item.status === "ready" ? "success" : item.status === "high_risk" ? "error" : "warning"}
+                variant={item.status === "ready" ? "filled" : "outlined"}
+                label={`${item.label}${item.suggestedAnswer ? `: ${item.suggestedAnswer}` : ""}`}
+                title={item.detail}
+              />
+            ))}
+          </Stack>
+          {criteria ? (
+            <Stack spacing={1}>
+              <Typography sx={{ fontWeight: 850 }}>Resume criteria visibility</Typography>
+              {criteria.warnings.length ? <Alert severity={criteria.status === "high_risk" ? "error" : "warning"}>{criteria.warnings.join(" ")}</Alert> : <Alert severity="success">Top-third resume criteria visibility looks ready.</Alert>}
+              <SignalSection title="Visible criteria" items={criteria.presentCriteria} color="success" />
+              <SignalSection title="Missing criteria" items={criteria.missingCriteria} color="warning" />
+            </Stack>
+          ) : null}
+          <SignalSection title="Recommended actions" items={assessment.recommendedActions} color="primary" />
         </Stack>
       </CardContent>
     </Card>

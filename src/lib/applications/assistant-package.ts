@@ -1,4 +1,5 @@
 import type { Application, Prisma } from "@prisma/client";
+import { buildAshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 import { evaluateAutoSubmitEligibility } from "@/lib/applications/auto-submit-policy";
 import { selectedApplicationAnswers } from "@/lib/applications/application-packets";
 import { fieldMemoryForAssistant, findActiveFieldMemories } from "@/lib/applications/field-learning";
@@ -85,6 +86,25 @@ export async function buildApplicationAssistantPackage(application: AssistantPac
     limit: 50,
   });
   const isAshby = application.jobPosting.atsProvider === "ashby" || /(^|\.)ashbyhq\.com$/i.test(applicationHost);
+  const selectedAnswers = selectedApplicationAnswers(packet?.applicationAnswersJson);
+  const ashbyRisk = buildAshbyRiskAssessment({
+    atsProvider: application.jobPosting.atsProvider,
+    applicationUrl: application.jobPosting.applicationUrl,
+    job: {
+      title: application.jobPosting.title,
+      company: application.jobPosting.company,
+      description: application.jobPosting.description,
+      location: application.jobPosting.location,
+      country: application.jobPosting.country,
+      remoteType: application.jobPosting.remoteType,
+    },
+    candidate: {
+      location: profile?.location,
+      yearsExperience: profile?.yearsExperience,
+    },
+    resumeText: application.resume.plainText ?? application.resume.markdown,
+    selectedAnswers,
+  });
 
   return {
     status: 200,
@@ -146,11 +166,12 @@ export async function buildApplicationAssistantPackage(application: AssistantPac
         coverLetterId: application.coverLetter.id,
         coverLetterPdfUrl: `${origin}/api/cover-letters/${application.coverLetter.id}/pdf`,
         coverLetterBody: application.coverLetter.body,
-        selectedApplicationAnswers: selectedApplicationAnswers(packet?.applicationAnswersJson),
+        selectedApplicationAnswers: selectedAnswers,
       },
       learning: {
         fieldMemories: fieldMemories.map(fieldMemoryForAssistant),
       },
+      ashbyRisk,
       workflow: {
         fieldByFieldCommands: true,
         eventUrl: `${origin}/api/applications/${application.id}/assistant-workflow/events`,

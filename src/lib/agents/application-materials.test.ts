@@ -94,4 +94,28 @@ describe("reviewApplicationMaterials", () => {
     expect(qa.suggestedEdits).toContain("If the application asks why you want to join, paste or adapt the generated cover letter before submit.");
     expect(qa.appliedLearning).toEqual(["cover_letter_field", "field_classification"]);
   });
+
+  it("flags Ashby resume criteria that are not visible near the top", () => {
+    const qa = reviewApplicationMaterials({
+      job: {
+        title: "Senior Frontend Engineer",
+        company: "Ashby Co",
+        description: "Requires React, TypeScript, GraphQL, design systems, accessibility, and SaaS dashboards.",
+        atsProvider: "ashby",
+        applicationUrl: "https://jobs.ashbyhq.com/acme/123/application",
+      } as JobPosting,
+      resumeMarkdown: [
+        "# Candidate\nSenior Frontend Engineer with React and TypeScript experience.",
+        "Built enterprise interfaces.",
+        "Later section: GraphQL, design systems, accessibility, SaaS, dashboards.".padStart(2000, "x"),
+      ].join("\n"),
+      coverLetterBody: null,
+      evidenceRefs: ["ev1"],
+    });
+
+    expect(qa.status).toBe("NEEDS_REVIEW");
+    expect(qa.ashbyCriteriaVisibility?.missingCriteria).toEqual(expect.arrayContaining(["GraphQL", "design systems", "accessibility"]));
+    expect(qa.warnings.some((warning) => warning.includes("Top-third resume visibility"))).toBe(true);
+    expect(qa.suggestedEdits.some((edit) => edit.includes("summary"))).toBe(true);
+  });
 });
