@@ -1,3 +1,5 @@
+import { getLocalAssistantAvailability } from "@/lib/applications/local-assistant-availability";
+
 export type FallbackItem = { id: string; message: string };
 
 const FALLBACK_DEFS: Record<string, string> = {
@@ -8,7 +10,7 @@ const FALLBACK_DEFS: Record<string, string> = {
   email_sync:
     "No email inbox is connected — application outcomes won't update automatically when recruiter replies or rejections arrive.",
   playwright:
-    "The local browser assistant is not installed — Apply Sprint cannot auto-fill application forms.",
+    "The local browser assistant is not installed — run npm run assistant:install so Apply Sprint can auto-fill application forms.",
   notifications:
     "No notification provider is configured — you won't be alerted when strong matches are found or the assistant needs input.",
 };
@@ -50,7 +52,7 @@ export function getServiceFallbacks(ids: string[], opts?: FallbackOptions): Fall
         !outlookConfigured &&
         !opts?.anyEmailSyncConnected;
     } else if (id === "playwright") {
-      missing = !process.env.ENABLE_LOCAL_ASSISTANT?.trim();
+      missing = !getLocalAssistantAvailability().available;
     } else if (id === "notifications") {
       const pushoverEnv =
         Boolean(process.env.PUSHOVER_USER_KEY?.trim()) &&

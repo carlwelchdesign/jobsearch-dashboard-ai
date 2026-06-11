@@ -139,6 +139,7 @@ Implementation notes:
 
 - LangGraph dependencies are imported lazily inside server-only workflow construction to avoid bundling `@langchain/*` into unrelated Next.js RSC route chunks.
 - `ApplicationAutomationRun.workflowStateJson` is the app-facing state projection used by Apply Sprint.
+- Apply Sprint also derives diagnostics and a timeline from `ApplicationAutomationRun`, structured `ASSISTANT_EVENT` log lines, and log classification so browser closes, blockers, setup failures, and ready-to-review states are visible without reading the raw log first.
 - `ApplicationAutomationRun.observabilityJson` stores optional LangSmith metadata; it does not replace workflow events or agent run events.
 - Assistant failures and repairs create redacted `AgentQualityExample` records for later evaluation.
 - LangGraph checkpointing is backed by Postgres.

@@ -1,6 +1,6 @@
 import type { JobSearchProfile, JobSource } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { extractBuiltInHowToApplyUrl, searchQueryAdapter } from "@/lib/job-search/adapters/search-query";
+import { extractBuiltInHowToApplyUrl, extractHimalayasApplyUrl, searchQueryAdapter } from "@/lib/job-search/adapters/search-query";
 
 describe("searchQueryAdapter", () => {
   beforeEach(() => {
@@ -209,6 +209,164 @@ describe("searchQueryAdapter", () => {
       url: "https://example-board.test/jobs/search?page=1&sort=date&query=frontend",
     });
   });
+
+  it("resolves Himalayas job pages to direct application URLs before saving", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Senior Frontend Engineer, React",
+                url: "https://himalayas.app/companies/newfire-global-partners/jobs/senior-frontend-engineer-react",
+                description: "Remote React role",
+                profile: { name: "Newfire Global Partners" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => himalayasDetailHtml,
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:himalayas.app "Senior Frontend Engineer"'] }));
+    const normalized = await searchQueryAdapter.normalize(jobs[0]!);
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      company: "Newfire Global Partners",
+      title: "Senior Frontend Engineer, React",
+      applicationUrl: "https://jobs.ashbyhq.com/newfire/abc-123/application",
+      rawData: {
+        expansionProvider: "himalayas",
+        expandedFrom: "https://himalayas.app/companies/newfire-global-partners/jobs/senior-frontend-engineer-react",
+      },
+    });
+    expect(normalized).toMatchObject({
+      applicationUrl: "https://jobs.ashbyhq.com/newfire/abc-123/application",
+      atsProvider: "ashby",
+    });
+  });
+
+  it("suppresses Himalayas job pages when no direct application URL is exposed", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Senior Frontend Engineer, React",
+                url: "https://himalayas.app/companies/newfire-global-partners/jobs/senior-frontend-engineer-react",
+                description: "Remote React role",
+                profile: { name: "Newfire Global Partners" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => "<html><body><a href=\"/companies/newfire-global-partners\">Company</a></body></html>",
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:himalayas.app "Senior Frontend Engineer"'] }));
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      applicationUrl: "https://himalayas.app/companies/newfire-global-partners/jobs/senior-frontend-engineer-react",
+      listingReview: {
+        reason: "Himalayas job page did not expose a direct application URL.",
+        blocked: false,
+      },
+    });
+  });
+
+  it("suppresses Indeed search result pages instead of treating them as application URLs", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "React Developer Remote Jobs, Employment",
+                url: "https://www.indeed.com/q-react-developer-remote-jobs.html?vjk=2b96b1e36b1939fe",
+                description: "Search remote React developer jobs on Indeed.",
+                profile: { name: "Indeed" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => "<html><body><a href=\"/jobs?q=react+developer\">React developer jobs</a></body></html>",
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:indeed.com "React Developer" "remote"'] }));
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      company: "Indeed",
+      title: "React Developer Remote Jobs, Employment",
+      applicationUrl: "https://www.indeed.com/q-react-developer-remote-jobs.html?vjk=2b96b1e36b1939fe",
+      listingReview: {
+        reason: "generic-listing listing page had no parseable individual job links.",
+        blocked: false,
+      },
+    });
+  });
+
+  it("suppresses Dice search result pages instead of treating them as application URLs", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Front End Developer React Js Jobs",
+                url: "https://www.dice.com/jobs/q-front+end+developer+react+js-jobs",
+                description: "Search front end developer React JS jobs on Dice.",
+                profile: { name: "Dice" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => "<html><body><a href=\"/jobs/q-front+end+developer+react+js-jobs?page=2\">Next</a></body></html>",
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:dice.com "Front End Developer" "React"'] }));
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      company: "Dice",
+      title: "Front End Developer React Js Jobs",
+      applicationUrl: "https://www.dice.com/jobs/q-front+end+developer+react+js-jobs",
+      listingReview: {
+        reason: "generic-listing listing page had no parseable individual job links.",
+        blocked: false,
+      },
+    });
+  });
+
+  it("extracts Himalayas apply links from ATS URLs or apply anchors", () => {
+    expect(extractHimalayasApplyUrl(himalayasDetailHtml, "https://himalayas.app/companies/newfire-global-partners/jobs/senior-frontend-engineer-react")).toBe(
+      "https://jobs.ashbyhq.com/newfire/abc-123/application",
+    );
+    expect(extractHimalayasApplyUrl(
+      "<a href=\"https://company.example.com/apply/senior-frontend-engineer\">Apply now</a>",
+      "https://himalayas.app/companies/example/jobs/senior-frontend-engineer",
+    )).toBe("https://company.example.com/apply/senior-frontend-engineer");
+  });
 });
 
 const builtInListingHtml = `
@@ -260,6 +418,15 @@ const builtInDetailHtml = `
       <script>
         Builtin.jobPostInit({"job":{"id":9425940,"howToApply":"https://jobs.ashbyhq.com/brisk-teaching/efaac331-a366-4bef-88ed-e3afb3127f5c","companyName":"Brisk Teaching","title":"Frontend Engineer, Accessibility Contractor"}});
       </script>
+    </body>
+  </html>
+`;
+
+const himalayasDetailHtml = `
+  <html>
+    <body>
+      <h1>Senior Frontend Engineer, React</h1>
+      <a href="https://jobs.ashbyhq.com/newfire/abc-123/application">Apply now</a>
     </body>
   </html>
 `;

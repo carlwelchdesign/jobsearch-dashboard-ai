@@ -7,6 +7,7 @@ import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import CheckCircleOutlineOutlinedIcon from "@mui/icons-material/CheckCircleOutlineOutlined";
+import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -21,7 +22,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { RejectionReasonDialog, type RejectionReasonCode } from "@/components/job-reject-button";
 import type { AshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 
@@ -68,6 +69,59 @@ type LaunchResponse = {
     title: string;
     applicationUrl: string | null;
   };
+};
+
+type AssistantRunDiagnostics = {
+  phase: string;
+  severity: "info" | "success" | "warning" | "error";
+  status: string;
+  statusLabel: string;
+  summary: string;
+  reason: string | null;
+  nextAction: string;
+  currentAction: string;
+  blockerType: string | null;
+  lastEventType: string | null;
+  lastEventMessage: string | null;
+  counts: {
+    detected: number | null;
+    filled: number | null;
+    learned: number | null;
+    uploaded: number | null;
+    skipped: number | null;
+    observed: number | null;
+  };
+  pid?: number | null;
+  logPath?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  durationSeconds?: number | null;
+};
+
+type AssistantRunTimelineItem = {
+  type: string;
+  message: string;
+  severity: "info" | "success" | "warning" | "error";
+  at?: string | null;
+  detail?: string | null;
+};
+
+type AssistantLogResponse = {
+  log?: string;
+  logPath?: string;
+  pid?: number;
+  automationRun?: ReadyApplication["automationRun"] & { workflowStateJson?: unknown };
+  diagnostics?: AssistantRunDiagnostics;
+  timeline?: AssistantRunTimelineItem[];
+  message?: string;
+  error?: string;
+};
+
+type RunFeedbackState = {
+  applicationId: string;
+  log: string;
+  diagnostics: AssistantRunDiagnostics | null;
+  timeline: AssistantRunTimelineItem[];
 };
 
 type WorkflowStatus = {
@@ -165,7 +219,7 @@ export function AssistantWorkbench({
     : applications[0]?.id ?? "";
   const [selectedId, setSelectedId] = useState(initialSelectedId);
   const [launch, setLaunch] = useState<LaunchResponse | null>(null);
-  const [log, setLog] = useState("");
+  const [runFeedback, setRunFeedback] = useState<RunFeedbackState | null>(null);
   const [loading, setLoading] = useState(false);
   const [markingApplied, setMarkingApplied] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -187,15 +241,17 @@ export function AssistantWorkbench({
   const selectedRunState = selected?.automationRun ? automationRunState(selected.automationRun) : null;
   const selectedWorkflow = workflowStatusForApplication(selected, launch);
   const selectedPrimaryAction = selected ? primarySprintAction(selected, Boolean(launch?.application?.id ?? selectedId)) : null;
+  const selectedFeedback = runFeedback?.applicationId === selectedId ? runFeedback : null;
   const queueProgress = useMemo(() => visibleApplications.map((application) => ({
     ...application,
     progress: sprintProgressForApplication(application),
   })), [visibleApplications]);
+  const selectedRunActive = selected?.automationRun?.status === "RUNNING" || isLearningWorkflow(selectedWorkflow);
 
   async function launchSelected(next = false) {
     const endpoint = next ? "/api/applications/next-ready/launch-assistant" : `/api/applications/${selectedId}/launch-assistant`;
     setLoading(true);
-    setLog("");
+    setRunFeedback(null);
     try {
       const response = await fetch(endpoint, { method: "POST" });
       const payload = (await response.json()) as LaunchResponse;
@@ -211,13 +267,27 @@ export function AssistantWorkbench({
     }
   }
 
-  async function refreshLog(applicationId = launch?.application?.id ?? selectedId) {
+  const refreshLog = useCallback(async (applicationId = selectedId) => {
     if (!applicationId) return;
     const response = await fetch(`/api/applications/${applicationId}/assistant-log`);
-    const payload = await response.json().catch(() => ({}));
-      if (response.ok) setLog(payload.log ?? "");
-      if (response.ok && payload.automationRun?.workflowStateJson) refresh();
-  }
+    const payload = await response.json().catch(() => ({})) as AssistantLogResponse;
+    if (response.ok) {
+      setRunFeedback({
+        applicationId,
+        log: payload.log ?? "",
+        diagnostics: payload.diagnostics ?? null,
+        timeline: payload.timeline ?? [],
+      });
+    }
+    if (response.ok && payload.automationRun?.workflowStateJson) refresh();
+  }, [refresh, selectedId]);
+
+  useEffect(() => {
+    if (!selectedId || !selectedRunActive) return;
+    void refreshLog(selectedId);
+    const timer = window.setInterval(() => void refreshLog(selectedId), 5000);
+    return () => window.clearInterval(timer);
+  }, [refreshLog, selectedId, selectedRunActive]);
 
   async function markApplied(applicationId = launch?.application?.id ?? selectedId) {
     if (!applicationId) return;
@@ -245,7 +315,7 @@ export function AssistantWorkbench({
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "Unable to reset assistant state.");
       setLaunch(null);
-      setLog("");
+      setRunFeedback(null);
       setNotice(payload.message ?? "Assistant test state reset.");
       refresh();
     } catch (error) {
@@ -283,7 +353,7 @@ export function AssistantWorkbench({
       setPendingRejectionFeedback(null);
       setSelectedId(remaining[0]?.id ?? "");
       setLaunch(null);
-      setLog("");
+      setRunFeedback(null);
       setNotice(
         reasons.length || note.trim()
           ? "Application removed, job rejected, and feedback saved for agent learning."
@@ -362,6 +432,15 @@ export function AssistantWorkbench({
     }
   }
 
+  async function copyRawLog() {
+    try {
+      await navigator.clipboard.writeText(selectedFeedback?.log || "");
+      setNotice("Assistant log copied.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to copy assistant log.");
+    }
+  }
+
   return (
     <>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "380px 1fr" }, gap: 2 }}>
@@ -426,6 +505,28 @@ export function AssistantWorkbench({
                       </Button>
                     </Stack>
                   ) : null}
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                    <Button
+                      component={Link}
+                      href={`/applications/${selected.id}`}
+                      size="small"
+                      variant="outlined"
+                    >
+                      Application profile
+                    </Button>
+                    <Button
+                      component="a"
+                      href={selected.applicationUrl ?? undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                      size="small"
+                      variant="outlined"
+                      startIcon={<OpenInNewOutlinedIcon />}
+                      disabled={!selected.applicationUrl}
+                    >
+                      Actual application
+                    </Button>
+                  </Stack>
                 </Stack>
               ) : (
                 <Alert severity="info">No ready applications. Run search so the recruiting agency can approve strong matches and prepare packets.</Alert>
@@ -595,7 +696,7 @@ export function AssistantWorkbench({
                   Refresh log
                 </Button>
               </Stack>
-              {loading ? <LinearProgress /> : null}
+              {loading || selectedRunActive ? <LinearProgress /> : null}
               {launch ? (
                 <Alert severity="success">
                   {launch.message}
@@ -605,25 +706,12 @@ export function AssistantWorkbench({
               ) : (
                 <Alert severity="info">Launch an application to see fill, upload, learning, and blocker results here.</Alert>
               )}
-              <Box
-                component="pre"
-                sx={{
-                  minHeight: 360,
-                  m: 0,
-                  p: 2,
-                  border: 1,
-                  borderColor: "divider",
-                  borderRadius: 1,
-                  bgcolor: "#0f172a",
-                  color: "#e2e8f0",
-                  overflow: "auto",
-                  fontSize: 12,
-                  lineHeight: 1.6,
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                {log || "No log yet."}
-              </Box>
+              <AssistantRunPanel
+                diagnostics={selectedFeedback?.diagnostics ?? null}
+                timeline={selectedFeedback?.timeline ?? []}
+                log={selectedFeedback?.log ?? ""}
+                onCopyLog={copyRawLog}
+              />
             </Stack>
           </CardContent>
         </Card>
@@ -772,6 +860,144 @@ export function AssistantWorkbench({
         submitLabel="Reject application"
       />
     </>
+  );
+}
+
+function AssistantRunPanel({
+  diagnostics,
+  timeline,
+  log,
+  onCopyLog,
+}: {
+  diagnostics: AssistantRunDiagnostics | null;
+  timeline: AssistantRunTimelineItem[];
+  log: string;
+  onCopyLog: () => Promise<void>;
+}) {
+  const metricItems = diagnostics ? [
+    { label: "Detected", value: diagnostics.counts.detected },
+    { label: "Filled", value: diagnostics.counts.filled },
+    { label: "Uploaded", value: diagnostics.counts.uploaded },
+    { label: "Learned", value: diagnostics.counts.learned ?? diagnostics.counts.observed },
+    { label: "Skipped", value: diagnostics.counts.skipped },
+  ] : [];
+
+  if (!diagnostics) {
+    return (
+      <Stack spacing={2}>
+        <Alert severity="info">No structured run feedback yet. Refresh after launching the assistant.</Alert>
+        <RawLogPanel log={log} onCopyLog={onCopyLog} />
+      </Stack>
+    );
+  }
+
+  return (
+    <Stack spacing={2}>
+      <Alert severity={diagnostics.severity}>
+        <Stack spacing={0.75}>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+            <Chip size="small" color={diagnostics.severity} label={titleCase(diagnostics.statusLabel)} />
+            <Chip size="small" variant="outlined" label={titleCase(diagnostics.phase.replace(/_/g, " "))} />
+            {diagnostics.blockerType ? <Chip size="small" color="warning" variant="outlined" label={diagnostics.blockerType.replace(/_/g, " ")} /> : null}
+          </Stack>
+          <Typography sx={{ fontWeight: 850 }}>{diagnostics.summary}</Typography>
+          <Typography variant="body2">{diagnostics.currentAction}</Typography>
+          {diagnostics.reason ? <Typography variant="body2" color="text.secondary">Reason: {diagnostics.reason}</Typography> : null}
+          <Typography variant="body2" color="text.secondary">Next: {diagnostics.nextAction}</Typography>
+        </Stack>
+      </Alert>
+
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "repeat(5, 1fr)" }, gap: 1 }}>
+        {metricItems.map((item) => (
+          <Box key={item.label} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>{item.label}</Typography>
+            <Typography variant="h3">{item.value ?? "--"}</Typography>
+          </Box>
+        ))}
+      </Box>
+
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" }, gap: 1 }}>
+        <RunMeta label="Last update" value={formatDateTime(timeline.at(-1)?.at ?? diagnostics.finishedAt ?? diagnostics.startedAt)} />
+        <RunMeta label="Run duration" value={formatDuration(diagnostics.durationSeconds)} />
+        <RunMeta label="Process / log" value={[diagnostics.pid ? `PID ${diagnostics.pid}` : null, diagnostics.logPath ? shortPath(diagnostics.logPath) : null].filter(Boolean).join(" · ") || "--"} />
+      </Box>
+
+      <Box>
+        <Typography variant="h3" sx={{ mb: 1 }}>Event timeline</Typography>
+        {timeline.length ? (
+          <Stack spacing={1}>
+            {timeline.slice(-10).reverse().map((item, index) => (
+              <Box key={`${item.type}-${item.at ?? index}-${item.message}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { sm: "flex-start" } }}>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+                      <Chip size="small" color={item.severity} variant="outlined" label={item.type.replace(/_/g, " ")} />
+                      <Typography sx={{ fontWeight: 800 }}>{item.message}</Typography>
+                    </Stack>
+                    {item.detail ? <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{item.detail}</Typography> : null}
+                  </Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ flex: "0 0 auto" }}>{formatDateTime(item.at)}</Typography>
+                </Stack>
+              </Box>
+            ))}
+          </Stack>
+        ) : (
+          <Alert severity="info">No assistant events have been recorded yet.</Alert>
+        )}
+      </Box>
+
+      <RawLogPanel log={log} onCopyLog={onCopyLog} />
+    </Stack>
+  );
+}
+
+function RunMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>{label}</Typography>
+      <Typography variant="body2" sx={{ fontWeight: 800, overflowWrap: "anywhere" }}>{value || "--"}</Typography>
+    </Box>
+  );
+}
+
+function RawLogPanel({ log, onCopyLog }: { log: string; onCopyLog: () => Promise<void> }) {
+  return (
+    <Box component="details" sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+      <Box component="summary" sx={{ cursor: "pointer", fontWeight: 850 }}>
+        Raw log
+      </Box>
+      <Stack spacing={1} sx={{ mt: 1.5 }}>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<ContentCopyOutlinedIcon />}
+          disabled={!log}
+          onClick={() => void onCopyLog()}
+          sx={{ alignSelf: "flex-start" }}
+        >
+          Copy raw log
+        </Button>
+        <Box
+          component="pre"
+          sx={{
+            maxHeight: 360,
+            m: 0,
+            p: 2,
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
+            bgcolor: "#0f172a",
+            color: "#e2e8f0",
+            overflow: "auto",
+            fontSize: 12,
+            lineHeight: 1.6,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {log || "No log yet."}
+        </Box>
+      </Stack>
+    </Box>
   );
 }
 
@@ -1001,4 +1227,28 @@ function primarySprintAction(application: ReadyApplication, canMarkApplied: bool
 
 function isLearningWorkflow(workflow: WorkflowStatus | null) {
   return workflow?.currentNode === "observeManualInput" || workflow?.pendingCommand?.type === "observe";
+}
+
+function titleCase(value: string) {
+  return value.replace(/\w\S*/g, (word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`);
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--";
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+}
+
+function formatDuration(seconds?: number | null) {
+  if (seconds === null || seconds === undefined) return "--";
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}m ${remainingSeconds}s`;
+}
+
+function shortPath(value: string) {
+  const parts = value.split("/");
+  return parts.slice(-2).join("/");
 }

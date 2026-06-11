@@ -76,6 +76,10 @@ async function expandSearchResult(result: BraveSearchResult, query: string, prof
     const expanded = await fetchListingPageJobs(result, query, profile, parseBuiltInListingJobs, "builtin");
     return expanded.jobs.length ? expanded.jobs : [listingReviewFromSearchResult(result, query, expanded.reason, expanded.blocked)];
   }
+  if (isHimalayasJobUrl(result.url)) {
+    const expanded = await fetchHimalayasJobResult(result, query, profile);
+    return expanded.job ? [expanded.job] : [listingReviewFromSearchResult(result, query, expanded.reason, expanded.blocked)];
+  }
   if (isLikelySearchListingResult(result)) {
     const expanded = await fetchListingPageJobs(result, query, profile, parseGenericListingJobs, "generic-listing");
     return expanded.jobs.length ? expanded.jobs : [listingReviewFromSearchResult(result, query, expanded.reason, expanded.blocked)];
@@ -94,6 +98,48 @@ function jobFromSearchResult(result: BraveSearchResult, query: string, profile: 
     applicationUrl: url,
     rawData: { provider: "brave", query, result },
   };
+}
+
+async function fetchHimalayasJobResult(result: BraveSearchResult, query: string, profile: JobSearchProfile) {
+  if (!result.url) return { job: null, reason: "Missing Himalayas job URL.", blocked: false };
+  try {
+    const response = await fetch(result.url, {
+      headers: {
+        Accept: "text/html",
+        "User-Agent": "JobSearchOS/1.0",
+      },
+      signal: AbortSignal.timeout(searchTimeoutMs),
+    });
+    if (!response.ok) {
+      return { job: null, reason: `Himalayas job page returned HTTP ${response.status}.`, blocked: response.status === 401 || response.status === 403 };
+    }
+    const html = await response.text();
+    if (isBlockedListingHtml(html)) {
+      return { job: null, reason: "Himalayas job page returned a bot-protection/block page.", blocked: true };
+    }
+    const applicationUrl = extractHimalayasApplyUrl(html, result.url);
+    if (!applicationUrl) {
+      return { job: null, reason: "Himalayas job page did not expose a direct application URL.", blocked: false };
+    }
+
+    return {
+      job: {
+        ...jobFromSearchResult(result, query, profile),
+        applicationUrl,
+        rawData: {
+          provider: "brave",
+          expansionProvider: "himalayas",
+          expandedFrom: result.url,
+          query,
+          result,
+        },
+      },
+      reason: "Resolved Himalayas job page to direct application URL.",
+      blocked: false,
+    };
+  } catch {
+    return { job: null, reason: "Himalayas job page could not be fetched.", blocked: true };
+  }
 }
 
 function listingReviewFromSearchResult(result: BraveSearchResult, query: string, reason: string, blocked = false): RawJobPosting {
@@ -400,6 +446,8 @@ function isKnownListingUrl(value: string) {
     const url = new URL(value);
     const hostname = url.hostname.replace(/^www\./, "");
     if (hostname === "remoterocketship.com" && url.pathname.startsWith("/jobs/")) return true;
+    if (hostname === "indeed.com" && isIndeedListingUrl(url)) return true;
+    if (hostname === "dice.com" && isDiceListingUrl(url)) return true;
     return false;
   } catch {
     return false;
@@ -412,6 +460,8 @@ function isLikelyListingUrl(value: string) {
     const path = url.pathname.toLowerCase();
     const listingParams = ["page", "sort", "jobtitle", "seniority", "q", "query", "search", "location", "remote", "department", "category"];
     const paramMatches = Array.from(url.searchParams.keys()).filter((key) => listingParams.includes(key.toLowerCase())).length;
+    if (url.hostname.replace(/^www\./, "") === "indeed.com" && isIndeedListingUrl(url)) return true;
+    if (url.hostname.replace(/^www\./, "") === "dice.com" && isDiceListingUrl(url)) return true;
     if (paramMatches >= 2) return true;
     if (/\/(jobs|careers|open-roles|positions)\/(search|remote|engineering|software|frontend|front-end|developer|dev-engineering)/i.test(path)) return true;
     if (/\/(search|job-search|jobs\/search)\b/i.test(path)) return true;
@@ -419,6 +469,23 @@ function isLikelyListingUrl(value: string) {
   } catch {
     return false;
   }
+}
+
+function isIndeedListingUrl(url: URL) {
+  const path = url.pathname.toLowerCase();
+  if (path === "/jobs" || path === "/m/jobs") return true;
+  if (/^\/q-.+-jobs\.html$/i.test(path)) return true;
+  if (url.searchParams.has("q") || url.searchParams.has("l") || url.searchParams.has("vjk")) return true;
+  return false;
+}
+
+function isDiceListingUrl(url: URL) {
+  const path = url.pathname.toLowerCase();
+  if (path === "/jobs" || path === "/jobs/") return true;
+  if (/^\/jobs\/q-.+/i.test(path)) return true;
+  if (/^\/jobs\/l-.+/i.test(path)) return true;
+  if (url.searchParams.has("q") || url.searchParams.has("location") || url.searchParams.has("page")) return true;
+  return false;
 }
 
 function isBlockedListingHtml(html: string) {
@@ -523,11 +590,25 @@ function isBuiltInJobUrl(value: string) {
   }
 }
 
+function isHimalayasJobUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.replace(/^www\./, "");
+    return hostname === "himalayas.app" && /^\/companies\/[^/]+\/jobs\/[^/]+\/?$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 async function resolveApplicationUrl(value?: string) {
   if (!value) return value;
   if (isBuiltInJobUrl(value)) {
     const resolved = await resolveBuiltInJobApplicationUrl(value);
     return canonicalApplicationUrl(resolved ?? value);
+  }
+  if (isHimalayasJobUrl(value)) {
+    const resolved = await resolveHimalayasJobApplicationUrl(value);
+    return resolved ? canonicalApplicationUrl(resolved) : undefined;
   }
   return canonicalApplicationUrl(value);
 }
@@ -565,6 +646,74 @@ export function extractBuiltInHowToApplyUrl(html: string, baseUrl: string) {
 
   const atsUrl = firstMatch(html, /https:\/\/(?:jobs\.ashbyhq\.com|jobs\.lever\.co|boards\.greenhouse\.io|job-boards\.greenhouse\.io)\/[^"' <)]+/i);
   return absoluteUrl(atsUrl, baseUrl);
+}
+
+async function resolveHimalayasJobApplicationUrl(jobUrl: string) {
+  try {
+    const response = await fetch(jobUrl, {
+      headers: {
+        Accept: "text/html",
+        "User-Agent": "JobSearchOS/1.0",
+      },
+      signal: AbortSignal.timeout(searchTimeoutMs),
+    });
+    if (!response.ok) return undefined;
+    const html = await response.text();
+    if (isBlockedListingHtml(html)) return undefined;
+    return extractHimalayasApplyUrl(html, jobUrl);
+  } catch {
+    return undefined;
+  }
+}
+
+export function extractHimalayasApplyUrl(html: string, baseUrl: string) {
+  const directAtsUrl = firstMatch(
+    html,
+    /https:\/\/(?:jobs\.ashbyhq\.com|jobs\.lever\.co|boards\.greenhouse\.io|job-boards\.greenhouse\.io|apply\.workable\.com|jobs\.smartrecruiters\.com)\/[^"' <)\\]+/i,
+  );
+  const resolvedAtsUrl = absoluteUrl(directAtsUrl, baseUrl);
+  if (resolvedAtsUrl && !isHimalayasJobUrl(resolvedAtsUrl)) return resolvedAtsUrl;
+
+  for (const anchor of parseAnchors(html, baseUrl)) {
+    if (!/\b(apply|apply now|continue|view application|start application)\b/i.test(anchor.text)) continue;
+    if (isHimalayasUrl(anchor.url) || isLikelySocialOrShareUrl(anchor.url)) continue;
+    return anchor.url;
+  }
+
+  return undefined;
+}
+
+function parseAnchors(html: string, baseUrl: string) {
+  const anchors: Array<{ text: string; url: string }> = [];
+  const anchorPattern = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = anchorPattern.exec(html))) {
+    const attributes = match[1] ?? "";
+    const href = firstMatch(attributes, /\bhref=["']([^"']+)["']/i);
+    const url = href ? absoluteUrl(decodeHtmlEntities(href), baseUrl) : undefined;
+    if (!url) continue;
+    anchors.push({ text: cleanText(match[2] ?? ""), url });
+  }
+
+  return anchors;
+}
+
+function isHimalayasUrl(value: string) {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "") === "himalayas.app";
+  } catch {
+    return false;
+  }
+}
+
+function isLikelySocialOrShareUrl(value: string) {
+  try {
+    const hostname = new URL(value).hostname.replace(/^www\./, "");
+    return /^(linkedin\.com|twitter\.com|x\.com|facebook\.com|mailto:)/i.test(hostname) || value.startsWith("mailto:");
+  } catch {
+    return false;
+  }
 }
 
 function canonicalApplicationUrl(value?: string) {

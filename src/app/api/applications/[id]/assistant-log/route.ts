@@ -3,7 +3,7 @@ import path from "path";
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
 import { createAgentUserRequest } from "@/lib/agent-user-requests";
-import { updateApplicationAutomationRunFromLog } from "@/lib/applications/automation-runs";
+import { buildAssistantRunFeedback, updateApplicationAutomationRunFromLog } from "@/lib/applications/automation-runs";
 import { recordApplicationOutcome } from "@/lib/applications/outcomes";
 import { sendNotification } from "@/lib/notifications/send";
 import { prisma } from "@/lib/prisma";
@@ -59,10 +59,13 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     if (automationRun?.blockerMessage) {
       await ensureAutomationBlockerRequest(params.id, automationRun.blockerMessage, automationRun.blockerType).catch(() => null);
     }
+    const feedback = buildAssistantRunFeedback({ log, run: automationRun });
     return NextResponse.json({
       logPath: resolved,
       pid: payload?.pid,
       automationRun,
+      diagnostics: feedback.diagnostics,
+      timeline: feedback.timeline,
       log,
       createdAt: event?.createdAt,
     });

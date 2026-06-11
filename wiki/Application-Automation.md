@@ -104,6 +104,8 @@ The Playwright runner remains the browser execution bridge. It opens the employe
 
 The current implementation intentionally keeps the older broad fill pass before the field-command loop. This preserves coverage for known fields, learned form rules, saved field memories, demographic settings, and uploads. LangGraph then handles remaining unresolved fields through learning mode or hard-blocker pauses.
 
+Apply Sprint derives structured run feedback from the assistant log and latest automation run. The Assistant run panel shows the current phase, last meaningful event, field/upload/learning counts, blocker or close reason, recommended next action, recent event timeline, process/log metadata, and a collapsible raw log. Browser close before submit is reported as `assistant_closed` with relaunch/mark-applied guidance instead of leaving the user to infer what happened from the raw log.
+
 ### Field Learning
 
 When the user manually fills a field, the assistant can store that answer as application field memory.
@@ -134,6 +136,7 @@ The assistant can:
 - upload generated resume and cover letter files when matching controls are visible
 - write selected application answers to a local text file
 - report workflow activity and field progress to Apply Sprint
+- explain run status, close reasons, errors, and recommended next actions in the Apply Sprint Assistant run panel
 - observe safe manual field edits for future field memory
 - keep the browser session in learning mode while the user completes ordinary unknown fields
 - detect submit intent, submit confirmation, and browser close lifecycle events

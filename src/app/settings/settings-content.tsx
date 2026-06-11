@@ -16,6 +16,7 @@ import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { PageHeader } from "@/components/ui/page-header";
+import { getLocalAssistantAvailability } from "@/lib/applications/local-assistant-availability";
 import { getLearningImpact } from "@/lib/observability/learning-impact";
 import { getOutcomeCalibration, getOutcomeCalibrationTrends, getOutcomeRegressionTriage } from "@/lib/observability/outcome-calibration";
 import { getLearningRollbackAudit } from "@/lib/observability/rollback-audit";
@@ -188,6 +189,7 @@ export async function SettingsRouteContent({
   const cronEnabled = searchProfiles.some((profile) => profile.enabled && profile.scheduleEnabled);
   const latestGithubSyncDate = latestDate(user?.profile?.githubRepositories.map((repo) => repo.updatedAt) ?? []);
   const githubRepoCount = user?.profile?.githubRepositories.length ?? 0;
+  const localAssistant = getLocalAssistantAvailability();
 
   const serviceStatuses: Record<string, ServiceStatus> = {
     openai: process.env.OPENAI_API_KEY ? "active" : "not_configured",
@@ -219,7 +221,7 @@ export async function SettingsRouteContent({
     extension_token: Boolean(process.env.BROWSER_EXTENSION_TOKEN) ? "active" : "not_configured",
     adk: process.env.ADK_ENABLED === "true" ? "active" : "not_configured",
     redis: Boolean(process.env.REDIS_URL) ? "active" : "not_configured",
-    playwright: Boolean(process.env.ENABLE_LOCAL_ASSISTANT) ? "active" : "not_configured",
+    playwright: localAssistant.available ? "active" : "not_configured",
   };
 
   const inferredSilentFailures: Array<{ service: string; message: string }> = [];

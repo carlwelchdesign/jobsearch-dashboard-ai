@@ -3,6 +3,7 @@ import {
   assistantLogActions,
   assistantLogFieldPatterns,
   assistantLogScreenshots,
+  buildAssistantRunFeedback,
   buildAutomationRunEventPayload,
   classifyAssistantLog,
   shouldRecoverRunningAutomationRun,
@@ -33,6 +34,34 @@ Tracker updated: Application marked applied.
     expect(classifyAssistantLog("Assistant browser/page closed before a submission confirmation was observed.")).toMatchObject({
       status: "NEEDS_USER",
       blockerType: "assistant_closed",
+    });
+  });
+
+  it("builds diagnostics for browser close before submit", () => {
+    const feedback = buildAssistantRunFeedback({
+      log: `
+ASSISTANT_EVENT {"type":"workflow_started","message":"Playwright assistant runner started.","at":"2026-06-11T10:00:00Z"}
+ASSISTANT_EVENT {"type":"browser_closed_without_submit","message":"Assistant browser closed before submit confirmation.","payload":{"closeReason":"without_submit","safeRetry":"relaunch_or_mark_applied_if_submitted"},"at":"2026-06-11T10:01:00Z"}
+Assistant browser/page closed before a submission confirmation was observed.
+`,
+      run: {
+        status: "NEEDS_USER",
+        blockerType: "assistant_closed",
+        blockerMessage: "The assistant browser was closed or stopped before submission.",
+        startedAt: new Date("2026-06-11T10:00:00Z"),
+        finishedAt: new Date("2026-06-11T10:01:00Z"),
+      },
+    });
+
+    expect(feedback.diagnostics).toMatchObject({
+      phase: "closed",
+      severity: "warning",
+      statusLabel: "Closed before submit",
+      nextAction: "Relaunch the assistant, or mark applied if you submitted before the browser closed.",
+    });
+    expect(feedback.timeline.at(-1)).toMatchObject({
+      type: "browser_closed_without_submit",
+      severity: "warning",
     });
   });
 
@@ -70,6 +99,26 @@ playwright._impl._errors.Error: Locator.count: Frame was detached
     });
   });
 
+  it("builds diagnostics for setup and page blockers", () => {
+    expect(buildAssistantRunFeedback({
+      log: "Unable to load assistant package: Application must be ready_to_apply before assisted form filling.",
+      run: { status: "FAILED" },
+    }).diagnostics).toMatchObject({
+      phase: "failed",
+      reason: "The assistant could not load the prepared application package.",
+      nextAction: "Inspect the raw log, fix the setup issue, then relaunch.",
+    });
+
+    expect(buildAssistantRunFeedback({
+      log: "This application page appears to be closed, removed, or unavailable. No form can be filled.",
+      run: { status: "BLOCKED", blockerType: "closed_job" },
+    }).diagnostics).toMatchObject({
+      phase: "blocked",
+      blockerType: "closed_job",
+      nextAction: "Reject this application as Job unavailable.",
+    });
+  });
+
   it("extracts action summaries from logs", () => {
     expect(assistantLogActions(`
 Filled 4 safe text fields.
@@ -82,6 +131,31 @@ Selected application answers: /tmp/answers.txt
       { type: "uploaded_materials", message: "2 material files uploaded." },
       { type: "prepared_selected_answers", message: "Selected custom-answer drafts were prepared." },
     ]);
+  });
+
+  it("summarizes counts and timeline actions for fill runs", () => {
+    const feedback = buildAssistantRunFeedback({
+      log: `
+ASSISTANT_EVENT {"type":"page_opened","message":"Application page opened.","payload":{"url":"https://jobs.example.com/apply"},"at":"2026-06-11T10:00:00Z"}
+Detected 7 application field(s).
+Filled 4 safe text fields.
+Filled 1 learned recurring field(s).
+Uploaded 2 material file(s).
+Review every field in the browser. Submit manually only if everything is correct.
+`,
+      run: { status: "READY_TO_SUBMIT" },
+    });
+
+    expect(feedback.diagnostics).toMatchObject({
+      phase: "waiting_for_review",
+      severity: "success",
+      counts: {
+        detected: 7,
+        filled: 5,
+        uploaded: 2,
+      },
+    });
+    expect(feedback.timeline.some((item) => item.type === "uploaded_materials")).toBe(true);
   });
 
   it("extracts submit confirmation artifacts from logs", () => {

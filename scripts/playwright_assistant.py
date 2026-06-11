@@ -463,6 +463,10 @@ def open_browser(playwright: Any, args: argparse.Namespace) -> tuple[Any, Any]:
             fallback_dir = profile_dir.parent / f"{profile_dir.name}-{int(time.time())}"
             fallback_dir.mkdir(parents=True, exist_ok=True)
             print(f"Browser profile was locked. Retrying with {fallback_dir}.")
+            assistant_event(args.application_id, "browser_profile_locked", "Browser profile was locked; retrying with a temporary assistant profile.", {
+                "profileDir": str(profile_dir),
+                "fallbackDir": str(fallback_dir),
+            })
             context = playwright.chromium.launch_persistent_context(
                 str(fallback_dir),
                 channel=channel,
@@ -550,7 +554,7 @@ def field_command_loop(
         "application_id": args.application_id,
         "app_url": args.app_url,
         "marked": False,
-        "learning_baseline": snapshot_fields_in_contexts(form_contexts),
+        "learning_baseline": snapshot_fields_in_contexts(contexts),
         "reported_learning_keys": set(),
         "package": package,
     }
@@ -872,9 +876,38 @@ def upload_materials(page: Any, resume_pdf: Path, cover_letter_pdf: Path) -> int
 def set_upload_file(element: Any, path: Path) -> None:
     element.set_input_files(str(path), timeout=3000)
     mark_filled(element)
-    uploaded_name = element.evaluate("node => node.files && node.files[0] ? node.files[0].name : ''")
-    if not uploaded_name:
+    if not upload_visible_after_set(element, path.name):
         raise RuntimeError("browser did not report a selected file after upload")
+
+
+def upload_visible_after_set(element: Any, filename: str) -> bool:
+    normalized_filename = filename.lower()
+    for _ in range(20):
+        try:
+            uploaded_name = element.evaluate("node => node.files && node.files[0] ? node.files[0].name : ''")
+            if uploaded_name and uploaded_name.lower() == normalized_filename:
+                return True
+        except Exception:
+            pass
+        try:
+            surrounding_text = element.evaluate(
+                """node => {
+                  const containers = [];
+                  let parent = node.parentElement;
+                  for (let index = 0; parent && index < 8; index += 1, parent = parent.parentElement) {
+                    if (parent.tagName === 'FORM') break;
+                    const text = (parent.innerText || '').trim();
+                    if (text) containers.push(text);
+                  }
+                  return containers.join(' ');
+                }"""
+            )
+            if normalized_filename in str(surrounding_text or "").lower():
+                return True
+        except Exception:
+            pass
+        time.sleep(0.1)
+    return False
 
 
 def material_for_upload_field(descriptor: str, count: int, resume_uploaded: bool, cover_uploaded: bool) -> str | None:
@@ -2537,6 +2570,11 @@ def browser_was_closed_without_pages(browser: Any, state: dict[str, Any] | None 
         if elapsed_seconds < 4:
             return False
         print(f"Browser closed after manual submit click: {str(submit_intent.get('descriptor') or 'submit control')[:160]}")
+        if state:
+            assistant_event(str(state.get("application_id") or ""), "browser_closed_after_submit", "Assistant browser closed after a manual submit click.", {
+                "submitIntent": submit_intent,
+                "closeReason": "after_submit",
+            })
         event_posted = post_workflow_event(
             state,
             "browser_closed_after_submit",
@@ -2551,6 +2589,11 @@ def browser_was_closed_without_pages(browser: Any, state: dict[str, Any] | None 
         state["marked"] = marked
         return True
     print("Assistant browser/page closed before a submission confirmation was observed.")
+    if state:
+        assistant_event(str(state.get("application_id") or ""), "browser_closed_without_submit", "Assistant browser closed before submit confirmation.", {
+            "closeReason": "without_submit",
+            "safeRetry": "relaunch_or_mark_applied_if_submitted",
+        })
     post_workflow_event(
         state,
         "browser_closed_without_submit",

@@ -232,6 +232,7 @@ The assistant will:
 - upload the generated resume PDF and cover letter text file when matching upload controls exist
 - prepare selected application-question answers as a local text file when you have chosen an answer option in the packet review page
 - report meaningful workflow activity, detected fields, pending commands, blockers, and ready-to-submit state back to Apply Sprint
+- show structured Apply Sprint run feedback with current phase, recent events, close/error reasons, next action, field/upload counts, and a collapsible raw log
 - observe required or custom fields you complete manually, save safe field memories, and reuse repeated low/medium-risk answers on future matching forms
 - create Needs Me requests only for hard blockers and sensitive approvals
 - stop on Ashby possible-spam/reCAPTCHA blocks with `ats_spam_block` and route the user to normal Chrome assisted fill instead of retrying Playwright submission
