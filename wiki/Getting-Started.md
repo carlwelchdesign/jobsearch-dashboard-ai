@@ -134,6 +134,6 @@ npm run smoke:pages
 4. Review scored jobs in Jobs.
 5. Approve jobs worth pursuing.
 6. Generate or review application packets.
-7. Resolve blockers in Needs Me.
-8. Launch Apply Sprint only for approved applications.
+7. Launch Apply Sprint only for approved applications.
+8. Complete any ordinary unknown fields once while the assistant observes and learns.
 9. Track outcomes and let agents recommend improvements.

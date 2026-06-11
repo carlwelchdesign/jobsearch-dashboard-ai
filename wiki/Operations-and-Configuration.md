@@ -5,13 +5,13 @@
 The app now emphasizes the active operating surfaces:
 
 - Command Center
-- Needs Me
 - Jobs
 - Apply Sprint
+- Field Learning
 - Applications
 - Settings
 
-Older supporting pages remain accessible from Settings as admin/supporting tools.
+Older supporting pages remain accessible from Settings as admin/supporting tools. `Needs Me` still exists for compatibility and hard blockers, but it is no longer a primary navigation surface.
 
 ## Settings
 

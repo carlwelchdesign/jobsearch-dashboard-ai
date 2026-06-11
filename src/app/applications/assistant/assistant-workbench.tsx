@@ -396,10 +396,12 @@ export function AssistantWorkbench({
                     <Chip size="small" color="success" variant="outlined" label="Resume ready" />
                     <Chip size="small" color="secondary" variant="outlined" label="Cover letter ready" />
                     {selectedRunState ? <Chip size="small" color={selectedRunState.color} variant={selectedRunState.variant} label={selectedRunState.label} /> : null}
+                    {isLearningWorkflow(selectedWorkflow) ? <Chip size="small" color="info" variant="filled" label="Learning mode" /> : null}
                     {selectedWorkflow?.currentNode ? <Chip size="small" color="info" variant="outlined" label={`Workflow: ${workflowNodeLabel(selectedWorkflow.currentNode)}`} /> : null}
                     {selectedWorkflow?.counts?.detected ? <Chip size="small" color="info" variant="outlined" label={`${selectedWorkflow.counts.filled}/${selectedWorkflow.counts.detected} fields`} /> : null}
+                    {selectedWorkflow?.counts?.observed ? <Chip size="small" color="success" variant="outlined" label={`${selectedWorkflow.counts.observed} learned`} /> : null}
                     {selected.assistantLaunched ? <Chip size="small" color="warning" variant="outlined" label="Assistant launched" /> : null}
-                    {selected.blocker ? <Chip size="small" color="warning" label="Needs answer" /> : null}
+                    {selected.blocker ? <Chip size="small" color="warning" label="Blocked" /> : null}
                     {selected.score ? <Chip size="small" label={`${selected.score} score`} /> : null}
                     {selected.ashbyRisk?.enabled ? (
                       <Chip
@@ -434,11 +436,16 @@ export function AssistantWorkbench({
                   severity="warning"
                   action={
                     <Button component={Link} href="/needs-me" color="inherit" size="small">
-                      Answer
+                      Open blocker
                     </Button>
                   }
                 >
                   {selectedBlocker.question}
+                </Alert>
+              ) : null}
+              {isLearningWorkflow(selectedWorkflow) ? (
+                <Alert severity="info">
+                  Learning mode is active. Complete the unknown field in the browser once; the assistant will save the answer, continue where safe, and reuse repeated low/medium-risk answers next time.
                 </Alert>
               ) : null}
               {selectedRunState?.running ? (
@@ -449,7 +456,9 @@ export function AssistantWorkbench({
               {selectedWorkflow?.pendingCommand ? (
                 <Alert severity={selectedWorkflow.pendingCommand.type === "ask_user" ? "warning" : "info"}>
                   {selectedWorkflow.pendingCommand.type === "ask_user"
-                    ? "Assistant is paused for your answer."
+                    ? "Assistant is paused for a sensitive approval."
+                    : selectedWorkflow.pendingCommand.type === "observe"
+                      ? "Assistant is watching how you complete this field."
                     : `Next field action: ${workflowNodeLabel(selectedWorkflow.pendingCommand.type)}.`} {selectedWorkflow.pendingCommand.reason}
                 </Alert>
               ) : null}
@@ -579,7 +588,7 @@ export function AssistantWorkbench({
                 <Box>
                   <Typography variant="h3">Assistant run</Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Live result from the local browser filler.
+                    Live result from the local browser filler and learning session.
                   </Typography>
                 </Box>
                 <Button variant="outlined" startIcon={<RefreshOutlinedIcon />} onClick={() => void refreshLog()}>
@@ -594,7 +603,7 @@ export function AssistantWorkbench({
                   {launch.logPath ? <Box component="span" sx={{ display: "block", mt: 0.5 }}>Log: {launch.logPath}</Box> : null}
                 </Alert>
               ) : (
-                <Alert severity="info">Launch an application to see fill/upload results here.</Alert>
+                <Alert severity="info">Launch an application to see fill, upload, learning, and blocker results here.</Alert>
               )}
               <Box
                 component="pre"
@@ -817,7 +826,7 @@ function sprintProgressForApplication(application: ReadyApplication): {
   if (application.automationRun?.status === "BLOCKED" || application.automationRun?.status === "FAILED") {
     return {
       label: application.automationRun.status === "FAILED" ? "Failed" : "Blocked",
-      detail: application.automationRun.blockerMessage ?? "Review the assistant log or Needs Me queue.",
+      detail: application.automationRun.blockerMessage ?? "Review the assistant log and blocker details.",
       value: 60,
       color: application.automationRun.status === "FAILED" ? "error" : "warning",
     };
@@ -825,7 +834,7 @@ function sprintProgressForApplication(application: ReadyApplication): {
   if (application.blocker) {
     return {
       label: "Blocked",
-      detail: "Needs your answer before the assistant should run again.",
+      detail: "A hard blocker or sensitive approval must be resolved before the assistant should run again.",
       value: 60,
       color: "warning",
     };
@@ -869,7 +878,7 @@ function automationRunState(run: NonNullable<ReadyApplication["automationRun"]>)
   running: boolean;
 } {
   if (run.status === "RUNNING") {
-    return { label: "Running", color: "primary", variant: "filled", running: true };
+    return { label: run.currentNode === "observeManualInput" ? "Learning" : "Running", color: "primary", variant: "filled", running: true };
   }
   if (run.status === "READY_TO_SUBMIT") {
     return {
@@ -946,8 +955,8 @@ function primarySprintAction(application: ReadyApplication, canMarkApplied: bool
   if (application.blocker) {
     return {
       kind: "answer",
-      label: "Answer blocker",
-      detail: "Resolve the open question before launching the assistant again.",
+      label: "Review blocker",
+      detail: "Resolve the hard blocker or sensitive approval before launching the assistant again.",
       color: "warning",
       href: "/needs-me",
     };
@@ -985,7 +994,11 @@ function primarySprintAction(application: ReadyApplication, canMarkApplied: bool
     kind: "launch",
     label: "Launch assistant",
     loadingLabel: "Launching...",
-    detail: "Open the local browser assistant to fill known fields and upload materials.",
+    detail: "Open the local browser assistant to fill known fields, upload materials, and learn from fields you complete.",
     color: "success",
   };
+}
+
+function isLearningWorkflow(workflow: WorkflowStatus | null) {
+  return workflow?.currentNode === "observeManualInput" || workflow?.pendingCommand?.type === "observe";
 }

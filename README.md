@@ -155,7 +155,7 @@ curl -X POST http://localhost:3000/api/email/imap-sync \
   -d '{"limit":25,"sinceDays":14}'
 ```
 
-Synced messages are classified as rejection, interview request, assessment, offer, confirmation, or needs review. Matched messages update application outcomes, reconcile duplicate application trackers, create `Needs Me` items when action is required, and trigger interview prep for interview/assessment messages.
+Synced messages are classified as rejection, interview request, assessment, offer, confirmation, or needs review. Matched messages update application outcomes, reconcile duplicate application trackers, create blocker items when action is required, and trigger interview prep for interview/assessment messages.
 
 Application state integrity endpoints:
 
@@ -201,7 +201,7 @@ Scheduled job search runs are configured in `vercel.json` and call `/api/cron/jo
 
 ## Local Playwright Application Assistant
 
-The app does not submit applications automatically. For jobs marked `ready_to_apply`, you can run a local browser assistant that fills safe known fields, uploads the generated resume and cover letter when matching inputs are visible, then stops before submit.
+The app does not submit applications automatically. For jobs marked `ready_to_apply`, you can run a local browser assistant that fills safe known fields, uploads the generated resume and cover letter when matching inputs are visible, learns from fields you complete manually, then stops before submit.
 
 The assistant is orchestrated by a LangGraph-backed workflow plus a local Playwright browser runner:
 
@@ -210,7 +210,7 @@ The assistant is orchestrated by a LangGraph-backed workflow plus a local Playwr
 - Workflow state is persisted in Postgres through LangGraph checkpointing and in `workflowStateJson` for app UI visibility.
 - Optional LangSmith observability stores redacted workflow traces and trace metadata on `ApplicationAutomationRun.observabilityJson`.
 - Assistant failures and repairs are captured as redacted quality examples, evaluated locally, and surfaced as improvement proposals on Settings. Safe accepted proposals become low-risk QA/guidance adjustments that application QA consumes; browser lifecycle and submit-state workflow changes remain review-only.
-- The graph does not click final submit in the current phase. It stops at manual review and can resume after Needs Me answers for unknown fields. If you click submit and then close the browser without a visible validation error, the workflow treats that as applied and updates the application state.
+- The graph does not click final submit in the current phase. It stops at manual review, enters learning mode for ordinary unknown fields, and uses Needs Me only for hard blockers or sensitive approvals. If you click submit and then close the browser without a visible validation error, the workflow treats that as applied and updates the application state.
 - LangGraph imports are loaded lazily inside server-only workflow construction so ordinary Next.js route bundles do not pull `@langchain/*` into unrelated RSC chunks.
 
 Install local browser automation dependencies:
@@ -232,7 +232,8 @@ The assistant will:
 - upload the generated resume PDF and cover letter text file when matching upload controls exist
 - prepare selected application-question answers as a local text file when you have chosen an answer option in the packet review page
 - report meaningful workflow activity, detected fields, pending commands, blockers, and ready-to-submit state back to Apply Sprint
-- create Needs Me requests when a required or custom field cannot be safely answered
+- observe required or custom fields you complete manually, save safe field memories, and reuse repeated low/medium-risk answers on future matching forms
+- create Needs Me requests only for hard blockers and sensitive approvals
 - stop on Ashby possible-spam/reCAPTCHA blocks with `ats_spam_block` and route the user to normal Chrome assisted fill instead of retrying Playwright submission
 
 Quality loop endpoints:

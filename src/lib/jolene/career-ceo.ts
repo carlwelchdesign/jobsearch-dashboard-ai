@@ -139,7 +139,7 @@ export async function buildCareerCeoBrief(userId: string): Promise<CareerCeoBrie
     readyApplications.length ? "Use Apply Sprint for ready applications before tuning lower-value settings." : null,
     unknownSalaryApplications ? "Ask compensation range early for salary-unknown roles." : null,
     highScoreJobs.length ? "Approve only high-score roles that support the income target or clear strategic leverage." : null,
-    openBlockers ? "Clear Needs Me blockers that stop applications or agent runs." : null,
+    openBlockers ? "Clear hard blockers that stop applications or agent runs." : null,
   ].filter(Boolean) as string[];
 
   return {

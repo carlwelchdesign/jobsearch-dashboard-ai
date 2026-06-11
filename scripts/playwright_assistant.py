@@ -546,7 +546,16 @@ def field_command_loop(
     assistant_event(args.application_id, "field_inventory", "Field inventory sent to workflow controller.", {"fieldCount": len(inventory)})
 
     handled_commands: set[str] = set()
+    learning_state = {
+        "application_id": args.application_id,
+        "app_url": args.app_url,
+        "marked": False,
+        "learning_baseline": snapshot_fields_in_contexts(form_contexts),
+        "reported_learning_keys": set(),
+        "package": package,
+    }
     for _ in range(160):
+        maybe_report_field_learning(page.context, learning_state)
         try:
             payload = fetch_json(str(command_url))
         except Exception as exc:
@@ -574,6 +583,13 @@ def field_command_loop(
         if command_type == "ask_user":
             print(f"Workflow needs user input: {command_payload.get('reason') or 'unknown field'}")
             assistant_event(args.application_id, "needs_user", "Workflow paused for user input.", {"commandId": command_id})
+            handled_commands.add(command_id)
+            time.sleep(3)
+            continue
+
+        if command_type == "observe":
+            print(f"Workflow is learning from manual input: {command_payload.get('reason') or 'complete the highlighted field manually'}")
+            assistant_event(args.application_id, "learning_mode", "Workflow is observing manual input for field learning.", {"commandId": command_id})
             handled_commands.add(command_id)
             time.sleep(3)
             continue

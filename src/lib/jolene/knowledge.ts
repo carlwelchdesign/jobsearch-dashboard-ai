@@ -442,7 +442,7 @@ function likelyCauses(normalized: string, globalContext: JoleneGlobalContext, re
 
 function recommendedActions(normalized: string, globalContext: JoleneGlobalContext, retrievedItems: JoleneKnowledgeItem[]) {
   const actions: string[] = [];
-  if (globalContext.pipeline.openBlockers > 0) actions.push("Open /needs-me and resolve the oldest blocker first.");
+  if (globalContext.pipeline.openBlockers > 0) actions.push("Open /needs-me and resolve the oldest hard blocker first.");
   if (/\b(duplicate|duplicates|same|again|still showing|resurfacing)\b/.test(normalized)) actions.push("Run duplicate detection, then review matching application and job links before marking anything applied or rejected.");
   if (/\b(not finding|not getting|better jobs|bad jobs|quality|fit|search)\b/.test(normalized)) {
     actions.push("Review /profiles for enabled profiles, minimum match scores, required keywords, excluded titles, countries, and remote preference.");

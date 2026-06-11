@@ -14,10 +14,12 @@ const captureButton = document.querySelector("#capture");
 const applyNowButton = document.querySelector("#applyNow");
 const fillApplicationButton = document.querySelector("#fillApplication");
 const fillSelectedApplicationButton = document.querySelector("#fillSelectedApplication");
+const saveLearnedFieldsButton = document.querySelector("#saveLearnedFields");
 const openJobLink = document.querySelector("#openJob");
 let capturedPayload = null;
 let lastSavedJob = null;
 let readyApplications = [];
+let lastFilledApplicationId = "";
 
 function setStatus(message) {
   statusElement.textContent = message;
@@ -43,6 +45,10 @@ function selectedAssistantPackageEndpoint(applicationId, currentUrl) {
   const url = new URL(`${normalizeAppUrl(fields.apiUrl.value)}/api/applications/${encodeURIComponent(applicationId)}/extension-package`);
   if (currentUrl) url.searchParams.set("currentUrl", currentUrl);
   return url.toString();
+}
+
+function fieldLearningEndpoint(applicationId) {
+  return `${normalizeAppUrl(fields.apiUrl.value)}/api/applications/${encodeURIComponent(applicationId)}/field-learning`;
 }
 
 function applyNowEndpoint(jobId) {
@@ -115,6 +121,11 @@ function renderReadyApplications() {
     fields.readyApplications.append(option);
   }
   fillSelectedApplicationButton.disabled = false;
+}
+
+function setLastFilledApplication(applicationId) {
+  lastFilledApplicationId = applicationId || "";
+  saveLearnedFieldsButton.disabled = !lastFilledApplicationId;
 }
 
 async function loadReadyApplications() {
@@ -316,13 +327,14 @@ async function fillApplicationFromPackage() {
     if (!response.ok) throw new Error(payload.error || "Unable to load an application package for this page.");
     const packagePayload = await packageWithMaterialFiles(payload);
     const result = await chrome.tabs.sendMessage(tab.id, { type: "FILL_APPLICATION_FROM_PACKAGE", package: packagePayload });
+    setLastFilledApplication(payload.application?.id || "");
     const filled = Number(result?.filled || 0);
     const skipped = Number(result?.skipped || 0);
     const uploads = Number(result?.uploads || 0);
     const uploadNeedsManual = Number(result?.uploadNeedsManual || 0);
     const uploadText = uploads ? ` Uploaded ${uploads} file(s).` : "";
     const warning = uploadNeedsManual ? ` ${uploadNeedsManual} upload field(s) still need manual file selection.` : "";
-    setStatus(`Filled ${filled} field(s).${uploadText} Skipped ${skipped}.${warning} Review and submit manually.`);
+    setStatus(`Filled ${filled} field(s).${uploadText} Skipped ${skipped}.${warning} Complete missed fields, then click Save learned fields before submitting manually.`);
   } catch (error) {
     setStatus(contentScriptError(error));
   } finally {
@@ -351,18 +363,57 @@ async function fillSelectedApplication() {
     if (!response.ok) throw new Error(payload.error || "Unable to load the selected application package.");
     const packagePayload = await packageWithMaterialFiles(payload);
     const result = await chrome.tabs.sendMessage(tab.id, { type: "FILL_APPLICATION_FROM_PACKAGE", package: packagePayload });
+    setLastFilledApplication(payload.application?.id || applicationId);
     const filled = Number(result?.filled || 0);
     const skipped = Number(result?.skipped || 0);
     const uploads = Number(result?.uploads || 0);
     const uploadNeedsManual = Number(result?.uploadNeedsManual || 0);
     const uploadText = uploads ? ` Uploaded ${uploads} file(s).` : "";
     const warning = uploadNeedsManual ? ` ${uploadNeedsManual} upload field(s) still need manual file selection.` : "";
-    setStatus(`Filled ${filled} field(s) for ${payload.job?.company || "selected job"}.${uploadText} Skipped ${skipped}.${warning} Review and submit manually.`);
+    setStatus(`Filled ${filled} field(s) for ${payload.job?.company || "selected job"}.${uploadText} Skipped ${skipped}.${warning} Complete missed fields, then click Save learned fields before submitting manually.`);
     await loadReadyApplications();
   } catch (error) {
     setStatus(contentScriptError(error));
   } finally {
     fillSelectedApplicationButton.disabled = readyApplications.length === 0;
+  }
+}
+
+async function saveLearnedFields() {
+  if (!lastFilledApplicationId) {
+    setStatus("Fill a ready application first, then save learned fields.");
+    return;
+  }
+  saveLearnedFieldsButton.disabled = true;
+  setStatus("Collecting learned fields from the current tab...");
+  try {
+    const token = fields.token.value.trim();
+    const appUrl = normalizeAppUrl(fields.apiUrl.value);
+    await chrome.storage.local.set({ jobSearchOsToken: token, jobSearchOsAppUrl: appUrl });
+    const tab = await getActiveTab();
+    if (!tab?.id || !tab.url) throw new Error("No active application tab found.");
+    const collected = await chrome.tabs.sendMessage(tab.id, { type: "COLLECT_APPLICATION_FIELD_LEARNING" });
+    const fieldsForLearning = Array.isArray(collected?.fields) ? collected.fields : [];
+    if (!fieldsForLearning.length) {
+      setStatus("No new safe manually completed fields were found.");
+      return;
+    }
+    const host = new URL(tab.url).hostname.replace(/^www\./, "");
+    const response = await fetch(fieldLearningEndpoint(lastFilledApplicationId), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...tokenHeaders(),
+      },
+      body: JSON.stringify({ host, fields: fieldsForLearning }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Unable to save learned fields.");
+    setStatus(`Saved ${payload.saved || 0} learned field(s); ignored ${payload.ignored || 0}. Review and submit manually.`);
+  } catch (error) {
+    setStatus(contentScriptError(error));
+  } finally {
+    saveLearnedFieldsButton.disabled = !lastFilledApplicationId;
   }
 }
 
@@ -380,6 +431,10 @@ fillApplicationButton.addEventListener("click", () => {
 
 fillSelectedApplicationButton.addEventListener("click", () => {
   void fillSelectedApplication();
+});
+
+saveLearnedFieldsButton.addEventListener("click", () => {
+  void saveLearnedFields();
 });
 
 fields.apiUrl.addEventListener("change", () => {

@@ -24,7 +24,7 @@ On a ready application page, click **Fill from Job Search OS**. The extension lo
 
 If the current page does not match the stored application URL, use the **Ready applications** dropdown instead. Select the prepared job, click **Fill selected ready job**, and the extension loads that application's package directly. The app also saves the current tab URL as the job's application URL so future URL-matched fills work from the same page.
 
-The extension runs in your regular Chrome profile and does not solve CAPTCHA, use stealth settings, or rotate networks. **Apply Now** launches the local assistant and preserves its manual-submit safety gates. **Fill from Job Search OS** never clicks submit. It attempts to attach the generated resume and cover-letter PDFs to matching file inputs; fields that cannot accept an attachment are highlighted for manual selection.
+The extension runs in your regular Chrome profile and does not solve CAPTCHA, use stealth settings, or rotate networks. **Apply Now** launches the local assistant and preserves its manual-submit safety gates. **Fill from Job Search OS** never clicks submit. It attempts to attach the generated resume and cover-letter PDFs to matching file inputs; fields that cannot accept an attachment are highlighted for manual selection. After you complete missed non-sensitive fields, click **Save learned fields** so the app can reuse safe repeated answers on future applications.
 
 ## Package
 

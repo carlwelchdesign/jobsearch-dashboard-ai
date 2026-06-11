@@ -182,7 +182,7 @@ Jolene currently builds specialized context for:
 - applications
 - application detail
 - Apply Sprint
-- Needs Me
+- blocker review
 - Settings
 
 For unknown routes, she falls back to general workflow help and navigation guidance.

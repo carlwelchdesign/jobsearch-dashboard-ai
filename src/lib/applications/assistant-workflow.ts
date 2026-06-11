@@ -390,9 +390,23 @@ async function reduceBrowserEvent(
   if (event.type === "manual_input_observed") {
     const observedFields = normalizeWorkflowFields(event.fields ?? (event.label ? [event] : []));
     const observedFieldIds = observedFields.map((field) => field.fieldId);
-    return {
+    const nextFields = state.fields.map((field) => {
+      const observed = observedFields.find((candidate) => fieldsRepresentSameControl(field, candidate));
+      return observed
+        ? { ...field, result: "success", status: "observed", valuePreview: observed.valuePreview ?? field.valuePreview ?? null, decision: field.decision ?? "observe" }
+        : field;
+    });
+    const matchedObservedIds = nextFields
+      .filter((field) => field.result === "success" && observedFields.some((candidate) => fieldsRepresentSameControl(field, candidate)))
+      .map((field) => field.fieldId);
+    const nextState: AssistantWorkflowState = {
       ...state,
       currentNode: "observeManualInput",
+      status: "RUNNING",
+      pendingCommand: state.pendingCommand?.type === "observe" ? null : state.pendingCommand,
+      pendingFieldId: state.pendingCommand?.type === "observe" ? null : state.pendingFieldId,
+      fields: nextFields,
+      filledFields: uniqueStrings([...state.filledFields, ...matchedObservedIds]),
       observedManualFields: uniqueStrings([...state.observedManualFields, ...observedFieldIds]),
       events: [
         ...state.events,
@@ -402,6 +416,7 @@ async function reduceBrowserEvent(
         }),
       ],
     };
+    return ensureNextCommand(run, nextState);
   }
 
   if (event.type === "submit_intent_detected") {
@@ -694,6 +709,20 @@ async function decideCommandForField(
   }
 
   if (field.required || questionLike(field)) {
+    if (!requiresSensitiveApproval(field)) {
+      return {
+        currentNode: "observeManualInput",
+        command: command("observe", {
+          fieldId: field.fieldId,
+          selector: field.selector,
+          reason: "Unknown required or custom field will be learned from manual input instead of interrupting the queue.",
+        }),
+        message: `Observing manual input for field: ${field.label}`,
+        confidence: reusable[0]?.matchScore ?? 0,
+        memoryMatchId: reusable[0]?.id ?? null,
+      };
+    }
+
     const suggestedAnswer = reusable[0]?.answer ?? "";
     const request = await createAgentUserRequest({
       userId: run.userId,
@@ -716,7 +745,7 @@ async function decideCommandForField(
         value: suggestedAnswer,
         reason: suggestedAnswer
           ? "A similar saved answer exists, but this field needs user approval before reuse."
-          : "Required or custom application field needs user input before the assistant can continue.",
+          : "Sensitive application field needs user approval before the assistant can continue.",
         requiresUserApproval: true,
       }),
       message: `Needs user input for field: ${field.label}`,
@@ -838,6 +867,17 @@ function canonicalKey(value: string) {
 
 function questionLike(field: AssistantWorkflowField) {
   return /\?|why|describe|explain|tell us|cover letter|interest|experience|project|challenge|contribution/i.test(field.label);
+}
+
+function requiresSensitiveApproval(field: AssistantWorkflowField) {
+  const descriptor = `${field.category} ${field.label} ${field.context ?? ""}`.toLowerCase();
+  return /\b(salary|compensation|pay|wage|bonus|equity|sponsor|sponsorship|visa|authorization|authorized|work permit|legal|attest|certify|convict|felony|criminal|background|clearance|race|ethnic|gender|sex|veteran|disab|orientation|pronoun|religion|age|birth|citizenship|nationality)\b/i.test(descriptor);
+}
+
+function fieldsRepresentSameControl(a: AssistantWorkflowField, b: AssistantWorkflowField) {
+  if (a.fieldId && b.fieldId && a.fieldId === b.fieldId) return true;
+  if (a.selector && b.selector && a.selector === b.selector) return true;
+  return canonicalKey(`${a.category} ${a.label}`) === canonicalKey(`${b.category} ${b.label}`);
 }
 
 function isWorkflowCommand(value: unknown): value is AssistantWorkflowCommand {

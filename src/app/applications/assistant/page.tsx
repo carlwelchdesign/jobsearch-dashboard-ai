@@ -1,6 +1,6 @@
 export const metadata = {
   title: "Apply Sprint | Job Search OS",
-  description: "Launch and monitor controlled application assistant workflows.",
+  description: "Launch and monitor application learning workflows.",
 };
 
 import { AppShell } from "@/app/app-shell";
@@ -100,7 +100,7 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
         <PageHeader
           eyebrow="Application assistant"
           title="Apply Sprint"
-          description="Run the local application assistant on ready packets. It fills known fields, stops for blockers, respects auto-submit gates, and records what happened."
+          description="Run the local application assistant on ready packets. It fills what it safely knows, learns from fields you complete manually, stops only for real blockers, and never submits without you."
           actions={(
             <Button component={Link} href="/applications/field-learning" variant="outlined">
               Review field learning
