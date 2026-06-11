@@ -22,7 +22,9 @@ If the app is running on a different local port, open **Local settings** in the 
 
 On a ready application page, click **Fill from Job Search OS**. The extension looks up the ready application by the current URL through `GET /api/applications/assistant-package/by-url`, then fills safe known fields such as name, email, phone, links, location, selected application-answer text, and obvious cover-letter fields.
 
-The extension runs in your regular Chrome profile and does not solve CAPTCHA, use stealth settings, or rotate networks. **Apply Now** launches the local assistant and preserves its manual-submit safety gates. **Fill from Job Search OS** never clicks submit; file inputs are highlighted for manual resume or cover-letter upload because Chrome extensions cannot safely set local file paths without user selection.
+If the current page does not match the stored application URL, use the **Ready applications** dropdown instead. Select the prepared job, click **Fill selected ready job**, and the extension loads that application's package directly. The app also saves the current tab URL as the job's application URL so future URL-matched fills work from the same page.
+
+The extension runs in your regular Chrome profile and does not solve CAPTCHA, use stealth settings, or rotate networks. **Apply Now** launches the local assistant and preserves its manual-submit safety gates. **Fill from Job Search OS** never clicks submit. It attempts to attach the generated resume and cover-letter PDFs to matching file inputs; fields that cannot accept an attachment are highlighted for manual selection.
 
 ## Package
 

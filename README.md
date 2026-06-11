@@ -275,7 +275,7 @@ The assistant will not:
 - rotate proxies
 - answer sensitive demographic questions automatically
 
-For Ashby roles, the safer path is normal Chrome assisted apply. The Chrome extension can load the prepared assistant package for the current application URL, fill safe known fields and obvious cover-letter/custom-answer text in the user's regular Chrome profile, highlight upload fields that still need manual file selection, and stop before submit. This is not an anti-fraud bypass: it does not solve CAPTCHA, mask automation, rotate networks, or click submit.
+For Ashby roles, the safer path is normal Chrome assisted apply. The Chrome extension can load the prepared assistant package for the current application URL, fill safe known fields and obvious cover-letter/custom-answer text in the user's regular Chrome profile, attach generated resume and cover-letter PDFs to matching upload fields when the page accepts them, highlight upload fields that still need manual file selection, and stop before submit. This is not an anti-fraud bypass: it does not solve CAPTCHA, mask automation, rotate networks, or click submit.
 
 During autofill testing, Apply Sprint includes a reset control for the selected application. It clears assistant automation runs and open assistant blockers, stops any tracked local runner process, and lets you relaunch without rejecting the job or deleting learned memories.
 

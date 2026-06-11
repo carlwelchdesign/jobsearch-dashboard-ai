@@ -167,7 +167,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 function fillApplicationFromPackage(assistantPackage) {
   const values = packageValues(assistantPackage);
-  const result = { filled: 0, skipped: 0, uploads: 0 };
+  const materialFiles = packageMaterialFiles(assistantPackage);
+  const result = { filled: 0, skipped: 0, uploads: 0, uploadNeedsManual: 0 };
   const fields = Array.from(document.querySelectorAll("input:not([type=hidden]), textarea, select"));
   for (const field of fields) {
     if (!isFillable(field)) {
@@ -175,8 +176,14 @@ function fillApplicationFromPackage(assistantPackage) {
       continue;
     }
     if (field.type === "file") {
-      highlightUpload(field);
-      result.uploads += 1;
+      const descriptor = fieldDescriptor(field);
+      const files = filesForUploadField(descriptor, field, materialFiles);
+      if (files.length && attachFiles(field, files)) {
+        result.uploads += files.length;
+      } else {
+        highlightUpload(field);
+        result.uploadNeedsManual += 1;
+      }
       continue;
     }
     const descriptor = fieldDescriptor(field);
@@ -188,6 +195,73 @@ function fillApplicationFromPackage(assistantPackage) {
     if (fillField(field, value)) result.filled += 1;
   }
   return result;
+}
+
+function packageMaterialFiles(assistantPackage) {
+  const files = Array.isArray(assistantPackage.materialFiles) ? assistantPackage.materialFiles : [];
+  return files.map((file) => materialFileFromPayload(file)).filter(Boolean);
+}
+
+function materialFileFromPayload(file) {
+  const dataUrl = String(file?.dataUrl || "");
+  const match = /^data:([^;,]+)?(;base64)?,(.*)$/i.exec(dataUrl);
+  if (!match) return null;
+  const mimeType = String(file?.mimeType || match[1] || "application/pdf");
+  const name = String(file?.name || `${file?.kind || "material"}.pdf`);
+  const bytes = match[2] ? bytesFromBase64(match[3]) : new TextEncoder().encode(decodeURIComponent(match[3]));
+  return {
+    kind: file?.kind === "coverLetter" ? "coverLetter" : "resume",
+    file: new File([bytes], name, { type: mimeType }),
+  };
+}
+
+function bytesFromBase64(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function filesForUploadField(descriptor, field, materialFiles) {
+  const resume = materialFiles.find((item) => item.kind === "resume");
+  const coverLetter = materialFiles.find((item) => item.kind === "coverLetter");
+  if (/\bcover\b|\bletter\b/.test(descriptor) && coverLetter) return [coverLetter.file];
+  if (/\bcv\b|\br[eé]sum[eé]\b|\bresume\b/.test(descriptor) && resume) return [resume.file];
+  if (field.multiple) return materialFiles.map((item) => item.file);
+  return resume ? [resume.file] : [];
+}
+
+function attachFiles(field, files) {
+  try {
+    const transfer = new DataTransfer();
+    const accepted = files.filter((file) => uploadAcceptsFile(field, file));
+    for (const file of accepted) transfer.items.add(file);
+    if (!transfer.files.length) return false;
+    field.files = transfer.files;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    field.style.outline = "3px solid #0f6b4f";
+    field.title = `${transfer.files.length} prepared Job Search OS file(s) attached. Review before submitting.`;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function uploadAcceptsFile(field, file) {
+  const accept = String(field.accept || "").trim();
+  if (!accept) return true;
+  const entries = accept.split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
+  const name = file.name.toLowerCase();
+  const type = file.type.toLowerCase();
+  return entries.some((entry) => {
+    if (entry === "*/*") return true;
+    if (entry.endsWith("/*")) return type.startsWith(entry.slice(0, -1));
+    if (entry.startsWith(".")) return name.endsWith(entry);
+    return type === entry;
+  });
 }
 
 function packageValues(assistantPackage) {

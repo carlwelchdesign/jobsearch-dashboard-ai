@@ -40,6 +40,15 @@
       </details>
       <p id="status" role="status"></p>
       <a id="openJob" class="open-job" href="#" target="_blank" rel="noreferrer" hidden>Open captured job</a>
+      <section class="ready-fill" aria-label="Ready application fill">
+        <label>
+          Ready applications
+          <select id="readyApplications">
+            <option value="">Loading ready applications...</option>
+          </select>
+        </label>
+        <button id="fillSelectedApplication" class="secondary" type="button">Fill selected ready job</button>
+      </section>
       <div class="actions">
         <button id="capture" type="button">Save to Job Search OS</button>
         <button id="applyNow" class="apply-now" type="button" hidden>Apply Now</button>

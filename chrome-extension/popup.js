@@ -7,14 +7,17 @@ const fields = {
   description: document.querySelector("#description"),
   apiUrl: document.querySelector("#apiUrl"),
   token: document.querySelector("#token"),
+  readyApplications: document.querySelector("#readyApplications"),
 };
 const statusElement = document.querySelector("#status");
 const captureButton = document.querySelector("#capture");
 const applyNowButton = document.querySelector("#applyNow");
 const fillApplicationButton = document.querySelector("#fillApplication");
+const fillSelectedApplicationButton = document.querySelector("#fillSelectedApplication");
 const openJobLink = document.querySelector("#openJob");
 let capturedPayload = null;
 let lastSavedJob = null;
+let readyApplications = [];
 
 function setStatus(message) {
   statusElement.textContent = message;
@@ -30,6 +33,16 @@ function captureEndpoint() {
 
 function assistantPackageByUrlEndpoint(pageUrl) {
   return `${normalizeAppUrl(fields.apiUrl.value)}/api/applications/assistant-package/by-url?url=${encodeURIComponent(pageUrl)}`;
+}
+
+function readyApplicationsEndpoint() {
+  return `${normalizeAppUrl(fields.apiUrl.value)}/api/applications/ready-for-extension`;
+}
+
+function selectedAssistantPackageEndpoint(applicationId, currentUrl) {
+  const url = new URL(`${normalizeAppUrl(fields.apiUrl.value)}/api/applications/${encodeURIComponent(applicationId)}/extension-package`);
+  if (currentUrl) url.searchParams.set("currentUrl", currentUrl);
+  return url.toString();
 }
 
 function applyNowEndpoint(jobId) {
@@ -63,6 +76,11 @@ function savedJobFromCaptureResponse(payload) {
   };
 }
 
+function tokenHeaders() {
+  const token = fields.token.value.trim();
+  return token ? { "x-job-search-os-token": token } : {};
+}
+
 function currentPayload() {
   return {
     ...capturedPayload,
@@ -72,6 +90,115 @@ function currentPayload() {
     description: fields.description.value.trim(),
     sourceName: "Chrome Capture",
   };
+}
+
+function formatReadyApplication(application) {
+  const score = Number.isFinite(application.score) ? ` · ${application.score}` : "";
+  const location = application.location ? ` · ${application.location}` : "";
+  return `${application.company || "Unknown company"} — ${application.title || "Untitled role"}${location}${score}`;
+}
+
+function renderReadyApplications() {
+  fields.readyApplications.innerHTML = "";
+  if (!readyApplications.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No ready applications";
+    fields.readyApplications.append(option);
+    fillSelectedApplicationButton.disabled = true;
+    return;
+  }
+  for (const application of readyApplications) {
+    const option = document.createElement("option");
+    option.value = application.id;
+    option.textContent = formatReadyApplication(application);
+    fields.readyApplications.append(option);
+  }
+  fillSelectedApplicationButton.disabled = false;
+}
+
+async function loadReadyApplications() {
+  try {
+    const appUrl = normalizeAppUrl(fields.apiUrl.value);
+    const token = fields.token.value.trim();
+    await chrome.storage.local.set({ jobSearchOsToken: token, jobSearchOsAppUrl: appUrl });
+    const response = await fetch(readyApplicationsEndpoint(), {
+      headers: tokenHeaders(),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Unable to load ready applications.");
+    readyApplications = Array.isArray(payload.applications) ? payload.applications : [];
+    renderReadyApplications();
+  } catch (error) {
+    readyApplications = [];
+    renderReadyApplications();
+    setStatus(error instanceof Error ? error.message : "Unable to load ready applications.");
+  }
+}
+
+function contentScriptError(error) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  if (/receiving end does not exist|could not establish connection|Cannot access/i.test(message)) {
+    return "Unable to reach this tab. Reload the application page, pass any security verification manually, then reopen the extension.";
+  }
+  return message || "Unable to fill this application.";
+}
+
+function materialFileName(assistantPackage, kind) {
+  const job = assistantPackage.job || {};
+  const company = String(job.company || "Company").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
+  const title = String(job.title || "Role").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
+  return kind === "resume"
+    ? `${company}-${title}-Resume.pdf`
+    : `${company}-${title}-Cover-Letter.pdf`;
+}
+
+async function packageWithMaterialFiles(assistantPackage) {
+  const materials = assistantPackage.materials || {};
+  const materialFiles = [];
+  if (materials.resumePdfUrl) {
+    materialFiles.push(await fetchMaterialFile(materials.resumePdfUrl, "resume", materialFileName(assistantPackage, "resume")));
+  }
+  if (materials.coverLetterPdfUrl) {
+    materialFiles.push(await fetchMaterialFile(materials.coverLetterPdfUrl, "coverLetter", materialFileName(assistantPackage, "coverLetter")));
+  }
+  return {
+    ...assistantPackage,
+    materialFiles: materialFiles.filter(Boolean),
+  };
+}
+
+async function fetchMaterialFile(url, kind, fallbackName) {
+  const response = await fetch(url, {
+    headers: tokenHeaders(),
+  });
+  if (!response.ok) throw new Error(`Unable to download ${kind === "resume" ? "resume" : "cover letter"} PDF.`);
+  const blob = await response.blob();
+  return {
+    kind,
+    name: fileNameFromDisposition(response.headers.get("content-disposition")) || fallbackName,
+    mimeType: blob.type || "application/pdf",
+    dataUrl: await blobToDataUrl(blob),
+  };
+}
+
+function fileNameFromDisposition(value) {
+  const match = /filename\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i.exec(value || "");
+  const fileName = match?.[1] || match?.[2] || "";
+  try {
+    return decodeURIComponent(fileName);
+  } catch {
+    return fileName;
+  }
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Unable to read PDF blob."));
+    reader.readAsDataURL(blob);
+  });
 }
 
 async function getActiveTab() {
@@ -94,8 +221,10 @@ async function loadCapture() {
     fields.location.value = payload.location || "";
     fields.description.value = payload.description || "";
     setOpenJobLink(null);
+    await loadReadyApplications();
     const applyText = lastSavedJob ? " Apply Now is available for the last saved job." : "";
-    setStatus(`Review fields before saving.${applyText}`);
+    const readyText = readyApplications.length ? ` ${readyApplications.length} ready application(s) available for selected fill.` : "";
+    setStatus(`Review fields before saving.${applyText}${readyText}`);
   } catch (error) {
     setStatus(error instanceof Error ? error.message : "Unable to inspect this tab.");
   }
@@ -181,22 +310,59 @@ async function fillApplicationFromPackage() {
     const tab = await getActiveTab();
     if (!tab?.id || !tab.url) throw new Error("No active application tab found.");
     const response = await fetch(assistantPackageByUrlEndpoint(tab.url), {
-      headers: {
-        ...(token ? { "x-job-search-os-token": token } : {}),
-      },
+      headers: tokenHeaders(),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Unable to load an application package for this page.");
-    const result = await chrome.tabs.sendMessage(tab.id, { type: "FILL_APPLICATION_FROM_PACKAGE", package: payload });
+    const packagePayload = await packageWithMaterialFiles(payload);
+    const result = await chrome.tabs.sendMessage(tab.id, { type: "FILL_APPLICATION_FROM_PACKAGE", package: packagePayload });
     const filled = Number(result?.filled || 0);
     const skipped = Number(result?.skipped || 0);
     const uploads = Number(result?.uploads || 0);
-    const warning = uploads ? ` ${uploads} upload field(s) still need manual file selection.` : "";
-    setStatus(`Filled ${filled} field(s). Skipped ${skipped}.${warning} Review and submit manually.`);
+    const uploadNeedsManual = Number(result?.uploadNeedsManual || 0);
+    const uploadText = uploads ? ` Uploaded ${uploads} file(s).` : "";
+    const warning = uploadNeedsManual ? ` ${uploadNeedsManual} upload field(s) still need manual file selection.` : "";
+    setStatus(`Filled ${filled} field(s).${uploadText} Skipped ${skipped}.${warning} Review and submit manually.`);
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : "Unable to fill this application.");
+    setStatus(contentScriptError(error));
   } finally {
     fillApplicationButton.disabled = false;
+  }
+}
+
+async function fillSelectedApplication() {
+  const applicationId = fields.readyApplications.value;
+  if (!applicationId) {
+    setStatus("Select a ready application first.");
+    return;
+  }
+  fillSelectedApplicationButton.disabled = true;
+  setStatus("Loading selected application package...");
+  try {
+    const token = fields.token.value.trim();
+    const appUrl = normalizeAppUrl(fields.apiUrl.value);
+    await chrome.storage.local.set({ jobSearchOsToken: token, jobSearchOsAppUrl: appUrl });
+    const tab = await getActiveTab();
+    if (!tab?.id || !tab.url) throw new Error("No active application tab found.");
+    const response = await fetch(selectedAssistantPackageEndpoint(applicationId, tab.url), {
+      headers: tokenHeaders(),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Unable to load the selected application package.");
+    const packagePayload = await packageWithMaterialFiles(payload);
+    const result = await chrome.tabs.sendMessage(tab.id, { type: "FILL_APPLICATION_FROM_PACKAGE", package: packagePayload });
+    const filled = Number(result?.filled || 0);
+    const skipped = Number(result?.skipped || 0);
+    const uploads = Number(result?.uploads || 0);
+    const uploadNeedsManual = Number(result?.uploadNeedsManual || 0);
+    const uploadText = uploads ? ` Uploaded ${uploads} file(s).` : "";
+    const warning = uploadNeedsManual ? ` ${uploadNeedsManual} upload field(s) still need manual file selection.` : "";
+    setStatus(`Filled ${filled} field(s) for ${payload.job?.company || "selected job"}.${uploadText} Skipped ${skipped}.${warning} Review and submit manually.`);
+    await loadReadyApplications();
+  } catch (error) {
+    setStatus(contentScriptError(error));
+  } finally {
+    fillSelectedApplicationButton.disabled = readyApplications.length === 0;
   }
 }
 
@@ -210,6 +376,18 @@ applyNowButton.addEventListener("click", () => {
 
 fillApplicationButton.addEventListener("click", () => {
   void fillApplicationFromPackage();
+});
+
+fillSelectedApplicationButton.addEventListener("click", () => {
+  void fillSelectedApplication();
+});
+
+fields.apiUrl.addEventListener("change", () => {
+  void loadReadyApplications();
+});
+
+fields.token.addEventListener("change", () => {
+  void loadReadyApplications();
 });
 
 void loadCapture();
