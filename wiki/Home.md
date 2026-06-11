@@ -7,9 +7,9 @@ The product is not a blind mass-apply bot. It is designed around verified candid
 ## Primary Surfaces
 
 - **Command Center**: daily operating view with live search updates, blockers, pipeline state, and prioritized actions.
-- **Needs Me**: questions and blockers agents cannot safely resolve alone.
 - **Jobs**: scored role review queue with signals, fit, status, and approval/rejection flows.
-- **Apply Sprint**: controlled browser-assistant launch surface for approved applications.
+- **Apply Sprint**: controlled browser-assistant launch surface for approved applications, learning sessions, and hard blockers.
+- **Field Learning**: review learned application-field memories and decide what can auto-fill.
 - **Applications**: application tracker, packets, outcomes, prep, and automation state.
 - **Settings**: provider config, cron, email, automation gates, company policies, sources, and admin links.
 - **Jolene**: persistent context-aware assistant available on every screen with text and voice interaction.
@@ -50,7 +50,7 @@ The product is not a blind mass-apply bot. It is designed around verified candid
 
 The system can find jobs, score jobs, generate materials, prepare application packets, draft messages, monitor responses, and launch local automation. It must not silently invent career claims or submit/send externally without the configured approval rules and safety gates.
 
-LangGraph is used where durable state-machine behavior matters. The application assistant tracks browser launch, field inspection, pending field commands, user pauses, resumes, and ready-to-submit state. The recruiting agency tracks candidate discovery, approval, packet preparation, result recording, and finalization. Searches now auto-handoff eligible 90+ matches to that agency workflow when possible. The assistant graph does not remove the manual final-submit gate.
+LangGraph is used where durable state-machine behavior matters. The application assistant tracks browser launch, field inspection, pending field commands, learning observation, hard-blocker pauses, resumes, and ready-to-submit state. The recruiting agency tracks candidate discovery, approval, packet preparation, result recording, and finalization. Searches now auto-handoff eligible 90+ matches to that agency workflow when possible. The assistant graph does not remove the manual final-submit gate.
 
 LangSmith is available as an optional observability layer. When configured, it traces redacted metadata for agent runs, OpenAI calls, assistant workflow steps, and recruiting agency graph runs. The app also has a local quality loop that turns application-assistant failures, recruiting agency failures, noisy search runs, rejected high-score matches, outcome calibration signals, user mistake reports, and learned-rule rollbacks into redacted examples, scores them with deterministic evaluators, and creates controlled improvement proposals without sending raw resumes, cover letters, application answers, prompts, or secrets by default. Outcome calibration refreshes automatically after high-signal job, application, email, and assistant events and shows review-only actions plus drill-down records behind noisy signals; those actions can now be promoted into governed proposals from Settings or `POST /api/observability/outcomes/propose-actions`, then tracked as open, accepted, or dismissed. Aggregate outcome snapshots also power trend views so Settings can show whether quality is improving or regressing over time, and regressing trends can be promoted into review-only proposals with priority triage. Accepted low-risk mapped proposals become bounded skill rules for future agent runs, and Settings shows outcome calibration, impact status, and rollback history for active/disabled rules with manual disable and manual-triggered auto rollback for repeated negative impact; high-risk or workflow changes stay review-only.
 

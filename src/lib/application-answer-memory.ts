@@ -56,7 +56,7 @@ export function buildAnswerMemoryMatch(memory: Pick<ApplicationAnswerMemory, "id
     useCount: memory.useCount,
     lastUsedAt: memory.lastUsedAt,
     matchScore,
-    autoUsable: memory.reusePolicy === "AUTO_USE" && memory.sensitivity === "LOW" && matchScore >= 92,
+    autoUsable: memory.reusePolicy === "AUTO_USE" && memory.sensitivity !== "HIGH" && matchScore >= 92,
   };
 }
 

@@ -96,7 +96,7 @@ async function buildDashboardContext(contextPath: string): Promise<JolenePageCon
       applicationCounts: countsByStatus(applicationCounts),
     },
     suggestedActions: [
-      { label: "Resolve blockers", href: "/needs-me", description: "Answer questions that are preventing agents from finishing work." },
+      { label: "Resolve blockers", href: "/needs-me", description: "Review hard blockers and sensitive approvals that are preventing agents from finishing work." },
       { label: "Review job queue", href: "/jobs", description: "Approve, reject, or save newly scored jobs." },
       { label: "Open Apply Sprint", href: "/applications/assistant", description: "Launch application work for approved packets." },
     ],
@@ -285,7 +285,7 @@ async function buildApplicationsContext(contextPath: string): Promise<JolenePage
       })),
     },
     suggestedActions: [
-      { label: "Handle blockers", href: "/needs-me", description: "Resolve questions that stop agents from completing application work." },
+      { label: "Handle blockers", href: "/needs-me", description: "Resolve hard blockers or sensitive approvals that stop agents from completing application work." },
       { label: "Review jobs", href: "/jobs", description: "Approve more jobs for the application pipeline." },
     ],
   };
@@ -359,7 +359,7 @@ async function buildApplicationContext(contextPath: string): Promise<JolenePageC
     },
     suggestedActions: [
       { label: "Open Apply Sprint", href: "/applications/assistant", description: "Continue controlled application automation." },
-      { label: "Resolve blockers", href: "/needs-me", description: "Answer open questions for this application." },
+      { label: "Resolve blockers", href: "/needs-me", description: "Review open hard blockers for this application." },
     ],
   };
 }
@@ -378,7 +378,7 @@ async function buildNeedsMeContext(contextPath: string): Promise<JolenePageConte
   return {
     routeType: "needs_me",
     contextPath,
-    summary: "Needs Me queue for questions, blockers, email reviews, application blockers, and follow-up items that require the user's judgment.",
+    summary: "Compatibility blocker queue for hard blockers, email reviews, application blockers, and follow-up items that require the user's judgment.",
     data: {
       openRequests: requests.map((request) => ({
         id: request.id,

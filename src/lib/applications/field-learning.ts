@@ -84,6 +84,23 @@ export async function storeObservedFieldLearning(input: StoreObservedFieldLearni
     }
 
     const answer = field.answer.trim();
+    const uniqueMemoryKey = {
+      userId_host_fieldKey_category: {
+        userId: input.userId,
+        host: input.host,
+        fieldKey: classification.fieldKey,
+        category: classification.category,
+      },
+    };
+    const existingMemory = await prisma.applicationFieldMemory.findUnique({
+      where: uniqueMemoryKey,
+    });
+    const sameAnswer = existingMemory?.answer.trim() === answer;
+    const nextSuccessCount = sameAnswer ? existingMemory.successCount + 1 : 1;
+    const promoted = progressiveAutoUseAllowed(classification, nextSuccessCount);
+    const nextStatus = promoted ? "ACTIVE" : classification.status;
+    const nextReusePolicy = promoted ? "AUTO_USE" : classification.reusePolicy;
+    const nextConfidence = promoted ? Math.max(classification.confidence, 86) : classification.confidence;
     const pattern = await findRelatedFormPattern({
       userId: input.userId,
       host: input.host,
@@ -93,14 +110,7 @@ export async function storeObservedFieldLearning(input: StoreObservedFieldLearni
       label: field.label,
     });
     const memory = await prisma.applicationFieldMemory.upsert({
-      where: {
-        userId_host_fieldKey_category: {
-          userId: input.userId,
-          host: input.host,
-          fieldKey: classification.fieldKey,
-          category: classification.category,
-        },
-      },
+      where: uniqueMemoryKey,
       create: {
         userId: input.userId,
         sourceApplicationId: input.applicationId,
@@ -114,10 +124,10 @@ export async function storeObservedFieldLearning(input: StoreObservedFieldLearni
         selector: field.selector?.trim().slice(0, 240) || null,
         answer,
         sensitivity: classification.sensitivity,
-        reusePolicy: classification.reusePolicy,
-        status: classification.status,
-        confidence: classification.confidence,
-        successCount: classification.status === "ACTIVE" ? 1 : 0,
+        reusePolicy: nextReusePolicy,
+        status: nextStatus,
+        confidence: nextConfidence,
+        successCount: nextSuccessCount,
         metadataJson: learningMetadata(field) as Prisma.InputJsonValue,
       },
       update: {
@@ -129,10 +139,10 @@ export async function storeObservedFieldLearning(input: StoreObservedFieldLearni
         selector: field.selector?.trim().slice(0, 240) || null,
         answer,
         sensitivity: classification.sensitivity,
-        reusePolicy: classification.reusePolicy,
-        status: classification.status,
-        confidence: classification.confidence,
-        successCount: classification.status === "ACTIVE" ? { increment: 1 } : undefined,
+        reusePolicy: nextReusePolicy,
+        status: nextStatus,
+        confidence: nextConfidence,
+        successCount: nextSuccessCount,
         lastSeenAt: new Date(),
         metadataJson: learningMetadata(field) as Prisma.InputJsonValue,
       },
@@ -169,7 +179,7 @@ export async function findActiveFieldMemories(input: {
       userId: input.userId,
       status: "ACTIVE",
       reusePolicy: "AUTO_USE",
-      sensitivity: "LOW",
+      sensitivity: { in: ["LOW", "MEDIUM"] },
       OR: [
         { host: input.host },
         { atsProvider: input.atsProvider },
@@ -227,6 +237,20 @@ function shouldMirrorToAnswerMemory(memory: Pick<ApplicationFieldMemory, "catego
   if (memory.sensitivity === "HIGH") return false;
   if (safeCategory(memory.category)) return false;
   return /\?|why|describe|explain|authorized|sponsor|source|hear about|available|start/i.test(memory.label);
+}
+
+function progressiveAutoUseAllowed(
+  classification: Pick<ReturnType<typeof classifyObservedField>, "blocked" | "sensitivity" | "reusePolicy" | "status" | "confidence">,
+  successCount: number,
+) {
+  if (classification.blocked) return false;
+  if (classification.sensitivity === "HIGH") return false;
+  if (classification.status === "ACTIVE" && classification.reusePolicy === "AUTO_USE") return true;
+  return classification.sensitivity === "MEDIUM"
+    && classification.reusePolicy === "ASK_FIRST"
+    && classification.status === "NEEDS_REVIEW"
+    && classification.confidence >= 82
+    && successCount >= 2;
 }
 
 function questionLikeField(input: { category: string; label: string; inputType: string }) {

@@ -12,7 +12,7 @@ It can:
 - prepare approved packets, sync packet records, open the sprint console, and launch the next ready application from a consistent operations grid
 - prepare assistant package data
 - launch the local browser assistant
-- surface blocker state
+- surface blocker and learning state
 - show logs and automation status
 
 The Chrome extension can start the same flow with **Apply Now** after saving a job. It remembers the last saved job, uses the active tab URL as the final application URL, prepares or reuses the custom resume and cover letter, creates the `ready_to_apply` application, and launches the local assistant.
@@ -95,22 +95,24 @@ Current graph responsibilities:
 - checkpoint workflow state in Postgres
 - persist current node, events, field inventory, pending command, and counts on `ApplicationAutomationRun.workflowStateJson`
 - create or resume field-level commands when the assistant needs a known value, upload, skip, or user answer
+- enter learning mode for ordinary unknown required/custom fields instead of opening an interruption queue item
 - stop at `READY_TO_SUBMIT` for manual review
-- emit optional redacted LangSmith traces for launch, field inventory, command decisions, command results, Needs Me resume, browser close, submit detection, and reset
+- emit optional redacted LangSmith traces for launch, field inventory, command decisions, command results, learning observation, blocker resume, browser close, submit detection, and reset
 - capture failures, repairs, manual corrections, and user mistake reports as redacted quality examples for local evaluation
 
 The Playwright runner remains the browser execution bridge. It opens the employer application URL, fills safe known fields, uploads files, reports field inventory to the workflow, polls for commands, executes fill/upload/skip commands, observes manual input, and watches for submit confirmation.
 
-The current implementation intentionally keeps the older broad fill pass before the field-command loop. This preserves coverage for known fields, learned form rules, saved field memories, demographic settings, and uploads. LangGraph then handles remaining unresolved fields and user pauses.
+The current implementation intentionally keeps the older broad fill pass before the field-command loop. This preserves coverage for known fields, learned form rules, saved field memories, demographic settings, and uploads. LangGraph then handles remaining unresolved fields through learning mode or hard-blocker pauses.
 
 ### Field Learning
 
-When the user manually fills a field or answers a Needs Me field prompt, the assistant can store that answer as application field memory.
+When the user manually fills a field, the assistant can store that answer as application field memory.
 
 Memory policy:
 
 - low-risk profile/contact fields may become `AUTO_USE`
-- custom questions and sensitive answers stay `ASK_FIRST`
+- repeated medium-risk custom answers can promote to `AUTO_USE` after consistent observations
+- sensitive answers stay `ASK_FIRST`
 - blocked fields such as passwords, CAPTCHA, SSN, payment, secrets, resumes, and cover letters are not saved as reusable field memories
 
 ### Test Reset
@@ -133,10 +135,11 @@ The assistant can:
 - write selected application answers to a local text file
 - report workflow activity and field progress to Apply Sprint
 - observe safe manual field edits for future field memory
+- keep the browser session in learning mode while the user completes ordinary unknown fields
 - detect submit intent, submit confirmation, and browser close lifecycle events
 - detect blockers
 - update automation run records
-- ask the user for help through Needs Me
+- ask the user for help only for hard blockers or sensitive approvals
 - detect Ashby possible-spam/reCAPTCHA blocks as `ats_spam_block` and recommend normal Chrome assisted fill
 
 The assistant must not:
@@ -152,7 +155,7 @@ The assistant must not:
 
 Ashby may flag Playwright-controlled submissions as possible spam. Job Search OS treats that as a blocker, not something to bypass.
 
-When the assistant sees Ashby copy such as `We couldn't submit your application`, `possible spam`, or reCAPTCHA anti-spam guidance, it records `ats_spam_block`, keeps the application out of applied state, creates a Needs Me item, and recommends retrying in the user's normal Chrome profile.
+When the assistant sees Ashby copy such as `We couldn't submit your application`, `possible spam`, or reCAPTCHA anti-spam guidance, it records `ats_spam_block`, keeps the application out of applied state, creates a hard-blocker item, and recommends retrying in the user's normal Chrome profile.
 
 The Chrome extension supports `Apply Now` after saving a job and `Fill from Job Search OS` on a ready application URL. Apply Now prepares materials and launches the local assistant from the user's current tab URL; Fill from Job Search OS loads the local assistant package, fills safe known fields and obvious cover-letter/application-answer fields, attaches generated PDFs to matching upload fields when the page accepts them, highlights upload fields that still require manual file selection, and never clicks submit. If Ashby still blocks normal Chrome submission, the recommended fallback is company direct or recruiter outreach, not stealth automation.
 
@@ -170,16 +173,14 @@ Safety gates still apply. Company-level overrides exist because some companies o
 
 ## Blockers
 
-When automation cannot safely continue, it creates an agent user request.
+When automation cannot safely continue, it creates an agent user request. Ordinary unknown application fields should use learning mode first.
 
 Examples:
 
-- unknown application question
 - login or OAuth wall
 - CAPTCHA
-- unclear field
 - missing approved packet
 - unapproved sensitive answer
 - policy forbids submit
 
-The user resolves blockers in Needs Me. If the answer can be reused later, it can be saved to answer memory.
+The user resolves hard blockers through the blocker surfaces. If a sensitive answer is approved and can be reused later, it can be saved to answer memory.

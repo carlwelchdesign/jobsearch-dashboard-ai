@@ -10,6 +10,7 @@ describe("Chrome extension ready application fill", () => {
 
     expect(html).toContain('id="readyApplications"');
     expect(html).toContain('id="fillSelectedApplication"');
+    expect(html).toContain('id="saveLearnedFields"');
     expect(html).toContain("Fill selected ready job");
   });
 
@@ -21,6 +22,8 @@ describe("Chrome extension ready application fill", () => {
     expect(script).toContain("currentUrl");
     expect(script).toContain("tokenHeaders()");
     expect(script).toContain("FILL_APPLICATION_FROM_PACKAGE");
+    expect(script).toContain("COLLECT_APPLICATION_FIELD_LEARNING");
+    expect(script).toContain("/field-learning");
     expect(script).toContain("packageWithMaterialFiles");
     expect(script).toContain("resumePdfUrl");
     expect(script).toContain("coverLetterPdfUrl");
@@ -34,5 +37,7 @@ describe("Chrome extension ready application fill", () => {
     expect(contentScript).toContain("new DataTransfer()");
     expect(contentScript).toContain("field.files = transfer.files");
     expect(contentScript).toContain("uploadNeedsManual");
+    expect(contentScript).toContain("collectApplicationFieldLearning");
+    expect(contentScript).toContain("sensitiveLearningDescriptor");
   });
 });

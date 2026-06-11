@@ -289,9 +289,9 @@ export default async function DashboardPage() {
                   <Stack spacing={2}>
                     <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
                       <Box>
-                        <Typography variant="h3">Needs Me</Typography>
+                        <Typography variant="h3">Blockers</Typography>
                         <Typography variant="body2" color="text.secondary">
-                          Agent blockers.
+                          Hard blockers and sensitive approvals.
                         </Typography>
                       </Box>
                       <ActionButton href="/needs-me" variant={agentUserRequests.length ? "contained" : "outlined"} color={agentUserRequests.length ? "warning" : "primary"} size="small">
@@ -521,7 +521,7 @@ function getNextAction({
       title: "Resolve the agent blocker",
       detail: "An agent needs your answer before it can continue the workflow.",
       href: "/needs-me",
-      label: "Open Needs Me",
+      label: "Open blockers",
       count: agentUserRequestCount,
     };
   }

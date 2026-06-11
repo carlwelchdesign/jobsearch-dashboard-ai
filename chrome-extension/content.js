@@ -145,6 +145,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "COLLECT_APPLICATION_FIELD_LEARNING") {
+    sendResponse(collectApplicationFieldLearning());
+    return true;
+  }
+
   if (message?.type !== "CAPTURE_JOB_PAGE") return false;
 
   sendResponse({
@@ -340,6 +345,7 @@ function fillField(field, value) {
   if (field.tagName === "SELECT") return selectOption(field, text);
   field.focus();
   field.value = text;
+  field.dataset.jobSearchOsFilled = "true";
   field.dispatchEvent(new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" }));
   field.dispatchEvent(new Event("change", { bubbles: true }));
   return true;
@@ -353,6 +359,7 @@ function selectOption(field, value) {
   });
   if (!option) return false;
   field.value = option.value;
+  field.dataset.jobSearchOsFilled = "true";
   field.dispatchEvent(new Event("change", { bubbles: true }));
   return true;
 }
@@ -360,4 +367,68 @@ function selectOption(field, value) {
 function highlightUpload(field) {
   field.style.outline = "3px solid #946200";
   field.title = "Upload the prepared resume or cover letter from Job Search OS, then submit manually.";
+}
+
+function collectApplicationFieldLearning() {
+  const fields = [];
+  const seen = new Set();
+  for (const field of Array.from(document.querySelectorAll("input:not([type=hidden]), textarea, select"))) {
+    if (!canLearnFromField(field)) continue;
+    const descriptor = fieldDescriptor(field);
+    if (!descriptor || sensitiveLearningDescriptor(descriptor)) continue;
+    const answer = observedFieldValue(field);
+    if (!answer) continue;
+    const key = `${fieldCategory(descriptor)}:${field.name || field.id || descriptor}`;
+    if (seen.has(`${key}:${answer}`)) continue;
+    seen.add(`${key}:${answer}`);
+    fields.push({
+      fieldKey: canonicalFieldKey(field.name || field.id || descriptor),
+      category: fieldCategory(descriptor),
+      label: descriptor.slice(0, 300) || "(unlabeled field)",
+      inputType: String(field.type || field.tagName || "").toLowerCase(),
+      selector: stableFieldSelector(field),
+      answer,
+      source: "manual_observation",
+      confidence: 84
+    });
+  }
+  return { fields };
+}
+
+function canLearnFromField(field) {
+  if (field.disabled || field.readOnly || field.dataset.jobSearchOsFilled === "true") return false;
+  const type = String(field.type || "").toLowerCase();
+  return !["hidden", "password", "file", "submit", "button", "reset"].includes(type);
+}
+
+function observedFieldValue(field) {
+  if (field.type === "checkbox" || field.type === "radio") return field.checked ? "checked" : "";
+  if (field.tagName === "SELECT") return field.options[field.selectedIndex]?.textContent?.trim() || field.value.trim();
+  return String(field.value || "").trim();
+}
+
+function sensitiveLearningDescriptor(value) {
+  return /\b(password|captcha|token|secret|ssn|social security|payment|credit card|resume|cover letter|salary|compensation|pay|sponsor|sponsorship|visa|authorization|authorized|legal|attest|certify|convict|felony|criminal|race|ethnic|gender|sex|veteran|disab|orientation|pronoun|religion|age|birth|citizenship|nationality)\b/i.test(value);
+}
+
+function fieldCategory(value) {
+  if (/linkedin/.test(value)) return "linkedin_url";
+  if (/github/.test(value)) return "github_url";
+  if (/portfolio|website|homepage/.test(value)) return "portfolio_url";
+  if (/phone|mobile|telephone/.test(value)) return "phone";
+  if (/email|e-mail/.test(value)) return "email";
+  if (/country/.test(value)) return "country";
+  if (/location|city|address/.test(value)) return "location";
+  if (/source|hear about|referral/.test(value)) return "referral_source";
+  return "custom";
+}
+
+function stableFieldSelector(field) {
+  if (field.id) return `#${CSS.escape(field.id)}`;
+  if (field.name) return `${field.tagName.toLowerCase()}[name="${CSS.escape(field.name)}"]`;
+  return "";
+}
+
+function canonicalFieldKey(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 100) || "field";
 }

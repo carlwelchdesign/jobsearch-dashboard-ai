@@ -129,7 +129,7 @@ The application assistant workflow combines LangGraph orchestration with local P
 5. Playwright reports field inventory and fill events back to the app.
 6. The workflow stores current node, events, field decisions, pending command, and counts on the latest automation run.
 7. If a known field remains, the workflow issues a fill/upload/skip command.
-8. If an unknown required or custom field remains, the workflow creates a Needs Me request and waits.
+8. If an unknown required or custom field remains, the workflow enters learning mode. The browser stays open, the user completes the field once, and the assistant records the observed answer through field learning.
 9. When the user answers, the workflow resumes with a fill command and saves safe learning according to field-memory policy.
 10. The workflow stops before final submit and waits for manual review.
 11. Playwright keeps observing manual field edits, submit intent, submit confirmation, and browser close events until the browser session ends.
@@ -143,7 +143,8 @@ Implementation notes:
 - Assistant failures and repairs create redacted `AgentQualityExample` records for later evaluation.
 - LangGraph checkpointing is backed by Postgres.
 - Playwright remains responsible for browser I/O; LangGraph decides workflow state and commands.
-- Ignoring Needs Me does not disable passive observation. Safe manual field edits can still become field memories while the browser remains open.
+- `Needs Me` is reserved for hard blockers and sensitive approvals. Normal unknown application fields should be learned from manual input instead of creating queue work.
+- Progressive learning auto-uses low-risk fields immediately, can promote repeated medium/custom answers after consistent observations, and keeps high-risk fields such as salary, legal, demographic, veteran/disability, and sponsorship answers behind approval.
 
 ## Recruiting Agency Workflow
 

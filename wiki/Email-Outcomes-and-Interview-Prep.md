@@ -84,7 +84,7 @@ Synced messages can be classified as:
 - unrelated
 - needs review
 
-Matched messages update application outcomes or create Needs Me items when the agent cannot safely decide.
+Matched messages update application outcomes or create blocker items when the agent cannot safely decide.
 
 ## Outcomes
 
