@@ -14,4 +14,14 @@ describe("AssistantWorkbench run feedback panel", () => {
     expect(source).toContain("setInterval");
     expect(source).toContain("Copy raw log");
   });
+
+  it("advances the ready application selection after marking applied", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/assistant-workbench.tsx"), "utf8");
+
+    expect(source).toContain("const [appliedIds, setAppliedIds]");
+    expect(source).toContain("!appliedIds.includes(application.id)");
+    expect(source).toContain("setSelectedId(nextApplication?.id ?? \"\")");
+    expect(source).toContain("I applied");
+    expect(source).not.toContain("I already applied");
+  });
 });

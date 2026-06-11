@@ -225,6 +225,7 @@ export function AssistantWorkbench({
   const [deleting, setDeleting] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  const [appliedIds, setAppliedIds] = useState<string[]>([]);
   const [question, setQuestion] = useState("");
   const [questionLoading, setQuestionLoading] = useState(false);
   const [questionHelper, setQuestionHelper] = useState<QuestionHelperResponse | null>(null);
@@ -233,8 +234,8 @@ export function AssistantWorkbench({
   const [pendingRejectionFeedback, setPendingRejectionFeedback] = useState<Pick<ReadyApplication, "id" | "company" | "title"> | null>(null);
   const [notice, setNotice] = useState("");
   const visibleApplications = useMemo(
-    () => applications.filter((application) => !deletedIds.includes(application.id)),
-    [applications, deletedIds],
+    () => applications.filter((application) => !deletedIds.includes(application.id) && !appliedIds.includes(application.id)),
+    [applications, appliedIds, deletedIds],
   );
   const selected = useMemo(() => visibleApplications.find((application) => application.id === selectedId), [visibleApplications, selectedId]);
   const selectedBlocker = selected?.blocker ?? null;
@@ -247,6 +248,13 @@ export function AssistantWorkbench({
     progress: sprintProgressForApplication(application),
   })), [visibleApplications]);
   const selectedRunActive = selected?.automationRun?.status === "RUNNING" || isLearningWorkflow(selectedWorkflow);
+
+  useEffect(() => {
+    if (!selectedId || visibleApplications.some((application) => application.id === selectedId)) return;
+    setSelectedId(visibleApplications[0]?.id ?? "");
+    setLaunch(null);
+    setRunFeedback(null);
+  }, [selectedId, visibleApplications]);
 
   async function launchSelected(next = false) {
     const endpoint = next ? "/api/applications/next-ready/launch-assistant" : `/api/applications/${selectedId}/launch-assistant`;
@@ -296,6 +304,12 @@ export function AssistantWorkbench({
       const response = await fetch(`/api/applications/${applicationId}/mark-applied`, { method: "POST" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error ?? "Unable to mark application applied.");
+      const currentIndex = visibleApplications.findIndex((application) => application.id === applicationId);
+      const nextApplication = visibleApplications[currentIndex + 1] ?? visibleApplications.find((application) => application.id !== applicationId);
+      setAppliedIds((current) => current.includes(applicationId) ? current : [...current, applicationId]);
+      setSelectedId(nextApplication?.id ?? "");
+      setLaunch(null);
+      setRunFeedback(null);
       setNotice(payload.message ?? "Application marked applied.");
       refresh();
     } catch (error) {
@@ -565,34 +579,30 @@ export function AssistantWorkbench({
               ) : null}
               {selectedPrimaryAction ? (
                 <Stack spacing={1}>
-                  <Button
-                    component={selectedPrimaryAction.href ? Link : "button"}
-                    href={selectedPrimaryAction.href}
-                    variant="contained"
-                    color={selectedPrimaryAction.color}
-                    startIcon={selectedPrimaryAction.kind === "launch" ? <PlayCircleOutlineOutlinedIcon /> : undefined}
-                    disabled={selectedPrimaryAction.disabled || loading || markingApplied}
-                    onClick={selectedPrimaryAction.kind === "launch"
-                      ? () => void launchSelected(false)
-                      : selectedPrimaryAction.kind === "mark_applied"
-                        ? () => void markApplied()
-                        : undefined}
-                  >
-                    {selectedPrimaryAction.loadingLabel && (loading || markingApplied) ? selectedPrimaryAction.loadingLabel : selectedPrimaryAction.label}
-                  </Button>
                   {selectedPrimaryAction.kind !== "mark_applied" ? (
                     <Button
-                      variant="outlined"
-                      color="primary"
-                      startIcon={<CheckCircleOutlineOutlinedIcon />}
-                      disabled={!selected || loading || markingApplied}
-                      onClick={() => {
-                        if (selected) void markApplied(selected.id);
-                      }}
+                      component={selectedPrimaryAction.href ? Link : "button"}
+                      href={selectedPrimaryAction.href}
+                      variant="contained"
+                      color={selectedPrimaryAction.color}
+                      startIcon={selectedPrimaryAction.kind === "launch" ? <PlayCircleOutlineOutlinedIcon /> : undefined}
+                      disabled={selectedPrimaryAction.disabled || loading}
+                      onClick={selectedPrimaryAction.kind === "launch" ? () => void launchSelected(false) : undefined}
                     >
-                      {markingApplied ? "Updating..." : "I already applied"}
+                      {selectedPrimaryAction.loadingLabel && loading ? selectedPrimaryAction.loadingLabel : selectedPrimaryAction.label}
                     </Button>
                   ) : null}
+                  <Button
+                    variant={selectedPrimaryAction.kind === "mark_applied" ? "contained" : "outlined"}
+                    color="primary"
+                    startIcon={<CheckCircleOutlineOutlinedIcon />}
+                    disabled={!selected || loading || markingApplied}
+                    onClick={() => {
+                      if (selected) void markApplied(selected.id);
+                    }}
+                  >
+                    {markingApplied ? "Updating..." : "I applied"}
+                  </Button>
                   <Typography variant="body2" color="text.secondary">{selectedPrimaryAction.detail}</Typography>
                 </Stack>
               ) : null}
