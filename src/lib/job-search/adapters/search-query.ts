@@ -16,6 +16,23 @@ type BraveSearchResponse = {
   };
 };
 
+type WorkingNomadsJob = {
+  url?: string;
+  title?: string;
+  description?: string;
+  company_name?: string;
+  category_name?: string;
+  tags?: string;
+  location?: string;
+  pub_date?: string;
+};
+
+type ListingExpansionResult = {
+  jobs: RawJobPosting[];
+  reason: string;
+  blocked: boolean;
+};
+
 const searchTimeoutMs = 10_000;
 
 export const searchQueryAdapter: JobSourceAdapter = {
@@ -42,7 +59,7 @@ export const searchQueryAdapter: JobSourceAdapter = {
     return dedupeByUrl(results).slice(0, maxFetch);
   },
   async normalize(raw: RawJobPosting): Promise<NormalizedJobPosting> {
-    const applicationUrl = await resolveApplicationUrl(raw.applicationUrl);
+    const applicationUrl = sanitizeApplicationUrl(await resolveApplicationUrl(raw.applicationUrl));
     const haystack = `${raw.title} ${raw.location ?? ""} ${raw.description}`;
     return {
       sourceJobId: raw.sourceJobId,
@@ -74,6 +91,17 @@ async function expandSearchResult(result: BraveSearchResult, query: string, prof
   if (!result.url) return [];
   if (isBuiltInListingUrl(result.url)) {
     const expanded = await fetchListingPageJobs(result, query, profile, parseBuiltInListingJobs, "builtin");
+    return expanded.jobs.length ? expanded.jobs : [listingReviewFromSearchResult(result, query, expanded.reason, expanded.blocked)];
+  }
+  if (isDiceListingResult(result.url)) {
+    const expanded = await fetchProviderListingJobs(result, query, profile, parseDiceListingJobs, "dice");
+    return expanded.jobs.length ? expanded.jobs : [listingReviewFromSearchResult(result, query, expanded.reason, expanded.blocked)];
+  }
+  if (isIndeedListingResult(result.url)) {
+    return [listingReviewFromSearchResult(result, query, "Indeed listing pages are not fetched server-side because they return bot-protection challenges.", true)];
+  }
+  if (isWorkingNomadsListingResult(result.url)) {
+    const expanded = await fetchWorkingNomadsListingJobs(result, query, profile);
     return expanded.jobs.length ? expanded.jobs : [listingReviewFromSearchResult(result, query, expanded.reason, expanded.blocked)];
   }
   if (isHimalayasJobUrl(result.url)) {
@@ -174,7 +202,7 @@ async function fetchListingPageJobs(
   profile: JobSearchProfile,
   parser: (html: string, result: BraveSearchResult, query: string, profile: JobSearchProfile) => RawJobPosting[],
   expansionProvider: string,
-) {
+): Promise<ListingExpansionResult> {
   if (!result.url) return { jobs: [], reason: "Missing listing page URL.", blocked: false };
   try {
     const response = await fetch(result.url, {
@@ -195,6 +223,49 @@ async function fetchListingPageJobs(
     return { jobs, reason: jobs.length ? "Expanded listing page into individual jobs." : `${expansionProvider} listing page had no parseable individual job links.`, blocked: false };
   } catch {
     return { jobs: [], reason: `${expansionProvider} listing page could not be fetched.`, blocked: true };
+  }
+}
+
+async function fetchProviderListingJobs(
+  result: BraveSearchResult,
+  query: string,
+  profile: JobSearchProfile,
+  parser: (html: string, result: BraveSearchResult, query: string, profile: JobSearchProfile) => RawJobPosting[],
+  expansionProvider: string,
+): Promise<ListingExpansionResult> {
+  return fetchListingPageJobs(result, query, profile, parser, expansionProvider);
+}
+
+async function fetchWorkingNomadsListingJobs(result: BraveSearchResult, query: string, profile: JobSearchProfile): Promise<ListingExpansionResult> {
+  if (!result.url) return { jobs: [], reason: "Missing Working Nomads listing URL.", blocked: false };
+  try {
+    const listingUrl = new URL(result.url);
+    const response = await fetch(new URL("/api/exposed_jobs/", listingUrl).toString(), {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "JobSearchOS/1.0",
+      },
+      signal: AbortSignal.timeout(searchTimeoutMs),
+    });
+    if (!response.ok) {
+      return { jobs: [], reason: `Working Nomads API returned HTTP ${response.status}.`, blocked: response.status === 401 || response.status === 403 };
+    }
+    const payload = await response.json().catch(() => null) as unknown;
+    if (!Array.isArray(payload)) {
+      return { jobs: [], reason: "Working Nomads API returned an unexpected payload.", blocked: false };
+    }
+    const jobs = payload
+      .filter(isWorkingNomadsJob)
+      .filter((job) => matchesWorkingNomadsListing(job, listingUrl, query))
+      .map((job) => workingNomadsJobToRawPosting(job, result, query, profile, listingUrl.toString()))
+      .slice(0, 50);
+    return {
+      jobs: dedupeByUrl(jobs),
+      reason: jobs.length ? "Expanded Working Nomads listing through public jobs API." : "Working Nomads API had no matching jobs for this listing.",
+      blocked: false,
+    };
+  } catch {
+    return { jobs: [], reason: "Working Nomads listing could not be expanded through the public jobs API.", blocked: true };
   }
 }
 
@@ -280,6 +351,99 @@ export function parseGenericListingJobs(html: string, result: BraveSearchResult,
   }
 
   return dedupeByUrl(jobs).slice(0, 50);
+}
+
+export function parseDiceListingJobs(html: string, result: BraveSearchResult, query: string, profile: JobSearchProfile) {
+  if (!result.url) return [];
+  const listingUrl = result.url;
+  const jobs: RawJobPosting[] = [];
+
+  for (const item of parseJsonLdItemListElements(html)) {
+    const jobUrl = absoluteUrl(item.url, listingUrl);
+    if (!jobUrl || !isDiceJobDetailUrl(jobUrl)) continue;
+    jobs.push(jobFromExpandedListing({
+      jobUrl,
+      title: cleanTitle(item.name ?? result.title ?? "Dice job"),
+      company: result.profile?.name ?? "Dice",
+      description: item.description ?? result.description ?? "",
+      listingUrl,
+      query,
+      profile,
+      result,
+      expansionProvider: "dice",
+      item,
+    }));
+  }
+
+  for (const item of parseJobAnchors(html, listingUrl)) {
+    if (!isDiceJobDetailUrl(item.url)) continue;
+    if (jobs.some((job) => job.applicationUrl === item.url)) continue;
+    jobs.push(jobFromExpandedListing({
+      jobUrl: item.url,
+      title: isPlausibleJobTitle(item.title) ? item.title : cleanTitle(result.title ?? "Dice job"),
+      company: result.profile?.name ?? "Dice",
+      description: result.description ?? "",
+      listingUrl,
+      query,
+      profile,
+      result,
+      expansionProvider: "dice",
+      item,
+    }));
+  }
+
+  for (const jobUrl of extractDiceJobDetailUrls(html, listingUrl)) {
+    if (jobs.some((job) => job.applicationUrl === jobUrl)) continue;
+    jobs.push(jobFromExpandedListing({
+      jobUrl,
+      title: cleanTitle(result.title ?? "Dice job"),
+      company: result.profile?.name ?? "Dice",
+      description: result.description ?? "",
+      listingUrl,
+      query,
+      profile,
+      result,
+      expansionProvider: "dice",
+      item: { url: jobUrl },
+    }));
+  }
+
+  return dedupeByUrl(jobs).slice(0, 50);
+}
+
+function workingNomadsJobToRawPosting(
+  job: WorkingNomadsJob,
+  result: BraveSearchResult,
+  query: string,
+  profile: JobSearchProfile,
+  listingUrl: string,
+): RawJobPosting {
+  const detailUrl = absoluteUrl(job.url, listingUrl) ?? listingUrl;
+  const applicationUrl = extractWorkingNomadsApplyUrl(job.description ?? "", detailUrl) ?? detailUrl;
+  return {
+    sourceJobId: `search:workingnomads:${stableId(detailUrl)}`,
+    company: cleanText(job.company_name ?? result.profile?.name ?? "Working Nomads"),
+    title: cleanTitle(job.title ?? result.title ?? "Working Nomads job"),
+    location: cleanText(job.location ?? locationFromQuery(query) ?? "Remote"),
+    description: [
+      cleanText(job.description ?? result.description ?? ""),
+      job.category_name ? `Category: ${job.category_name}` : "",
+      job.tags ? `Tags: ${job.tags}` : "",
+      `Expanded from: ${listingUrl}`,
+      `Matched query: ${query}`,
+      profile.name ? `Profile: ${profile.name}` : "",
+    ].filter(Boolean).join("\n\n"),
+    applicationUrl,
+    rawData: {
+      provider: "brave",
+      expansionProvider: "workingnomads",
+      expandedFrom: listingUrl,
+      detailUrl,
+      query,
+      result,
+      item: job,
+    },
+  };
 }
 
 function jobFromExpandedListing(input: {
@@ -441,6 +605,33 @@ function isLikelySearchListingResult(result: BraveSearchResult) {
   return hasRoleSignal && hasListingSignal;
 }
 
+function isDiceListingResult(value: string) {
+  try {
+    const url = new URL(value);
+    return url.hostname.replace(/^www\./, "") === "dice.com" && isDiceListingUrl(url);
+  } catch {
+    return false;
+  }
+}
+
+function isIndeedListingResult(value: string) {
+  try {
+    const url = new URL(value);
+    return url.hostname.replace(/^www\./, "") === "indeed.com" && isIndeedListingUrl(url);
+  } catch {
+    return false;
+  }
+}
+
+function isWorkingNomadsListingResult(value: string) {
+  try {
+    const url = new URL(value);
+    return url.hostname.replace(/^www\./, "") === "workingnomads.com" && isWorkingNomadsListingUrl(url);
+  } catch {
+    return false;
+  }
+}
+
 function isKnownListingUrl(value: string) {
   try {
     const url = new URL(value);
@@ -448,6 +639,7 @@ function isKnownListingUrl(value: string) {
     if (hostname === "remoterocketship.com" && url.pathname.startsWith("/jobs/")) return true;
     if (hostname === "indeed.com" && isIndeedListingUrl(url)) return true;
     if (hostname === "dice.com" && isDiceListingUrl(url)) return true;
+    if (hostname === "workingnomads.com" && isWorkingNomadsListingUrl(url)) return true;
     return false;
   } catch {
     return false;
@@ -462,6 +654,7 @@ function isLikelyListingUrl(value: string) {
     const paramMatches = Array.from(url.searchParams.keys()).filter((key) => listingParams.includes(key.toLowerCase())).length;
     if (url.hostname.replace(/^www\./, "") === "indeed.com" && isIndeedListingUrl(url)) return true;
     if (url.hostname.replace(/^www\./, "") === "dice.com" && isDiceListingUrl(url)) return true;
+    if (url.hostname.replace(/^www\./, "") === "workingnomads.com" && isWorkingNomadsListingUrl(url)) return true;
     if (paramMatches >= 2) return true;
     if (/\/(jobs|careers|open-roles|positions)\/(search|remote|engineering|software|frontend|front-end|developer|dev-engineering)/i.test(path)) return true;
     if (/\/(search|job-search|jobs\/search)\b/i.test(path)) return true;
@@ -488,8 +681,73 @@ function isDiceListingUrl(url: URL) {
   return false;
 }
 
+function isWorkingNomadsListingUrl(url: URL) {
+  const path = url.pathname.toLowerCase();
+  if (path === "/jobs" || path === "/jobs/") return true;
+  if (/^\/remote-.+-jobs\/?$/i.test(path)) return true;
+  if (/^\/remote-jobs-by-/i.test(path)) return true;
+  return false;
+}
+
+function isDiceJobDetailUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.hostname.replace(/^www\./, "") === "dice.com" && /^\/job-detail\/[a-f0-9-]{24,}$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function extractDiceJobDetailUrls(html: string, baseUrl: string) {
+  const urls = new Set<string>();
+  const absolutePattern = /https:\/\/www\.dice\.com\/job-detail\/[a-f0-9-]{24,}/gi;
+  const relativePattern = /\/job-detail\/[a-f0-9-]{24,}/gi;
+  for (const match of html.matchAll(absolutePattern)) {
+    const resolved = absoluteUrl(match[0], baseUrl);
+    if (resolved && isDiceJobDetailUrl(resolved)) urls.add(resolved);
+  }
+  for (const match of html.matchAll(relativePattern)) {
+    const resolved = absoluteUrl(match[0], baseUrl);
+    if (resolved && isDiceJobDetailUrl(resolved)) urls.add(resolved);
+  }
+  return [...urls];
+}
+
+function isWorkingNomadsJob(value: unknown): value is WorkingNomadsJob {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && typeof (value as WorkingNomadsJob).url === "string");
+}
+
+function matchesWorkingNomadsListing(job: WorkingNomadsJob, listingUrl: URL, query: string) {
+  const terms = workingNomadsListingTerms(listingUrl, query);
+  if (terms.length === 0) return true;
+  const haystack = cleanText([
+    job.title,
+    job.description,
+    job.company_name,
+    job.category_name,
+    job.tags,
+    job.location,
+  ].filter(Boolean).join(" ")).toLowerCase();
+  return terms.some((term) => haystack.includes(term));
+}
+
+function workingNomadsListingTerms(listingUrl: URL, query: string) {
+  const pathTerms = listingUrl.pathname
+    .toLowerCase()
+    .replace(/^\/remote-/, "")
+    .replace(/-jobs\/?$/, "")
+    .split("-")
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3 && !["remote", "jobs", "job", "anywhere"].includes(term));
+  const queryTerms = query
+    .toLowerCase()
+    .match(/[a-z0-9+#.]{3,}/g)
+    ?.filter((term) => !["site", "workingnomads", "com", "remote", "jobs", "job"].includes(term.replace(/[+#.]/g, ""))) ?? [];
+  return [...new Set([...pathTerms, ...queryTerms.map((term) => term.replace(/[+#.]/g, ""))])];
+}
+
 function isBlockedListingHtml(html: string) {
-  return /Attention Required!\s*\|\s*Cloudflare|Sorry, you have been blocked|cf-error-details|enable cookies/i.test(html);
+  return /Attention Required!\s*\|\s*Cloudflare|Sorry, you have been blocked|cf-error-details|enable cookies|Just a moment|cf_chl|challenges\.cloudflare\.com/i.test(html);
 }
 
 function isSameUrlWithoutSearch(left: string, right: string) {
@@ -707,6 +965,25 @@ function isHimalayasUrl(value: string) {
   }
 }
 
+function extractWorkingNomadsApplyUrl(html: string, baseUrl: string) {
+  for (const anchor of parseAnchors(html, baseUrl)) {
+    if (isWorkingNomadsUrl(anchor.url) || isLikelySocialOrShareUrl(anchor.url)) continue;
+    if (/\b(apply|interested|here|job|available)\b/i.test(anchor.text) || /\/(apply|jobs?|careers?|available)\b/i.test(anchor.url)) {
+      return anchor.url;
+    }
+  }
+  const directUrl = firstMatch(html, /https?:\/\/(?!www\.workingnomads\.com)[^"' <)]+/i);
+  return absoluteUrl(directUrl, baseUrl);
+}
+
+function isWorkingNomadsUrl(value: string) {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "") === "workingnomads.com";
+  } catch {
+    return false;
+  }
+}
+
 function isLikelySocialOrShareUrl(value: string) {
   try {
     const hostname = new URL(value).hostname.replace(/^www\./, "");
@@ -731,6 +1008,26 @@ function canonicalApplicationUrl(value?: string) {
     return url.toString();
   } catch {
     return value;
+  }
+}
+
+function sanitizeApplicationUrl(value?: string) {
+  if (!value) return value;
+  return isUnsafeApplicationListingUrl(value) ? undefined : value;
+}
+
+function isUnsafeApplicationListingUrl(value: string) {
+  if (isBuiltInListingUrl(value) || isLikelyListingUrl(value)) return true;
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.replace(/^www\./, "");
+    if (hostname === "dice.com") return isDiceListingUrl(url) && !isDiceJobDetailUrl(value);
+    if (hostname === "indeed.com") return isIndeedListingUrl(url);
+    if (hostname === "himalayas.app") return !isHimalayasJobUrl(value);
+    if (hostname === "workingnomads.com") return isWorkingNomadsListingUrl(url);
+    return false;
+  } catch {
+    return false;
   }
 }
 

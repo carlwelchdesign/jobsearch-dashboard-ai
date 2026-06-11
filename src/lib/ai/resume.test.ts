@@ -106,6 +106,85 @@ describe("tailorResumeForJob", () => {
     expect(tailored.markdownResume).toContain("### EarlierCo - Frontend Engineer | 2018 - 2021");
     expect(tailored.markdownResume).toContain("- Built and maintained customer-facing web applications.");
   });
+
+  it("does not emit internal continuity placeholder bullets for roles without details", async () => {
+    parseStructuredOutputMock.mockResolvedValue(null);
+    const now = new Date("2026-06-04T12:00:00Z");
+
+    const tailored = await tailorResumeForJob({
+      userProfile: {
+        id: "profile_1",
+        userId: "user_1",
+        fullName: "Carl Welch",
+        email: "carl@example.com",
+        phone: null,
+        location: "Remote",
+        linkedinUrl: null,
+        githubUrl: null,
+        portfolioUrl: null,
+        raceAnswer: null,
+        genderAnswer: null,
+        veteranStatusAnswer: null,
+        disabilityAnswer: null,
+        masterSummary: "Senior product engineer.",
+        professionalSummary: "Senior product engineer building React and TypeScript products.",
+        yearsExperience: 20,
+        primaryRoles: [],
+        coreSkills: ["React", "TypeScript"],
+        technicalSkills: ["Next.js", "Prisma"],
+        industries: [],
+        domainExpertise: [],
+        createdAt: now,
+        updatedAt: now,
+      } satisfies UserProfile,
+      job: {
+        id: "job_1",
+        sourceId: null,
+        sourceJobId: null,
+        company: "Acme",
+        title: "Senior Frontend Engineer",
+        location: "Remote",
+        country: null,
+        city: null,
+        remoteType: "remote",
+        salaryMin: null,
+        salaryMax: null,
+        salaryCurrency: null,
+        description: "React TypeScript frontend product engineering.",
+        requirements: [],
+        niceToHaves: [],
+        benefits: [],
+        applicationUrl: null,
+        atsProvider: "unknown",
+        rawData: {},
+        contentHash: "hash",
+        duplicateGroupId: null,
+        staleScore: 0,
+        firstSeenAt: now,
+        lastSeenAt: now,
+        createdAt: now,
+        updatedAt: now,
+      } satisfies JobPosting,
+      bullets: [],
+      projects: [],
+      workExperiences: [
+        workExperience({
+          id: "work_1",
+          company: "The David Allen Company",
+          title: "Art Director / Full Stack Developer",
+          startDate: "Jan 2004",
+          endDate: "Feb 2009",
+          createdAt: now,
+        }),
+      ],
+    });
+
+    expect(tailored.markdownResume).toContain("### The David Allen Company - Art Director / Full Stack Developer | Jan 2004 - Feb 2009");
+    expect(tailored.markdownResume).not.toMatch(/verified role|employment-history continuity|included for continuity/i);
+    expect(tailored.markdownResume).toContain(
+      "- Contributed to Art Director / Full Stack Developer responsibilities across product delivery, execution, and cross-functional collaboration.",
+    );
+  });
 });
 
 function experienceBullet(input: Partial<ExperienceBullet> & Pick<ExperienceBullet, "id" | "company" | "role" | "text" | "createdAt">): ExperienceBullet {

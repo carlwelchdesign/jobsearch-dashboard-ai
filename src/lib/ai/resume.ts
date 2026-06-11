@@ -64,6 +64,7 @@ export async function tailorResumeForJob({ userProfile, job, bullets, projects, 
         "Use these sections in this order when supported by the source data: Summary, Skills, Professional Experience, Projects, Education, Certifications. " +
         "Professional Experience role lines must follow 'Company - Role | Date range' when dates are available, then 3-5 concise bullets focused on outcomes, scope, tools, and measurable evidence already present in source data. " +
         "Do not omit any supplied workExperiences from Professional Experience. If a role is less relevant, keep the entry compact with 1-2 truthful bullets rather than creating an employment-date gap. " +
+        "Never write internal bookkeeping phrases such as verified role, employment-history continuity, included for continuity, or placeholder-style role notes in the resume. " +
         "Verified bullets marked as profile updates or role-description digest evidence are recently approved user profile data. Give them strong consideration when they align with the job, even if older uploaded-resume bullets also match. " +
         "Keep the Summary to 2 polished sentences and the Skills section to a selective comma-separated list rather than a dense keyword dump. " +
         "In the contact line, list values only — no labels like 'Email:', 'Phone:', 'LinkedIn:'. Separate with ' | '. Use only the root GitHub profile URL (e.g. github.com/username) — never individual repository URLs. Include the LinkedIn URL if provided. " +
@@ -448,13 +449,13 @@ function appendToProfessionalExperience(markdownResume: string, additions: strin
 }
 
 function fallbackWorkBullets(work: WorkExperience | undefined) {
-  if (!work) return ["Held a verified role in the candidate's employment history."];
+  if (!work) return ["Contributed to product delivery across design, engineering, and cross-functional execution."];
   const achievements = jsonStringArray(work.achievements).filter(Boolean);
   if (achievements.length) return achievements.slice(0, 2);
   if (work.summary?.trim()) return [work.summary.trim()];
   const skills = jsonStringArray(work.skills).slice(0, 6);
-  if (skills.length) return [`Worked across ${skills.join(", ")} in this verified role.`];
-  return ["Verified role included for employment-history continuity."];
+  if (skills.length) return [`Applied ${skills.join(", ")} across product, delivery, and cross-functional work.`];
+  return [`Contributed to ${work.title} responsibilities across product delivery, execution, and cross-functional collaboration.`];
 }
 
 function sortWorkExperiences(workExperiences: WorkExperience[]) {

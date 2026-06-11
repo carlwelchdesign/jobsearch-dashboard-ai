@@ -1,6 +1,6 @@
 import type { JobSearchProfile, JobSource } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { extractBuiltInHowToApplyUrl, extractHimalayasApplyUrl, searchQueryAdapter } from "@/lib/job-search/adapters/search-query";
+import { extractBuiltInHowToApplyUrl, extractHimalayasApplyUrl, parseDiceListingJobs, searchQueryAdapter } from "@/lib/job-search/adapters/search-query";
 
 describe("searchQueryAdapter", () => {
   beforeEach(() => {
@@ -286,6 +286,39 @@ describe("searchQueryAdapter", () => {
     });
   });
 
+  it("returns a blocked listing-review record for protected Himalayas job pages", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Senior Frontend Engineer, React",
+                url: "https://himalayas.app/companies/newfire-global-partners/jobs/senior-frontend-engineer-react",
+                description: "Remote React role",
+                profile: { name: "Newfire Global Partners" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => cloudflareChallengeHtml,
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:himalayas.app "Senior Frontend Engineer"'] }));
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      listingReview: {
+        reason: "Himalayas job page returned a bot-protection/block page.",
+        blocked: true,
+      },
+    });
+  });
+
   it("suppresses Indeed search result pages instead of treating them as application URLs", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce({
@@ -302,27 +335,88 @@ describe("searchQueryAdapter", () => {
             ],
           },
         }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => "<html><body><a href=\"/jobs?q=react+developer\">React developer jobs</a></body></html>",
       } as Response);
 
     const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:indeed.com "React Developer" "remote"'] }));
 
+    expect(fetch).toHaveBeenCalledTimes(1);
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({
       company: "Indeed",
       title: "React Developer Remote Jobs, Employment",
       applicationUrl: "https://www.indeed.com/q-react-developer-remote-jobs.html?vjk=2b96b1e36b1939fe",
       listingReview: {
-        reason: "generic-listing listing page had no parseable individual job links.",
-        blocked: false,
+        reason: "Indeed listing pages are not fetched server-side because they return bot-protection challenges.",
+        blocked: true,
       },
     });
   });
 
-  it("suppresses Dice search result pages instead of treating them as application URLs", async () => {
+  it("accepts individual Indeed job URLs from Brave when they are not listing pages", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        web: {
+          results: [
+            {
+              title: "React Developer",
+              url: "https://www.indeed.com/viewjob?jk=abc123def456",
+              description: "Remote React developer role.",
+              profile: { name: "Indeed" },
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:indeed.com/viewjob "React Developer"'] }));
+    const normalized = await searchQueryAdapter.normalize(jobs[0]!);
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.listingReview).toBeUndefined();
+    expect(normalized.applicationUrl).toBe("https://www.indeed.com/viewjob?jk=abc123def456");
+  });
+
+  it("expands Dice search result pages into individual job detail links", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Front End Developer React Js Jobs",
+                url: "https://www.dice.com/jobs/q-front+end+developer+react+js-jobs",
+                description: "Search front end developer React JS jobs on Dice.",
+                profile: { name: "Dice" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => diceListingHtml,
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:dice.com "Front End Developer" "React"'] }));
+
+    expect(jobs).toHaveLength(2);
+    expect(jobs.map((job) => job.applicationUrl)).toEqual([
+      "https://www.dice.com/job-detail/1c463470-ecc8-45a0-b1a7-8c72c6fcafd9",
+      "https://www.dice.com/job-detail/72b1e2e3-525f-4097-8add-88d9ccd1e503",
+    ]);
+    expect(jobs[0]).toMatchObject({
+      company: "Dice",
+      title: "Senior React Developer",
+      rawData: {
+        expansionProvider: "dice",
+        expandedFrom: "https://www.dice.com/jobs/q-front+end+developer+react+js-jobs",
+      },
+    });
+  });
+
+  it("suppresses Dice listing pages when no individual job detail links are parseable", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce({
         ok: true,
@@ -348,11 +442,104 @@ describe("searchQueryAdapter", () => {
 
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({
-      company: "Dice",
-      title: "Front End Developer React Js Jobs",
-      applicationUrl: "https://www.dice.com/jobs/q-front+end+developer+react+js-jobs",
       listingReview: {
-        reason: "generic-listing listing page had no parseable individual job links.",
+        reason: "dice listing page had no parseable individual job links.",
+        blocked: false,
+      },
+    });
+  });
+
+  it("dedupes Dice job detail links extracted from listing HTML", () => {
+    const jobs = parseDiceListingJobs(diceListingHtml, {
+      title: "Front End Developer React Js Jobs",
+      url: "https://www.dice.com/jobs/q-front+end+developer+react+js-jobs",
+      description: "Search front end developer React JS jobs on Dice.",
+      profile: { name: "Dice" },
+    }, "site:dice.com React", profile());
+
+    expect(jobs.map((job) => job.applicationUrl)).toEqual([
+      "https://www.dice.com/job-detail/1c463470-ecc8-45a0-b1a7-8c72c6fcafd9",
+      "https://www.dice.com/job-detail/72b1e2e3-525f-4097-8add-88d9ccd1e503",
+    ]);
+  });
+
+  it("expands Working Nomads listing pages through the public jobs API", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Remote TypeScript Jobs",
+                url: "https://www.workingnomads.com/remote-typescript-jobs",
+                description: "Explore fully remote TypeScript jobs.",
+                profile: { name: "Working Nomads" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => workingNomadsJobs,
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:workingnomads.com "TypeScript" "remote"'] }));
+
+    expect(fetch).toHaveBeenCalledWith("https://www.workingnomads.com/api/exposed_jobs/", expect.objectContaining({
+      headers: expect.objectContaining({ Accept: "application/json" }),
+    }));
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      company: "Acme Remote",
+      title: "Senior TypeScript Engineer",
+      location: "Anywhere",
+      applicationUrl: "https://jobs.ashbyhq.com/acme/ts-123/application",
+      rawData: {
+        expansionProvider: "workingnomads",
+        expandedFrom: "https://www.workingnomads.com/remote-typescript-jobs",
+        detailUrl: "https://www.workingnomads.com/job/go/123456/",
+      },
+    });
+  });
+
+  it("suppresses Working Nomads listings when the API has no matching jobs", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Remote TypeScript Jobs",
+                url: "https://www.workingnomads.com/remote-typescript-jobs",
+                description: "Explore fully remote TypeScript jobs.",
+                profile: { name: "Working Nomads" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{
+          url: "https://www.workingnomads.com/job/go/999/",
+          title: "Payroll Specialist",
+          description: "Accounting operations role.",
+          company_name: "Backoffice Co",
+          tags: "payroll,accounting",
+          location: "Remote",
+        }],
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:workingnomads.com "TypeScript" "remote"'] }));
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      applicationUrl: "https://www.workingnomads.com/remote-typescript-jobs",
+      listingReview: {
+        reason: "Working Nomads API had no matching jobs for this listing.",
         blocked: false,
       },
     });
@@ -430,6 +617,49 @@ const himalayasDetailHtml = `
     </body>
   </html>
 `;
+
+const cloudflareChallengeHtml = `
+  <html>
+    <head><title>Just a moment...</title></head>
+    <body>
+      <script src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1"></script>
+    </body>
+  </html>
+`;
+
+const diceListingHtml = `
+  <html>
+    <body>
+      <a href="/job-detail/1c463470-ecc8-45a0-b1a7-8c72c6fcafd9">Senior React Developer</a>
+      <a href="https://www.dice.com/job-detail/1c463470-ecc8-45a0-b1a7-8c72c6fcafd9">Senior React Developer duplicate</a>
+      <a href="https://www.dice.com/job-detail/72b1e2e3-525f-4097-8add-88d9ccd1e503">Front End Engineer</a>
+      <a href="/jobs/q-front+end+developer+react+js-jobs?page=2">Next</a>
+    </body>
+  </html>
+`;
+
+const workingNomadsJobs = [
+  {
+    url: "https://www.workingnomads.com/job/go/123456/",
+    title: "Senior TypeScript Engineer",
+    description: "<p>Build React and TypeScript interfaces.</p><p><strong>If interested, please apply here:</strong> <a href=\"https://jobs.ashbyhq.com/acme/ts-123/application\">Apply</a></p>",
+    company_name: "Acme Remote",
+    category_name: "Development",
+    tags: "typescript,react,frontend",
+    location: "Anywhere",
+    pub_date: "2026-06-11T11:06:58-04:00",
+  },
+  {
+    url: "https://www.workingnomads.com/job/go/654321/",
+    title: "Payroll Specialist",
+    description: "Accounting operations role.",
+    company_name: "Backoffice Co",
+    category_name: "Finance",
+    tags: "payroll,accounting",
+    location: "Remote",
+    pub_date: "2026-06-11T11:06:58-04:00",
+  },
+];
 
 function profile(input: Partial<JobSearchProfile> = {}) {
   return {

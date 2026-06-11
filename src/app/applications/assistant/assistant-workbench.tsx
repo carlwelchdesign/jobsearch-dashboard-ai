@@ -893,6 +893,8 @@ function AssistantRunPanel({
 
   return (
     <Stack spacing={2}>
+      <RawLogPanel log={log} onCopyLog={onCopyLog} />
+
       <Alert severity={diagnostics.severity}>
         <Stack spacing={0.75}>
           <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
@@ -945,8 +947,6 @@ function AssistantRunPanel({
           <Alert severity="info">No assistant events have been recorded yet.</Alert>
         )}
       </Box>
-
-      <RawLogPanel log={log} onCopyLog={onCopyLog} />
     </Stack>
   );
 }
