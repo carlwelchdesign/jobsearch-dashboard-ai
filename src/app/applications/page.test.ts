@@ -15,6 +15,9 @@ describe("/applications page agency workflow", () => {
     expect(pageSource).toContain("minimumScore: 0");
     expect(pageSource).toContain("/api/applications/next-ready/launch-assistant");
     expect(pageSource).toContain("/applications/assistant");
+    expect(pageSource).toContain("These applications are already in Apply Sprint.");
+    expect(pageSource).toContain("Open {items.length} in Apply Sprint");
+    expect(pageSource).toContain("No applications are currently in Apply Sprint.");
     expect(pageSource).not.toContain("Review jobs first");
     expect(pageSource).not.toContain("ApplicationCreateForm");
   });
