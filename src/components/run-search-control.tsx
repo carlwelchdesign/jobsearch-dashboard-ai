@@ -72,7 +72,7 @@ export function RunSearchControl({ compact = false }: { compact?: boolean }) {
   return (
     <Stack spacing={1.5}>
       <Button variant="contained" startIcon={<PlayArrowIcon />} disabled={running} onClick={startRun}>
-        {running ? "Search running..." : "Run search"}
+        {running ? "Search loop running..." : "Run search improvement loop"}
       </Button>
       {error ? <Alert severity="error">{error}</Alert> : null}
       {run && !compact ? (
@@ -100,7 +100,7 @@ export function RunSearchControl({ compact = false }: { compact?: boolean }) {
         <Stack spacing={0.75}>
           <SearchRunAnalyticsCharts run={run} compact />
           <Typography variant="body2" color="text.secondary">
-            {run.status}: {run.progress?.[run.progress.length - 1]?.message ?? "Search started."}
+            {run.status}: {run.progress?.[run.progress.length - 1]?.message ?? "Search improvement loop started."}
           </Typography>
         </Stack>
       ) : null}

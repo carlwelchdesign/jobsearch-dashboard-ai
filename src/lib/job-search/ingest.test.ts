@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
+import { runSearchProfileManagerAgent } from "@/lib/agents/search-profile-manager";
 import { runRecruitingAgency } from "@/lib/applications/recruiting-agency";
-import { autoRunAgencyAfterSearch, autoRunMarketIntelligenceAfterSearch } from "@/lib/job-search/ingest";
+import { autoRunAgencyAfterSearch, autoRunMarketIntelligenceAfterSearch, autoRunProfileOptimizerAfterSearch } from "@/lib/job-search/ingest";
 import { prisma } from "@/lib/prisma";
 
 vi.mock("@/lib/applications/recruiting-agency", () => ({
@@ -11,6 +12,7 @@ vi.mock("@/lib/applications/recruiting-agency", () => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     agentRun: { findFirst: vi.fn() },
+    application: { count: vi.fn() },
     jobProfileMatch: { count: vi.fn() },
     jobSearchRun: { findUnique: vi.fn(), update: vi.fn() },
   },
@@ -28,10 +30,16 @@ vi.mock("@/lib/agents/market-intelligence", () => ({
   runMarketIntelligenceAgent: vi.fn(),
 }));
 
+vi.mock("@/lib/agents/search-profile-manager", () => ({
+  runSearchProfileManagerAgent: vi.fn(),
+}));
+
 const runAgencyMock = vi.mocked(runRecruitingAgency);
 const runMarketIntelligenceMock = vi.mocked(runMarketIntelligenceAgent);
+const runSearchProfileManagerMock = vi.mocked(runSearchProfileManagerAgent);
 const agentRunFindFirstMock = vi.mocked(prisma.agentRun.findFirst);
 const matchCountMock = vi.mocked(prisma.jobProfileMatch.count);
+const applicationCountMock = vi.mocked(prisma.application.count);
 const searchRunFindUniqueMock = vi.mocked(prisma.jobSearchRun.findUnique);
 const searchRunUpdateMock = vi.mocked(prisma.jobSearchRun.update);
 
@@ -249,6 +257,7 @@ describe("autoRunMarketIntelligenceAfterSearch", () => {
       triggeredBy: "manual",
       status: "completed",
       stats: stats(),
+      profileOptimizer: completedOptimizerProgress(),
     });
 
     expect(runMarketIntelligenceMock).toHaveBeenCalledWith({
@@ -282,6 +291,7 @@ describe("autoRunMarketIntelligenceAfterSearch", () => {
       triggeredBy: "cron",
       status: "partial",
       stats: stats(),
+      profileOptimizer: completedOptimizerProgress(),
     });
 
     expect(runMarketIntelligenceMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -322,6 +332,7 @@ describe("autoRunMarketIntelligenceAfterSearch", () => {
       triggeredBy: "manual",
       status: "completed",
       stats: stats(),
+      profileOptimizer: completedOptimizerProgress(),
     });
 
     expect(result).toMatchObject({ started: false, reason: "market_intelligence_failed", error: "research source failed" });
@@ -340,6 +351,127 @@ describe("autoRunMarketIntelligenceAfterSearch", () => {
       }),
     }));
   });
+
+  it("pauses market intelligence when the profile optimizer gate is still open", async () => {
+    const result = await autoRunMarketIntelligenceAfterSearch({
+      runId: "search_1",
+      userId: "user_1",
+      triggeredBy: "manual",
+      status: "completed",
+      stats: stats(),
+      profileOptimizer: {
+        status: "skipped",
+        reason: "review_gate_open",
+        gates: { needsReview: 2, pendingApplications: 0 },
+      },
+    });
+
+    expect(result).toMatchObject({ started: false, reason: "profile_optimizer_not_completed" });
+    expect(runMarketIntelligenceMock).not.toHaveBeenCalled();
+    expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        progress: expect.arrayContaining([
+          expect.objectContaining({
+            marketIntelligence: expect.objectContaining({
+              status: "skipped",
+              reason: "profile_optimizer_not_completed",
+            }),
+          }),
+        ]),
+      }),
+    }));
+  });
+});
+
+describe("autoRunProfileOptimizerAfterSearch", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    searchRunFindUniqueMock.mockResolvedValue({ progress: [] } as never);
+    searchRunUpdateMock.mockResolvedValue({ id: "search_1" } as never);
+    matchCountMock.mockResolvedValue(0);
+    applicationCountMock.mockResolvedValue(0);
+    runSearchProfileManagerMock.mockResolvedValue({
+      run: { id: "optimizer_1" },
+      output: {
+        profileHealthScores: [{ profileId: "profile_1", name: "Frontend", healthScore: 72 }],
+        recommendedChanges: [{ profileId: "profile_1", profileName: "Frontend", action: "keep", summary: "Keep running." }],
+        profilesToCreate: [],
+      },
+    } as never);
+  });
+
+  it("runs profile optimizer after review and application gates are clear", async () => {
+    const result = await autoRunProfileOptimizerAfterSearch({
+      runId: "search_1",
+      userId: "user_1",
+      status: "completed",
+      stats: stats(),
+    });
+
+    expect(runSearchProfileManagerMock).toHaveBeenCalledWith({ userId: "user_1" });
+    expect(result).toMatchObject({
+      started: true,
+      agentRunId: "optimizer_1",
+      progress: expect.objectContaining({
+        status: "completed",
+        result: expect.objectContaining({ healthScores: 1, recommendedChanges: 1 }),
+      }),
+    });
+    expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        progress: expect.arrayContaining([
+          expect.objectContaining({
+            profileOptimizer: expect.objectContaining({
+              status: "completed",
+              reason: "started",
+              agentRunId: "optimizer_1",
+            }),
+          }),
+        ]),
+      }),
+    }));
+  });
+
+  it("pauses profile optimizer while jobs still need review", async () => {
+    matchCountMock.mockResolvedValue(4);
+
+    const result = await autoRunProfileOptimizerAfterSearch({
+      runId: "search_1",
+      userId: "user_1",
+      status: "completed",
+      stats: stats(),
+    });
+
+    expect(result).toMatchObject({ started: false, reason: "review_gate_open" });
+    expect(runSearchProfileManagerMock).not.toHaveBeenCalled();
+    expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        progress: expect.arrayContaining([
+          expect.objectContaining({
+            profileOptimizer: expect.objectContaining({
+              status: "skipped",
+              reason: "review_gate_open",
+              gates: { needsReview: 4, pendingApplications: 0 },
+            }),
+          }),
+        ]),
+      }),
+    }));
+  });
+
+  it("pauses profile optimizer while applications still need Apply Sprint", async () => {
+    applicationCountMock.mockResolvedValue(3);
+
+    const result = await autoRunProfileOptimizerAfterSearch({
+      runId: "search_1",
+      userId: "user_1",
+      status: "completed",
+      stats: stats(),
+    });
+
+    expect(result).toMatchObject({ started: false, reason: "application_gate_open" });
+    expect(runSearchProfileManagerMock).not.toHaveBeenCalled();
+  });
 });
 
 function stats(input: Partial<{ jobsFetched: number; jobsAfterDedupe: number; jobsAfterFilters: number; jobsSaved: number }> = {}) {
@@ -348,5 +480,15 @@ function stats(input: Partial<{ jobsFetched: number; jobsAfterDedupe: number; jo
     jobsAfterDedupe: input.jobsAfterDedupe ?? 8,
     jobsAfterFilters: input.jobsAfterFilters ?? 4,
     jobsSaved: input.jobsSaved ?? 3,
+  };
+}
+
+function completedOptimizerProgress() {
+  return {
+    status: "completed" as const,
+    reason: "started" as const,
+    agentRunId: "optimizer_1",
+    result: { healthScores: 1, recommendedChanges: 1, profilesToCreate: 0 },
+    gates: { needsReview: 0, pendingApplications: 0 },
   };
 }

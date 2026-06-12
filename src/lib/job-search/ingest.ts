@@ -1,6 +1,7 @@
 import { JobSearchRun, NotificationSettings, Prisma, User } from "@prisma/client";
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
+import { runSearchProfileManagerAgent } from "@/lib/agents/search-profile-manager";
 import { MAX_RECRUITING_AGENCY_LIMIT } from "@/lib/applications/recruiting-agency-constants";
 import { runRecruitingAgency } from "@/lib/applications/recruiting-agency";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
@@ -17,6 +18,7 @@ type ProgressEvent = {
   message: string;
   stats?: JobSearchStats;
   agencyHandoff?: AgencyHandoffProgress;
+  profileOptimizer?: ProfileOptimizerProgress;
   marketIntelligence?: MarketIntelligenceProgress;
 };
 
@@ -88,8 +90,29 @@ type AgencyHandoffProgress = {
 
 type MarketIntelligenceProgress = {
   status: "completed" | "failed" | "skipped";
-  reason: "started" | "search_not_successful" | "market_intelligence_failed";
+  reason: "started" | "search_not_successful" | "profile_optimizer_not_completed" | "market_intelligence_failed";
   agentRunId?: string;
+  error?: string;
+};
+
+type ProfileOptimizerProgress = {
+  status: "completed" | "failed" | "skipped";
+  reason:
+    | "started"
+    | "search_not_successful"
+    | "review_gate_open"
+    | "application_gate_open"
+    | "profile_optimizer_failed";
+  agentRunId?: string;
+  result?: {
+    healthScores: number;
+    recommendedChanges: number;
+    profilesToCreate: number;
+  };
+  gates?: {
+    needsReview: number;
+    pendingApplications: number;
+  };
   error?: string;
 };
 
@@ -368,12 +391,19 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
     jobsSaved: stats.jobsSaved,
     stats,
   });
+  const profileOptimizer = await autoRunProfileOptimizerAfterSearch({
+    runId: run.id,
+    userId: user?.id ?? null,
+    status,
+    stats,
+  });
   await autoRunMarketIntelligenceAfterSearch({
     runId: run.id,
     userId: user?.id ?? null,
     triggeredBy,
     status,
     stats,
+    profileOptimizer: profileOptimizer.progress,
   });
 
   if (user?.notificationSettings) {
@@ -497,13 +527,21 @@ export async function autoRunMarketIntelligenceAfterSearch(input: {
   triggeredBy: "manual" | "cron";
   status: "completed" | "partial" | "failed";
   stats: JobSearchStats;
+  profileOptimizer?: ProfileOptimizerProgress;
 }) {
   if (!["completed", "partial"].includes(input.status)) {
-    await appendProgress(input.runId, "Market intelligence skipped because the search did not finish successfully.", input.stats, undefined, {
+    await appendProgress(input.runId, "Market intelligence skipped because the search did not finish successfully.", input.stats, undefined, undefined, {
       status: "skipped",
       reason: "search_not_successful",
     });
     return { started: false, reason: "search_not_successful" as const };
+  }
+  if (input.profileOptimizer && input.profileOptimizer.status !== "completed") {
+    await appendProgress(input.runId, "Market intelligence paused because the profile optimizer did not complete after the gated review/apply checks.", input.stats, undefined, undefined, {
+      status: "skipped",
+      reason: "profile_optimizer_not_completed",
+    });
+    return { started: false, reason: "profile_optimizer_not_completed" as const };
   }
 
   try {
@@ -520,6 +558,7 @@ export async function autoRunMarketIntelligenceAfterSearch(input: {
       `Market intelligence completed with ${result.output.marketTemperature.length} lane signal(s), ${result.output.recommendedActions.length} recommendation(s), ${result.output.adaptationSummary?.applied ?? 0} applied search adaptation(s), and ${result.output.adaptationSummary?.reviewOnly ?? 0} review item(s).`,
       input.stats,
       undefined,
+      undefined,
       {
         status: "completed",
         reason: "started",
@@ -529,13 +568,101 @@ export async function autoRunMarketIntelligenceAfterSearch(input: {
     return { started: true, reason: "started" as const, agentRunId: result.run.id };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown market intelligence failure";
-    await appendProgress(input.runId, `Market intelligence failed after search completion: ${message}`, input.stats, undefined, {
+    await appendProgress(input.runId, `Market intelligence failed after search completion: ${message}`, input.stats, undefined, undefined, {
       status: "failed",
       reason: "market_intelligence_failed",
       error: message,
     });
     return { started: false, reason: "market_intelligence_failed" as const, error: message };
   }
+}
+
+export async function autoRunProfileOptimizerAfterSearch(input: {
+  runId: string;
+  userId?: string | null;
+  status: "completed" | "partial" | "failed";
+  stats: JobSearchStats;
+}) {
+  if (!["completed", "partial"].includes(input.status)) {
+    const progress: ProfileOptimizerProgress = {
+      status: "skipped",
+      reason: "search_not_successful",
+    };
+    await appendProgress(input.runId, "Profile optimizer skipped because the search did not finish successfully.", input.stats, undefined, progress);
+    return { started: false, reason: "search_not_successful" as const, progress };
+  }
+
+  const gates = await improvementLoopGates(input.userId ?? null);
+  if (gates.needsReview > 0) {
+    const progress: ProfileOptimizerProgress = {
+      status: "skipped",
+      reason: "review_gate_open",
+      gates,
+    };
+    await appendProgress(input.runId, `Profile optimizer paused: ${gates.needsReview} job${gates.needsReview === 1 ? " needs" : "s need"} approve/reject review before profile health is recalculated.`, input.stats, undefined, progress);
+    return { started: false, reason: "review_gate_open" as const, progress };
+  }
+  if (gates.pendingApplications > 0) {
+    const progress: ProfileOptimizerProgress = {
+      status: "skipped",
+      reason: "application_gate_open",
+      gates,
+    };
+    await appendProgress(input.runId, `Profile optimizer paused: ${gates.pendingApplications} prepared application${gates.pendingApplications === 1 ? " needs" : "s need"} Apply Sprint or outcome tracking before profile health is recalculated.`, input.stats, undefined, progress);
+    return { started: false, reason: "application_gate_open" as const, progress };
+  }
+
+  try {
+    await appendProgress(input.runId, "Profile optimizer started after review and Apply Sprint gates cleared.", input.stats);
+    const result = await runSearchProfileManagerAgent({ userId: input.userId ?? undefined });
+    const progress: ProfileOptimizerProgress = {
+      status: "completed",
+      reason: "started",
+      agentRunId: result.run.id,
+      result: {
+        healthScores: result.output.profileHealthScores.length,
+        recommendedChanges: result.output.recommendedChanges.length,
+        profilesToCreate: result.output.profilesToCreate.length,
+      },
+      gates,
+    };
+    await appendProgress(
+      input.runId,
+      `Profile optimizer completed: ${progress.result?.healthScores ?? 0} health score${progress.result?.healthScores === 1 ? "" : "s"}, ${progress.result?.recommendedChanges ?? 0} recommendation${progress.result?.recommendedChanges === 1 ? "" : "s"}.`,
+      input.stats,
+      undefined,
+      progress,
+    );
+    return { started: true, reason: "started" as const, agentRunId: result.run.id, progress };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown profile optimizer failure";
+    const progress: ProfileOptimizerProgress = {
+      status: "failed",
+      reason: "profile_optimizer_failed",
+      gates,
+      error: message,
+    };
+    await appendProgress(input.runId, `Profile optimizer failed after gated search loop checks: ${message}`, input.stats, undefined, progress);
+    return { started: false, reason: "profile_optimizer_failed" as const, error: message, progress };
+  }
+}
+
+async function improvementLoopGates(userId: string | null) {
+  const [needsReview, pendingApplications] = await Promise.all([
+    prisma.jobProfileMatch.count({
+      where: {
+        status: "needs_review",
+        ...(userId ? { jobSearchProfile: { userId } } : {}),
+      },
+    }),
+    prisma.application.count({
+      where: {
+        ...(userId ? { userId } : {}),
+        status: { in: ["approved", "resume_generated", "cover_letter_generated", "ready_to_apply"] },
+      },
+    }),
+  ]);
+  return { needsReview, pendingApplications };
 }
 
 function jobIdentity(job: Pick<NormalizedJobPosting, "company" | "title" | "location" | "applicationUrl">) {
@@ -640,9 +767,10 @@ async function appendProgress(
   message: string,
   stats?: JobSearchStats,
   agencyHandoff?: AgencyHandoffProgress,
+  profileOptimizer?: ProfileOptimizerProgress,
   marketIntelligence?: MarketIntelligenceProgress,
 ) {
-  const progress = await nextProgress(runId, progressEvent(message, stats, agencyHandoff, marketIntelligence));
+  const progress = await nextProgress(runId, progressEvent(message, stats, agencyHandoff, profileOptimizer, marketIntelligence));
   await prisma.jobSearchRun.update({
     where: { id: runId },
     data: {
@@ -664,6 +792,7 @@ function progressEvent(
   message: string,
   stats?: JobSearchStats,
   agencyHandoff?: AgencyHandoffProgress,
+  profileOptimizer?: ProfileOptimizerProgress,
   marketIntelligence?: MarketIntelligenceProgress,
 ): ProgressEvent {
   return {
@@ -671,6 +800,7 @@ function progressEvent(
     message,
     ...(stats ? { stats } : {}),
     ...(agencyHandoff ? { agencyHandoff } : {}),
+    ...(profileOptimizer ? { profileOptimizer } : {}),
     ...(marketIntelligence ? { marketIntelligence } : {}),
   };
 }

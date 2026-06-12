@@ -646,11 +646,11 @@ Click **Command Center** in the left sidebar (`/dashboard`). This is the page yo
 ### How to trigger a job search from here
 
 1. Find the **Search** section on the Command Center.
-2. Click **Run Search**.
+2. Click **Run search improvement loop**.
 3. A live progress panel will appear showing: sources being fetched → jobs deduped → jobs scored → jobs saved.
-4. When it completes, the panel shows how many jobs were found, how many were new, and how many matched your profiles.
+4. When it completes, the panel shows how many jobs were found, how many were new, how many matched your profiles, and whether the loop paused for review or Apply Sprint.
 
-> **What just happened?** The system contacted every enabled job source, pulled new listings, removed duplicates, scored each one against your search profiles, and saved the results to your Jobs queue.
+> **What just happened?** The system contacted every enabled job source, pulled new listings, removed duplicates, scored each one against your search profiles, saved the results to your Jobs queue, and prepared eligible high-confidence matches for Apply Sprint. If jobs still need approve/reject review or prepared applications still need Apply Sprint, the profile-health and Market Analysis refresh pauses until you handle those gates.
 
 ### How to read the Daily Plan
 
@@ -709,6 +709,8 @@ You can run multiple active profiles at the same time. The system will score eve
 ### AI Profile Optimizer
 
 On the Search profiles page, there is a **Suggest** or **Optimize** button that uses your candidate evidence to propose improvements to your profile keywords, title targeting, and scoring thresholds. This is useful after you have added evidence or after a few search runs.
+
+The Command Center search improvement loop can also run the optimizer automatically, but only after review and Apply Sprint gates are clear. That keeps the **Profile Health** chart from treating unresolved jobs or unworked application packets as completed learning signal.
 
 ### Market Intelligence
 
@@ -825,7 +827,10 @@ If you see thousands fetched but only a small number saved, the chart should sho
 2. **LLM evaluation** (if OpenAI is configured): A deeper AI evaluation adds fit, opportunity, and confidence scores with rationale
 3. **Duplicate check**: Stale or duplicate listings are flagged
 4. **Agency handoff**: Eligible non-review-only matches with application URLs are handed to the **Recruiting Agency** for packet preparation (see [Part 11](#part-11--the-recruiting-agency-hands-off-packet-prep))
-5. **Notifications**: If configured, you get an alert with the search summary
+5. **Profile health gate**: If jobs still need review or prepared applications still need Apply Sprint, the loop pauses and tells you what to handle next
+6. **Profile optimizer**: When gates are clear, the optimizer refreshes search-profile health snapshots
+7. **Market Intelligence**: The market brief refreshes after the optimizer so the dashboard charts use current profile-health data
+8. **Notifications**: If configured, you get an alert with the search summary
 
 The seeded `Broad LinkedIn Parity Review` profile is intentionally wider than the focused frontend/product profiles. It catches senior software, full-stack, frontend, React, TypeScript, product engineer, design-system, AI product UI, remote, US, and global opportunities that you might otherwise see manually on LinkedIn, with a 250-match per-run cap. Lower-confidence matches from this broad lane are saved for review but excluded from automatic Apply Sprint preparation until you approve them.
 

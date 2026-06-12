@@ -28,6 +28,7 @@ type ProgressEvent = {
     [key: string]: unknown;
   };
   agencyHandoff?: AgencyHandoff;
+  profileOptimizer?: ProfileOptimizer;
 };
 
 type AgencyHandoff = {
@@ -39,6 +40,22 @@ type AgencyHandoff = {
     prepared: number;
     failed: number;
     skipped: number;
+  };
+  error?: string;
+};
+
+type ProfileOptimizer = {
+  status: "completed" | "failed" | "skipped";
+  reason: "started" | "search_not_successful" | "review_gate_open" | "application_gate_open" | "profile_optimizer_failed";
+  agentRunId?: string;
+  result?: {
+    healthScores: number;
+    recommendedChanges: number;
+    profilesToCreate: number;
+  };
+  gates?: {
+    needsReview: number;
+    pendingApplications: number;
   };
   error?: string;
 };
@@ -91,6 +108,7 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
   const latest = run?.progress?.[run.progress.length - 1] ?? null;
   const timeline = useMemo(() => run?.progress?.slice(-10).reverse() ?? [], [run?.progress]);
   const agencyHandoff = useMemo(() => latestAgencyHandoff(run?.progress ?? []), [run?.progress]);
+  const profileOptimizer = useMemo(() => latestProfileOptimizer(run?.progress ?? []), [run?.progress]);
   const linkedAgencyRunId = agencyHandoff?.agentRunId ?? null;
   const visibleAgencyRun = linkedAgencyRunId && agencyRun?.id === linkedAgencyRunId ? agencyRun : null;
   const agencyRunning = visibleAgencyRun?.status === "PENDING" || visibleAgencyRun?.status === "RUNNING";
@@ -175,11 +193,11 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
               </Stack>
               <Typography variant="h3">{running ? "Search is running" : run ? "Latest search run" : "No search run yet"}</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {latest?.message ?? "Start discovery to fetch, dedupe, score, save jobs, and prepare eligible matches for Apply Sprint."}
+                {latest?.message ?? "Start the gated loop to discover jobs, prepare eligible matches, refresh profile health, and rerun market intelligence when review gates are clear."}
               </Typography>
             </Box>
             <Button variant="contained" startIcon={<PlayArrowIcon />} disabled={running} onClick={startRun}>
-              {running ? "Running..." : "Run search"}
+              {running ? "Running..." : "Run search improvement loop"}
             </Button>
           </Stack>
 
@@ -197,6 +215,8 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
               onRetry={() => void controlAgencyRun("retry")}
             />
           ) : null}
+
+          {profileOptimizer ? <ProfileOptimizerPanel optimizer={profileOptimizer} /> : null}
 
           {timeline.length ? (
             <Stack spacing={0.75}>
@@ -254,6 +274,10 @@ function normalizeRun(value: unknown): SearchRun | null {
 
 function latestAgencyHandoff(progress: ProgressEvent[]) {
   return [...progress].reverse().find((event) => event.agencyHandoff)?.agencyHandoff ?? null;
+}
+
+function latestProfileOptimizer(progress: ProgressEvent[]) {
+  return [...progress].reverse().find((event) => event.profileOptimizer)?.profileOptimizer ?? null;
 }
 
 function AgencyHandoffPanel({
@@ -352,6 +376,59 @@ function agencyHandoffDetail(handoff: AgencyHandoff) {
   if (handoff.reason === "agency_already_running") return "Another agency run is already active.";
   if (handoff.reason === "agency_failed") return handoff.error ?? "Agency run failed.";
   return "Eligible matches were handed to the recruiting agency for Apply Sprint preparation.";
+}
+
+function ProfileOptimizerPanel({ optimizer }: { optimizer: ProfileOptimizer }) {
+  const failed = optimizer.status === "failed";
+  const blocked = optimizer.status === "skipped" && (optimizer.reason === "review_gate_open" || optimizer.reason === "application_gate_open");
+  return (
+    <Box sx={{ border: 1, borderColor: failed ? "error.main" : blocked ? "warning.main" : "divider", borderRadius: 1, p: 1.5, bgcolor: blocked ? "rgba(245, 158, 11, 0.08)" : "background.paper" }}>
+      <Stack spacing={1}>
+        <Stack direction="row" spacing={0.75} useFlexGap sx={{ alignItems: "center", flexWrap: "wrap" }}>
+          <Chip size="small" color={profileOptimizerChipColor(optimizer)} label="Profile health gate" />
+          <Chip size="small" variant="outlined" label={profileOptimizerLabel(optimizer)} />
+          {optimizer.agentRunId ? <Chip size="small" variant="outlined" label={`run ${optimizer.agentRunId.slice(-6)}`} /> : null}
+        </Stack>
+        <Typography sx={{ fontWeight: 850 }}>{profileOptimizerMessage(optimizer)}</Typography>
+        <Typography variant="caption" color="text.secondary">{profileOptimizerDetail(optimizer)}</Typography>
+        {optimizer.result ? (
+          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+            <MetricChip label="Health scores" value={optimizer.result.healthScores} />
+            <MetricChip label="Recommendations" value={optimizer.result.recommendedChanges} />
+            <MetricChip label="New campaigns" value={optimizer.result.profilesToCreate} />
+          </Stack>
+        ) : null}
+        {optimizer.error ? <Alert severity="error">{optimizer.error}</Alert> : null}
+      </Stack>
+    </Box>
+  );
+}
+
+function profileOptimizerMessage(optimizer: ProfileOptimizer) {
+  if (optimizer.status === "completed") return "Profile optimizer refreshed the health snapshots used by Market Analysis.";
+  if (optimizer.reason === "review_gate_open") return "Profile optimizer paused for job review.";
+  if (optimizer.reason === "application_gate_open") return "Profile optimizer paused for Apply Sprint.";
+  if (optimizer.status === "failed") return "Profile optimizer failed.";
+  return "Profile optimizer skipped.";
+}
+
+function profileOptimizerDetail(optimizer: ProfileOptimizer) {
+  if (optimizer.reason === "review_gate_open") return `${optimizer.gates?.needsReview ?? 0} job(s) still need approve/reject decisions before profile health is recalculated.`;
+  if (optimizer.reason === "application_gate_open") return `${optimizer.gates?.pendingApplications ?? 0} prepared application(s) still need Apply Sprint or outcome tracking.`;
+  if (optimizer.reason === "search_not_successful") return "Search did not complete successfully.";
+  if (optimizer.reason === "profile_optimizer_failed") return optimizer.error ?? "The optimizer could not write fresh profile-health snapshots.";
+  return "Market Intelligence can now use fresh profile-health data for the dashboard charts.";
+}
+
+function profileOptimizerLabel(optimizer: ProfileOptimizer) {
+  return optimizer.status === "skipped" ? optimizer.reason.replaceAll("_", " ") : optimizer.status;
+}
+
+function profileOptimizerChipColor(optimizer: ProfileOptimizer) {
+  if (optimizer.status === "failed") return "error";
+  if (optimizer.status === "completed") return "success";
+  if (optimizer.reason === "review_gate_open" || optimizer.reason === "application_gate_open") return "warning";
+  return "default";
 }
 
 function handoffChipColor(status: AgencyHandoff["status"], runStatus?: AgencyRunStatus["status"]) {

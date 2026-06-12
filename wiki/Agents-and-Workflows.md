@@ -106,7 +106,11 @@ Evaluation runs score examples and cluster repeated failure categories into prop
 2. Duplicate/Stale Job Detector groups likely duplicates and flags stale jobs.
 3. Job Fit Scorer scores the job against a search profile and approved evidence.
 4. Jobs appear in the review queue with scores, strengths, risks, and missing keywords.
-5. User approves, rejects, saves, or archives.
+5. Recruiting Agency prepares eligible high-confidence matches for Apply Sprint.
+6. The loop pauses while jobs still need approve/reject review or prepared applications still need Apply Sprint work.
+7. Search Profile Manager refreshes profile-health snapshots when the gates are clear.
+8. Market Intelligence runs after the optimizer so Profile Health and market charts use current profile data.
+9. User approves, rejects, saves, archives, applies, and records outcomes at the manual gates.
 
 ## Application Packet Workflow
 

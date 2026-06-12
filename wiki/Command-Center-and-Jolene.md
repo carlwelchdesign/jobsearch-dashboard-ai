@@ -34,6 +34,8 @@ Tracked run data includes:
 
 The goal is for the user to see what the search system is actually doing instead of only seeing a spinner.
 
+The main search action starts the gated search improvement loop. After discovery, scoring, duplicate detection, and recruiting-agency handoff, Command Center shows a Profile Health gate. If unresolved `needs_review` jobs or prepared-but-unworked applications remain, the loop pauses and explains the manual work required. When those gates clear, the Search Profile Manager refreshes health snapshots and Market Intelligence runs from the fresh profile data.
+
 ## Apply Sprint Agency Command Center
 
 The Apply Sprint page has a dedicated Agency command center for the application workflow. It uses a primary action panel for running the recruiting agency and showing live graph activity, plus a separate operations panel for packet preparation, packet sync, sprint-console access, and launching the next ready application.
