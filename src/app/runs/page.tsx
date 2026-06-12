@@ -114,7 +114,7 @@ function runsNextAction(latestRun: { status: string; progress: unknown; jobsSave
     return {
       kind: "search" as const,
       title: "Run discovery",
-      detail: "Fetch, dedupe, score, save matching jobs, and hand strong matches to the agency.",
+      detail: "Fetch, dedupe, score, save matching jobs, and prepare eligible matches for Apply Sprint.",
       label: "Run search",
       color: "primary" as const,
       icon: <SearchOutlinedIcon />,
@@ -125,8 +125,8 @@ function runsNextAction(latestRun: { status: string; progress: unknown; jobsSave
       kind: "link" as const,
       title: "Discovery is running",
       detail: latestProgress(latestRun.progress),
-      label: "Open jobs",
-      href: "/jobs",
+      label: "Open Apply Sprint",
+      href: "/applications/assistant",
       color: "primary" as const,
       icon: <VisibilityOutlinedIcon />,
     };
@@ -135,9 +135,9 @@ function runsNextAction(latestRun: { status: string; progress: unknown; jobsSave
     return {
       kind: "link" as const,
       title: "Agency is handling saved jobs",
-      detail: `The latest run saved ${latestRun.jobsSaved} job${latestRun.jobsSaved === 1 ? "" : "s"} and handed strong matches to the agency when eligible.`,
-      label: "Open dashboard",
-      href: "/dashboard",
+      detail: `The latest run saved ${latestRun.jobsSaved} job${latestRun.jobsSaved === 1 ? "" : "s"} and handed eligible matches to Apply Sprint when possible.`,
+      label: "Open Apply Sprint",
+      href: "/applications/assistant",
       color: "success" as const,
       icon: <VisibilityOutlinedIcon />,
     };

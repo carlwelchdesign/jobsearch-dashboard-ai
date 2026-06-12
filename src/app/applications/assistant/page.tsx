@@ -117,6 +117,7 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
             jobProfileMatchId: application.jobProfileMatchId,
             company: application.jobPosting.company,
             title: application.jobPosting.title,
+            description: application.jobPosting.description,
             applicationUrl: application.jobPosting.applicationUrl,
             atsProvider: application.jobPosting.atsProvider,
             score: application.jobProfileMatch?.overallScore ?? null,

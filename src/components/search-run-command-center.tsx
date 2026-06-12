@@ -90,8 +90,9 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
   const timeline = useMemo(() => run?.progress?.slice(-10).reverse() ?? [], [run?.progress]);
   const agencyHandoff = useMemo(() => latestAgencyHandoff(run?.progress ?? []), [run?.progress]);
   const linkedAgencyRunId = agencyHandoff?.agentRunId ?? null;
-  const agencyRunning = agencyRun?.status === "PENDING" || agencyRun?.status === "RUNNING";
-  const agencyStale = Boolean(agencyRun && agencyRunning && Date.now() - new Date(agencyRun.updatedAt).getTime() > 10 * 60 * 1000);
+  const visibleAgencyRun = linkedAgencyRunId && agencyRun?.id === linkedAgencyRunId ? agencyRun : null;
+  const agencyRunning = visibleAgencyRun?.status === "PENDING" || visibleAgencyRun?.status === "RUNNING";
+  const agencyStale = Boolean(visibleAgencyRun && agencyRunning && Date.now() - new Date(visibleAgencyRun.updatedAt).getTime() > 10 * 60 * 1000);
 
   async function refreshLatest() {
     const response = await fetch("/api/jobs/search/run/status");
@@ -126,10 +127,7 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
   }, [refresh, run?.status, running]);
 
   useEffect(() => {
-    if (!linkedAgencyRunId) {
-      setAgencyRun(null);
-      return;
-    }
+    if (!linkedAgencyRunId) return;
     void refreshAgencyRun(linkedAgencyRunId);
   }, [linkedAgencyRunId]);
 
@@ -146,9 +144,9 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
   }
 
   async function controlAgencyRun(action: "repair" | "retry") {
-    if (!agencyRun) return;
+    if (!visibleAgencyRun) return;
     setError("");
-    const response = await fetch(`/api/agents/runs/${agencyRun.id}/control`, {
+    const response = await fetch(`/api/agents/runs/${visibleAgencyRun.id}/control`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action }),
@@ -158,7 +156,7 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
       setError(body.error ?? "Unable to update agency run.");
       return;
     }
-    await refreshAgencyRun(body.childRunId ?? agencyRun.id);
+    await refreshAgencyRun(body.childRunId ?? visibleAgencyRun.id);
     refresh();
   }
 
@@ -175,7 +173,7 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
               </Stack>
               <Typography variant="h3">{running ? "Search is running" : run ? "Latest search run" : "No search run yet"}</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {latest?.message ?? "Start discovery to fetch, dedupe, score, save jobs, and hand strong matches to the recruiting agency."}
+                {latest?.message ?? "Start discovery to fetch, dedupe, score, save jobs, and prepare eligible matches for Apply Sprint."}
               </Typography>
             </Box>
             <Button variant="contained" startIcon={<PlayArrowIcon />} disabled={running} onClick={startRun}>
@@ -196,7 +194,7 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
           {agencyHandoff ? (
             <AgencyHandoffPanel
               handoff={agencyHandoff}
-              agencyRun={agencyRun}
+              agencyRun={visibleAgencyRun}
               stale={agencyStale}
               onRepair={() => void controlAgencyRun("repair")}
               onRetry={() => void controlAgencyRun("retry")}
@@ -363,10 +361,10 @@ function agencyHandoffMessage(handoff: AgencyHandoff) {
 
 function agencyHandoffDetail(handoff: AgencyHandoff) {
   if (handoff.reason === "search_not_successful") return "Search did not complete successfully.";
-  if (handoff.reason === "no_eligible_matches") return "No 90+ application-ready matches were eligible.";
+  if (handoff.reason === "no_eligible_matches") return "No application-ready matches were eligible.";
   if (handoff.reason === "agency_already_running") return "Another agency run is already active.";
   if (handoff.reason === "agency_failed") return handoff.error ?? "Agency run failed.";
-  return "Strong matches were handed to the recruiting agency.";
+  return "Eligible matches were handed to the recruiting agency for Apply Sprint preparation.";
 }
 
 function handoffChipColor(status: AgencyHandoff["status"], runStatus?: AgencyRunStatus["status"]) {

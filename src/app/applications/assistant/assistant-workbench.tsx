@@ -25,6 +25,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RejectionReasonDialog, type RejectionReasonCode } from "@/components/job-reject-button";
 import type { AshbyRiskAssessment } from "@/lib/applications/ashby-risk";
+import { summarizeApplicationJobDescription } from "@/lib/applications/job-summary";
 
 type ReadyApplication = {
   id: string;
@@ -32,6 +33,7 @@ type ReadyApplication = {
   jobProfileMatchId: string | null;
   company: string;
   title: string;
+  description: string | null;
   applicationUrl: string | null;
   atsProvider?: string | null;
   score: number | null;
@@ -540,7 +542,7 @@ export function AssistantWorkbench({
                   </Stack>
                 </Stack>
               ) : (
-                <Alert severity="info">No ready applications. Run search so the recruiting agency can approve strong matches and prepare packets.</Alert>
+                <Alert severity="info">No ready applications. Run search so eligible saved matches can be prepared for Apply Sprint automatically.</Alert>
               )}
               <Divider />
               {selectedBlocker ? (
@@ -1101,7 +1103,7 @@ function sprintProgressForApplication(application: ReadyApplication): {
   if (application.resumeId && application.coverLetterId) {
     return {
       label: "Ready",
-      detail: "Materials are ready. Launch the assistant when you are ready to work this item.",
+      detail: summarizeReadyJobDescription(application),
       value: 50,
       color: "primary",
     };
@@ -1237,9 +1239,13 @@ function primarySprintAction(application: ReadyApplication, canMarkApplied: bool
     kind: "launch",
     label: "Launch assistant",
     loadingLabel: "Launching...",
-    detail: "Open the local browser assistant to fill known fields, upload materials, and learn from fields you complete.",
+    detail: summarizeReadyJobDescription(application),
     color: "success",
   };
+}
+
+function summarizeReadyJobDescription(application: Pick<ReadyApplication, "description" | "title" | "company">) {
+  return summarizeApplicationJobDescription(application);
 }
 
 function isLearningWorkflow(workflow: WorkflowStatus | null) {

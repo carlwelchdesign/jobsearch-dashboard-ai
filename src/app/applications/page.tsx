@@ -19,7 +19,6 @@ import Link from "next/link";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { AgencyRunControl } from "@/components/agency-run-control";
-import { BulkPrepareControl } from "@/components/bulk-prepare-control";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip, formatStatus } from "@/components/ui/status-chip";
@@ -65,7 +64,6 @@ export default async function ApplicationsPage() {
     prisma.jobProfileMatch.findMany({
       where: {
         status: "needs_review",
-        overallScore: { gte: 90 },
         jobPosting: {
           applicationUrl: { not: null },
         },
@@ -117,7 +115,13 @@ export default async function ApplicationsPage() {
               </Box>
               {nextAction.postTo === "/api/applications/agency/run" ? (
                 <Box sx={{ minWidth: { md: 360 } }}>
-                  <AgencyRunControl label={nextAction.label} color="primary" showLatestOnMount={false} />
+                  <AgencyRunControl
+                    label={nextAction.label}
+                    color="primary"
+                    minimumScore={nextAction.body.minimumScore}
+                    limit={nextAction.body.limit}
+                    showLatestOnMount={false}
+                  />
                 </Box>
               ) : (
                 <ActionButton
@@ -159,10 +163,10 @@ export default async function ApplicationsPage() {
                       <Chip size="small" color="primary" label="Primary workflow" />
                       <Typography variant="h4" sx={{ mt: 1 }}>Recruiting agency</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Review high-fit matches, approve the right jobs, and generate application packets.
+                        Prepare eligible saved matches directly for Apply Sprint.
                       </Typography>
                     </Box>
-                    <AgencyRunControl buttonSx={{ minHeight: 44, px: 2.25 }} />
+                    <AgencyRunControl minimumScore={0} buttonSx={{ minHeight: 44, px: 2.25 }} />
                   </Stack>
                 </Box>
                 <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 2, bgcolor: "background.paper" }}>
@@ -177,15 +181,9 @@ export default async function ApplicationsPage() {
                     <Box sx={{ display: "grid", gridTemplateColumns: "1fr", gap: 1.25 }}>
                       <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
                         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-                          Move approved applications into Apply Sprint
+                          Recover approved applications into Apply Sprint
                         </Typography>
                         <BulkMoveToSprintControl buttonSx={commandButtonSx} />
-                      </Box>
-                      <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-                          Prepare high-score approved matches
-                        </Typography>
-                        <BulkPrepareControl compact defaultMinimumScore={90} defaultLimit={10} buttonSx={commandButtonSx} />
                       </Box>
                       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1 }}>
                         <BackfillPacketsButton sx={commandButtonSx} />
@@ -305,7 +303,7 @@ export default async function ApplicationsPage() {
         </Box>
         {visibleApplications.length === 0 ? (
           <Card>
-            <EmptyState title="No applications tracked" body="Run search from the Dashboard. Strong matches will flow through the recruiting agency into prepared application packets." />
+            <EmptyState title="No applications tracked" body="Run search from the Dashboard. Eligible saved matches will be prepared for Apply Sprint automatically." />
           </Card>
         ) : null}
       </Stack>
@@ -328,10 +326,10 @@ function applicationsNextAction({ approvedCount, readyCount, agencyCandidateCoun
   if (agencyCandidateCount > 0) {
     return {
       title: "Run the recruiting agency",
-      detail: "Strong 90+ matches are waiting. Let the agency approve them, create trackers, and generate application packets.",
+      detail: "Eligible saved matches are waiting. Prepare them directly for Apply Sprint.",
       label: "Run agency",
       postTo: "/api/applications/agency/run",
-      body: { minimumScore: 90, limit: 50, triggeredBy: "manual" },
+      body: { minimumScore: 0, limit: Math.min(Math.max(agencyCandidateCount, 1), 100), triggeredBy: "manual" },
       runInBackground: true,
       loadingLabel: "Agency running...",
       color: "primary" as const,
@@ -354,10 +352,10 @@ function applicationsNextAction({ approvedCount, readyCount, agencyCandidateCoun
     };
   }
   return {
-    title: "Review jobs first",
-    detail: "No application work is ready. Approve strong job matches, then return here to generate packets.",
-    label: "Review jobs",
-    href: "/jobs",
+    title: "Run search",
+    detail: "Search results with usable application links will be prepared for Apply Sprint automatically.",
+    label: "Open dashboard",
+    href: "/dashboard",
     color: "primary" as const,
     icon: <FactCheckOutlinedIcon />,
   };

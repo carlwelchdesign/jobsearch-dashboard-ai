@@ -28,4 +28,16 @@ describe("AssistantWorkbench run feedback panel", () => {
     expect(source).toContain("I applied");
     expect(source).not.toContain("I already applied");
   });
+
+  it("uses smart job summaries for ready application detail text", () => {
+    const pageSource = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/page.tsx"), "utf8");
+    const workbenchSource = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/assistant-workbench.tsx"), "utf8");
+
+    expect(pageSource).toContain("description: application.jobPosting.description");
+    expect(workbenchSource).toContain("description: string | null");
+    expect(workbenchSource).toContain("summarizeReadyJobDescription");
+    expect(workbenchSource).toContain("summarizeApplicationJobDescription");
+    expect(workbenchSource).toContain("detail: summarizeReadyJobDescription(application)");
+    expect(workbenchSource).not.toContain("Materials are ready. Launch the assistant when you are ready to work this item.");
+  });
 });

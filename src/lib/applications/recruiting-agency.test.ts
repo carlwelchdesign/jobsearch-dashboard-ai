@@ -126,6 +126,40 @@ describe("runRecruitingAgency", () => {
     }));
   });
 
+  it("can prepare eligible saved matches below 90 for Apply Sprint when the search auto-flow triggers it", async () => {
+    findUserMock.mockResolvedValue({ id: "user_1" } as Awaited<ReturnType<typeof prisma.user.findFirst>>);
+    findApplicationsMock.mockResolvedValue([]);
+    findApplicationMock.mockResolvedValue(null);
+    const agencyMatch = match({ id: "match_1", jobPostingId: "job_1", score: 76, company: "Acme", title: "Frontend Engineer" });
+    findMatchesMock.mockResolvedValue([agencyMatch] as Awaited<ReturnType<typeof prisma.jobProfileMatch.findMany>>);
+    findMatchMock.mockResolvedValue(agencyMatch as Awaited<ReturnType<typeof prisma.jobProfileMatch.findUnique>>);
+    updateMatchMock.mockResolvedValue({ id: "match_1" } as Awaited<ReturnType<typeof prisma.jobProfileMatch.update>>);
+    createApplicationMock.mockResolvedValue({ id: "app_1" } as Awaited<ReturnType<typeof prisma.application.create>>);
+    createEventMock.mockResolvedValue({ id: "event_1" } as Awaited<ReturnType<typeof prisma.applicationEvent.create>>);
+    preparePackageMock.mockResolvedValue({
+      application: { id: "app_1" },
+      resume: { id: "resume_1" },
+      coverLetter: { id: "cover_1" },
+    } as Awaited<ReturnType<typeof prepareApplicationPackage>>);
+
+    const result = await runRecruitingAgency({ minimumScore: 0, limit: 10, triggeredBy: "search_auto" });
+
+    expect(findMatchesMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        status: "needs_review",
+        overallScore: { gte: 0 },
+        jobPosting: { applicationUrl: { not: null } },
+      }),
+    }));
+    expect(preparePackageMock).toHaveBeenCalledWith("job_1");
+    expect(result).toMatchObject({
+      requested: { minimumScore: 0, limit: 10, triggeredBy: "search_auto" },
+      approved: 1,
+      prepared: 1,
+      failed: 0,
+    });
+  });
+
   it("skips canonical duplicates that already have applications", async () => {
     findUserMock.mockResolvedValue({ id: "user_1" } as Awaited<ReturnType<typeof prisma.user.findFirst>>);
     findApplicationsMock.mockResolvedValue([

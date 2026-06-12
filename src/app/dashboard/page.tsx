@@ -91,7 +91,6 @@ export default async function DashboardPage() {
     prisma.jobProfileMatch.findMany({
       where: {
         status: "needs_review",
-        overallScore: { gte: 90 },
         jobPosting: {
           applicationUrl: { not: null },
         },
@@ -154,7 +153,7 @@ export default async function DashboardPage() {
         <PageHeader
           eyebrow="Command center"
           title="Agency Command Center"
-          description="Run search, watch the recruiting agency approve strong fits, and move prepared applications through Apply Sprint."
+          description="Run search and let eligible saved matches flow directly into Apply Sprint for review, rejection, or assisted application."
           actions={
             <>
             <ActionButton href="/jobs/manual" variant="outlined" startIcon={<AddCircleOutlineIcon />}>Add manual job</ActionButton>
@@ -176,7 +175,13 @@ export default async function DashboardPage() {
               </Box>
               {nextAction.postTo === "/api/applications/agency/run" ? (
                 <Box sx={{ minWidth: { lg: 380 } }}>
-                  <AgencyRunControl label={nextAction.label} color="primary" showLatestOnMount={false} />
+                  <AgencyRunControl
+                    label={nextAction.label}
+                    color="primary"
+                    minimumScore={nextAction.body.minimumScore}
+                    limit={nextAction.body.limit}
+                    showLatestOnMount={false}
+                  />
                 </Box>
               ) : nextAction.postTo ? (
                 <ActionButton
@@ -218,10 +223,10 @@ export default async function DashboardPage() {
                 </Stack>
                 <Typography variant="h3">Agency activity</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                  After search saves new strong matches, the agency approves appropriate jobs and prepares packets. Borderline jobs remain as exceptions below.
+                  After search saves eligible matches, the agency prepares packets for Apply Sprint automatically. Unusable or uncertain jobs remain as exceptions below.
                 </Typography>
               </Box>
-              <AgencyRunControl label="Run agency now" variant="outlined" showLatestOnMount />
+              <AgencyRunControl label="Run agency now" minimumScore={0} variant="outlined" showLatestOnMount />
             </Stack>
           </CardContent>
         </Card>
@@ -232,7 +237,7 @@ export default async function DashboardPage() {
               <SectionTitle title="Exception Review" />
               {visibleNeedsReview.length === 0 ? (
                 <Card>
-                  <EmptyState title="No exceptions waiting" body="Run a search and the agency will approve strong fits automatically. Borderline jobs will appear here." />
+                  <EmptyState title="No exceptions waiting" body="Run a search and eligible matches will be prepared for Apply Sprint automatically. Admin exceptions will appear here." />
                 </Card>
               ) : (
                 visibleNeedsReview.map((match) => (
@@ -553,9 +558,9 @@ function getNextAction({
     return {
       color: "primary" as const,
       title: "Run the recruiting agency",
-      detail: "Strong 90+ matches are waiting. Let the agents approve them, create trackers, and generate packets.",
+      detail: "Eligible saved matches are waiting. Prepare them directly for Apply Sprint.",
       postTo: "/api/applications/agency/run",
-      body: { minimumScore: 90, limit: 50, triggeredBy: "manual" },
+      body: { minimumScore: 0, limit: Math.min(Math.max(agencyCandidateCount, 1), 100), triggeredBy: "manual" },
       runInBackground: true,
       loadingLabel: "Agency running...",
       icon: <AutoAwesomeOutlinedIcon />,
@@ -578,10 +583,10 @@ function getNextAction({
   const latestRunIsStale = !latestRunStartedAt || Date.now() - latestRunStartedAt.getTime() > 86_400_000;
   return {
     color: "primary" as const,
-    title: latestRunIsStale ? "Run job discovery" : "Monitor search and agency",
-    detail: latestRunIsStale ? "Refresh discovery; the agency will review strong results after the search finishes." : "Discovery is fresh. Review agency activity or work the exception queue.",
-    href: latestRunIsStale ? "/runs" : "/jobs",
-    label: latestRunIsStale ? "Run search" : "Open exceptions",
+    title: latestRunIsStale ? "Run job discovery" : "Open Apply Sprint",
+    detail: latestRunIsStale ? "Refresh discovery; eligible saved matches will be prepared for Apply Sprint after search finishes." : "Discovery is fresh. Work ready applications or monitor agency activity.",
+    href: latestRunIsStale ? "/runs" : "/applications/assistant",
+    label: latestRunIsStale ? "Run search" : "Open Apply Sprint",
   };
 }
 

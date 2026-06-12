@@ -9,11 +9,13 @@ describe("/applications page agency workflow", () => {
     expect(pageSource).toContain("Agency command center");
     expect(pageSource).toContain("Primary workflow");
     expect(pageSource).toContain("Application operations");
-    expect(pageSource).toContain("Move approved applications into Apply Sprint");
-    expect(pageSource).toContain("Prepare high-score approved matches");
+    expect(pageSource).toContain("Recover approved applications into Apply Sprint");
+    expect(pageSource).toContain("Prepare eligible saved matches directly for Apply Sprint.");
     expect(pageSource).toContain("/api/applications/agency/run");
+    expect(pageSource).toContain("minimumScore: 0");
     expect(pageSource).toContain("/api/applications/next-ready/launch-assistant");
     expect(pageSource).toContain("/applications/assistant");
+    expect(pageSource).not.toContain("Review jobs first");
     expect(pageSource).not.toContain("ApplicationCreateForm");
   });
 

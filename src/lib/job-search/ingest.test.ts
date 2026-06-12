@@ -10,7 +10,7 @@ vi.mock("@/lib/applications/recruiting-agency", () => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     agentRun: { findFirst: vi.fn() },
-    jobProfileMatch: { findFirst: vi.fn() },
+    jobProfileMatch: { count: vi.fn() },
     jobSearchRun: { findUnique: vi.fn(), update: vi.fn() },
   },
 }));
@@ -25,7 +25,7 @@ vi.mock("@/lib/agents/job-fit-scorer", () => ({
 
 const runAgencyMock = vi.mocked(runRecruitingAgency);
 const agentRunFindFirstMock = vi.mocked(prisma.agentRun.findFirst);
-const matchFindFirstMock = vi.mocked(prisma.jobProfileMatch.findFirst);
+const matchCountMock = vi.mocked(prisma.jobProfileMatch.count);
 const searchRunFindUniqueMock = vi.mocked(prisma.jobSearchRun.findUnique);
 const searchRunUpdateMock = vi.mocked(prisma.jobSearchRun.update);
 
@@ -33,25 +33,25 @@ describe("autoRunAgencyAfterSearch", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     agentRunFindFirstMock.mockResolvedValue(null);
-    matchFindFirstMock.mockResolvedValue({ id: "match_1" } as never);
+    matchCountMock.mockResolvedValue(3);
     searchRunFindUniqueMock.mockResolvedValue({ progress: [] } as never);
     searchRunUpdateMock.mockResolvedValue({ id: "search_1" } as never);
     runAgencyMock.mockImplementation(async (input = {}) => {
       await input.onStarted?.("agency_1");
       return {
       agentRunId: "agency_1",
-      requested: { minimumScore: 90, limit: 10, triggeredBy: "search_auto" },
+      requested: { minimumScore: 0, limit: 3, triggeredBy: "search_auto" },
       approved: 2,
       prepared: 2,
       failed: 0,
-      skipped: 8,
+      skipped: 1,
       results: [],
       message: "Recruiting agency prepared 2 application packages from 2 approved matches. 0 failed.",
       };
     });
   });
 
-  it("starts the recruiting agency after a successful search with eligible new matches", async () => {
+  it("starts the recruiting agency after a successful search with every eligible saved match", async () => {
     const result = await autoRunAgencyAfterSearch({
       runId: "search_1",
       userId: "user_1",
@@ -60,14 +60,13 @@ describe("autoRunAgencyAfterSearch", () => {
       stats: stats(),
     });
 
-    expect(matchFindFirstMock).toHaveBeenCalledWith(expect.objectContaining({
+    expect(matchCountMock).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         status: "needs_review",
-        overallScore: { gte: 90 },
         jobSearchProfile: { userId: "user_1" },
       }),
     }));
-    expect(runAgencyMock).toHaveBeenCalledWith(expect.objectContaining({ minimumScore: 90, limit: 10, triggeredBy: "search_auto" }));
+    expect(runAgencyMock).toHaveBeenCalledWith(expect.objectContaining({ minimumScore: 0, limit: 3, triggeredBy: "search_auto" }));
     expect(result).toMatchObject({ started: true, agentRunId: "agency_1" });
     expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
@@ -78,7 +77,7 @@ describe("autoRunAgencyAfterSearch", () => {
               status: "completed",
               reason: "started",
               agentRunId: "agency_1",
-              result: expect.objectContaining({ approved: 2, prepared: 2, failed: 0, skipped: 8 }),
+              result: expect.objectContaining({ approved: 2, prepared: 2, failed: 0, skipped: 1 }),
             }),
           }),
         ]),
@@ -86,8 +85,25 @@ describe("autoRunAgencyAfterSearch", () => {
     }));
   });
 
+  it("does not require a 90+ score gate for search auto handoff", async () => {
+    matchCountMock.mockResolvedValue(1);
+
+    await autoRunAgencyAfterSearch({
+      runId: "search_1",
+      userId: "user_1",
+      status: "completed",
+      jobsSaved: 1,
+      stats: stats({ jobsSaved: 1 }),
+    });
+
+    expect(matchCountMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.not.objectContaining({ overallScore: { gte: 90 } }),
+    }));
+    expect(runAgencyMock).toHaveBeenCalledWith(expect.objectContaining({ minimumScore: 0, limit: 1, triggeredBy: "search_auto" }));
+  });
+
   it("skips the agency when no jobs were saved and no existing eligible matches remain", async () => {
-    matchFindFirstMock.mockResolvedValue(null);
+    matchCountMock.mockResolvedValue(0);
 
     const result = await autoRunAgencyAfterSearch({
       runId: "search_1",
@@ -99,7 +115,7 @@ describe("autoRunAgencyAfterSearch", () => {
 
     expect(result).toMatchObject({ started: false, reason: "no_eligible_matches" });
     expect(runAgencyMock).not.toHaveBeenCalled();
-    expect(matchFindFirstMock).toHaveBeenCalled();
+    expect(matchCountMock).toHaveBeenCalled();
     expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         progress: expect.arrayContaining([
@@ -121,7 +137,7 @@ describe("autoRunAgencyAfterSearch", () => {
     });
 
     expect(result).toMatchObject({ started: true, agentRunId: "agency_1" });
-    expect(runAgencyMock).toHaveBeenCalledWith(expect.objectContaining({ minimumScore: 90, limit: 10, triggeredBy: "search_auto" }));
+    expect(runAgencyMock).toHaveBeenCalledWith(expect.objectContaining({ minimumScore: 0, limit: 3, triggeredBy: "search_auto" }));
   });
 
   it("skips the agency while another agency run is active", async () => {
@@ -137,7 +153,7 @@ describe("autoRunAgencyAfterSearch", () => {
 
     expect(result).toMatchObject({ started: false, reason: "agency_already_running", agentRunId: "agency_active" });
     expect(runAgencyMock).not.toHaveBeenCalled();
-    expect(matchFindFirstMock).not.toHaveBeenCalled();
+    expect(matchCountMock).not.toHaveBeenCalled();
     expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         progress: expect.arrayContaining([

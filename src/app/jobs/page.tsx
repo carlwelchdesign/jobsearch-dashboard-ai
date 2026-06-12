@@ -1,6 +1,6 @@
 export const metadata = {
-  title: "Jobs | Job Search OS",
-  description: "Search, review, approve, reject, and dedupe job matches.",
+  title: "Job Admin | Job Search OS",
+  description: "Admin tooling for exceptions, rejected jobs, archived jobs, duplicate cleanup, and manual investigation.",
 };
 
 import AddIcon from "@mui/icons-material/Add";
@@ -107,9 +107,9 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
     <AppShell>
       <Stack spacing={3}>
         <PageHeader
-          eyebrow="Decision queue"
-          title="Job Exceptions"
-          description="Review borderline roles the recruiting agency did not confidently approve. Strong fits are approved and prepared automatically after search."
+          eyebrow="Admin and exceptions"
+          title="Job Admin"
+          description="Investigate exceptions, rejected or archived roles, duplicate cleanup, and manual jobs. Normal search results are prepared for Apply Sprint automatically."
           actions={
             <>
               <ActionButton href="/jobs/manual" variant="outlined" startIcon={<AddIcon />}>Add manual job</ActionButton>
@@ -131,14 +131,14 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
                   {approvedForPrep.length ? <Chip size="small" variant="outlined" label={`${approvedForPrep.length} approved`} /> : null}
                 </Stack>
                 <Typography variant="h3">
-                  {topReviewMatch ? "Review the top exception" : approvedForPrep.length ? "Prepare approved jobs" : "Run discovery"}
+                  {topReviewMatch ? "Review the top exception" : approvedForPrep.length ? "Recover approved jobs" : "Run discovery"}
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                   {topReviewMatch
                     ? `${topReviewMatch.jobPosting.company} - ${topReviewMatch.jobPosting.title} needs your decision before the agency can move it forward.`
                     : approvedForPrep.length
-                      ? "Approved jobs are ready for tailored resumes, cover letters, and application packets."
-                      : "No reviewable jobs are waiting. Run discovery or add a manual job."}
+                      ? "Approved jobs are waiting outside the normal Apply Sprint flow and can be recovered here."
+                      : "No admin exceptions are waiting. Run discovery or add a manual job."}
                 </Typography>
               </Box>
               {topReviewMatch ? (

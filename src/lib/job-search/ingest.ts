@@ -1,5 +1,6 @@
 import { JobSearchRun, NotificationSettings, Prisma, User } from "@prisma/client";
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
+import { MAX_RECRUITING_AGENCY_LIMIT } from "@/lib/applications/recruiting-agency-constants";
 import { runRecruitingAgency } from "@/lib/applications/recruiting-agency";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
 import { createCanonicalJobKeys, createJobContentHash, hasSameCanonicalJob } from "@/lib/job-search/dedupe";
@@ -286,10 +287,9 @@ export async function autoRunAgencyAfterSearch(input: {
     return { started: false, reason: "agency_already_running" as const, agentRunId: activeAgencyRun.id };
   }
 
-  const eligible = await prisma.jobProfileMatch.findFirst({
+  const eligibleCount = await prisma.jobProfileMatch.count({
     where: {
       status: "needs_review",
-      overallScore: { gte: 90 },
       ...(input.userId ? { jobSearchProfile: { userId: input.userId } } : {}),
       jobPosting: {
         applicationUrl: { not: null },
@@ -300,13 +300,11 @@ export async function autoRunAgencyAfterSearch(input: {
         },
       },
     },
-    select: { id: true },
-    orderBy: [{ overallScore: "desc" }, { updatedAt: "desc" }],
   });
-  if (!eligible) {
+  if (eligibleCount <= 0) {
     const message = input.jobsSaved <= 0
-      ? "Recruiting agency skipped because the search saved no new matches and no existing 90+ application-ready matches were eligible."
-      : "Recruiting agency skipped because no new 90+ application-ready matches were eligible.";
+      ? "Recruiting agency skipped because the search saved no new matches and no existing application-ready matches were eligible."
+      : "Recruiting agency skipped because no new application-ready matches were eligible.";
     await appendProgress(input.runId, message, input.stats, {
       status: "skipped",
       reason: "no_eligible_matches",
@@ -315,16 +313,17 @@ export async function autoRunAgencyAfterSearch(input: {
   }
 
   try {
+    const limit = Math.min(Math.max(eligibleCount, 1), MAX_RECRUITING_AGENCY_LIMIT);
     const result = await runRecruitingAgency({
-      minimumScore: 90,
-      limit: 10,
+      minimumScore: 0,
+      limit,
       triggeredBy: "search_auto",
       onStarted: async (agentRunId) => {
         await appendProgress(
           input.runId,
           input.jobsSaved <= 0
-            ? "Recruiting agency auto-started for existing eligible strong matches."
-            : "Recruiting agency auto-started to approve strong matches and prepare application packets.",
+            ? `Recruiting agency auto-started for ${eligibleCount} existing eligible application-ready match${eligibleCount === 1 ? "" : "es"}.`
+            : `Recruiting agency auto-started to prepare ${eligibleCount} eligible saved match${eligibleCount === 1 ? "" : "es"} for Apply Sprint.`,
           input.stats,
           {
             status: "started",
@@ -582,19 +581,19 @@ async function notifyAfterRun(
     .slice(0, 8)
     .map((match) => `${match.score} - ${match.title} - ${match.company} (${match.profile})`)
     .join("\n");
-  const subject = `${newMatches.length} new jobs found, ${strongMatches.length} strong matches`;
+  const subject = `${newMatches.length} new jobs found, ${strongMatches.length} notification-priority matches`;
   const body = [
     "The job search run finished.",
     "",
     `Fetched: ${run.jobsFetched}`,
     `New after dedupe: ${run.jobsAfterDedupe}`,
-    `Saved for agency review: ${run.jobsSaved}`,
-    `Strong matches: ${strongMatches.length}`,
+    `Saved for Apply Sprint prep: ${run.jobsSaved}`,
+    `Notification-priority matches: ${strongMatches.length}`,
     "",
     "Top matches:",
     topMatches || "No new matches.",
     "",
-    `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/jobs`,
+    `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/applications/assistant`,
   ].join("\n");
 
   await sendNotification({

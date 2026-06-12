@@ -53,7 +53,7 @@ type AgencyRunControlProps = {
 
 export function AgencyRunControl({
   label = "Run recruiting agency",
-  minimumScore = 90,
+  minimumScore = 0,
   limit = DEFAULT_RECRUITING_AGENCY_LIMIT,
   color = "primary",
   variant = "contained",
