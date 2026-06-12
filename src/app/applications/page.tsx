@@ -210,16 +210,41 @@ export default async function ApplicationsPage() {
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)", xl: "repeat(4, 1fr)" }, gap: 2 }}>
           {columns.map((status) => {
             const items = visibleApplications.filter((application) => application.status === status);
+            const isReadyColumn = status === "ready_to_apply";
             return (
-              <Card key={status} sx={{ minHeight: 220 }}>
+              <Card key={status} sx={{ minHeight: 220, borderColor: isReadyColumn && items.length ? "success.main" : "divider" }}>
                 <CardContent>
-                  <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
-                    <StatusChip status={status} />
-                    <Chip label={items.length} sx={{ fontVariantNumeric: "tabular-nums" }} />
+                  <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <Box>
+                      <StatusChip status={status} />
+                      {isReadyColumn ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
+                          These applications are already in Apply Sprint.
+                        </Typography>
+                      ) : null}
+                    </Box>
+                    <Chip label={items.length} color={isReadyColumn && items.length ? "success" : "default"} sx={{ fontVariantNumeric: "tabular-nums" }} />
                   </Stack>
+                  {isReadyColumn && items.length ? (
+                    <Button
+                      component={Link}
+                      href="/applications/assistant"
+                      fullWidth
+                      variant="contained"
+                      color="success"
+                      startIcon={<BoltOutlinedIcon />}
+                      sx={{ mt: 1.5, justifyContent: "flex-start" }}
+                    >
+                      Open {items.length} in Apply Sprint
+                    </Button>
+                  ) : null}
                   <Stack spacing={1.5} sx={{ mt: 2 }}>
                     {items.length === 0 ? (
-                      <Typography variant="body2" color="text.secondary">No {formatStatus(status)} applications.</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {isReadyColumn
+                          ? "No applications are currently in Apply Sprint."
+                          : `No ${formatStatus(status)} applications.`}
+                      </Typography>
                     ) : (
                       items.map((application) => (
                         <Box key={application.id} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5 }}>
