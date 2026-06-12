@@ -827,7 +827,7 @@ If you see thousands fetched but only a small number saved, the chart should sho
 4. **Agency handoff**: Eligible non-review-only matches with application URLs are handed to the **Recruiting Agency** for packet preparation (see [Part 11](#part-11--the-recruiting-agency-hands-off-packet-prep))
 5. **Notifications**: If configured, you get an alert with the search summary
 
-The seeded `Broad LinkedIn Parity Review` profile is intentionally wider than the focused frontend/product profiles. It catches senior software, full-stack, frontend, React, TypeScript, product engineer, design-system, AI product UI, remote, US, and global opportunities that you might otherwise see manually on LinkedIn. Lower-confidence matches from this broad lane are saved for review but excluded from automatic Apply Sprint preparation until you approve them.
+The seeded `Broad LinkedIn Parity Review` profile is intentionally wider than the focused frontend/product profiles. It catches senior software, full-stack, frontend, React, TypeScript, product engineer, design-system, AI product UI, remote, US, and global opportunities that you might otherwise see manually on LinkedIn, with a 250-match per-run cap. Lower-confidence matches from this broad lane are saved for review but excluded from automatic Apply Sprint preparation until you approve them.
 
 ### Manually adding a job
 

@@ -89,7 +89,7 @@ async function main() {
       salaryMin: 140000,
       includeUnknownSalary: true,
       minimumMatchScore: 62,
-      maxResultsPerRun: 150,
+      maxResultsPerRun: 250,
       excludedTitles: [
         "Manager",
         "Director",
