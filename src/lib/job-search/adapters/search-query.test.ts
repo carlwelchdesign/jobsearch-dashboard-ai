@@ -510,6 +510,119 @@ describe("searchQueryAdapter", () => {
     expect(jobs[1]?.description).not.toContain("Generic Dice search listing text.");
   });
 
+  it("discovers friendly alternate links for paywalled Remotive leads", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Senior Frontend Engineer • Acme Remote | Remotive.com",
+                url: "https://remotive.com/remote-jobs/software-dev/senior-frontend-engineer-acme-remote-123456",
+                description: "Acme Remote · Software Development · full-time · Worldwide",
+                profile: { name: "Remotive" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Senior Frontend Engineer - Acme Remote",
+                url: "https://jobs.ashbyhq.com/acme/abc-123",
+                description: "Acme Remote is hiring a Senior Frontend Engineer to build React products.",
+                profile: { name: "Acme Remote" },
+              },
+            ],
+          },
+        }),
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:remotive.com/remote-jobs "Senior Frontend Engineer"'] }));
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenNthCalledWith(2, expect.any(URL), expect.objectContaining({
+      headers: expect.objectContaining({ "X-Subscription-Token": "brave_key" }),
+    }));
+    expect((vi.mocked(fetch).mock.calls[1]?.[0] as URL).searchParams.get("q")).toContain("\"Acme Remote\" \"Senior Frontend Engineer\" jobs");
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      company: "Acme Remote",
+      title: "Senior Frontend Engineer - Acme Remote",
+      applicationUrl: "https://jobs.ashbyhq.com/acme/abc-123",
+      rawData: {
+        expansionProvider: "remotive-alternate",
+        expandedFrom: "https://remotive.com/remote-jobs/software-dev/senior-frontend-engineer-acme-remote-123456",
+      },
+    });
+    expect(jobs[0]?.description).toContain("Discovered via Remotive lead");
+    expect(jobs[0]?.description).toContain("Remotive source must be attributed");
+  });
+
+  it("suppresses paywalled Remotive leads when no friendly alternate link is found", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Senior Frontend Engineer • Acme Remote | Remotive.com",
+                url: "https://remotive.com/remote-jobs/software-dev/senior-frontend-engineer-acme-remote-123456",
+                description: "Acme Remote · Software Development · full-time · Worldwide",
+                profile: { name: "Remotive" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Senior Frontend Engineer • Acme Remote | Remotive.com",
+                url: "https://remotive.com/remote-jobs/software-dev/senior-frontend-engineer-acme-remote-123456",
+                description: "Unlock full access to apply before everyone else.",
+                profile: { name: "Remotive" },
+              },
+            ],
+          },
+        }),
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:remotive.com/remote-jobs "Senior Frontend Engineer"'] }));
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      applicationUrl: "https://remotive.com/remote-jobs/software-dev/senior-frontend-engineer-acme-remote-123456",
+      listingReview: {
+        reason: "Remotive listing is paywall-gated and no friendly alternate URL was found.",
+        blocked: true,
+      },
+    });
+  });
+
+  it("strips Remotive URLs during final application URL safety validation", async () => {
+    const normalized = await searchQueryAdapter.normalize({
+      sourceJobId: "search:remotive:test",
+      company: "Acme Remote",
+      title: "Senior Frontend Engineer",
+      location: "Remote",
+      description: "Remotive lead",
+      applicationUrl: "https://remotive.com/remote-jobs/software-dev/senior-frontend-engineer-acme-remote-123456",
+      rawData: { provider: "brave" },
+    });
+
+    expect(normalized.applicationUrl).toBeUndefined();
+  });
+
   it("expands Working Nomads listing pages through the public jobs API", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce({

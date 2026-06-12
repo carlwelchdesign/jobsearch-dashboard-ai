@@ -33,6 +33,14 @@ type ListingExpansionResult = {
   blocked: boolean;
 };
 
+type RemotiveLead = {
+  title: string;
+  company?: string;
+  location?: string;
+  summary?: string;
+  remotiveUrl: string;
+};
+
 const searchTimeoutMs = 10_000;
 
 export const searchQueryAdapter: JobSourceAdapter = {
@@ -50,7 +58,7 @@ export const searchQueryAdapter: JobSourceAdapter = {
       const payload = await fetchBraveResults(query, apiKey, maxResultsPerQuery);
       for (const result of payload) {
         if (!result.url || !result.title) continue;
-        const expanded = await expandSearchResult(result, query, profile);
+        const expanded = await expandSearchResult(result, query, profile, apiKey);
         results.push(...expanded);
         if (results.length >= maxFetch) return dedupeByUrl(results).slice(0, maxFetch);
       }
@@ -87,8 +95,12 @@ export const searchQueryAdapter: JobSourceAdapter = {
   },
 };
 
-async function expandSearchResult(result: BraveSearchResult, query: string, profile: JobSearchProfile) {
+async function expandSearchResult(result: BraveSearchResult, query: string, profile: JobSearchProfile, apiKey: string) {
   if (!result.url) return [];
+  if (isRemotiveResult(result.url)) {
+    const expanded = await fetchRemotiveAlternateJobs(result, query, profile, apiKey);
+    return expanded.jobs.length ? expanded.jobs : [listingReviewFromSearchResult(result, query, expanded.reason, expanded.blocked)];
+  }
   if (isBuiltInListingUrl(result.url)) {
     const expanded = await fetchListingPageJobs(result, query, profile, parseBuiltInListingJobs, "builtin");
     return expanded.jobs.length ? expanded.jobs : [listingReviewFromSearchResult(result, query, expanded.reason, expanded.blocked)];
@@ -125,6 +137,133 @@ function jobFromSearchResult(result: BraveSearchResult, query: string, profile: 
     description: [result.description, `Matched query: ${query}`, profile.name ? `Profile: ${profile.name}` : ""].filter(Boolean).join("\n\n"),
     applicationUrl: url,
     rawData: { provider: "brave", query, result },
+  };
+}
+
+async function fetchRemotiveAlternateJobs(result: BraveSearchResult, query: string, profile: JobSearchProfile, apiKey: string): Promise<ListingExpansionResult> {
+  const lead = remotiveLeadFromSearchResult(result, query);
+  if (!lead) return { jobs: [], reason: "Remotive listing is paywall-gated and did not expose enough public lead metadata for alternate discovery.", blocked: true };
+
+  for (const alternateQuery of remotiveAlternateQueries(lead)) {
+    const alternateResults = await fetchBraveResults(alternateQuery, apiKey, 8);
+    const friendly = alternateResults.find((alternate) => isFriendlyRemotiveAlternate(alternate, lead));
+    if (!friendly?.url) continue;
+    return {
+      jobs: [remotiveAlternateJob(friendly, alternateQuery, profile, lead, result)],
+      reason: "Resolved Remotive lead to a friendly alternate application URL.",
+      blocked: false,
+    };
+  }
+
+  return {
+    jobs: [],
+    reason: "Remotive listing is paywall-gated and no friendly alternate URL was found.",
+    blocked: true,
+  };
+}
+
+function remotiveLeadFromSearchResult(result: BraveSearchResult, query: string): RemotiveLead | null {
+  if (!result.url) return null;
+  const titleParts = cleanTitle(result.title ?? "")
+    .replace(/\s+\|\s*Remotive\.com$/i, "")
+    .split(/\s+[•|-]\s+/)
+    .map((part) => cleanText(part))
+    .filter(Boolean);
+  const title = titleParts[0] || cleanTitle(result.title ?? "");
+  const company = titleParts.length > 1 && !/\[company name\]/i.test(titleParts[1] ?? "") ? titleParts[1] : undefined;
+  const summary = cleanText(result.description ?? "");
+  const location = firstMatch(summary, /\b(Worldwide|USA|United States|Europe|Canada|Remote)\b/i);
+  if (!title || /^remote jobs\b/i.test(title)) return null;
+  return {
+    title,
+    company,
+    location,
+    summary,
+    remotiveUrl: result.url,
+  };
+}
+
+function remotiveAlternateQueries(lead: RemotiveLead) {
+  const title = quoteSearchTerm(lead.title);
+  const company = lead.company ? quoteSearchTerm(lead.company) : "";
+  const base = company ? `${company} ${title}` : title;
+  return [
+    `${base} jobs`,
+    `site:jobs.ashbyhq.com ${base}`,
+    `site:boards.greenhouse.io ${base}`,
+    `site:job-boards.greenhouse.io ${base}`,
+    `site:jobs.lever.co ${base}`,
+    `site:workdayjobs.com ${base}`,
+    `${base} careers apply`,
+  ];
+}
+
+function quoteSearchTerm(value: string) {
+  const cleaned = cleanText(value).replace(/"/g, "");
+  return cleaned.includes(" ") ? `"${cleaned}"` : cleaned;
+}
+
+function isFriendlyRemotiveAlternate(result: BraveSearchResult, lead: RemotiveLead) {
+  if (!result.url || isRemotiveResult(result.url) || isKnownListingUrl(result.url) || isLikelySocialOrShareUrl(result.url)) return false;
+  if (isUnsafeApplicationListingUrl(result.url)) return false;
+  if (!friendlyAlternateUrl(result.url)) return false;
+  const haystack = cleanText(`${result.title ?? ""} ${result.description ?? ""}`).toLowerCase();
+  const titleTokens = tokenSet(lead.title);
+  const companyTokens = tokenSet(lead.company ?? "");
+  const titleMatch = titleTokens.length === 0 || titleTokens.some((token) => haystack.includes(token));
+  const companyMatch = companyTokens.length === 0 || companyTokens.some((token) => haystack.includes(token));
+  return titleMatch && companyMatch;
+}
+
+function friendlyAlternateUrl(value: string) {
+  const provider = atsProviderFromUrl(value);
+  if (provider !== "other") return true;
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.replace(/^www\./, "");
+    if (/(linkedin\.com|indeed\.com|dice\.com|builtin\.com|himalayas\.app|workingnomads\.com|remotive\.com|facebook\.com|x\.com|twitter\.com)/i.test(hostname)) return false;
+    return /\/(careers?|jobs?|job|openings?|positions?|apply)\b/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function tokenSet(value: string) {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9+#.]+/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 2 && !["senior", "staff", "remote", "engineer", "developer", "software"].includes(token));
+}
+
+function remotiveAlternateJob(result: BraveSearchResult, alternateQuery: string, profile: JobSearchProfile, lead: RemotiveLead, remotiveResult: BraveSearchResult): RawJobPosting {
+  const job = jobFromSearchResult({
+    ...result,
+    title: result.title ?? lead.title,
+    description: result.description ?? lead.summary,
+    profile: result.profile ?? (lead.company ? { name: lead.company } : undefined),
+  }, alternateQuery, profile);
+  return {
+    ...job,
+    company: lead.company ?? job.company,
+    title: cleanTitle(result.title ?? lead.title),
+    location: lead.location ?? job.location,
+    description: [
+      cleanText(result.description ?? lead.summary ?? ""),
+      `Discovered via Remotive lead: ${lead.remotiveUrl}`,
+      `Remotive source must be attributed when used.`,
+      `Matched alternate query: ${alternateQuery}`,
+      profile.name ? `Profile: ${profile.name}` : "",
+    ].filter(Boolean).join("\n\n"),
+    rawData: {
+      provider: "brave",
+      expansionProvider: "remotive-alternate",
+      expandedFrom: lead.remotiveUrl,
+      query: alternateQuery,
+      result,
+      remotiveLead: lead,
+      remotiveResult,
+    },
   };
 }
 
@@ -650,11 +789,21 @@ function isWorkingNomadsListingResult(value: string) {
   }
 }
 
+function isRemotiveResult(value: string) {
+  try {
+    const url = new URL(value);
+    return url.hostname.replace(/^www\./, "") === "remotive.com" && url.pathname.startsWith("/remote-jobs");
+  } catch {
+    return false;
+  }
+}
+
 function isKnownListingUrl(value: string) {
   try {
     const url = new URL(value);
     const hostname = url.hostname.replace(/^www\./, "");
     if (hostname === "remoterocketship.com" && url.pathname.startsWith("/jobs/")) return true;
+    if (hostname === "remotive.com" && url.pathname.startsWith("/remote-jobs")) return true;
     if (hostname === "indeed.com" && isIndeedListingUrl(url)) return true;
     if (hostname === "dice.com" && isDiceListingUrl(url)) return true;
     if (hostname === "workingnomads.com" && isWorkingNomadsListingUrl(url)) return true;
@@ -1160,6 +1309,7 @@ function isUnsafeApplicationListingUrl(value: string) {
     if (hostname === "indeed.com") return isIndeedListingUrl(url);
     if (hostname === "himalayas.app") return !isHimalayasJobUrl(value);
     if (hostname === "workingnomads.com") return isWorkingNomadsListingUrl(url);
+    if (hostname === "remotive.com") return url.pathname.startsWith("/remote-jobs");
     return false;
   } catch {
     return false;
