@@ -31,7 +31,7 @@ describe("POST /api/market-intelligence/run", () => {
         sourceDigest: [],
         researchDigest: [],
         researchSynthesis: { mode: "deterministic", narrative: "", appObservedFacts: [], sourceBackedClaims: [], inferredRecommendations: [], contradictions: [], opportunities: [], risks: [], warnings: [] },
-        chartData: { laneDemand: [], skillDemand: [], profileHealth: [] },
+        chartData: { laneDemand: [], skillDemand: [], profileHealth: [], actionMix: [], matchQualityDistribution: [], sourceCoverage: [] },
         dataFreshness: { internalJobsAnalyzed: 0, applicationsAnalyzed: 0, profilesAnalyzed: 0, externalSourcesChecked: 0 },
         confidence: 0.5,
         searchAdaptations: [{ action: "add_preferred_keywords", riskLevel: "LOW", values: ["AI"], rationale: "Demand", confidence: 0.8, autoApply: true, status: "applied" }],

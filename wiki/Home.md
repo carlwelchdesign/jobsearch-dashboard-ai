@@ -30,7 +30,7 @@ The product is not a blind mass-apply bot. It is designed around verified candid
 - LangGraph-backed recruiting agency workflow with live `AgentRun` activity, packet-preparation state, and explicit repair/retry/cancel controls.
 - MCP server exposing app tools to local agents.
 - Chrome extension for capturing externally found jobs into the system.
-- Weekly market intelligence briefs that combine the user's real pipeline data with cited labor-market sources and review-only search strategy guidance.
+- Dashboard market analysis briefs that combine the user's real pipeline data with cited labor-market sources, analytical charts, article links, and review-only search strategy guidance.
 
 ## Wiki Pages
 

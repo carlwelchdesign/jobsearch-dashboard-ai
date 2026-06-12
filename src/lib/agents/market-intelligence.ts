@@ -66,6 +66,16 @@ export type MarketIntelligenceOutput = {
     laneDemand: Array<{ label: string; value: number }>;
     skillDemand: Array<{ label: string; value: number }>;
     profileHealth: Array<{ label: string; value: number }>;
+    actionMix: Array<{ label: string; value: number }>;
+    matchQualityDistribution: Array<{
+      company: string;
+      title: string;
+      lane: string;
+      fitScore: number;
+      opportunityScore: number;
+      overallScore: number;
+    }>;
+    sourceCoverage: Array<{ label: string; value: number }>;
   };
   dataFreshness: {
     internalJobsAnalyzed: number;
@@ -107,6 +117,7 @@ type ProfileForMarket = JobSearchProfile & {
 type MatchForMarket = {
   status: JobMatchStatus;
   overallScore: number;
+  recommendedAction?: string;
   jobSearchProfileId: string;
   jobPosting: Pick<JobPosting, "id" | "company" | "title" | "description" | "requirements" | "niceToHaves" | "lastSeenAt"> & {
     evaluations: Array<{ recommendedAction: string; fitScore: number; opportunityScore: number }>;
@@ -353,9 +364,18 @@ export function buildMarketIntelligenceReport(input: BuildInput): MarketIntellig
     warnings: researchDigest.length ? [] : ["No fresh article content was available; synthesis uses local pipeline signals and curated source metadata only."],
   });
   const topLane = laneStats[0];
+  const topSkill = skillSignals[0];
+  const sourceClaim = researchSynthesis.sourceBackedClaims[0];
   const summary = topLane
-    ? `${topLane.lane} is the strongest current lane in your recent data with ${topLane.jobCount} matching role(s), ${topLane.applyNowCount} apply-now signal(s), and a ${topLane.callbackRate}% callback rate. Use external sources as context, but prioritize lanes that also show up in your own pipeline.`
+    ? [
+        `${topLane.lane} is the strongest current lane with ${topLane.jobCount} recent matching role(s), ${topLane.applyNowCount} apply-now signal(s), and a ${topLane.callbackRate}% callback rate.`,
+        topSkill ? `${topSkill.skill} is the highest-repeat skill signal with ${topSkill.mentions} mention(s).` : "No repeatable skill signal is strong enough yet.",
+        sourceClaim ? `Fresh research supports this context: ${sourceClaim}` : "External source coverage is thin, so treat local pipeline data as the primary signal.",
+        recommendedActions[0] ? `Next move: ${recommendedActions[0].title}.` : "Next move: run discovery again after more job data lands.",
+      ].join(" ")
     : "There is not enough recent local job data yet. Run discovery, then rerun market intelligence to compare market signals against your actual search pipeline.";
+  const checkedSourceCount = input.sources.filter((source) => source.status === "checked").length;
+  const unverifiedSourceCount = input.sources.filter((source) => source.status === "unverified").length;
 
   return {
     generatedAt: generatedAt.toISOString(),
@@ -374,15 +394,44 @@ export function buildMarketIntelligenceReport(input: BuildInput): MarketIntellig
         label: profile.name,
         value: profile.performanceSnapshots[0]?.healthScore ?? 0,
       })),
+      actionMix: actionMix(input.matches),
+      matchQualityDistribution: matchQualityDistribution(input.matches),
+      sourceCoverage: [
+        { label: "Checked sources", value: checkedSourceCount },
+        { label: "Unverified sources", value: unverifiedSourceCount },
+        { label: "Fetched articles", value: researchDigest.length },
+      ].filter((item) => item.value > 0),
     },
     dataFreshness: {
       internalJobsAnalyzed: new Set(input.matches.map((match) => match.jobPosting.id)).size,
       applicationsAnalyzed: input.matches.reduce((count, match) => count + match.jobPosting.applications.length, 0),
       profilesAnalyzed: input.profiles.length,
-      externalSourcesChecked: input.sources.filter((source) => source.status === "checked").length + researchDigest.length,
+      externalSourcesChecked: checkedSourceCount + researchDigest.length,
     },
     confidence: confidenceFor(input.matches.length, input.profiles.length, input.sources.filter((source) => source.status === "checked").length),
   };
+}
+
+function actionMix(matches: MatchForMarket[]) {
+  const counts = new Map<string, number>();
+  for (const match of matches) {
+    const action = match.jobPosting.evaluations[0]?.recommendedAction || match.recommendedAction || "NEEDS_REVIEW";
+    counts.set(action, (counts.get(action) ?? 0) + 1);
+  }
+  return ["APPLY_NOW", "MAYBE_APPLY", "SAVE_FOR_LATER", "REJECT", "NEEDS_REVIEW"]
+    .map((action) => ({ label: action.replace(/_/g, " ").toLowerCase(), value: counts.get(action) ?? 0 }))
+    .filter((item) => item.value > 0);
+}
+
+function matchQualityDistribution(matches: MatchForMarket[]) {
+  return matches.slice(0, 80).map((match) => ({
+    company: match.jobPosting.company,
+    title: match.jobPosting.title,
+    lane: laneDefinitions.find((lane) => textHasAny(jobText(match.jobPosting), lane.terms))?.lane ?? "Unclassified",
+    fitScore: match.jobPosting.evaluations[0]?.fitScore ?? match.overallScore,
+    opportunityScore: match.jobPosting.evaluations[0]?.opportunityScore ?? match.overallScore,
+    overallScore: match.overallScore,
+  }));
 }
 
 export async function collectMarketResearch({

@@ -195,7 +195,7 @@ function report(input: { skills?: string[]; companies?: string[] } = {}): Market
       risks: [],
       warnings: [],
     },
-    chartData: { laneDemand: [], skillDemand: [], profileHealth: [] },
+    chartData: { laneDemand: [], skillDemand: [], profileHealth: [], actionMix: [], matchQualityDistribution: [], sourceCoverage: [] },
     dataFreshness: { internalJobsAnalyzed: 293, applicationsAnalyzed: 0, profilesAnalyzed: 1, externalSourcesChecked: 10 },
     confidence: 0.9,
   };
