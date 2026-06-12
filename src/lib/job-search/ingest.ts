@@ -40,6 +40,32 @@ type JobSearchStats = {
   backendDataPlatformTitles?: number;
   nonTargetTitles?: number;
   genericSoftwareTitles?: number;
+  detailCandidates?: number;
+  existingJobDuplicates?: number;
+  existingProfileMatches?: number;
+  profileMaxResultsCapped?: number;
+  jobsMissingApplicationUrl?: number;
+  agencyEligible?: number;
+  reviewOnlyMatches?: number;
+  highConfidenceMatches?: number;
+  scoreBuckets?: Record<"below" | "nearMiss" | "qualified" | "highConfidence", number>;
+  byProfile?: Record<string, SearchDimensionStats>;
+  bySource?: Record<string, SearchDimensionStats>;
+};
+
+type SearchDimensionStats = {
+  fetched?: number;
+  candidates?: number;
+  scored?: number;
+  qualified?: number;
+  saved?: number;
+  belowThreshold?: number;
+  duplicates?: number;
+  existingMatches?: number;
+  suppressed?: number;
+  capped?: number;
+  missingApplicationUrl?: number;
+  reviewOnly?: number;
 };
 
 type AgencyHandoffProgress = {
@@ -123,6 +149,17 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
     backendDataPlatformTitles: 0,
     nonTargetTitles: 0,
     genericSoftwareTitles: 0,
+    detailCandidates: 0,
+    existingJobDuplicates: 0,
+    existingProfileMatches: 0,
+    profileMaxResultsCapped: 0,
+    jobsMissingApplicationUrl: 0,
+    agencyEligible: 0,
+    reviewOnlyMatches: 0,
+    highConfidenceMatches: 0,
+    scoreBuckets: { below: 0, nearMiss: 0, qualified: 0, highConfidence: 0 },
+    byProfile: {},
+    bySource: {},
   };
   const errors: Array<{ source: string; profile: string; message: string }> = [];
   const newMatches: Array<{ score: number; title: string; company: string; profile: string }> = [];
@@ -171,6 +208,11 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
           }
         }
         const jobCandidates = rawJobs.filter((rawJob) => !isListingReviewPosting(rawJob));
+        stats.detailCandidates += jobCandidates.length;
+        addDimensionStat(stats.byProfile, profile.name, "fetched", rawJobs.length);
+        addDimensionStat(stats.byProfile, profile.name, "candidates", jobCandidates.length);
+        addDimensionStat(stats.bySource, source.name, "fetched", rawJobs.length);
+        addDimensionStat(stats.bySource, source.name, "candidates", jobCandidates.length);
         await updateRunStats(run.id, stats, `Fetched ${rawJobs.length} jobs from ${source.name}.`);
 
         const rankedJobs = (await Promise.all(jobCandidates.map(async (rawJob) => {
@@ -181,25 +223,37 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
           return { normalized, score, classification };
         }))).sort((a, b) => b.score.overallScore - a.score.overallScore);
         stats.jobsScored += rankedJobs.length;
+        addDimensionStat(stats.byProfile, profile.name, "scored", rankedJobs.length);
+        addDimensionStat(stats.bySource, source.name, "scored", rankedJobs.length);
         const jobsToScore = rankedJobs.slice(0, Math.min(rankedJobs.length, Math.max(profile.maxResultsPerRun * 8, 160), 600));
+        if (rankedJobs.length > jobsToScore.length) {
+          stats.profileMaxResultsCapped += rankedJobs.length - jobsToScore.length;
+          addDimensionStat(stats.byProfile, profile.name, "capped", rankedJobs.length - jobsToScore.length);
+        }
         await appendProgress(run.id, `Scoring ${jobsToScore.length} ${source.name} jobs for ${profile.name}.`, stats);
 
         for (const [index, rankedJob] of jobsToScore.entries()) {
           if (savedForProfile >= profile.maxResultsPerRun) break;
 
           const { normalized, score } = rankedJob;
+          recordScoreBucket(stats, score.overallScore, profile.minimumMatchScore);
           const suppressionState = suppressionStateByUserId.get(profile.userId);
           if (suppressionState && isJobSuppressed(jobIdentity(normalized), suppressionState)) {
             stats.jobsSuppressed += 1;
+            addDimensionStat(stats.byProfile, profile.name, "suppressed", 1);
+            addDimensionStat(stats.bySource, source.name, "suppressed", 1);
             continue;
           }
 
           const { job, isNew } = await upsertDedupedJob(normalized, source.id);
           if (suppressionState && isJobSuppressed(job, suppressionState)) {
             stats.jobsSuppressed += 1;
+            addDimensionStat(stats.byProfile, profile.name, "suppressed", 1);
+            addDimensionStat(stats.bySource, source.name, "suppressed", 1);
             continue;
           }
           if (isNew) stats.jobsAfterDedupe += 1;
+          else stats.existingJobDuplicates += 1;
 
           if (score.overallScore >= profile.minimumMatchScore) {
             const existing = await prisma.jobProfileMatch.findUnique({
@@ -210,6 +264,7 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
                 },
               },
             });
+            const reviewOnly = isReviewOnlyBroadMatch(profile, score.overallScore);
             await prisma.jobProfileMatch.upsert({
               where: {
                 jobPostingId_jobSearchProfileId: {
@@ -220,12 +275,14 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
               update: {
                 ...score,
                 status: existing?.status ?? "needs_review",
+                recommendedAction: reviewOnly ? reviewOnlyRecommendedAction(score.recommendedAction) : score.recommendedAction,
               },
               create: {
                 jobPostingId: job.id,
                 jobSearchProfileId: profile.id,
                 status: "needs_review",
                 ...score,
+                recommendedAction: reviewOnly ? reviewOnlyRecommendedAction(score.recommendedAction) : score.recommendedAction,
               },
             });
             await runJobFitScoringAgent({
@@ -236,18 +293,44 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
               await appendProgress(run.id, `Evidence scoring failed for ${job.title} at ${job.company}: ${error instanceof Error ? error.message : "Unknown scoring failure"}`, stats);
             });
             stats.jobsAfterFilters += 1;
+            addDimensionStat(stats.byProfile, profile.name, "qualified", 1);
+            addDimensionStat(stats.bySource, source.name, "qualified", 1);
+            if (!job.applicationUrl) {
+              stats.jobsMissingApplicationUrl += 1;
+              addDimensionStat(stats.byProfile, profile.name, "missingApplicationUrl", 1);
+              addDimensionStat(stats.bySource, source.name, "missingApplicationUrl", 1);
+            } else if (reviewOnly) {
+              stats.reviewOnlyMatches += 1;
+              addDimensionStat(stats.byProfile, profile.name, "reviewOnly", 1);
+              addDimensionStat(stats.bySource, source.name, "reviewOnly", 1);
+            } else {
+              stats.agencyEligible += 1;
+            }
+            if (score.overallScore >= highConfidenceThreshold(profile)) stats.highConfidenceMatches += 1;
             if (!existing) {
               stats.jobsSaved += 1;
               savedForProfile += 1;
+              addDimensionStat(stats.byProfile, profile.name, "saved", 1);
+              addDimensionStat(stats.bySource, source.name, "saved", 1);
               newMatches.push({ score: score.overallScore, title: job.title, company: job.company, profile: profile.name });
               await updateRunStats(run.id, stats, `Saved match: ${score.overallScore} - ${job.title} at ${job.company}.`);
+            } else {
+              stats.existingProfileMatches += 1;
+              addDimensionStat(stats.byProfile, profile.name, "existingMatches", 1);
+              addDimensionStat(stats.bySource, source.name, "existingMatches", 1);
             }
           } else {
             stats.jobsBelowThreshold += 1;
+            addDimensionStat(stats.byProfile, profile.name, "belowThreshold", 1);
+            addDimensionStat(stats.bySource, source.name, "belowThreshold", 1);
           }
           if ((index + 1) % 50 === 0) {
             await updateRunStats(run.id, stats, `Scored ${index + 1}/${jobsToScore.length} ${source.name} jobs for ${profile.name}.`);
           }
+        }
+        if (savedForProfile >= profile.maxResultsPerRun) {
+          stats.profileMaxResultsCapped += 1;
+          addDimensionStat(stats.byProfile, profile.name, "capped", 1);
         }
         await updateRunStats(run.id, stats, `Finished ${source.name} for ${profile.name}.`);
       } catch (error) {
@@ -333,6 +416,11 @@ export async function autoRunAgencyAfterSearch(input: {
     where: {
       status: "needs_review",
       ...(input.userId ? { jobSearchProfile: { userId: input.userId } } : {}),
+      NOT: {
+        recommendedAction: {
+          startsWith: "Review-only broad discovery",
+        },
+      },
       jobPosting: {
         applicationUrl: { not: null },
         applications: {
@@ -467,6 +555,36 @@ function recordSearchDiagnostics(stats: JobSearchStats, classification: ReturnTy
   if (classification.backendDataPlatformOnly) stats.backendDataPlatformTitles = (stats.backendDataPlatformTitles ?? 0) + 1;
   if (classification.nonTarget) stats.nonTargetTitles = (stats.nonTargetTitles ?? 0) + 1;
   if (classification.genericSoftwareWithoutFrontend) stats.genericSoftwareTitles = (stats.genericSoftwareTitles ?? 0) + 1;
+}
+
+function recordScoreBucket(stats: JobSearchStats, score: number, threshold: number) {
+  stats.scoreBuckets ??= { below: 0, nearMiss: 0, qualified: 0, highConfidence: 0 };
+  if (score >= Math.max(85, threshold + 10)) stats.scoreBuckets.highConfidence += 1;
+  else if (score >= threshold) stats.scoreBuckets.qualified += 1;
+  else if (score >= Math.max(0, threshold - 10)) stats.scoreBuckets.nearMiss += 1;
+  else stats.scoreBuckets.below += 1;
+}
+
+function addDimensionStat(container: Record<string, SearchDimensionStats> | undefined, key: string, field: keyof SearchDimensionStats, amount: number) {
+  if (!container || amount <= 0) return;
+  container[key] ??= {};
+  container[key][field] = (container[key][field] ?? 0) + amount;
+}
+
+function isReviewOnlyBroadMatch(profile: { name: string; searchIntent: string; minimumMatchScore: number }, score: number) {
+  return isBroadDiscoveryProfile(profile) && score < highConfidenceThreshold(profile);
+}
+
+function isBroadDiscoveryProfile(profile: { name: string; searchIntent: string }) {
+  return profile.searchIntent === "custom" && /linkedin|broad|wide net/i.test(profile.name);
+}
+
+function highConfidenceThreshold(profile: { minimumMatchScore: number }) {
+  return Math.max(75, profile.minimumMatchScore + 12);
+}
+
+function reviewOnlyRecommendedAction(action: string) {
+  return `Review-only broad discovery: ${action}`;
 }
 
 function listingReviewMessage(raw: { listingReview?: { url: string; reason: string; sourceTitle?: string; query?: string; blocked?: boolean } }) {

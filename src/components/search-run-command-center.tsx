@@ -14,6 +14,7 @@ import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useEffect, useMemo, useState } from "react";
+import { SearchRunAnalyticsCharts } from "@/components/search-run-analytics-charts";
 import { StatusChip } from "@/components/ui/status-chip";
 
 type ProgressEvent = {
@@ -24,6 +25,7 @@ type ProgressEvent = {
     jobsAfterDedupe?: number;
     jobsAfterFilters?: number;
     jobsSaved?: number;
+    [key: string]: unknown;
   };
   agencyHandoff?: AgencyHandoff;
 };
@@ -184,12 +186,7 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
           {error ? <Alert severity="error">{error}</Alert> : null}
           {running ? <LinearProgress /> : null}
 
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "repeat(4, 1fr)" }, gap: 1 }}>
-            <RunStat label="Fetched" value={run?.jobsFetched ?? 0} helper="From sources" />
-            <RunStat label="New" value={run?.jobsAfterDedupe ?? 0} helper="After dedupe" />
-            <RunStat label="Matched" value={run?.jobsAfterFilters ?? 0} helper="Passed filters" />
-            <RunStat label="Saved" value={run?.jobsSaved ?? 0} helper="Sent to agency" />
-          </Box>
+          <SearchRunAnalyticsCharts run={run} compact />
 
           {agencyHandoff ? (
             <AgencyHandoffPanel
@@ -235,16 +232,6 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
         </Stack>
       </CardContent>
     </Card>
-  );
-}
-
-function RunStat({ label, value, helper }: { label: string; value: number; helper: string }) {
-  return (
-    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25, bgcolor: "background.paper" }}>
-      <Typography variant="caption" color="text.secondary">{label}</Typography>
-      <Typography sx={{ fontSize: 24, fontWeight: 900, fontVariantNumeric: "tabular-nums", lineHeight: 1.15 }}>{value}</Typography>
-      <Typography variant="caption" color="text.secondary">{helper}</Typography>
-    </Box>
   );
 }
 

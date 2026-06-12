@@ -148,6 +148,11 @@ describe("runRecruitingAgency", () => {
       where: expect.objectContaining({
         status: "needs_review",
         overallScore: { gte: 0 },
+        NOT: {
+          recommendedAction: {
+            startsWith: "Review-only broad discovery",
+          },
+        },
         jobPosting: { applicationUrl: { not: null } },
       }),
     }));

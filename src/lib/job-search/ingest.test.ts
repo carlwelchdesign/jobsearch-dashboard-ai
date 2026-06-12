@@ -70,6 +70,11 @@ describe("autoRunAgencyAfterSearch", () => {
       where: expect.objectContaining({
         status: "needs_review",
         jobSearchProfile: { userId: "user_1" },
+        NOT: {
+          recommendedAction: {
+            startsWith: "Review-only broad discovery",
+          },
+        },
       }),
     }));
     expect(runAgencyMock).toHaveBeenCalledWith(expect.objectContaining({ minimumScore: 0, limit: 3, triggeredBy: "search_auto" }));
@@ -106,6 +111,26 @@ describe("autoRunAgencyAfterSearch", () => {
       where: expect.not.objectContaining({ overallScore: { gte: 90 } }),
     }));
     expect(runAgencyMock).toHaveBeenCalledWith(expect.objectContaining({ minimumScore: 0, limit: 1, triggeredBy: "search_auto" }));
+  });
+
+  it("excludes review-only broad discovery matches from automatic agency handoff", async () => {
+    await autoRunAgencyAfterSearch({
+      runId: "search_1",
+      userId: "user_1",
+      status: "completed",
+      jobsSaved: 3,
+      stats: stats(),
+    });
+
+    expect(matchCountMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        NOT: {
+          recommendedAction: {
+            startsWith: "Review-only broad discovery",
+          },
+        },
+      }),
+    }));
   });
 
   it("skips the agency when no jobs were saved and no existing eligible matches remain", async () => {

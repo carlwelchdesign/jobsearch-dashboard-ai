@@ -6,6 +6,7 @@ import CardContent from "@mui/material/CardContent";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useTheme, type Theme } from "@mui/material/styles";
+import { useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -57,7 +58,7 @@ function ChartPanel({ title, helper, children }: { title: string; helper: string
   return (
     <Panel title={title}>
       <Typography variant="caption" color="text.secondary">{helper}</Typography>
-      <Box sx={{ height: 280, mt: 1 }}>
+      <Box sx={{ height: 280, mt: 1, minWidth: 0, width: "100%" }}>
         {children}
       </Box>
     </Panel>
@@ -66,6 +67,8 @@ function ChartPanel({ title, helper, children }: { title: string; helper: string
 
 function BarChartBlock({ data, colorIndex }: { data: Array<{ label: string; value: number }>; colorIndex: number }) {
   const theme = useTheme();
+  const mounted = useMounted();
+  if (!mounted) return <EmptyChart label="Preparing chart..." />;
   if (!data.length) return <EmptyChart label="No data available yet." />;
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -82,6 +85,8 @@ function BarChartBlock({ data, colorIndex }: { data: Array<{ label: string; valu
 
 function TrendChartBlock({ data }: { data: MarketTrendPoint[] }) {
   const theme = useTheme();
+  const mounted = useMounted();
+  if (!mounted) return <EmptyChart label="Preparing chart..." />;
   if (data.length < 2) return <EmptyChart label="Run at least two market briefs to see trends." />;
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -100,6 +105,8 @@ function TrendChartBlock({ data }: { data: MarketTrendPoint[] }) {
 function PieChartBlock({ data }: { data: Array<{ label: string; value: number }> }) {
   const theme = useTheme();
   const colors = chartColors(theme);
+  const mounted = useMounted();
+  if (!mounted) return <EmptyChart label="Preparing chart..." />;
   if (!data.length) return <EmptyChart label="No action mix available yet." />;
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -115,6 +122,8 @@ function PieChartBlock({ data }: { data: Array<{ label: string; value: number }>
 
 function ScatterChartBlock({ data }: { data: MarketIntelligenceOutput["chartData"]["matchQualityDistribution"] }) {
   const theme = useTheme();
+  const mounted = useMounted();
+  if (!mounted) return <EmptyChart label="Preparing chart..." />;
   if (!data.length) return <EmptyChart label="No scored matches available yet." />;
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -139,9 +148,9 @@ function EmptyChart({ label }: { label: string }) {
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <Card variant="outlined" sx={{ boxShadow: "none" }}>
+    <Card variant="outlined" sx={{ boxShadow: "none", minWidth: 0 }}>
       <CardContent>
-        <Stack spacing={1}>
+        <Stack spacing={1} sx={{ minWidth: 0 }}>
           <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 900, textTransform: "uppercase" }}>{title}</Typography>
           {children}
         </Stack>
@@ -159,4 +168,10 @@ function chartColors(theme: Theme) {
     theme.palette.secondary.main,
     theme.palette.error.main,
   ];
+}
+
+function useMounted() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return mounted;
 }

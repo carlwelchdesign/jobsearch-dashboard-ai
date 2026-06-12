@@ -45,6 +45,64 @@ async function main() {
 
   const profiles = [
     {
+      name: "Broad LinkedIn Parity Review",
+      searchIntent: "custom",
+      remotePreference: "any",
+      countries: ["United States"],
+      titles: [
+        "Senior Software Engineer",
+        "Senior Full Stack Engineer",
+        "Senior Frontend Engineer",
+        "Product Engineer",
+        "Full-Stack Product Engineer",
+        "React Engineer",
+        "TypeScript Engineer",
+        "UI Engineer",
+        "Design Systems Engineer",
+        "AI Product Engineer",
+        "Staff Software Engineer",
+      ],
+      keywordsPreferred: [
+        "React",
+        "TypeScript",
+        "JavaScript",
+        "frontend",
+        "full stack",
+        "full-stack",
+        "product engineer",
+        "product UI",
+        "web platform",
+        "design systems",
+        "component library",
+        "Next.js",
+        "AI product",
+        "LLM",
+        "agent",
+        "workflow",
+        "dashboard",
+        "remote",
+        "United States",
+        "US",
+        "global",
+      ],
+      salaryCurrency: "USD",
+      salaryMin: 140000,
+      includeUnknownSalary: true,
+      minimumMatchScore: 62,
+      maxResultsPerRun: 250,
+      excludedTitles: [
+        "Manager",
+        "Director",
+        "Advocate",
+        "Developer Relations",
+        "DevRel",
+        "Instructor",
+        "Curriculum",
+        "Support Engineer",
+        "Sales Engineer",
+      ],
+    },
+    {
       name: "US Remote Senior Frontend",
       searchIntent: "us_remote",
       remotePreference: "remote_us_only",
@@ -266,6 +324,7 @@ async function main() {
   ];
 
   for (const profile of profiles) {
+    const profileExcludedTitles = "excludedTitles" in profile ? profile.excludedTitles : excludedTitles;
     await prisma.jobSearchProfile.upsert({
       where: {
         userId_name: {
@@ -276,14 +335,14 @@ async function main() {
       update: {
         ...profile,
         excludedCompanies,
-        excludedTitles,
+        excludedTitles: profileExcludedTitles,
         keywordsExcluded,
       },
       create: {
         userId: user.id,
         ...profile,
         excludedCompanies,
-        excludedTitles,
+        excludedTitles: profileExcludedTitles,
         keywordsExcluded,
       },
     });

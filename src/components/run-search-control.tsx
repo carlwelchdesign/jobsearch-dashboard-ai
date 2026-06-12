@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import Alert from "@mui/material/Alert";
-import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
@@ -11,6 +10,7 @@ import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useEffect, useState } from "react";
+import { SearchRunAnalyticsCharts } from "@/components/search-run-analytics-charts";
 import { StatusChip } from "@/components/ui/status-chip";
 
 type ProgressEvent = {
@@ -21,6 +21,7 @@ type ProgressEvent = {
     jobsAfterDedupe: number;
     jobsAfterFilters: number;
     jobsSaved: number;
+    [key: string]: unknown;
   };
 };
 
@@ -83,12 +84,7 @@ export function RunSearchControl({ compact = false }: { compact?: boolean }) {
                 <StatusChip status={run.status} />
               </Stack>
               {running ? <LinearProgress /> : null}
-              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(4, 1fr)" }, gap: 1 }}>
-                <Stat label="Fetched" value={run.jobsFetched} />
-                <Stat label="New" value={run.jobsAfterDedupe} />
-                <Stat label="Matched" value={run.jobsAfterFilters} />
-                <Stat label="Saved" value={run.jobsSaved} />
-              </Box>
+              <SearchRunAnalyticsCharts run={run} compact />
               <Stack spacing={0.75}>
                 {latest.map((event) => (
                   <Typography key={`${event.at}-${event.message}`} variant="body2" color="text.secondary">
@@ -101,20 +97,14 @@ export function RunSearchControl({ compact = false }: { compact?: boolean }) {
         </Card>
       ) : null}
       {run && compact ? (
-        <Typography variant="body2" color="text.secondary">
-          {run.status}: {run.progress?.[run.progress.length - 1]?.message ?? "Search started."}
-        </Typography>
+        <Stack spacing={0.75}>
+          <SearchRunAnalyticsCharts run={run} compact />
+          <Typography variant="body2" color="text.secondary">
+            {run.status}: {run.progress?.[run.progress.length - 1]?.message ?? "Search started."}
+          </Typography>
+        </Stack>
       ) : null}
     </Stack>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1 }}>
-      <Typography variant="caption" color="text.secondary">{label}</Typography>
-      <Typography sx={{ fontWeight: 850, fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
-    </Box>
   );
 }
 
