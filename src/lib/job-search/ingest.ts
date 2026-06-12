@@ -28,6 +28,10 @@ type JobSearchStats = {
   jobsScored?: number;
   jobsSuppressed?: number;
   listingPagesSuppressed?: number;
+  searchQueryTemplates?: number;
+  searchQueryProviderDomains?: number;
+  searchQueryExpandedLinks?: number;
+  providerMissingWarnings?: number;
   jobsBelowThreshold?: number;
   frontendTitles?: number;
   fullStackTitles?: number;
@@ -107,6 +111,10 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
     jobsScored: 0,
     jobsSuppressed: 0,
     listingPagesSuppressed: 0,
+    searchQueryTemplates: 0,
+    searchQueryProviderDomains: 0,
+    searchQueryExpandedLinks: 0,
+    providerMissingWarnings: 0,
     jobsBelowThreshold: 0,
     frontendTitles: 0,
     fullStackTitles: 0,
@@ -130,6 +138,17 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
       if (!adapter) continue;
 
       try {
+        if (source.type === "search_query") {
+          const coverage = searchQueryCoverage(source.config);
+          stats.searchQueryTemplates = coverage.queryCount;
+          stats.searchQueryProviderDomains = coverage.providerDomains.length;
+          if (!process.env.BRAVE_SEARCH_API_KEY) {
+            stats.providerMissingWarnings = (stats.providerMissingWarnings ?? 0) + 1;
+            await appendProgress(run.id, `${source.name} is enabled but BRAVE_SEARCH_API_KEY is missing; ${coverage.queryCount} provider query templates covering ${coverage.providerDomains.length} domain(s) cannot run.`, stats);
+          } else {
+            await appendProgress(run.id, `${source.name} coverage: ${coverage.queryCount} query templates across ${coverage.providerDomains.length} provider domain(s).`, stats);
+          }
+        }
         await appendProgress(run.id, `Fetching ${source.name} jobs for ${profile.name}.`, stats);
         const rawJobs = await withTimeout(
           adapter.fetchJobs(profile, source),
@@ -137,6 +156,13 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
           `${source.name} fetch timed out after ${Math.round(sourceFetchTimeoutMs / 60_000)} minutes.`,
         );
         stats.jobsFetched += rawJobs.length;
+        if (source.type === "search_query") {
+          const expandedLinks = rawJobs.filter(hasSearchExpansionProvider).length;
+          stats.searchQueryExpandedLinks = (stats.searchQueryExpandedLinks ?? 0) + expandedLinks;
+          if (expandedLinks > 0) {
+            await appendProgress(run.id, `${source.name} expanded ${expandedLinks} listing result${expandedLinks === 1 ? "" : "s"} into job-detail link${expandedLinks === 1 ? "" : "s"}.`, stats);
+          }
+        }
         const listingReviews = rawJobs.filter(isListingReviewPosting);
         if (listingReviews.length > 0) {
           stats.listingPagesSuppressed += listingReviews.length;
@@ -450,6 +476,31 @@ function listingReviewMessage(raw: { listingReview?: { url: string; reason: stri
   const query = listing.query ? ` Query: ${listing.query}.` : "";
   const title = listing.sourceTitle ? ` Title: ${listing.sourceTitle}.` : "";
   return `Suppressed search listing page before scoring: ${listing.url}. Reason: ${listing.reason}.${blocked}${title}${query}`;
+}
+
+function searchQueryCoverage(config: unknown) {
+  const input = isRecord(config) ? config : {};
+  const queries = Array.isArray(input.queries)
+    ? input.queries.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+  const domains = new Set<string>();
+  for (const query of queries) {
+    for (const match of query.matchAll(/\bsite:([^\s"']+)/gi)) {
+      const domain = (match[1] ?? "").replace(/^www\./, "").replace(/\/.*$/, "").toLowerCase();
+      if (domain) domains.add(domain);
+    }
+  }
+  return { queryCount: queries.length, providerDomains: [...domains].sort() };
+}
+
+function hasSearchExpansionProvider(raw: unknown) {
+  if (!isRecord(raw)) return false;
+  const rawData = raw.rawData;
+  return isRecord(rawData) && typeof rawData.expansionProvider === "string";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 async function updateRunStats(runId: string, stats: JobSearchStats, message?: string) {

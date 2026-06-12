@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { upsertApplicationAnswerMemory } from "../src/lib/application-answer-memory";
 import { syncJobSearchOsProjectEvidence } from "../src/lib/evidence/ingest";
 import { configToPrismaJson, defaultCompanySourceConfig } from "../src/lib/job-search/company-source-config";
-import { searchQueryTemplates } from "../src/lib/job-search/source-catalog";
+import { defaultSearchQuerySourceConfig, mergeSearchQuerySourceConfig } from "../src/lib/job-search/source-catalog";
 import { prisma as appPrisma } from "../src/lib/prisma";
 import { defaultResumeProfiles, resumeProfileJson } from "../src/lib/resume-profiles/defaults";
 
@@ -346,13 +346,7 @@ async function main() {
       type: "search_query",
       baseUrl: "https://search.brave.com",
       enabled: Boolean(process.env.BRAVE_SEARCH_API_KEY),
-      config: {
-        qualityTier: "search_query",
-        provider: "brave",
-        queries: searchQueryTemplates,
-        maxResultsPerQuery: 8,
-        maxFetch: Number(process.env.SEARCH_QUERY_MAX_RESULTS ?? 80),
-      },
+      config: defaultSearchQuerySourceConfig(),
     },
     {
       name: "Defense Tech Jobs",
@@ -385,9 +379,14 @@ async function main() {
   ] as const;
 
   for (const source of sources) {
+    const existing = await prisma.jobSource.findUnique({ where: { type_name: { type: source.type, name: source.name } } });
     await prisma.jobSource.upsert({
       where: { type_name: { type: source.type, name: source.name } },
-      update: { baseUrl: source.baseUrl, enabled: source.enabled, config: source.config },
+      update: {
+        baseUrl: source.baseUrl,
+        enabled: source.enabled,
+        config: source.type === "search_query" ? mergeSearchQuerySourceConfig(existing?.config) : source.config,
+      },
       create: source,
     });
   }

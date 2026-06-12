@@ -40,12 +40,18 @@ export const sourceCatalog: SourceCatalogItem[] = [
   source("Company Source List", "company_careers_page", 1, "active", "company_source", global, seniorEngineeringRoles, true, false, "medium", "daily", "Curated company list probes Greenhouse, Lever, and Ashby slugs directly."),
   source("Workday", "ats_platform", 1, "active", "search_query", global, seniorEngineeringRoles, true, false, "high", "daily", "Covered through Brave Search query templates while tenant-specific URLs and anti-automation are handled conservatively."),
   source("SmartRecruiters", "ats_platform", 1, "active", "search_query", global, seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates until a dedicated API connector is added."),
+  source("Bullhorn", "ats_platform", 2, "active", "search_query", ["US", "Europe"], seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for recruiter-hosted Bullhorn career portals."),
   source("iCIMS", "ats_platform", 2, "active", "search_query", ["US", "Europe"], seniorEngineeringRoles, true, false, "high", "daily", "Covered through Brave Search query templates for inconsistent enterprise career-page formats."),
   source("Jobvite", "ats_platform", 2, "active", "search_query", ["US", "Europe"], seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates until a dedicated connector is added."),
+  source("Oracle Taleo", "ats_platform", 2, "active", "search_query", ["US", "Europe", "Global"], seniorEngineeringRoles, true, false, "high", "daily", "Covered through Brave Search query templates for Taleo tenant career sections."),
+  source("SAP SuccessFactors", "ats_platform", 2, "active", "search_query", ["US", "Europe", "Global"], seniorEngineeringRoles, true, false, "high", "daily", "Covered through Brave Search query templates for SAP SuccessFactors career portals."),
   source("BambooHR", "ats_platform", 2, "active", "search_query", ["US", "Europe"], seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for startup career pages."),
   source("Workable", "ats_platform", 2, "active", "search_query", global, seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates until a dedicated API connector is added."),
   source("Recruitee", "ats_platform", 2, "active", "search_query", ["Europe", "Global"], seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for Europe startup coverage."),
   source("Teamtailor", "ats_platform", 2, "active", "search_query", ["Europe", "Global"], seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates until a dedicated API connector is added."),
+  source("Jobylon", "ats_platform", 3, "active", "search_query", ["Europe", "Global"], seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for European startup and growth company roles."),
+  source("Join", "ats_platform", 3, "active", "search_query", ["Europe", "Global"], seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for JOIN-hosted company job pages."),
+  source("Jobtrain", "ats_platform", 3, "active", "search_query", ["UK", "Europe"], seniorEngineeringRoles, true, false, "medium", "weekly", "Covered through Brave Search query templates for UK Jobtrain career portals."),
   source("Personio", "ats_platform", 2, "active", "search_query", ["Europe"], seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for EU relocation searches."),
 
   source("We Work Remotely", "remote_job_board", 1, "active", "html", global, seniorEngineeringRoles, true, false, "medium", "daily", "Adapter exists but is paused by default due board friction and lower precision."),
@@ -58,11 +64,16 @@ export const sourceCatalog: SourceCatalogItem[] = [
   source("FlexJobs", "remote_job_board", 3, "manual", "manual_review", global, seniorEngineeringRoles, true, true, "blocked", "weekly", "Paid/authenticated source, better as manual import unless account automation is added."),
 
   source("Wellfound", "startup_board", 1, "active", "search_query", global, seniorEngineeringRoles, true, true, "high", "daily", "Covered through Brave Search query templates; account workflow remains manual."),
+  source("ZipRecruiter", "general_job_board", 3, "active", "search_query", ["US"], seniorEngineeringRoles, true, false, "high", "weekly", "Covered through Brave Search query templates; kept as supplemental because aggregator results can be noisy."),
   source("Y Combinator Work at a Startup", "startup_board", 1, "active", "search_query", global, seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for startup engineering roles."),
   source("Built In", "tech_job_board", 1, "active", "search_query", ["US"], seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for US tech and remote indexes."),
   source("Levels.fyi Jobs", "tech_job_board", 2, "active", "search_query", global, seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for senior comp-aware roles."),
   source("TrueUp", "tech_job_board", 2, "active", "search_query", ["US", "Global"], seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for layoff-aware tech jobs."),
   source("Dice", "tech_job_board", 3, "active", "search_query", ["US"], seniorEngineeringRoles, true, false, "high", "weekly", "Covered through Brave Search query templates; kept lower priority because it is noisy."),
+  source("Monster", "general_job_board", 4, "active", "search_query", ["US", "Europe"], seniorEngineeringRoles, true, false, "high", "weekly", "Covered through Brave Search query templates as a supplemental general board."),
+  source("CareerBuilder", "general_job_board", 4, "active", "search_query", ["US"], seniorEngineeringRoles, true, false, "high", "weekly", "Covered through Brave Search query templates as a supplemental general board."),
+  source("SimplyHired", "general_job_board", 4, "active", "search_query", ["US"], seniorEngineeringRoles, true, false, "high", "weekly", "Covered through Brave Search query templates as a supplemental aggregator."),
+  source("Adzuna", "general_job_board", 4, "active", "search_query", ["US", "Europe", "Global"], seniorEngineeringRoles, true, false, "medium", "weekly", "Covered through Brave Search query templates as a supplemental job search engine."),
   source("Hacker News Who is Hiring", "community", 2, "active", "search_query", global, seniorEngineeringRoles, true, false, "medium", "monthly", "Covered through Brave Search query templates for monthly startup signal."),
 
   source("a16z Portfolio Jobs", "vc_portfolio_jobs", 1, "active", "search_query", global, seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for portfolio aggregator roles."),
@@ -83,7 +94,7 @@ export const sourceCatalog: SourceCatalogItem[] = [
   source("Toptal", "freelance_marketplace", 4, "manual", "marketplace", global, ["contract", "frontend", "fullstack"], true, true, "blocked", "weekly", "Emergency/fractional income source, not core full-time search."),
   source("Braintrust", "freelance_marketplace", 4, "manual", "marketplace", global, ["contract", "frontend", "fullstack"], true, true, "blocked", "weekly", "Contract marketplace."),
 
-  source("LinkedIn Jobs", "general_job_board", 3, "manual", "manual_review", global, seniorEngineeringRoles, true, true, "blocked", "daily", "Major source but requires account/session workflow and careful ToS handling."),
+  source("LinkedIn Jobs", "general_job_board", 3, "manual", "manual_review", global, seniorEngineeringRoles, true, true, "blocked", "daily", "Major discovery source, but not scraped directly; use open-web queries to find original employer or ATS postings behind LinkedIn-visible roles."),
   source("Indeed", "general_job_board", 4, "manual", "manual_review", global, seniorEngineeringRoles, true, false, "blocked", "weekly", "Large volume, high noise, blocked scraping risk."),
   source("Google Jobs", "general_job_board", 3, "manual", "search_query", global, seniorEngineeringRoles, true, false, "blocked", "daily", "Use through browser/search workflow, not direct scraping."),
   source("Glassdoor", "general_job_board", 4, "manual", "manual_review", global, seniorEngineeringRoles, true, true, "blocked", "weekly", "High noise and auth friction."),
@@ -105,18 +116,26 @@ export const searchQueryTemplates = [
   'site:workdayjobs.com "React" "remote" "Senior"',
   'site:smartrecruiters.com "Frontend Engineer" "United States"',
   'site:jobs.smartrecruiters.com "Senior Frontend Engineer" "remote"',
+  'site:bullhorn.com "Frontend Engineer" "React" "remote"',
+  'site:bullhornstaffing.com "Senior Software Engineer" "TypeScript"',
   'site:icims.com "Frontend Engineer" "React" "remote"',
   'site:jobs.jobvite.com "Frontend Engineer" "TypeScript" "remote"',
+  'site:taleo.net "Frontend Engineer" "React" "remote"',
+  'site:successfactors.com "Frontend Engineer" "React" "remote"',
   'site:jobs.bamboohr.com "Senior Frontend Engineer" "remote"',
   'site:jobs.workable.com "Frontend Engineer" "React" "remote"',
   'site:recruitee.com "Senior Frontend Engineer" "remote"',
   'site:jobs.teamtailor.com "Frontend Engineer" "TypeScript" "remote"',
+  'site:jobs.jobylon.com "Frontend Engineer" "React" "remote"',
+  'site:join.com/companies "Frontend Engineer" "React" "remote"',
+  'site:jobtrain.co.uk "Frontend Engineer" "React" "remote"',
   'site:jobs.personio.com "Frontend Engineer" "React" "remote"',
   'site:remote.co "Frontend Engineer" "React" "TypeScript"',
   'site:nodesk.co "Frontend Engineer" "remote"',
   'site:himalayas.app "Frontend Engineer" "React" "remote"',
   'site:workingnomads.com "Frontend Engineer" "TypeScript"',
   'site:wellfound.com/jobs "Frontend Engineer" "React" "remote"',
+  'site:ziprecruiter.com/jobs "Frontend Engineer" "React" "remote"',
   'site:ycombinator.com/jobs "Frontend Engineer" "React" "remote"',
   'site:builtin.com/jobs "Senior Frontend Engineer" "remote"',
   'site:builtin.com/job "Frontend Engineer" "Accessibility"',
@@ -124,6 +143,10 @@ export const searchQueryTemplates = [
   'site:levels.fyi/jobs "Frontend Engineer" "React" "remote"',
   'site:trueup.io/jobs "Frontend Engineer" "TypeScript" "remote"',
   'site:dice.com "Frontend Engineer" "React" "remote"',
+  'site:monster.com/job-openings "Frontend Engineer" "React" "remote"',
+  'site:careerbuilder.com/job "Frontend Engineer" "React" "remote"',
+  'site:simplyhired.com/job "Frontend Engineer" "React" "remote"',
+  'site:adzuna.com/details "Frontend Engineer" "React" "remote"',
   'site:news.ycombinator.com "Who is hiring" "Frontend Engineer" "remote"',
   'site:jobs.a16z.com "Frontend Engineer" "React" "remote"',
   'site:jobs.sequoiacap.com "Frontend Engineer" "React" "remote"',
@@ -139,11 +162,72 @@ export const searchQueryTemplates = [
   'site:explore.jobs.netflix.net/careers "Frontend Engineer" "React"',
   'site:explore.jobs.netflix.net/careers "Software Engineer" "remote"',
   '"Senior Frontend Engineer" "React" "TypeScript" "remote" "salary"',
+  '"Senior Frontend Engineer" "React" "remote" -site:linkedin.com',
+  '"Staff Frontend Engineer" "TypeScript" "remote" -site:linkedin.com',
   '"Staff Software Engineer" "design systems" "remote"',
   '"Developer Experience Engineer" "React" "TypeScript"',
   '"WebAuthn" "Frontend Engineer" "remote"',
   '"Mission Software Engineer" "React" "TypeScript"',
 ];
+
+export const requestedProviderCoverage = [
+  "Greenhouse",
+  "Lever",
+  "Bullhorn",
+  "iCIMS",
+  "Jobvite",
+  "Workable",
+  "SmartRecruiters",
+  "Oracle Taleo",
+  "SAP SuccessFactors",
+  "BambooHR",
+  "Ashby",
+  "Teamtailor",
+  "Jobylon",
+  "Join",
+  "Jobtrain",
+  "ZipRecruiter",
+  "Dice",
+  "Wellfound",
+  "Glassdoor",
+  "Monster",
+  "CareerBuilder",
+  "SimplyHired",
+  "Adzuna",
+  "FlexJobs",
+  "USAJOBS",
+] as const;
+
+export const manualOrAuthGatedProviderCoverage = ["Glassdoor", "FlexJobs"] as const;
+
+export function defaultSearchQuerySourceConfig() {
+  return {
+    qualityTier: "search_query",
+    provider: "brave",
+    queries: searchQueryTemplates,
+    maxResultsPerQuery: 8,
+    maxFetch: Number(process.env.SEARCH_QUERY_MAX_RESULTS ?? 160),
+  };
+}
+
+export function mergeSearchQuerySourceConfig(value: unknown) {
+  const input = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const existingQueries = Array.isArray(input.queries)
+    ? input.queries.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+  return {
+    ...defaultSearchQuerySourceConfig(),
+    ...input,
+    provider: typeof input.provider === "string" && input.provider.trim() ? input.provider : "brave",
+    queries: Array.from(new Set([...existingQueries, ...searchQueryTemplates])),
+    maxResultsPerQuery: typeof input.maxResultsPerQuery === "number" && Number.isFinite(input.maxResultsPerQuery)
+      ? Math.max(1, Math.round(input.maxResultsPerQuery))
+      : 8,
+    maxFetch: typeof input.maxFetch === "number" && Number.isFinite(input.maxFetch)
+      ? Math.max(10, Math.round(input.maxFetch))
+      : Number(process.env.SEARCH_QUERY_MAX_RESULTS ?? 160),
+  };
+}
 
 function source(
   name: string,

@@ -73,12 +73,16 @@ Optional Brave Search configuration enables the Search Query Backlog source:
 
 ```bash
 BRAVE_SEARCH_API_KEY=...
-SEARCH_QUERY_MAX_RESULTS=80
+SEARCH_QUERY_MAX_RESULTS=160
 ```
 
 Without `BRAVE_SEARCH_API_KEY`, the search-query adapter returns no jobs and `/sources` reports provider-missing status.
 
-The search-query source carries roadmap coverage for the former planned sources. It uses targeted source/site queries rather than dedicated scrapers for high-friction ATS, remote-board, startup-board, VC-portfolio, Hacker News, USAJOBS, and tech-board sources.
+The search-query source carries roadmap coverage for high-friction sources through targeted source/site queries rather than dedicated scrapers. Direct adapters cover Greenhouse, Lever, and Ashby. Brave-backed query coverage includes Workable, SmartRecruiters, iCIMS, Jobvite, BambooHR, Teamtailor, Jobylon, Join, Jobtrain, Bullhorn, Oracle Taleo, SAP SuccessFactors, ZipRecruiter, Dice, Wellfound, Monster, CareerBuilder, SimplyHired, Adzuna, USAJOBS, remote boards, startup boards, VC portfolio boards, Hacker News, and tech boards.
+
+LinkedIn is not scraped directly. Treat LinkedIn as a discovery signal and use the search-query backlog to find original employer, ATS, or career-page postings behind LinkedIn-visible roles when those postings are publicly discoverable.
+
+Existing `Search Query Backlog` configs are merged with new default query templates when seed or `/sources` runs, preserving custom user-added queries while adding newly supported provider coverage.
 
 The search-query adapter suppresses likely list/search result pages before scoring. If a listing page can be expanded into individual job URLs, those jobs continue through normal scoring. If expansion is blocked or no individual jobs are parseable, the listing URL is recorded in `JobSearchRun.progress` with `listingPagesSuppressed` stats and is not saved as an active job.
 

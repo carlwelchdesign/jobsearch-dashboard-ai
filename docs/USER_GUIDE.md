@@ -368,15 +368,15 @@ This connects the app to the email account you use for job applications. Once co
 
 Brave Search powers the **Search Query Backlog** source, which is a set of targeted web searches that covers hundreds of job platforms the app cannot scrape directly:
 
-- Workday, SmartRecruiters, iCIMS, Jobvite, BambooHR, Workable
-- Wellfound (AngelList), YC jobs, Built In, Levels.fyi, TrueUp, Dice
+- Workday, SmartRecruiters, iCIMS, Jobvite, Bullhorn, Oracle Taleo, SAP SuccessFactors, BambooHR, Workable, Teamtailor, Jobylon, Join, Jobtrain
+- Wellfound (AngelList), YC jobs, Built In, Levels.fyi, TrueUp, Dice, ZipRecruiter, Monster, CareerBuilder, SimplyHired, Adzuna
 - Hacker News "Who's Hiring", VC portfolio boards
 - Remote-specific boards: Remote.co, Remotive, NoDesk, Himalayas, Working Nomads
 - USAJOBS (federal roles)
 
 Without Brave Search, you are limited to companies you have explicitly added to your watchlist that use Greenhouse, Lever, or Ashby — which is a good start but misses a large portion of the job market.
 
-**If you skip it:** Your job search only covers companies you have manually added to your watchlist that happen to use one of the three directly-integrated ATS platforms. You miss all Workday companies, all Wellfound startups, all remote-specific boards, and anything found via open-web search.
+**If you skip it:** Your job search only covers companies you have manually added to your watchlist that happen to use one of the three directly-integrated ATS platforms. You miss Workday, SmartRecruiters, iCIMS, Jobvite, Bullhorn, Taleo, SuccessFactors, Wellfound, general boards, remote boards, and anything found via open-web search.
 
 **Verdict: Set this up. The free tier is more than enough for a job search.**
 
@@ -540,7 +540,7 @@ The MCP server always runs as a local process on your machine. When your app is 
 | **PostgreSQL + pgvector** | Yes | `npm run db:up` (Docker) | Hosted DB: Railway, Neon, or Supabase | App won't start |
 | **OpenAI API** | Strongly recommended | Add `OPENAI_API_KEY` to `.env` | Add to Vercel env vars | AI features degrade to rule-based fallbacks; Jolene becomes generic |
 | **Email sync** | Strongly recommended | Configure IMAP or OAuth in `.env` | Configure in Vercel env vars; cron runs automatically | Outcome tracking is 100% manual |
-| **Brave Search API** | Recommended | Add `BRAVE_SEARCH_API_KEY` to `.env` | Add to Vercel env vars | Lose Workday, Wellfound, YC, Built In, 100+ platforms |
+| **Brave Search API** | Recommended | Add `BRAVE_SEARCH_API_KEY` to `.env` | Add to Vercel env vars | Lose broad ATS, job-board, startup, remote-board, and LinkedIn-original-source discovery |
 | **Python + Playwright** | Recommended | `npm run assistant:install` on your machine | Same — always runs locally even with production app | Apply Sprint won't auto-fill forms |
 | **Pushover** | Optional | Add keys to `.env` or Settings UI | Add to Vercel env vars or Settings UI | No phone push alerts |
 | **Resend or Postmark** | Optional | Add API key to `.env` | Add to Vercel env vars | No email digests |
@@ -741,7 +741,7 @@ The full **Market Analysis** brief now lives on the Command Center. Click **Run 
 2. You will see sources organized by type:
    - **Company sources**: Companies you have added to your watchlist (Greenhouse, Lever, Ashby)
    - **Job boards**: RemoteOK, WeWorkRemotely, and others
-   - **Search Query Backlog**: Brave-powered open-web searches covering hundreds of platforms including Workday, SmartRecruiters, Wellfound, YC, and many more
+   - **Search Query Backlog**: Brave-powered open-web searches covering hundreds of platforms including Workday, SmartRecruiters, iCIMS, Jobvite, Bullhorn, Taleo, SuccessFactors, Wellfound, ZipRecruiter, Dice, USAJOBS, YC, and many more
    - **Niche boards**: JobFront-powered boards, Eightfold career pages
 
 ### Adding a company to your watchlist
@@ -756,7 +756,9 @@ The full **Market Analysis** brief now lives on the Command Center. Click **Run 
 
 ### The Search Query Backlog source
 
-When you enable **Search Query Backlog** (requires a `BRAVE_SEARCH_API_KEY`), the system runs targeted Brave web searches covering platforms that do not have direct ATS integrations — including Workday, iCIMS, Wellfound, Built In, Levels.fyi, Hacker News, and many others.
+When you enable **Search Query Backlog** (requires a `BRAVE_SEARCH_API_KEY`), the system runs targeted Brave web searches covering platforms that do not have direct ATS integrations — including Workday, SmartRecruiters, iCIMS, Jobvite, Bullhorn, Oracle Taleo, SAP SuccessFactors, BambooHR, Teamtailor, Jobylon, Join, Jobtrain, Wellfound, ZipRecruiter, Dice, Monster, CareerBuilder, SimplyHired, Adzuna, Built In, Levels.fyi, Hacker News, USAJOBS, and many others.
+
+LinkedIn itself is not scraped directly because it requires an authenticated account workflow and has high automation risk. If you see a role on LinkedIn, the search backlog is designed to find the original employer, ATS, or careers-page version of that role when it is publicly discoverable.
 
 To enable it:
 1. Get a [Brave Search API key](https://api.search.brave.com/).

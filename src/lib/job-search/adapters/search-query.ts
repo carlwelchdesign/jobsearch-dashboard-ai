@@ -69,6 +69,7 @@ export const searchQueryAdapter: JobSourceAdapter = {
   async normalize(raw: RawJobPosting): Promise<NormalizedJobPosting> {
     const applicationUrl = sanitizeApplicationUrl(await resolveApplicationUrl(raw.applicationUrl));
     const haystack = `${raw.title} ${raw.location ?? ""} ${raw.description}`;
+    const searchProvider = detectSearchProviderFromUrl(applicationUrl ?? raw.applicationUrl);
     return {
       sourceJobId: raw.sourceJobId,
       company: raw.company,
@@ -83,6 +84,7 @@ export const searchQueryAdapter: JobSourceAdapter = {
       atsProvider: atsProviderFromUrl(applicationUrl),
       rawData: {
         ...(isRecord(raw.rawData) ? raw.rawData : { raw }),
+        searchProvider,
         ...(applicationUrl !== raw.applicationUrl ? {
           resolvedApplicationUrl: {
             source: "job_detail_page",
@@ -136,7 +138,7 @@ function jobFromSearchResult(result: BraveSearchResult, query: string, profile: 
     location: locationFromQuery(query),
     description: [result.description, `Matched query: ${query}`, profile.name ? `Profile: ${profile.name}` : ""].filter(Boolean).join("\n\n"),
     applicationUrl: url,
-    rawData: { provider: "brave", query, result },
+    rawData: { provider: "brave", searchProvider: detectSearchProviderFromUrl(url), query, result },
   };
 }
 
@@ -331,7 +333,7 @@ function listingReviewFromSearchResult(result: BraveSearchResult, query: string,
       query,
       blocked,
     },
-    rawData: { provider: "brave", query, result, listingReview: true, reason, blocked },
+    rawData: { provider: "brave", searchProvider: detectSearchProviderFromUrl(url), query, result, listingReview: true, reason, blocked },
   };
 }
 
@@ -592,6 +594,7 @@ function workingNomadsJobToRawPosting(
     applicationUrl,
     rawData: {
       provider: "brave",
+      searchProvider: detectSearchProviderFromUrl(applicationUrl),
       expansionProvider: "workingnomads",
       expandedFrom: listingUrl,
       detailUrl,
@@ -629,6 +632,7 @@ function jobFromExpandedListing(input: {
     applicationUrl: input.jobUrl,
     rawData: {
       provider: "brave",
+      searchProvider: detectSearchProviderFromUrl(input.jobUrl),
       expansionProvider: input.expansionProvider,
       expandedFrom: input.listingUrl,
       query: input.query,
@@ -807,6 +811,7 @@ function isKnownListingUrl(value: string) {
     if (hostname === "indeed.com" && isIndeedListingUrl(url)) return true;
     if (hostname === "dice.com" && isDiceListingUrl(url)) return true;
     if (hostname === "workingnomads.com" && isWorkingNomadsListingUrl(url)) return true;
+    if (isAggregatorListingUrl(url)) return true;
     return false;
   } catch {
     return false;
@@ -822,6 +827,7 @@ function isLikelyListingUrl(value: string) {
     if (url.hostname.replace(/^www\./, "") === "indeed.com" && isIndeedListingUrl(url)) return true;
     if (url.hostname.replace(/^www\./, "") === "dice.com" && isDiceListingUrl(url)) return true;
     if (url.hostname.replace(/^www\./, "") === "workingnomads.com" && isWorkingNomadsListingUrl(url)) return true;
+    if (isAggregatorListingUrl(url)) return true;
     if (paramMatches >= 2) return true;
     if (/\/(jobs|careers|open-roles|positions)\/(search|remote|engineering|software|frontend|front-end|developer|dev-engineering)/i.test(path)) return true;
     if (/\/(search|job-search|jobs\/search)\b/i.test(path)) return true;
@@ -853,6 +859,17 @@ function isWorkingNomadsListingUrl(url: URL) {
   if (path === "/jobs" || path === "/jobs/") return true;
   if (/^\/remote-.+-jobs\/?$/i.test(path)) return true;
   if (/^\/remote-jobs-by-/i.test(path)) return true;
+  return false;
+}
+
+function isAggregatorListingUrl(url: URL) {
+  const hostname = url.hostname.replace(/^www\./, "");
+  const path = url.pathname.toLowerCase();
+  if (hostname === "ziprecruiter.com") return path === "/jobs-search" || path === "/jobs" || url.searchParams.has("search");
+  if (hostname === "monster.com") return path.startsWith("/jobs/search") || path === "/jobs";
+  if (hostname === "careerbuilder.com") return path === "/jobs" || path.startsWith("/jobs-");
+  if (hostname === "simplyhired.com") return path === "/search" || path.startsWith("/jobs/search");
+  if (hostname === "adzuna.com") return path.includes("/search") || path.endsWith("/jobs");
   return false;
 }
 
@@ -1310,6 +1327,7 @@ function isUnsafeApplicationListingUrl(value: string) {
     if (hostname === "himalayas.app") return !isHimalayasJobUrl(value);
     if (hostname === "workingnomads.com") return isWorkingNomadsListingUrl(url);
     if (hostname === "remotive.com") return url.pathname.startsWith("/remote-jobs");
+    if (isAggregatorListingUrl(url)) return true;
     return false;
   } catch {
     return false;
@@ -1343,6 +1361,38 @@ function atsProviderFromUrl(value?: string): NormalizedJobPosting["atsProvider"]
   if (/smartrecruiters/i.test(value)) return "smartrecruiters";
   if (/workable/i.test(value)) return "workable";
   return "other";
+}
+
+export function detectSearchProviderFromUrl(value?: string) {
+  if (!value) return "unknown";
+  const normalized = value.toLowerCase();
+  if (/greenhouse/.test(normalized)) return "greenhouse";
+  if (/lever\.co/.test(normalized)) return "lever";
+  if (/ashbyhq/.test(normalized)) return "ashby";
+  if (/workdayjobs|myworkdayjobs/.test(normalized)) return "workday";
+  if (/smartrecruiters/.test(normalized)) return "smartrecruiters";
+  if (/workable/.test(normalized)) return "workable";
+  if (/bullhorn|bullhornstaffing/.test(normalized)) return "bullhorn";
+  if (/icims/.test(normalized)) return "icims";
+  if (/jobvite/.test(normalized)) return "jobvite";
+  if (/taleo|oracle/.test(normalized)) return "oracle_taleo";
+  if (/successfactors|sap/.test(normalized)) return "sap_successfactors";
+  if (/bamboohr/.test(normalized)) return "bamboohr";
+  if (/teamtailor/.test(normalized)) return "teamtailor";
+  if (/jobylon/.test(normalized)) return "jobylon";
+  if (/join\.com/.test(normalized)) return "join";
+  if (/jobtrain/.test(normalized)) return "jobtrain";
+  if (/ziprecruiter/.test(normalized)) return "ziprecruiter";
+  if (/dice\.com/.test(normalized)) return "dice";
+  if (/wellfound|angel\.co/.test(normalized)) return "wellfound";
+  if (/glassdoor/.test(normalized)) return "glassdoor";
+  if (/monster\.com/.test(normalized)) return "monster";
+  if (/careerbuilder/.test(normalized)) return "careerbuilder";
+  if (/simplyhired/.test(normalized)) return "simplyhired";
+  if (/adzuna/.test(normalized)) return "adzuna";
+  if (/flexjobs/.test(normalized)) return "flexjobs";
+  if (/usajobs/.test(normalized)) return "usajobs";
+  return "unknown";
 }
 
 function dedupeByUrl(jobs: RawJobPosting[]) {

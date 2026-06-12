@@ -1,6 +1,6 @@
 import type { JobSearchProfile, JobSource } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { extractBuiltInHowToApplyUrl, extractHimalayasApplyUrl, parseDiceListingJobs, searchQueryAdapter } from "@/lib/job-search/adapters/search-query";
+import { detectSearchProviderFromUrl, extractBuiltInHowToApplyUrl, extractHimalayasApplyUrl, parseDiceListingJobs, searchQueryAdapter } from "@/lib/job-search/adapters/search-query";
 
 describe("searchQueryAdapter", () => {
   beforeEach(() => {
@@ -55,6 +55,68 @@ describe("searchQueryAdapter", () => {
       applicationUrl: "https://jobs.ashbyhq.com/example/123/application",
       remoteType: "remote",
       atsProvider: "ashby",
+    });
+  });
+
+  it("records broad provider metadata for ATS domains outside the Prisma ATS enum", async () => {
+    const raw = {
+      sourceJobId: "search:teamtailor:role",
+      company: "Acme",
+      title: "Senior Frontend Engineer",
+      location: "Remote",
+      description: "Remote React TypeScript role",
+      applicationUrl: "https://jobs.teamtailor.com/acme/jobs/123-senior-frontend-engineer",
+      rawData: { provider: "brave" },
+    };
+
+    const normalized = await searchQueryAdapter.normalize(raw);
+
+    expect(normalized.atsProvider).toBe("other");
+    expect(normalized.rawData).toMatchObject({
+      provider: "brave",
+      searchProvider: "teamtailor",
+    });
+    expect(detectSearchProviderFromUrl("https://jobs.jobylon.com/jobs/123")).toBe("jobylon");
+    expect(detectSearchProviderFromUrl("https://company.taleo.net/careersection/jobdetail.ftl")).toBe("oracle_taleo");
+    expect(detectSearchProviderFromUrl("https://company.successfactors.com/career?job=123")).toBe("sap_successfactors");
+  });
+
+  it("suppresses aggregator listing pages when no job detail links are parseable", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Frontend Engineer Jobs on Monster",
+                url: "https://www.monster.com/jobs/search?q=frontend-engineer&where=remote",
+                description: "Search frontend engineer jobs on Monster.",
+                profile: { name: "Monster" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => "<html><body>No public job detail links</body></html>",
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:monster.com/jobs/search "Frontend Engineer" "remote"'] }));
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      company: "Monster",
+      listingReview: expect.objectContaining({
+        url: "https://www.monster.com/jobs/search?q=frontend-engineer&where=remote",
+        provider: "brave",
+        blocked: false,
+      }),
+      rawData: expect.objectContaining({
+        listingReview: true,
+        searchProvider: "monster",
+      }),
     });
   });
 

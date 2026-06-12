@@ -18,7 +18,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { RunSearchControl } from "@/components/run-search-control";
 import { StatusChip } from "@/components/ui/status-chip";
 import { configToPrismaJson, defaultCompanySourceConfig, normalizeCompanySourceConfig } from "@/lib/job-search/company-source-config";
-import { searchQueryTemplates, sourceCatalog } from "@/lib/job-search/source-catalog";
+import { defaultSearchQuerySourceConfig, mergeSearchQuerySourceConfig, sourceCatalog } from "@/lib/job-search/source-catalog";
 import { prisma } from "@/lib/prisma";
 import { AddCompanySourceForm } from "./add-company-source-form";
 import { AddJobSourceForm } from "./add-job-source-form";
@@ -29,7 +29,7 @@ import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners
 export const dynamic = "force-dynamic";
 
 export default async function SourcesPage({ searchParams }: { searchParams?: { q?: string; category?: string; priority?: string } }) {
-  const [source, searchQuerySource, jobSources] = await prisma.$transaction([
+  const [source, rawSearchQuerySource, jobSources] = await prisma.$transaction([
     prisma.jobSource.upsert({
       where: { type_name: { type: "company_site", name: "Company Source List" } },
       update: {},
@@ -48,17 +48,18 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
         type: "search_query",
         baseUrl: "https://search.brave.com",
         enabled: Boolean(process.env.BRAVE_SEARCH_API_KEY),
-        config: {
-          qualityTier: "search_query",
-          provider: "brave",
-          queries: searchQueryTemplates,
-          maxResultsPerQuery: 8,
-          maxFetch: Number(process.env.SEARCH_QUERY_MAX_RESULTS ?? 80),
-        },
+        config: defaultSearchQuerySourceConfig(),
       },
     }),
     prisma.jobSource.findMany(),
   ]);
+  const mergedSearchQueryConfig = mergeSearchQuerySourceConfig(rawSearchQuerySource.config);
+  const searchQuerySource = JSON.stringify(rawSearchQuerySource.config) === JSON.stringify(mergedSearchQueryConfig)
+    ? rawSearchQuerySource
+    : await prisma.jobSource.update({
+        where: { id: rawSearchQuerySource.id },
+        data: { baseUrl: "https://search.brave.com", config: mergedSearchQueryConfig },
+      });
   const config = normalizeCompanySourceConfig(source.config);
   const query = searchParams?.q?.trim().toLowerCase() ?? "";
   const category = searchParams?.category?.trim() ?? "";
@@ -84,6 +85,14 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
   };
   const hasBraveSearchKey = Boolean(process.env.BRAVE_SEARCH_API_KEY);
   const searchQueryConfigured = searchQuerySource.enabled && hasBraveSearchKey;
+  const searchQueryConfig = mergeSearchQuerySourceConfig(searchQuerySource.config);
+  const configuredSearchQueries = Array.isArray(searchQueryConfig.queries) ? searchQueryConfig.queries : [];
+  const searchQueryDomains = Array.from(new Set(configuredSearchQueries.flatMap((item) => (
+    Array.from(item.matchAll(/\bsite:([^\s"']+)/gi)).flatMap((match) => {
+      const domain = (match[1] ?? "").replace(/^www\./, "").replace(/\/.*$/, "").toLowerCase();
+      return domain ? [domain] : [];
+    })
+  )))).sort();
   const visibleCatalog = sourceCatalog
     .slice()
     .sort((left, right) => left.priority - right.priority || statusRank(left.status) - statusRank(right.status) || left.name.localeCompare(right.name));
@@ -101,7 +110,7 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
         <PageHeader
           eyebrow="Source management"
           title="Company Sources"
-          description="Manage the curated company source list used to probe direct careers pages and ATS feeds. This is a source list, not a claim that each company is currently hiring."
+          description="Manage curated company sources and broad open-web provider coverage. LinkedIn is treated as a discovery signal: the app does not scrape LinkedIn directly, but it searches for original employer, ATS, and career-page postings behind LinkedIn-visible roles."
         />
         <ServiceFallbackBanners items={fallbacks} />
 
@@ -189,21 +198,26 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
                 <Typography variant="h3">Search-query backlog</Typography>
                 <Typography variant="body2" color="text.secondary">
                   {searchQueryConfigured
-                    ? "Targeted open-web queries are active and will run through the Brave Search connector during search runs."
+                    ? `Targeted open-web queries are active and will run through the Brave Search connector during search runs. Current coverage includes ${configuredSearchQueries.length} query templates across ${searchQueryDomains.length} provider domain(s).`
                     : hasBraveSearchKey
                       ? "BRAVE_SEARCH_API_KEY is configured, but the `Search Query Backlog` source is disabled."
                       : searchQuerySource.enabled
-                        ? "The `Search Query Backlog` source is enabled, but BRAVE_SEARCH_API_KEY is not configured for the running server."
+                        ? `The Search Query Backlog source is enabled, but BRAVE_SEARCH_API_KEY is not configured for the running server. ${configuredSearchQueries.length} provider query templates are configured but cannot run.`
                         : "Targeted open-web queries require the `Search Query Backlog` source to be enabled and BRAVE_SEARCH_API_KEY to be configured."}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                  LinkedIn jobs should be captured through their original company or ATS pages when possible; this backlog broadens discovery across ATS partners and job boards without account scraping.
                 </Typography>
               </Box>
               <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
                 <StatusChip status={searchQueryConfigured ? "configured" : "provider_missing"} />
                 <Chip variant="outlined" label={hasBraveSearchKey ? "Brave key configured" : "Brave key missing"} />
                 <Chip variant="outlined" label={searchQuerySource.enabled ? "Source enabled" : "Source disabled"} />
+                <Chip variant="outlined" label={`${configuredSearchQueries.length} queries`} />
+                <Chip variant="outlined" label={`${searchQueryDomains.length} domains`} />
               </Stack>
               <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1fr 1fr" }, gap: 1 }}>
-                {searchQueryTemplates.map((query) => (
+                {configuredSearchQueries.map((query) => (
                   <Box key={query} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1, bgcolor: "background.paper" }}>
                     <Typography variant="body2" sx={{ fontFamily: "monospace", overflowWrap: "anywhere" }}>{query}</Typography>
                   </Box>
