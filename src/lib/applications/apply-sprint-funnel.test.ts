@@ -75,9 +75,36 @@ describe("Apply Sprint trust funnel", () => {
     expect(funnel.summary.agencyFailedSkipped).toBe(1);
     expect(reasonLabel("profile_max_results_cap")).toBe("per-profile maxResultsPerRun cap");
   });
+
+  it("keeps review-only broad discovery matches out of agency candidates", () => {
+    const funnel = buildApplySprintTrustFunnel({
+      latestSearchRun: searchRun({ reviewOnlyMatches: 1 }),
+      latestAgencyRun: null,
+      matches: [
+        match({
+          id: "broad-review",
+          jobPostingId: "broad-job",
+          recommendedAction: "Review-only broad discovery: Review and consider approval",
+          applicationUrl: "https://jobs.ashbyhq.com/acme/123/application",
+        }),
+      ],
+      applications: [],
+      visibleReadyApplicationIds: new Set(),
+      suppressionByUserId: new Map([["user-1", createEmptyJobSuppressionState()]]),
+    });
+
+    expect(funnel.summary.eligibleForAgency).toBe(0);
+    expect(funnel.hidden).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "broad-review",
+        reasons: expect.arrayContaining(["review_only_broad_discovery"]),
+      }),
+    ]));
+    expect(reasonLabel("review_only_broad_discovery")).toBe("review-only broad discovery");
+  });
 });
 
-function searchRun(stats: { jobsBelowThreshold?: number; jobsSuppressed?: number; listingPagesSuppressed?: number } = {}) {
+function searchRun(stats: { jobsBelowThreshold?: number; jobsSuppressed?: number; listingPagesSuppressed?: number; reviewOnlyMatches?: number } = {}) {
   return {
     id: "search-1",
     status: "completed",
@@ -100,6 +127,7 @@ function searchRun(stats: { jobsBelowThreshold?: number; jobsSuppressed?: number
           jobsBelowThreshold: stats.jobsBelowThreshold ?? 0,
           jobsSuppressed: stats.jobsSuppressed ?? 0,
           listingPagesSuppressed: stats.listingPagesSuppressed ?? 0,
+          reviewOnlyMatches: stats.reviewOnlyMatches ?? 0,
         },
       },
     ],
@@ -112,6 +140,7 @@ function match(overrides: Record<string, any> = {}) {
     jobPostingId: overrides.jobPostingId ?? "job-1",
     status: (overrides.status ?? "needs_review") as JobMatchStatus,
     overallScore: 82,
+    recommendedAction: overrides.recommendedAction ?? "Review and consider approval",
     updatedAt: now,
     jobSearchProfile: {
       name: "Frontend",

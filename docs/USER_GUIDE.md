@@ -802,25 +802,32 @@ On the Sources page you may see labels like `Implemented`, `Planned`, `Manual`, 
 
 The system can run a search automatically every day. Click **Settings** in the left sidebar → scroll to the **Search schedule** card to configure the schedule (see also [Part 17 — Settings](#part-17--settings-reference)).
 
-### Reading the live progress panel
+### Reading the search analytics charts
 
-While a search runs, you will see a panel with:
+While a search runs, Command Center, Runs, Sources, and Apply Sprint show graph-based search analytics instead of only text counters:
 
-| Stat | What it means |
+| Chart / metric | What it means |
 |---|---|
-| **Fetched** | Total job postings pulled from all sources |
-| **After dedupe** | How many were left after removing exact duplicates |
-| **After filters** | How many passed your keyword/title filters |
-| **Saved** | How many were saved to your Jobs queue as matches |
-| **Progress log** | A running list of sources checked and results |
+| **Fetched** | Raw results returned by enabled sources. This can be very high because sources and profiles overlap. |
+| **Detail candidates** | Results left after listing/search pages are removed or expanded into job-detail URLs. |
+| **Scored** | Normalized jobs evaluated against active search profiles. |
+| **Qualified** | Jobs that met an active profile's score threshold. |
+| **New jobs** | Brand-new job records created after dedupe. Existing jobs are updated, not counted here. |
+| **New matches** | New job/profile matches created for the review/application pipeline. Existing matches are not counted again. |
+| **Agency eligible** | Matches with an application URL that are not review-only and can be prepared for Apply Sprint. |
+| **Drop-off chart** | Shows why jobs did not move forward: below threshold, existing duplicate, existing match, suppressed listing, missing application URL, profile cap, provider warning, or review-only broad match. |
+
+If you see thousands fetched but only a small number saved, the chart should show the bottleneck. Common causes are duplicate jobs from multiple sources, strict profile thresholds, existing matches already in the database, listing pages that cannot be expanded safely, missing application URLs, and profile `maxResultsPerRun` caps.
 
 ### What happens automatically after a search
 
 1. **Scoring**: Each new job is scored against your active search profiles
 2. **LLM evaluation** (if OpenAI is configured): A deeper AI evaluation adds fit, opportunity, and confidence scores with rationale
 3. **Duplicate check**: Stale or duplicate listings are flagged
-4. **Agency handoff**: Jobs scoring 90+ that you have not already applied to are automatically sent to the **Recruiting Agency** for packet preparation (see [Part 11](#part-11--the-recruiting-agency-hands-off-packet-prep))
+4. **Agency handoff**: Eligible non-review-only matches with application URLs are handed to the **Recruiting Agency** for packet preparation (see [Part 11](#part-11--the-recruiting-agency-hands-off-packet-prep))
 5. **Notifications**: If configured, you get an alert with the search summary
+
+The seeded `Broad LinkedIn Parity Review` profile is intentionally wider than the focused frontend/product profiles. It catches senior software, full-stack, frontend, React, TypeScript, product engineer, design-system, AI product UI, remote, US, and global opportunities that you might otherwise see manually on LinkedIn. Lower-confidence matches from this broad lane are saved for review but excluded from automatic Apply Sprint preparation until you approve them.
 
 ### Manually adding a job
 

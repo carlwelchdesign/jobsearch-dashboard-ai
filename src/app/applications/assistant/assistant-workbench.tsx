@@ -28,6 +28,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgencyRunControl } from "@/components/agency-run-control";
 import { RejectionReasonDialog, type RejectionReasonCode } from "@/components/job-reject-button";
+import { SearchRunAnalyticsCharts } from "@/components/search-run-analytics-charts";
 import type { AshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 import { summarizeApplicationJobDescription } from "@/lib/applications/job-summary";
 
@@ -73,7 +74,8 @@ type ApplySprintReasonCode =
   | "agency_already_running"
   | "packet_generation_failed"
   | "missing_resume_or_cover_letter"
-  | "hidden_by_canonical_duplicate_reconciliation";
+  | "hidden_by_canonical_duplicate_reconciliation"
+  | "review_only_broad_discovery";
 
 type ApplySprintTrustFunnel = {
   latestSearchRun: {
@@ -82,6 +84,11 @@ type ApplySprintTrustFunnel = {
     triggeredBy: string;
     startedAt: string;
     finishedAt: string | null;
+    jobsFetched: number;
+    jobsAfterDedupe: number;
+    jobsAfterFilters: number;
+    jobsSaved: number;
+    progress: unknown;
   } | null;
   latestAgencyRun: {
     id: string;
@@ -902,17 +909,6 @@ export function AssistantWorkbench({
 }
 
 function ApplySprintFunnelPanel({ trustFunnel, readyCount }: { trustFunnel: ApplySprintTrustFunnel; readyCount: number }) {
-  const metrics = [
-    { label: "Fetched", value: trustFunnel.summary.fetched },
-    { label: "New", value: trustFunnel.summary.newAfterDedupe },
-    { label: "Matched", value: trustFunnel.summary.matched },
-    { label: "Saved", value: trustFunnel.summary.saved },
-    { label: "Agency eligible", value: trustFunnel.summary.eligibleForAgency },
-    { label: "Prepared", value: trustFunnel.summary.agencyPrepared },
-    { label: "Failed/skipped", value: trustFunnel.summary.agencyFailedSkipped },
-    { label: "Ready", value: readyCount },
-  ];
-
   return (
     <Card sx={{ mb: 2 }}>
       <CardContent>
@@ -939,14 +935,14 @@ function ApplySprintFunnelPanel({ trustFunnel, readyCount }: { trustFunnel: Appl
             </Stack>
           </Stack>
 
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "repeat(4, 1fr)", xl: "repeat(8, 1fr)" }, gap: 1 }}>
-            {metrics.map((metric) => (
-              <Box key={metric.label} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25, minWidth: 0 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>{metric.label}</Typography>
-                <Typography variant="h3">{metric.value}</Typography>
-              </Box>
-            ))}
-          </Box>
+          <SearchRunAnalyticsCharts run={trustFunnel.latestSearchRun} compact />
+
+          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+            <Chip size="small" label={`Agency eligible: ${trustFunnel.summary.eligibleForAgency}`} />
+            <Chip size="small" label={`Prepared: ${trustFunnel.summary.agencyPrepared}`} />
+            <Chip size="small" label={`Failed/skipped: ${trustFunnel.summary.agencyFailedSkipped}`} />
+            <Chip size="small" color="success" label={`Ready: ${readyCount}`} />
+          </Stack>
 
           {(trustFunnel.summary.belowProfileThreshold || trustFunnel.summary.suppressed || trustFunnel.summary.listingPagesSuppressed) ? (
             <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
@@ -1706,6 +1702,7 @@ function applySprintReasonLabel(reason: ApplySprintReasonCode) {
     packet_generation_failed: "packet generation failed",
     missing_resume_or_cover_letter: "missing resume or cover letter",
     hidden_by_canonical_duplicate_reconciliation: "hidden by canonical duplicate reconciliation",
+    review_only_broad_discovery: "review-only broad discovery",
   };
   return labels[reason];
 }

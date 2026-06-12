@@ -208,6 +208,9 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
                   LinkedIn jobs should be captured through their original company or ATS pages when possible; this backlog broadens discovery across ATS partners and job boards without account scraping.
                 </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                  Search charts now separate raw fetched volume from detail candidates, qualified matches, new profile matches, agency-eligible jobs, and review-only broad matches so source coverage gains do not look like silent failures.
+                </Typography>
               </Box>
               <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
                 <StatusChip status={searchQueryConfigured ? "configured" : "provider_missing"} />

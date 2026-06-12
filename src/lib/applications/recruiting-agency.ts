@@ -473,6 +473,11 @@ async function findAgencyCandidates({ userId, minimumScore, limit }: { userId: s
       where: {
         status: JobMatchStatus.needs_review,
         overallScore: { gte: minimumScore },
+        NOT: {
+          recommendedAction: {
+            startsWith: "Review-only broad discovery",
+          },
+        },
         jobPosting: {
           applicationUrl: { not: null },
         },

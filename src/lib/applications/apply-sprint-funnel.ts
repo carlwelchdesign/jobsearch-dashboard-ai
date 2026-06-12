@@ -14,7 +14,8 @@ export type ApplySprintReasonCode =
   | "agency_already_running"
   | "packet_generation_failed"
   | "missing_resume_or_cover_letter"
-  | "hidden_by_canonical_duplicate_reconciliation";
+  | "hidden_by_canonical_duplicate_reconciliation"
+  | "review_only_broad_discovery";
 
 export type ApplySprintFunnelSummary = {
   fetched: number;
@@ -78,6 +79,11 @@ export type ApplySprintTrustFunnel = {
     triggeredBy: string;
     startedAt: string;
     finishedAt: string | null;
+    jobsFetched: number;
+    jobsAfterDedupe: number;
+    jobsAfterFilters: number;
+    jobsSaved: number;
+    progress: Prisma.JsonValue;
   } | null;
   latestAgencyRun: {
     id: string;
@@ -95,6 +101,7 @@ type MatchRecord = {
   jobPostingId: string;
   status: JobMatchStatus;
   overallScore: number;
+  recommendedAction: string;
   updatedAt: Date;
   jobPosting: {
     id: string;
@@ -246,6 +253,11 @@ export function buildApplySprintTrustFunnel(input: {
           triggeredBy: input.latestSearchRun.triggeredBy,
           startedAt: input.latestSearchRun.startedAt.toISOString(),
           finishedAt: input.latestSearchRun.finishedAt?.toISOString() ?? null,
+          jobsFetched: input.latestSearchRun.jobsFetched,
+          jobsAfterDedupe: input.latestSearchRun.jobsAfterDedupe,
+          jobsAfterFilters: input.latestSearchRun.jobsAfterFilters,
+          jobsSaved: input.latestSearchRun.jobsSaved,
+          progress: input.latestSearchRun.progress,
         }
       : null,
     latestAgencyRun: input.latestAgencyRun
@@ -288,6 +300,7 @@ export function reasonLabel(reason: ApplySprintReasonCode) {
     packet_generation_failed: "packet generation failed",
     missing_resume_or_cover_letter: "missing resume or cover letter",
     hidden_by_canonical_duplicate_reconciliation: "hidden by canonical duplicate reconciliation",
+    review_only_broad_discovery: "review-only broad discovery",
   };
   return labels[reason];
 }
@@ -301,6 +314,7 @@ function reasonsForMatch(
   const reasons: ApplySprintReasonCode[] = [];
   if (!match.jobPosting.applicationUrl) reasons.push("no_application_url");
   else if (isUnsupportedApplicationUrl(match.jobPosting.applicationUrl)) reasons.push("unsupported_application_url");
+  if (match.recommendedAction.startsWith("Review-only broad discovery")) reasons.push("review_only_broad_discovery");
   if (hasApplicationForJob(match.jobPosting, applicationKeys)) reasons.push("already_has_application");
   if (suppressionState && isJobSuppressed(match.jobPosting, suppressionState)) reasons.push("duplicate_or_suppressed");
   if (failedByMatchId.has(match.id)) reasons.push("packet_generation_failed");

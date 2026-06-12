@@ -20,9 +20,11 @@ import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { RunSearchControl } from "@/components/run-search-control";
+import { SearchRunAnalyticsCharts } from "@/components/search-run-analytics-charts";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip } from "@/components/ui/status-chip";
+import { buildSearchRunAnalytics } from "@/lib/job-search/run-analytics";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -66,16 +68,17 @@ export default async function RunsPage() {
           </CardContent>
         </Card>
         <RunSearchControl />
+        <SearchRunAnalyticsCharts run={latestRun} runs={runs} />
         <TableContainer component={Card}>
           <Table sx={{ minWidth: 820 }}>
             <TableHead>
               <TableRow>
                 <TableCell>Started</TableCell>
                 <TableCell>Status</TableCell>
-                <TableCell>Fetched</TableCell>
-                <TableCell>After dedupe</TableCell>
-                <TableCell>Matched</TableCell>
-                <TableCell>Saved</TableCell>
+                <TableCell>Raw fetched</TableCell>
+                <TableCell>New job records</TableCell>
+                <TableCell>Qualified</TableCell>
+                <TableCell>New matches</TableCell>
                 <TableCell>Diagnostics</TableCell>
                 <TableCell>Latest update</TableCell>
               </TableRow>
@@ -169,12 +172,7 @@ function latestProgress(progress: unknown) {
 }
 
 function latestDiagnostics(progress: unknown) {
-  if (!Array.isArray(progress) || progress.length === 0) return <Typography variant="caption" color="text.secondary">No diagnostics</Typography>;
-  const latestWithStats = [...progress].reverse().find((item): item is { stats: Record<string, number> } => {
-    return Boolean(item && typeof item === "object" && "stats" in item && typeof (item as { stats?: unknown }).stats === "object");
-  });
-  const stats = latestWithStats?.stats;
-  if (!stats) return <Typography variant="caption" color="text.secondary">No diagnostics</Typography>;
+  const stats = buildSearchRunAnalytics({ jobsFetched: 0, jobsAfterDedupe: 0, jobsAfterFilters: 0, jobsSaved: 0, progress }).stats;
   const chips = [
     ["Frontend", stats.frontendTitles],
     ["Full-stack", stats.fullStackTitles],
@@ -183,6 +181,8 @@ function latestDiagnostics(progress: unknown) {
     ["Backend/data", stats.backendDataPlatformTitles],
     ["Non-target", stats.nonTargetTitles],
     ["Suppressed", stats.jobsSuppressed],
+    ["Below threshold", stats.jobsBelowThreshold],
+    ["Review-only", stats.reviewOnlyMatches],
   ].filter(([, value]) => typeof value === "number" && value > 0);
   if (chips.length === 0) return <Typography variant="caption" color="text.secondary">No diagnostics</Typography>;
   return (
