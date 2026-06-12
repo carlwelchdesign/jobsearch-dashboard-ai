@@ -57,4 +57,20 @@ describe("AssistantWorkbench run feedback panel", () => {
     expect(workbenchSource).toContain("/api/applications/assistant/prepare-candidates");
     expect(workbenchSource).toContain("packet generation failed");
   });
+
+  it("keeps all ready applications visible and explains non-launchable items", () => {
+    const pageSource = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/page.tsx"), "utf8");
+    const workbenchSource = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/assistant-workbench.tsx"), "utf8");
+
+    expect(pageSource).toContain('status: "ready_to_apply"');
+    expect(pageSource).not.toContain("resumeId: { not: null }");
+    expect(pageSource).not.toContain("coverLetterId: { not: null }");
+    expect(pageSource).not.toContain('applicationUrl: { not: null }');
+    expect(pageSource).not.toContain("submittedApplicationJobKeySet");
+    expect(pageSource).not.toContain("!hasApplicationForJob");
+    expect(workbenchSource).toContain("Add application URL");
+    expect(workbenchSource).toContain("Review packet");
+    expect(workbenchSource).toContain("Open manually");
+    expect(workbenchSource).toContain("isUnsupportedAssistantUrl");
+  });
 });

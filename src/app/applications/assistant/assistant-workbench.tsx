@@ -1629,6 +1629,33 @@ function primarySprintAction(application: ReadyApplication, canMarkApplied: bool
       disabled: true,
     };
   }
+  if (!application.resumeId || !application.coverLetterId) {
+    return {
+      kind: "answer",
+      label: "Review packet",
+      detail: "Resume and cover letter are required before the assistant can launch this ready application.",
+      color: "warning",
+      href: `/applications/${application.id}`,
+    };
+  }
+  if (!application.applicationUrl) {
+    return {
+      kind: "answer",
+      label: "Add application URL",
+      detail: "This ready application is missing the employer application URL, so it can be tracked here but cannot launch the assistant yet.",
+      color: "warning",
+      href: `/applications/${application.id}`,
+    };
+  }
+  if (isUnsupportedAssistantUrl(application.applicationUrl)) {
+    return {
+      kind: "answer",
+      label: "Open manually",
+      detail: "This source URL is not usable for assisted form filling. Open the application profile and replace it with the employer form URL when available.",
+      color: "warning",
+      href: `/applications/${application.id}`,
+    };
+  }
   const closedRun = isAssistantClosedRun(application.automationRun) ? application.automationRun : null;
   if (closedRun) {
     return {
@@ -1660,6 +1687,10 @@ function primarySprintAction(application: ReadyApplication, canMarkApplied: bool
 
 function summarizeReadyJobDescription(application: Pick<ReadyApplication, "description" | "title" | "company">) {
   return summarizeApplicationJobDescription(application);
+}
+
+function isUnsupportedAssistantUrl(value: string) {
+  return /example\.com|remoteok\.com/i.test(value);
 }
 
 function applySprintReasonLabel(reason: ApplySprintReasonCode) {

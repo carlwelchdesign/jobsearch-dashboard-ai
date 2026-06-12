@@ -12,7 +12,6 @@ import { prisma } from "@/lib/prisma";
 import { summarizeAutomationBlockers } from "@/lib/applications/automation-analytics";
 import { recoverStaleApplicationAutomationRuns, syncRunningApplicationAutomationRunsFromLogs } from "@/lib/applications/automation-runs";
 import { buildAshbyRiskAssessment } from "@/lib/applications/ashby-risk";
-import { hasApplicationForJob, submittedApplicationJobKeySet, submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from "@/lib/applications/reconciliation";
 import { buildApplySprintTrustFunnel } from "@/lib/applications/apply-sprint-funnel";
 import { AssistantWorkbench } from "./assistant-workbench";
@@ -29,62 +28,39 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
     recoverStaleApplicationAutomationRuns(),
   ]);
 
-  const [applications, submittedApplications, atsBlockers, latestSearchRun, latestAgencyRun, funnelMatches, funnelApplications] = await Promise.all([
+  const [applications, atsBlockers, latestSearchRun, latestAgencyRun, funnelMatches, funnelApplications] = await Promise.all([
     prisma.application.findMany({
-    where: {
-      status: "ready_to_apply",
-      resumeId: { not: null },
-      coverLetterId: { not: null },
-      jobPosting: {
-        applicationUrl: { not: null },
-          NOT: [
-            { applicationUrl: { contains: "example.com", mode: "insensitive" } },
-            { applicationUrl: { contains: "remoteok.com", mode: "insensitive" } },
-          ],
-        },
+      where: {
+        status: "ready_to_apply",
       },
-    include: {
-      agentUserRequests: {
-        where: {
-          status: "OPEN",
-          type: "APPLICATION_BLOCKED",
-        },
-        orderBy: { createdAt: "desc" },
-        take: 1,
-      },
-      automationRuns: {
-        orderBy: { startedAt: "desc" },
-        take: 1,
-      },
-      events: {
-        where: { type: "note_added" },
-        orderBy: { createdAt: "desc" },
-        take: 10,
-      },
-      jobPosting: true,
-      resume: { select: { plainText: true, markdown: true } },
-      user: { include: { profile: true } },
-      jobProfileMatch: true,
-    },
-    orderBy: [
-      { jobProfileMatch: { overallScore: "desc" } },
-      { updatedAt: "desc" },
-    ],
-    take: 200,
-    }),
-    prisma.application.findMany({
-      where: { status: { in: submittedApplicationStatuses } },
-      select: {
-        status: true,
-        jobPosting: {
-          select: {
-            company: true,
-            title: true,
-            location: true,
-            lastSeenAt: true,
+      include: {
+        agentUserRequests: {
+          where: {
+            status: "OPEN",
+            type: "APPLICATION_BLOCKED",
           },
+          orderBy: { createdAt: "desc" },
+          take: 1,
         },
+        automationRuns: {
+          orderBy: { startedAt: "desc" },
+          take: 1,
+        },
+        events: {
+          where: { type: "note_added" },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        },
+        jobPosting: true,
+        resume: { select: { plainText: true, markdown: true } },
+        user: { include: { profile: true } },
+        jobProfileMatch: true,
       },
+      orderBy: [
+        { jobProfileMatch: { overallScore: "desc" } },
+        { updatedAt: "desc" },
+      ],
+      take: 200,
     }),
     summarizeAutomationBlockers(200),
     prisma.jobSearchRun.findFirst({
@@ -158,11 +134,8 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
       take: 1000,
     }),
   ]);
-  const submittedJobKeys = submittedApplicationJobKeySet(submittedApplications);
   const canonicalApplications = visibleCanonicalApplications(applications);
-  const visibleApplications = canonicalApplications.filter((application) => (
-    !hasApplicationForJob(application.jobPosting, submittedJobKeys)
-  ));
+  const visibleApplications = canonicalApplications;
   const funnelUserIds = Array.from(new Set(funnelMatches.map((match) => match.jobSearchProfile.userId)));
   const suppressionByUserId = await loadJobSuppressionStatesByUserIds(funnelUserIds);
   const trustFunnel = buildApplySprintTrustFunnel({
