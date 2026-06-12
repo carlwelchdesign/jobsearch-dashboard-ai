@@ -14,6 +14,9 @@ describe("Command Center market analysis", () => {
     expect(cardSource).toContain("Market Analysis");
     expect(cardSource).toContain("No market analysis report yet");
     expect(cardSource).toContain("Search and cron health");
+    expect(cardSource).toContain("Search learning");
+    expect(cardSource).toContain("Search adapted");
+    expect(cardSource).toContain("Needs review");
     expect(cardSource).toContain("triggeredBy: cron");
   });
 

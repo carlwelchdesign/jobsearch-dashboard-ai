@@ -88,7 +88,7 @@ The Chrome extension uses `POST /api/jobs/capture` for saving job pages and `POS
 
 ## Market Intelligence Research
 
-The market intelligence brief runs from the Command Center, the Profiles page, `POST /api/market-intelligence/run`, and automatically after successful or partial manual/cron job searches. It fetches trusted source pages, discovers relevant articles, extracts readable content, and stores only metadata, claims, summaries, short excerpts, and synthesis in the latest completed `MARKET_INTELLIGENCE` `AgentRun.outputJson`. Automatic search-triggered runs use standard depth and record the source search run in `inputJson.jobSearchRunId`.
+The market intelligence brief runs from the Command Center, the Profiles page, `POST /api/market-intelligence/run`, and automatically after successful or partial manual/cron job searches. It fetches trusted source pages, discovers relevant articles, extracts readable content, and stores only metadata, claims, summaries, short excerpts, synthesis, and search-adaptation audit data in the latest completed `MARKET_INTELLIGENCE` `AgentRun.outputJson`. Automatic search-triggered runs use standard depth and record the source search run in `inputJson.jobSearchRunId`.
 
 Optional configuration:
 
@@ -100,6 +100,8 @@ MARKET_INTELLIGENCE_MAX_ARTICLES=8
 `MARKET_INTELLIGENCE_EXTRA_SOURCES` is newline-separated. Keep it limited to trusted research, hiring-lab, labor-market, or role-trend sources. The app does not store full article snapshots.
 
 The Command Center market analysis card shows the latest report and cron/search health. The cron endpoint can be configured correctly but still not have run; the reliable signal is a recorded `JobSearchRun` whose `triggeredBy` value is `cron`.
+
+Market Intelligence uses guarded auto-adaptation. It may add unique preferred keywords and preferred companies to existing enabled search profiles, capped at five keyword additions and ten company additions per report. It never removes user settings or automatically changes required keywords, thresholds, exclusions, source state, profile enabled state, or profile deletion. Higher-risk market recommendations become `JOB_SEARCH` improvement proposals for review in Settings.
 
 ## Database
 

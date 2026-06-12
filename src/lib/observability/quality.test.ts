@@ -324,6 +324,35 @@ describe("agent quality evaluation loop", () => {
     expect(result.activation).toEqual(expect.objectContaining({ status: "already_active", adjustmentId: "adjustment_existing" }));
   });
 
+  it("activates accepted market adaptation proposals as search profile guidance", async () => {
+    proposalFindUniqueMock.mockResolvedValueOnce(improvementProposal({
+      target: "JOB_SEARCH",
+      type: "SKILL",
+      riskLevel: "LOW",
+      category: "market_search_adaptation",
+    }) as never);
+    proposalFindUniqueMock.mockResolvedValueOnce(improvementProposal({
+      target: "JOB_SEARCH",
+      type: "SKILL",
+      riskLevel: "LOW",
+      category: "market_search_adaptation",
+    }) as never);
+
+    const result = await acceptImprovementProposal("proposal_1");
+
+    expect(skillAdjustmentCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        skillId: "search_profile_manager",
+        kind: "GUIDANCE",
+        patchJson: expect.objectContaining({
+          category: "market_search_adaptation",
+          source: "quality_proposal",
+        }),
+      }),
+    }));
+    expect(result.activation).toEqual(expect.objectContaining({ status: "created", skillId: "search_profile_manager" }));
+  });
+
   it("accepts high-risk or unmapped proposals as review-only", async () => {
     proposalFindUniqueMock.mockResolvedValueOnce(improvementProposal({
       target: "APPLICATION_ASSISTANT",

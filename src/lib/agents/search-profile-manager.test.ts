@@ -52,6 +52,31 @@ describe("search profile performance", () => {
       summary: expect.stringContaining("Active low-yield learning"),
     });
   });
+
+  it("applies accepted market adaptation learning as profile review guidance", () => {
+    const recommendations = buildRecommendations(
+      [
+        {
+          id: "profile_1",
+          name: "Enterprise SaaS Product UI",
+          enabled: true,
+          titles: ["Frontend Engineer"],
+          keywordsRequired: [],
+          keywordsPreferred: ["React"],
+          industries: [],
+          matches: [],
+        } as unknown as Parameters<typeof buildRecommendations>[0][number],
+      ],
+      [{ profileId: "profile_1", name: "Enterprise SaaS Product UI", healthScore: 60, rationale: "", performance: calculatePerformanceSummary({ matches: [] } as never) }],
+      [],
+      { marketSearchAdaptation: true, appliedCategories: ["market_search_adaptation"], appliedAdjustmentIds: ["adjustment_1"] },
+    );
+
+    expect(recommendations[0]).toMatchObject({
+      action: "review",
+      summary: expect.stringContaining("market-intelligence guidance"),
+    });
+  });
 });
 
 function match(status: string, fitScore: number, opportunityScore: number, duplicateGroupId: string | null, applications: Array<{ status: string; outcomes: Array<{ outcome: string }> }>) {

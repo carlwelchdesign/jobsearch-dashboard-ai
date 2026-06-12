@@ -1225,7 +1225,7 @@ function proposalActivationLabel(proposal: {
     proposal.type !== "PROMPT" &&
     (
       (proposal.target === "JOB_MATCHING" && category === "high_score_user_rejected") ||
-      (proposal.target === "JOB_SEARCH" && ["dedupe_ineffective", "low_saved_yield"].includes(category)) ||
+      (proposal.target === "JOB_SEARCH" && ["dedupe_ineffective", "low_saved_yield", "market_search_adaptation"].includes(category)) ||
       (proposal.target === "APPLICATION_ASSISTANT" && ["cover_letter_field", "field_classification"].includes(category)) ||
       (proposal.target === "RECRUITING_AGENCY" && ["CANDIDATE_FAILURE", "candidate_failure"].includes(category))
     );

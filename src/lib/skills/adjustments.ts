@@ -4,6 +4,7 @@ export type QualityProposalLearningRules = {
   highScoreUserRejected?: boolean;
   stricterDedupe?: boolean;
   lowSavedYield?: boolean;
+  marketSearchAdaptation?: boolean;
   agencyCandidateQuality?: boolean;
   coverLetterFieldQa?: boolean;
   fieldClassificationQa?: boolean;
@@ -60,6 +61,7 @@ export function learningRulesFromAdjustments(adjustments: SkillAdjustment[]): Qu
     if (category === "high_score_user_rejected") rules.highScoreUserRejected = true;
     if (category === "dedupe_ineffective") rules.stricterDedupe = true;
     if (category === "low_saved_yield") rules.lowSavedYield = true;
+    if (category === "market_search_adaptation") rules.marketSearchAdaptation = true;
     if (category === "CANDIDATE_FAILURE" || category === "candidate_failure") rules.agencyCandidateQuality = true;
     if (category === "cover_letter_field") rules.coverLetterFieldQa = true;
     if (category === "field_classification") rules.fieldClassificationQa = true;
@@ -84,6 +86,7 @@ function hasAnyRuleForCategory(category: string) {
     "high_score_user_rejected",
     "dedupe_ineffective",
     "low_saved_yield",
+    "market_search_adaptation",
     "CANDIDATE_FAILURE",
     "candidate_failure",
     "cover_letter_field",

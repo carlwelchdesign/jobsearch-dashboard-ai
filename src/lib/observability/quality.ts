@@ -745,6 +745,19 @@ function activationPlanForProposal(proposal: {
     };
   }
 
+  if (proposal.target === "JOB_SEARCH" && category === "market_search_adaptation") {
+    return {
+      skillId: "search_profile_manager" as SkillId,
+      kind: "GUIDANCE" as SkillAdjustmentKind,
+      category,
+      patchJson: {
+        ...basePatch,
+        rule: "Use accepted market-intelligence adaptations as review guidance for profile specificity, lane focus, preferred keywords, and preferred companies. Do not pause, delete, narrow, or change thresholds automatically.",
+      },
+      rationale: "Activated conservative search-profile guidance from market intelligence review proposals.",
+    };
+  }
+
   if (proposal.target === "RECRUITING_AGENCY" && ["CANDIDATE_FAILURE", "candidate_failure"].includes(category)) {
     return {
       skillId: "approve_agency_match" as SkillId,

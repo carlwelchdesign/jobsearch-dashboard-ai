@@ -125,7 +125,9 @@ export async function runSearchProfileManagerAgent(input: SearchProfileManagerIn
         profilesToPause,
         profilesToCreate,
         profilesToDelete: [],
-        rationale: input.learningRules?.lowSavedYield
+        rationale: input.learningRules?.marketSearchAdaptation
+          ? "Reviewed search profiles with accepted market-intelligence adaptation guidance. No destructive changes are applied automatically."
+          : input.learningRules?.lowSavedYield
           ? "Reviewed search profiles with active low-yield learning, emphasizing source quality, query breadth, and profile specificity. No destructive changes are applied automatically."
           : "Reviewed search profiles using match volume, approval rate, rejection rate, average score, specificity, and title/keyword overlap. No destructive changes are applied automatically.",
         confidence: profiles.some((profile) => profile.matches.length >= 20) ? 0.82 : 0.62,
@@ -244,6 +246,9 @@ export function buildRecommendations(
     }
     if (learningRules?.lowSavedYield && (profile.matches.length === 0 || score < 65)) {
       return { profileId: profile.id, profileName: profile.name, action: "review" as const, summary: "Active low-yield learning is enabled. Review query breadth, source quality, and profile specificity before the next search run." };
+    }
+    if (learningRules?.marketSearchAdaptation && score < 70) {
+      return { profileId: profile.id, profileName: profile.name, action: "review" as const, summary: "Accepted market-intelligence guidance is active. Compare this profile against the latest market lane, skills, and company signals before the next search run." };
     }
     if (titles.length === 0 || required.length + preferred.length < 4) {
       return { profileId: profile.id, profileName: profile.name, action: "edit" as const, summary: "Profile is broad. Add target titles and high-signal keywords so job scoring has a clearer intent." };

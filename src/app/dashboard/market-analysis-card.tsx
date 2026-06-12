@@ -58,6 +58,8 @@ export function MarketAnalysisCard({
                 {generatedAt ? <Chip size="small" variant="outlined" label={`Generated ${formatDateTime(generatedAt)}`} /> : null}
                 <Chip size="small" variant="outlined" label={`${latest.dataFreshness.internalJobsAnalyzed} jobs analyzed`} />
                 <Chip size="small" variant="outlined" label={`${latest.dataFreshness.externalSourcesChecked} sources checked`} />
+                {latest.adaptationSummary?.applied ? <Chip size="small" color="success" label={`Search adapted: ${latest.adaptationSummary.applied}`} /> : null}
+                {latest.adaptationSummary?.reviewOnly ? <Chip size="small" color="warning" label={`Needs review: ${latest.adaptationSummary.reviewOnly}`} /> : null}
               </Stack>
 
               <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1fr 1fr" }, gap: 1.5 }}>
@@ -101,6 +103,28 @@ export function MarketAnalysisCard({
                         <Typography variant="body2" sx={{ fontWeight: 850 }}>{action.title}</Typography>
                       </Stack>
                       <Typography variant="caption" color="text.secondary">{action.detail}</Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              ) : null}
+
+              {latest.searchAdaptations?.length ? (
+                <Stack spacing={1}>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 900, textTransform: "uppercase" }}>Search learning</Typography>
+                  {latest.searchAdaptations.slice(0, 5).map((adaptation, index) => (
+                    <Box key={`${adaptation.action}-${adaptation.targetProfileId ?? "new"}-${index}`} sx={{ borderTop: 1, borderColor: "divider", pt: 1 }}>
+                      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+                        <Chip size="small" color={adaptation.status === "applied" ? "success" : adaptation.status === "review_only" ? "warning" : "default"} label={adaptation.status.replace(/_/g, " ")} />
+                        <Chip size="small" variant="outlined" label={adaptation.action.replace(/_/g, " ")} />
+                        {adaptation.targetProfileName ? <Chip size="small" variant="outlined" label={adaptation.targetProfileName} /> : null}
+                      </Stack>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
+                        {adaptation.values.length ? `${adaptation.values.join(", ")}. ` : ""}{adaptation.reason ?? adaptation.rationale}
+                      </Typography>
+                      <Stack direction="row" spacing={1} sx={{ mt: 0.75 }}>
+                        {adaptation.targetProfileId ? <ActionButton href="/profiles" size="small" variant="text">Open profile</ActionButton> : null}
+                        {adaptation.status === "review_only" ? <ActionButton href="/settings/learning#settings-quality-proposals" size="small" variant="text">Review proposal</ActionButton> : null}
+                      </Stack>
                     </Box>
                   ))}
                 </Stack>

@@ -1,5 +1,6 @@
 import type { ApplicationOutcomeType, JobMatchStatus, JobPosting, JobSearchProfile, Prisma, SearchProfilePerformance } from "@prisma/client";
 import { z } from "zod";
+import { applyMarketSearchAdaptations, type MarketAdaptationSummary, type MarketSearchAdaptation } from "@/lib/agents/market-adaptation";
 import { runAgent } from "@/lib/agents/run-agent";
 import { parseStructuredOutput } from "@/lib/ai/openai";
 import { jsonArray } from "@/lib/json";
@@ -73,6 +74,8 @@ export type MarketIntelligenceOutput = {
     externalSourcesChecked: number;
   };
   confidence: number;
+  searchAdaptations?: MarketSearchAdaptation[];
+  adaptationSummary?: MarketAdaptationSummary;
 };
 
 type SourceStatus = "checked" | "unverified";
@@ -240,7 +243,7 @@ export async function runMarketIntelligenceAgent(input: MarketIntelligenceInput 
     agentType: "MARKET_INTELLIGENCE",
     input: { ...input, lookbackDays, researchDepth },
     userId: input.userId,
-    execute: async () => {
+    execute: async (run) => {
       const since = new Date(Date.now() - lookbackDays * 86_400_000);
       const [profiles, matches, candidateProfile, sources, researchDigest] = await Promise.all([
         prisma.jobSearchProfile.findMany({
@@ -311,7 +314,7 @@ export async function runMarketIntelligenceAgent(input: MarketIntelligenceInput 
         profiles: profiles.map((profile) => ({ name: profile.name, enabled: profile.enabled })),
       });
 
-      return buildMarketIntelligenceReport({
+      const report = buildMarketIntelligenceReport({
         profiles,
         matches,
         candidateTerms: candidateTerms(candidateProfile),
@@ -320,6 +323,17 @@ export async function runMarketIntelligenceAgent(input: MarketIntelligenceInput 
         researchSynthesis,
         lookbackDays,
       });
+      const adaptations = await applyMarketSearchAdaptations({
+        userId: input.userId,
+        agentRunId: run.id,
+        report,
+        profiles,
+      });
+
+      return {
+        ...report,
+        ...adaptations,
+      };
     },
   });
 }

@@ -403,7 +403,7 @@ export async function autoRunMarketIntelligenceAfterSearch(input: {
     });
     await appendProgress(
       input.runId,
-      `Market intelligence completed with ${result.output.marketTemperature.length} lane signal(s) and ${result.output.recommendedActions.length} recommendation(s).`,
+      `Market intelligence completed with ${result.output.marketTemperature.length} lane signal(s), ${result.output.recommendedActions.length} recommendation(s), ${result.output.adaptationSummary?.applied ?? 0} applied search adaptation(s), and ${result.output.adaptationSummary?.reviewOnly ?? 0} review item(s).`,
       input.stats,
       undefined,
       {
