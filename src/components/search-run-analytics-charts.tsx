@@ -7,6 +7,7 @@ import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
+import { useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -86,6 +87,8 @@ function ChartPanel({ title, helper, children }: { title: string; helper: string
 
 function FunnelBar({ data }: { data: Array<{ label: string; value: number; helper: string }> }) {
   const theme = useTheme();
+  const mounted = useMounted();
+  if (!mounted) return <EmptyChart label="Preparing chart..." />;
   if (!data.some((item) => item.value > 0)) return <EmptyChart label="No run data yet." />;
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -102,6 +105,8 @@ function FunnelBar({ data }: { data: Array<{ label: string; value: number; helpe
 
 function SimpleBar({ data, empty }: { data: Array<{ label: string; value: number }>; empty: string }) {
   const theme = useTheme();
+  const mounted = useMounted();
+  if (!mounted) return <EmptyChart label="Preparing chart..." />;
   if (!data.length) return <EmptyChart label={empty} />;
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -118,6 +123,8 @@ function SimpleBar({ data, empty }: { data: Array<{ label: string; value: number
 
 function ProfileBar({ data }: { data: Array<{ label: string; fetched: number; scored: number; qualified: number; saved: number; capped: number }> }) {
   const theme = useTheme();
+  const mounted = useMounted();
+  if (!mounted) return <EmptyChart label="Preparing chart..." />;
   if (!data.length) return <EmptyChart label="No per-profile diagnostics recorded yet." />;
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -137,6 +144,8 @@ function ProfileBar({ data }: { data: Array<{ label: string; fetched: number; sc
 
 function SourceBar({ data }: { data: Array<{ label: string; fetched: number; scored: number; qualified: number; saved: number }> }) {
   const theme = useTheme();
+  const mounted = useMounted();
+  if (!mounted) return <EmptyChart label="Preparing chart..." />;
   if (!data.length) return <EmptyChart label="No per-source diagnostics recorded yet." />;
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -156,6 +165,8 @@ function SourceBar({ data }: { data: Array<{ label: string; fetched: number; sco
 
 function TrendLine({ data }: { data: Array<{ label: string; fetched: number; qualified: number; saved: number; agencyEligible: number }> }) {
   const theme = useTheme();
+  const mounted = useMounted();
+  if (!mounted) return <EmptyChart label="Preparing chart..." />;
   if (data.length < 2) return <EmptyChart label="Run at least two searches to see trend lines." />;
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -180,4 +191,10 @@ function EmptyChart({ label }: { label: string }) {
       <Typography variant="body2">{label}</Typography>
     </Box>
   );
+}
+
+function useMounted() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return mounted;
 }
