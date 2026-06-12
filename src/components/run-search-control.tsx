@@ -97,9 +97,12 @@ export function RunSearchControl({ compact = false }: { compact?: boolean }) {
         </Card>
       ) : null}
       {run && compact ? (
-        <Typography variant="body2" color="text.secondary">
-          {run.status}: {run.progress?.[run.progress.length - 1]?.message ?? "Search started."}
-        </Typography>
+        <Stack spacing={0.75}>
+          <SearchRunAnalyticsCharts run={run} compact />
+          <Typography variant="body2" color="text.secondary">
+            {run.status}: {run.progress?.[run.progress.length - 1]?.message ?? "Search started."}
+          </Typography>
+        </Stack>
       ) : null}
     </Stack>
   );
