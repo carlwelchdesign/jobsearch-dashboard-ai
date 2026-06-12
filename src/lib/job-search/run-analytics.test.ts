@@ -16,6 +16,7 @@ describe("search run analytics", () => {
       expect.objectContaining({ label: "Qualified", value: 12 }),
       expect.objectContaining({ label: "New matches", value: 5 }),
     ]));
+    expect(analytics.funnel.some((item) => item.label === "New jobs")).toBe(false);
     expect(analytics.drops).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: "Below threshold", value: 88 }),
     ]));

@@ -39,7 +39,7 @@ export function SearchRunAnalyticsCharts({
     <Stack spacing={1.5}>
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "1fr 1fr" }, gap: 1.5 }}>
         <ChartPanel title="Search Funnel" helper="Raw discovery volume through application-ready handoff">
-          <FunnelBar data={analytics.funnel} />
+          <ConversionFlow data={analytics.funnel} />
         </ChartPanel>
         <ChartPanel title="What Held Jobs Back" helper="Largest reasons fetched jobs did not become Apply Sprint candidates">
           <SimpleBar data={analytics.drops} empty="No drop-off reasons recorded yet." />
@@ -74,6 +74,7 @@ function CompactSearchRunAnalytics({ analytics }: { analytics: ReturnType<typeof
   const fetched = analytics.stats.jobsFetched;
   const kpis = [
     metric("Fetched", analytics.stats.jobsFetched, "raw", theme.palette.info.main),
+    metric("New jobs", analytics.stats.jobsAfterDedupe, "deduped", theme.palette.info.dark),
     metric("Scored", analytics.stats.jobsScored ?? analytics.stats.detailCandidates ?? 0, "evaluated", theme.palette.secondary.main),
     metric("Qualified", analytics.stats.jobsAfterFilters, "matched", theme.palette.success.main),
     metric("New matches", analytics.stats.jobsSaved, "saved", theme.palette.primary.main),
@@ -89,14 +90,14 @@ function CompactSearchRunAnalytics({ analytics }: { analytics: ReturnType<typeof
       bgcolor: "background.paper",
       overflow: "hidden",
     }}>
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", sm: "repeat(5, minmax(0, 1fr))" } }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", sm: "repeat(3, minmax(0, 1fr))", lg: "repeat(6, minmax(0, 1fr))" } }}>
         {kpis.map((item, index) => (
           <Box
             key={item.label}
             sx={{
               p: 1.1,
-              borderLeft: { xs: index % 2 === 0 ? 0 : 1, sm: index === 0 ? 0 : 1 },
-              borderTop: { xs: index > 1 ? 1 : 0, sm: 0 },
+              borderLeft: { xs: index % 2 === 0 ? 0 : 1, sm: index % 3 === 0 ? 0 : 1, lg: index === 0 ? 0 : 1 },
+              borderTop: { xs: index > 1 ? 1 : 0, sm: index > 2 ? 1 : 0, lg: 0 },
               borderColor: "divider",
               minWidth: 0,
             }}
@@ -121,7 +122,7 @@ function CompactSearchRunAnalytics({ analytics }: { analytics: ReturnType<typeof
         <Stack spacing={0.8}>
           <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 900, textTransform: "uppercase" }}>
-              Live funnel
+              Live conversion
             </Typography>
             {fetched > 0 ? (
               <Typography variant="caption" color="text.secondary">
@@ -129,21 +130,7 @@ function CompactSearchRunAnalytics({ analytics }: { analytics: ReturnType<typeof
               </Typography>
             ) : null}
           </Stack>
-          <Box sx={{ display: "grid", gridTemplateColumns: `repeat(${funnel.length}, minmax(0, 1fr))`, gap: 0.5 }}>
-            {funnel.map((step, index) => {
-              const width = fetched > 0 ? Math.max(5, Math.min(100, (step.value / fetched) * 100)) : 0;
-              return (
-                <Box key={step.label} sx={{ minWidth: 0 }}>
-                  <Box sx={{ height: 7, borderRadius: 99, bgcolor: "action.hover", overflow: "hidden" }}>
-                    <Box sx={{ height: "100%", width: `${width}%`, bgcolor: index < 3 ? theme.palette.info.main : index < 5 ? theme.palette.success.main : theme.palette.primary.main }} />
-                  </Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.35, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {step.label}
-                  </Typography>
-                </Box>
-              );
-            })}
-          </Box>
+          <ConversionFlow data={funnel} dense />
         </Stack>
       </Box>
 
@@ -173,21 +160,48 @@ function ChartPanel({ title, helper, children }: { title: string; helper: string
   );
 }
 
-function FunnelBar({ data }: { data: Array<{ label: string; value: number; helper: string }> }) {
+function ConversionFlow({ data, dense = false }: { data: Array<{ label: string; value: number; helper: string }>; dense?: boolean }) {
   const theme = useTheme();
-  const mounted = useMounted();
-  if (!mounted) return <EmptyChart label="Preparing chart..." />;
   if (!data.some((item) => item.value > 0)) return <EmptyChart label="No run data yet." />;
+  const transitions = data.slice(0, -1).map((step, index) => {
+    const next = data[index + 1];
+    const retained = next?.value ?? 0;
+    const dropped = Math.max(0, step.value - retained);
+    const retainedPercent = step.value > 0 ? Math.max(0, Math.min(100, (retained / step.value) * 100)) : 0;
+    return { from: step, to: next, retained, dropped, retainedPercent };
+  });
+
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={data} layout="vertical" margin={{ top: 8, right: 24, left: 16, bottom: 8 }}>
-        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-        <XAxis type="number" allowDecimals={false} />
-        <YAxis type="category" dataKey="label" width={112} tick={{ fontSize: 11 }} />
-        <Tooltip formatter={(value, _name, props) => [value, props.payload?.helper ?? "Count"]} />
-        <Bar dataKey="value" radius={[0, 6, 6, 0]} fill={theme.palette.primary.main} />
-      </BarChart>
-    </ResponsiveContainer>
+    <Stack spacing={dense ? 0.75 : 1} sx={{ height: dense ? "auto" : "100%", justifyContent: "center" }}>
+      {transitions.map((item) => (
+        <Box key={`${item.from.label}-${item.to?.label}`} sx={{ minWidth: 0 }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: "baseline", justifyContent: "space-between", mb: 0.35 }}>
+            <Typography variant="caption" sx={{ fontWeight: 850, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {item.from.label} → {item.to?.label}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums", flex: "0 0 auto" }}>
+              {Math.round(item.retainedPercent)}% kept · {formatCount(item.dropped)} dropped
+            </Typography>
+          </Stack>
+          <Box sx={{ display: "flex", height: dense ? 9 : 12, borderRadius: 99, overflow: "hidden", bgcolor: "action.hover" }}>
+            <Box
+              sx={{
+                width: `${item.retainedPercent}%`,
+                minWidth: item.retained > 0 ? 4 : 0,
+                bgcolor: item.retainedPercent >= 50 ? theme.palette.success.main : theme.palette.warning.main,
+              }}
+            />
+            <Box sx={{ flex: 1, bgcolor: item.dropped > 0 ? "rgba(239, 68, 68, 0.22)" : "transparent" }} />
+          </Box>
+          {!dense ? (
+            <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", mt: 0.25 }}>
+              <Typography variant="caption" color="text.secondary">{formatCount(item.from.value)} {item.from.helper.toLowerCase()}</Typography>
+              <Typography variant="caption" color="text.secondary">{formatCount(item.retained)} continue</Typography>
+            </Stack>
+          ) : null}
+        </Box>
+      ))}
+    </Stack>
   );
 }
 

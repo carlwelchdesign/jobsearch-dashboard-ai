@@ -85,7 +85,6 @@ export function buildSearchRunAnalytics(run: SearchRunAnalyticsInput | null | un
     { label: "Detail candidates", value: detailCandidates, helper: "Listing pages removed or expanded" },
     { label: "Scored", value: scored, helper: "Normalized jobs scored against profiles" },
     { label: "Qualified", value: stats.jobsAfterFilters, helper: "Met profile threshold" },
-    { label: "New jobs", value: stats.jobsAfterDedupe, helper: "Created after dedupe" },
     { label: "New matches", value: stats.jobsSaved, helper: "New profile matches created" },
     { label: "Agency eligible", value: agencyEligible, helper: "Has URL and is not review-only" },
   ];
