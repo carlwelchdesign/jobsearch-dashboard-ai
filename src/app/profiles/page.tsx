@@ -1,6 +1,6 @@
 export const metadata = {
   title: "Search Profiles | Job Search OS",
-  description: "Manage search profiles, market intelligence, and discovery strategy.",
+  description: "Manage search profiles and discovery strategy.",
 };
 
 import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
@@ -33,13 +33,11 @@ import type { OptimizerOutput } from "./profile-optimizer-panel";
 import { ProfileRebuildPanel } from "./profile-rebuild-panel";
 import { SearchExpansionPanel } from "./search-expansion-panel";
 import type { SearchExpansionPanelOutput } from "./search-expansion-panel";
-import { MarketIntelligencePanel } from "./market-intelligence-panel";
-import type { MarketIntelligenceOutput } from "@/lib/agents/market-intelligence";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProfilesPage() {
-  const [profiles, latestOptimizerRun, latestExpansionRun, latestMarketRun] = await Promise.all([
+  const [profiles, latestOptimizerRun, latestExpansionRun] = await Promise.all([
     prisma.jobSearchProfile.findMany({
       include: {
         performanceSnapshots: {
@@ -59,13 +57,6 @@ export default async function ProfilesPage() {
     prisma.agentRun.findFirst({
       where: {
         agentType: "SEARCH_EXPANSION",
-        status: "COMPLETED",
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.agentRun.findFirst({
-      where: {
-        agentType: "MARKET_INTELLIGENCE",
         status: "COMPLETED",
       },
       orderBy: { createdAt: "desc" },
@@ -110,7 +101,6 @@ export default async function ProfilesPage() {
         <ProfileRebuildPanel />
         <ProfileOptimizerPanel latest={isRecord(latestOptimizerRun?.outputJson) ? latestOptimizerRun.outputJson as OptimizerOutput : null} />
         <SearchExpansionPanel latest={isRecord(latestExpansionRun?.outputJson) ? latestExpansionRun.outputJson as SearchExpansionPanelOutput : null} />
-        <MarketIntelligencePanel latest={isRecord(latestMarketRun?.outputJson) ? latestMarketRun.outputJson as MarketIntelligenceOutput : null} />
 
         <TableContainer component={Card}>
           <Table sx={{ minWidth: 920 }}>

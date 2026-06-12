@@ -32,7 +32,7 @@ import { getServiceFallbacks } from "@/lib/service-fallbacks";
 import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
 import type { MarketIntelligenceOutput } from "@/lib/agents/market-intelligence";
 import { RunDailyPlanButton } from "./daily-plan-card";
-import { MarketAnalysisCard } from "./market-analysis-card";
+import { MarketAnalysisCard, type MarketTrendPoint } from "./market-analysis-card";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +53,7 @@ type DailyPlanOutput = {
 };
 
 export default async function DashboardPage() {
-  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, trackedApplicationsForAgency, agencyCandidateMatches, latestDailyPlanRun, latestMarketRun, latestManualSearchRun, latestCronSearchRun, agentUserRequests, integrityReport, notificationSettings] = await Promise.all([
+  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, trackedApplicationsForAgency, agencyCandidateMatches, latestDailyPlanRun, latestMarketRuns, latestManualSearchRun, latestCronSearchRun, agentUserRequests, integrityReport, notificationSettings] = await Promise.all([
     prisma.jobSearchProfile.findMany({ where: { enabled: true }, orderBy: { name: "asc" } }),
     prisma.jobSearchRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.application.groupBy({ by: ["status"], _count: { status: true } }),
@@ -105,9 +105,10 @@ export default async function DashboardPage() {
       where: { agentType: "DAILY_COMMAND_CENTER", status: "COMPLETED" },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.agentRun.findFirst({
+    prisma.agentRun.findMany({
       where: { agentType: "MARKET_INTELLIGENCE", status: "COMPLETED" },
       orderBy: { createdAt: "desc" },
+      take: 12,
     }),
     prisma.jobSearchRun.findFirst({
       where: { triggeredBy: "manual" },
@@ -146,7 +147,9 @@ export default async function DashboardPage() {
     needsReview: needsReviewCount,
     readyToApply,
   });
+  const latestMarketRun = latestMarketRuns[0] ?? null;
   const latestMarket = isRecord(latestMarketRun?.outputJson) ? latestMarketRun.outputJson as MarketIntelligenceOutput : null;
+  const marketTrendSeries = buildMarketTrendSeries(latestMarketRuns.map((run) => run.outputJson));
   const cronExpression = profiles.find((profile) => profile.cronExpression)?.cronExpression ?? "0 14 * * *";
   const scheduledProfileCount = profiles.filter((profile) => profile.scheduleEnabled).length;
   const nextAction = getNextAction({
@@ -226,6 +229,7 @@ export default async function DashboardPage() {
         <MarketAnalysisCard
           latest={latestMarket}
           latestRunCreatedAt={latestMarketRun?.createdAt ?? null}
+          trendSeries={marketTrendSeries}
           searchHealth={{
             latestManualSearchAt: latestManualSearchRun?.startedAt ?? null,
             latestCronSearchAt: latestCronSearchRun?.startedAt ?? null,
@@ -487,6 +491,28 @@ function dailyPlanOutput(value: unknown): DailyPlanOutput | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function buildMarketTrendSeries(values: unknown[]): MarketTrendPoint[] {
+  const points: MarketTrendPoint[] = [];
+  for (const value of values) {
+    if (!isRecord(value)) continue;
+    const output = value as Partial<MarketIntelligenceOutput>;
+    const generatedAt = typeof output.generatedAt === "string" ? output.generatedAt : null;
+    if (!generatedAt) continue;
+    const topLane = output.marketTemperature?.[0];
+    const topSkill = output.skillSignals?.[0];
+    points.push({
+      generatedAt,
+      label: new Date(generatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+      topLane: topLane?.lane ?? "No lane",
+      topLaneJobs: topLane?.jobCount ?? 0,
+      topSkill: topSkill?.skill ?? "No skill",
+      topSkillMentions: topSkill?.mentions ?? 0,
+      confidencePercent: Math.round((output.confidence ?? 0) * 100),
+    });
+  }
+  return points.reverse();
 }
 
 function filterDailyPlanForCurrentState(

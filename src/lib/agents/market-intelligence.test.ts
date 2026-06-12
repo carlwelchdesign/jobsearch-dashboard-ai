@@ -77,6 +77,22 @@ describe("market intelligence agent", () => {
       url: "https://www.hiringlab.org/2026/05/ai-hiring",
     });
     expect(report.researchSynthesis.sourceBackedClaims[0]).toContain("AI job postings");
+    expect(report.summary).toContain("React is the highest-repeat skill signal");
+    expect(report.chartData.actionMix).toEqual(expect.arrayContaining([
+      { label: "apply now", value: 1 },
+      { label: "maybe apply", value: 1 },
+    ]));
+    expect(report.chartData.matchQualityDistribution[0]).toMatchObject({
+      company: "Terzo",
+      lane: "AI product/frontend",
+      fitScore: 93,
+      opportunityScore: 80,
+      overallScore: 93,
+    });
+    expect(report.chartData.sourceCoverage).toEqual(expect.arrayContaining([
+      { label: "Checked sources", value: 1 },
+      { label: "Fetched articles", value: 1 },
+    ]));
   });
 
   it("extracts readable article summaries with excerpts and relevance", () => {

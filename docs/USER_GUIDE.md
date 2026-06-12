@@ -712,14 +712,16 @@ On the Search profiles page, there is a **Suggest** or **Optimize** button that 
 
 ### Market Intelligence
 
-At the bottom of the Search profiles page is a **Market Intelligence** section. Click **Run Market Intelligence Brief** to get a weekly summary of:
+The full **Market Analysis** brief now lives on the Command Center. Click **Run market brief** to get a weekly summary of:
 
 - Demand trends for your target roles
 - Which skills are being mentioned most in job listings you have seen
 - Company and source quality signals from your own pipeline
+- Analytical graphs for trends, comparisons, proportions, and match-quality distribution
+- Cited article/news cards with source links and implications
 - Review-only suggestions for tuning your profiles
 
-> **Watch out for:** This brief is advisory only. It never automatically changes your profiles — it just shows you data and suggestions. You decide whether to act on them.
+> **Watch out for:** This brief never removes or broadly changes your profiles automatically. Low-risk additive keyword/company signals may be applied with caps; higher-risk changes stay review-only.
 
 > [PART_COMPLETE:4]
 >
@@ -1702,7 +1704,7 @@ Scroll to the **Admin and supporting tools** card on the Settings page. You will
 
 | Button label | Where it goes | What you do there |
 |---|---|---|
-| **Search profiles** | `/profiles` | Search profile management and Market Intelligence |
+| **Search profiles** | `/profiles` | Search profile management |
 | **Evidence library** | `/evidence` | Candidate evidence library |
 | **Company sources** | `/sources` | Job source and company watchlist management |
 | **Agent board** | `/agents` | Agent run history and monitoring |
@@ -1816,18 +1818,18 @@ This is useful for debugging if something seems to have gone wrong in the backgr
 
 Get a weekly overview of your job market based on your own pipeline data combined with external labor-market research:
 
-1. Click **Settings** in the left sidebar → **Admin and supporting tools** → **Search profiles** (`/profiles`).
-2. Scroll to the **Market Intelligence** section.
-3. Click **Run Market Intelligence Brief**.
+1. Click **Command Center** in the left sidebar (`/dashboard`).
+2. Scroll to the **Market Analysis** section.
+3. Click **Run market brief**.
 
 The brief includes:
-- Demand trends for your target role types
-- Skill signals from the jobs you have matched against
-- Company and source quality patterns
-- Review-only suggestions for profile adjustments
-- Cited article cards with source links
+- An overview summary with confidence, data freshness, top lane, and top skills
+- Analytical charts for role-lane demand, skill demand, profile health, market trends, action mix, source coverage, and match quality distribution
+- Cited article/news cards with source links, claims, relevance, confidence, excerpts, and practical implications
+- Review-only suggestions for profile adjustments, positioning, company targeting, and outreach
+- Search-learning audit details when the brief safely applies additive keyword or company signals
 
-This never changes your profiles automatically — it is advisory only.
+This never removes or broadly changes your profiles automatically. Low-risk additive keyword/company signals may be applied with caps; higher-risk changes stay review-only.
 
 > [PART_COMPLETE:18]
 >
@@ -1882,7 +1884,7 @@ Here is how a typical day looks once the system is fully set up.
 
 ### Weekly (10–15 minutes)
 
-8. **Run Market Intelligence**: click **Settings** → **Admin and supporting tools** → **Search profiles** → scroll to Market Intelligence → click **Run Market Intelligence Brief**.
+8. **Run Market Intelligence**: click **Command Center** → scroll to **Market Analysis** → click **Run market brief**.
 9. **Check Outcome Calibration**: click **Settings** in the left sidebar → scroll to the **Outcome calibration** card to see if any proposals are waiting for your review.
 10. **Review and tune Search Profiles**: click **Settings** → **Admin and supporting tools** → **Search profiles** → open any profile that has been producing too many low-quality matches.
 
@@ -1920,7 +1922,7 @@ Here is how a typical day looks once the system is fully set up.
 
 | Button | URL | What you do there |
 |---|---|---|
-| **Search profiles** | `/profiles` | Search profiles and Market Intelligence |
+| **Search profiles** | `/profiles` | Search profile management |
 | **Evidence library** | `/evidence` | Manage your verified career facts |
 | **Company sources** | `/sources` | Job sources and company watchlist |
 | **Agent board** | `/agents` | Monitor agent run history |
