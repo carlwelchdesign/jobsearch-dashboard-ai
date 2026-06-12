@@ -358,6 +358,23 @@ export function parseDiceListingJobs(html: string, result: BraveSearchResult, qu
   const listingUrl = result.url;
   const jobs: RawJobPosting[] = [];
 
+  for (const item of parseDiceEmbeddedJobs(html, listingUrl)) {
+    if (jobs.some((job) => job.applicationUrl === item.detailsPageUrl)) continue;
+    jobs.push(jobFromExpandedListing({
+      jobUrl: item.detailsPageUrl,
+      title: item.title ?? result.title ?? "Dice job",
+      company: item.companyName ?? result.profile?.name ?? "Dice",
+      location: item.location,
+      description: diceEmbeddedJobDescription(item, result.description),
+      listingUrl,
+      query,
+      profile,
+      result,
+      expansionProvider: "dice",
+      item,
+    }));
+  }
+
   for (const item of parseJsonLdItemListElements(html)) {
     const jobUrl = absoluteUrl(item.url, listingUrl);
     if (!jobUrl || !isDiceJobDetailUrl(jobUrl)) continue;
@@ -450,6 +467,7 @@ function jobFromExpandedListing(input: {
   jobUrl: string;
   title: string;
   company: string;
+  location?: string;
   description: string;
   listingUrl: string;
   query: string;
@@ -462,7 +480,7 @@ function jobFromExpandedListing(input: {
     sourceJobId: `search:${input.expansionProvider}:${stableId(input.jobUrl)}`,
     company: input.company,
     title: cleanTitle(input.title),
-    location: locationFromQuery(input.query),
+    location: input.location ?? locationFromQuery(input.query),
     description: [
       cleanText(input.description),
       `Expanded from: ${input.listingUrl}`,
@@ -711,6 +729,123 @@ function extractDiceJobDetailUrls(html: string, baseUrl: string) {
     if (resolved && isDiceJobDetailUrl(resolved)) urls.add(resolved);
   }
   return [...urls];
+}
+
+type DiceEmbeddedJob = {
+  guid?: string;
+  detailsPageUrl: string;
+  title?: string;
+  companyName?: string;
+  summary?: string;
+  location?: string;
+  employmentType?: string;
+  postedDate?: string;
+  modifiedDate?: string;
+  easyApply?: boolean;
+  workplaceTypes?: string[];
+};
+
+function parseDiceEmbeddedJobs(html: string, baseUrl: string) {
+  const decoded = decodeHtmlEntities(html);
+  const jobs = new Map<string, DiceEmbeddedJob>();
+
+  for (const segment of diceEmbeddedJobSegments(decoded)) {
+    const guid = extractDiceField(segment, "guid");
+    const detailsPageUrl = absoluteUrl(extractDiceField(segment, "detailsPageUrl"), baseUrl)
+      ?? (guid ? `https://www.dice.com/job-detail/${guid}` : undefined);
+    if (!detailsPageUrl || !isDiceJobDetailUrl(detailsPageUrl)) continue;
+    if (jobs.has(detailsPageUrl)) continue;
+    jobs.set(detailsPageUrl, {
+      guid,
+      detailsPageUrl,
+      title: extractDiceField(segment, "title"),
+      companyName: extractDiceField(segment, "companyName"),
+      summary: extractDiceField(segment, "summary"),
+      location: extractDiceField(segment, "displayName"),
+      employmentType: extractDiceField(segment, "employmentType"),
+      postedDate: extractDiceField(segment, "postedDate"),
+      modifiedDate: extractDiceField(segment, "modifiedDate"),
+      easyApply: extractDiceBooleanField(segment, "easyApply"),
+      workplaceTypes: extractDiceStringArrayField(segment, "workplaceTypes"),
+    });
+  }
+
+  return [...jobs.values()];
+}
+
+function diceEmbeddedJobSegments(decodedHtml: string) {
+  const segments: string[] = [];
+  const detailUrlPattern = /(?:\\")?detailsPageUrl(?:\\")?\s*:\s*(?:\\")?/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = detailUrlPattern.exec(decodedHtml))) {
+    const matchIndex = match.index;
+    const escapedStart = decodedHtml.lastIndexOf("{\\\"id\\\"", matchIndex);
+    const plainStart = decodedHtml.lastIndexOf("{\"id\"", matchIndex);
+    const start = Math.max(escapedStart, plainStart);
+    if (start < 0) continue;
+
+    const escapedNext = decodedHtml.indexOf("{\\\"id\\\"", matchIndex + 1);
+    const plainNext = decodedHtml.indexOf("{\"id\"", matchIndex + 1);
+    const nextStarts = [escapedNext, plainNext].filter((index) => index > matchIndex);
+    const end = nextStarts.length ? Math.min(...nextStarts) : Math.min(decodedHtml.length, matchIndex + 8_000);
+    segments.push(decodedHtml.slice(start, end));
+  }
+
+  return segments;
+}
+
+function extractDiceField(segment: string, field: string) {
+  return extractDiceEscapedField(segment, field) ?? extractDicePlainField(segment, field);
+}
+
+function extractDiceEscapedField(segment: string, field: string) {
+  const match = new RegExp(`\\\\\\"${field}\\\\\\"\\s*:\\s*\\\\\\"((?:\\\\\\\\.|[^\\\\"])*)\\\\\\"`).exec(segment);
+  return match?.[1] ? decodeJsonStringFragment(match[1]) : undefined;
+}
+
+function extractDicePlainField(segment: string, field: string) {
+  const match = new RegExp(`"${field}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`).exec(segment);
+  return match?.[1] ? decodeJsonStringFragment(match[1]) : undefined;
+}
+
+function extractDiceBooleanField(segment: string, field: string) {
+  const escaped = new RegExp(`\\\\\\"${field}\\\\\\"\\s*:\\s*(true|false)`).exec(segment);
+  const plain = new RegExp(`"${field}"\\s*:\\s*(true|false)`).exec(segment);
+  const value = escaped?.[1] ?? plain?.[1];
+  return value ? value === "true" : undefined;
+}
+
+function extractDiceStringArrayField(segment: string, field: string) {
+  const escaped = new RegExp(`\\\\\\"${field}\\\\\\"\\s*:\\s*\\[((?:\\\\\\"[^\\\\"]*\\\\\\"\\s*,?\\s*)*)\\]`).exec(segment);
+  if (escaped?.[1]) {
+    return [...escaped[1].matchAll(/\\\"((?:\\\\.|[^\\"])*)\\\"/g)].map((match) => decodeJsonStringFragment(match[1] ?? "")).filter(Boolean);
+  }
+  const plain = new RegExp(`"${field}"\\s*:\\s*\\[((?:"(?:\\\\.|[^"\\\\])*"\\s*,?\\s*)*)\\]`).exec(segment);
+  if (!plain?.[1]) return undefined;
+  return [...plain[1].matchAll(/"((?:\\.|[^"\\])*)"/g)].map((match) => decodeJsonStringFragment(match[1] ?? "")).filter(Boolean);
+}
+
+function decodeJsonStringFragment(value: string) {
+  try {
+    return cleanText(JSON.parse(`"${value}"`));
+  } catch {
+    return cleanText(value
+      .replace(/\\u([0-9a-f]{4})/gi, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
+      .replace(/\\"/g, "\"")
+      .replace(/\\\//g, "/"));
+  }
+}
+
+function diceEmbeddedJobDescription(job: DiceEmbeddedJob, fallback?: string) {
+  return [
+    job.summary ?? fallback ?? "",
+    job.employmentType ? `Employment type: ${job.employmentType}` : "",
+    job.workplaceTypes?.length ? `Workplace: ${job.workplaceTypes.join(", ")}` : "",
+    job.easyApply === undefined ? "" : `Dice easy apply: ${job.easyApply ? "yes" : "no"}`,
+    job.postedDate ? `Posted: ${job.postedDate}` : "",
+    job.modifiedDate ? `Updated: ${job.modifiedDate}` : "",
+  ].filter(Boolean).join("\n\n");
 }
 
 function isWorkingNomadsJob(value: unknown): value is WorkingNomadsJob {

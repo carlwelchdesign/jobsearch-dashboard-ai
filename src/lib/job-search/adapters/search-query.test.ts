@@ -463,6 +463,53 @@ describe("searchQueryAdapter", () => {
     ]);
   });
 
+  it("expands Dice q-react.js listing pages from embedded job payloads", () => {
+    const jobs = parseDiceListingJobs(diceEmbeddedListingHtml, {
+      title: "React.js jobs | Dice.com",
+      url: "https://www.dice.com/jobs/q-react.js-jobs",
+      description: "React.js jobs",
+      profile: { name: "Dice" },
+    }, "site:dice.com React", profile());
+
+    expect(jobs.map((job) => job.applicationUrl)).toEqual([
+      "https://www.dice.com/job-detail/c5b1d610-2cea-4659-b5df-32e998a2685a",
+      "https://www.dice.com/job-detail/4e635806-b8a7-4c6c-88c4-247f09f970a4",
+    ]);
+    expect(jobs[0]).toMatchObject({
+      company: "SolutionIT, Inc.",
+      title: "React.js Developer",
+      location: "US",
+      rawData: {
+        expansionProvider: "dice",
+        expandedFrom: "https://www.dice.com/jobs/q-react.js-jobs",
+        item: {
+          easyApply: true,
+          workplaceTypes: ["Remote"],
+        },
+      },
+    });
+    expect(jobs[0]?.description).toContain("React.js, JSON, MongoDB");
+    expect(jobs[0]?.description).toContain("Employment type: Contract, Third Party");
+    expect(jobs[0]?.description).toContain("Dice easy apply: yes");
+  });
+
+  it("prefers embedded Dice job data over generic Dice listing result text", () => {
+    const jobs = parseDiceListingJobs(diceEmbeddedListingHtml, {
+      title: "React.js jobs | Dice.com",
+      url: "https://www.dice.com/jobs/q-react.js-jobs",
+      description: "Generic Dice search listing text.",
+      profile: { name: "Dice" },
+    }, "site:dice.com React", profile());
+
+    expect(jobs[1]).toMatchObject({
+      company: "Motion Recruitment Partners, LLC",
+      title: "Senior Software Engineer / React and Robotics / Boston",
+      location: "Boston, Massachusetts, USA",
+    });
+    expect(jobs[1]?.description).toContain("robotics start-up in Boston");
+    expect(jobs[1]?.description).not.toContain("Generic Dice search listing text.");
+  });
+
   it("expands Working Nomads listing pages through the public jobs API", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce({
@@ -634,6 +681,16 @@ const diceListingHtml = `
       <a href="https://www.dice.com/job-detail/1c463470-ecc8-45a0-b1a7-8c72c6fcafd9">Senior React Developer duplicate</a>
       <a href="https://www.dice.com/job-detail/72b1e2e3-525f-4097-8add-88d9ccd1e503">Front End Engineer</a>
       <a href="/jobs/q-front+end+developer+react+js-jobs?page=2">Next</a>
+    </body>
+  </html>
+`;
+
+const diceEmbeddedListingHtml = `
+  <html>
+    <body>
+      <script>
+        self.__next_f.push([1,"{\\"jobs\\":[{\\"id\\":\\"d65c8be5e42f1f2c83c346e313394f06\\",\\"guid\\":\\"c5b1d610-2cea-4659-b5df-32e998a2685a\\",\\"detailsPageUrl\\":\\"https://www.dice.com/job-detail/c5b1d610-2cea-4659-b5df-32e998a2685a\\",\\"companyName\\":\\"SolutionIT, Inc.\\",\\"employmentType\\":\\"Contract, Third Party\\",\\"jobLocation\\":{\\"country\\":\\"US\\",\\"displayName\\":\\"US\\"},\\"postedDate\\":\\"2026-06-11T18:01:35Z\\",\\"modifiedDate\\":\\"2026-06-12T03:02:33Z\\",\\"summary\\":\\"Solution IT Inc. is looking for React.js Developer. Must have skills React.js, JSON, MongoDB.\\",\\"title\\":\\"React.js Developer\\",\\"easyApply\\":true,\\"workplaceTypes\\":[\\"Remote\\"]},{\\"id\\":\\"53837836549287bcaa133979701dc83f\\",\\"guid\\":\\"4e635806-b8a7-4c6c-88c4-247f09f970a4\\",\\"detailsPageUrl\\":\\"https://www.dice.com/job-detail/4e635806-b8a7-4c6c-88c4-247f09f970a4\\",\\"companyName\\":\\"Motion Recruitment Partners, LLC\\",\\"employmentType\\":\\"Full-time\\",\\"jobLocation\\":{\\"city\\":\\"Boston\\",\\"state\\":\\"Massachusetts\\",\\"country\\":\\"USA\\",\\"displayName\\":\\"Boston, Massachusetts, USA\\"},\\"postedDate\\":\\"2026-06-10T00:02:54Z\\",\\"modifiedDate\\":\\"2026-06-12T00:04:13Z\\",\\"summary\\":\\"A robotics start-up in Boston is hiring a Principal Software Engineer.\\",\\"title\\":\\"Senior Software Engineer / React and Robotics / Boston\\",\\"easyApply\\":true,\\"workplaceTypes\\":[\\"On-Site\\"]},{\\"id\\":\\"duplicate\\",\\"guid\\":\\"c5b1d610-2cea-4659-b5df-32e998a2685a\\",\\"detailsPageUrl\\":\\"https://www.dice.com/job-detail/c5b1d610-2cea-4659-b5df-32e998a2685a\\",\\"companyName\\":\\"Duplicate\\",\\"title\\":\\"Duplicate\\"}],\\"meta\\":{\\"currentPage\\":1}}"]);
+      </script>
     </body>
   </html>
 `;
