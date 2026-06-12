@@ -13,6 +13,10 @@ describe("AssistantWorkbench run feedback panel", () => {
     expect(source).toContain("timeline");
     expect(source).toContain("setInterval");
     expect(source).toContain("Copy raw log");
+    expect(source).toContain("Review learned fields");
+    expect(source).toContain("activeForAutofill");
+    expect(source).toContain("needsReview");
+    expect(source).toContain("Ignored");
   });
 
   it("advances the ready application selection after marking applied", () => {

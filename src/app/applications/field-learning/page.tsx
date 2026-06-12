@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { prisma } from "@/lib/prisma";
 import { FieldMemoryActions } from "./field-memory-actions";
+import { FieldMemoryBulkActions } from "./field-memory-bulk-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -29,8 +30,14 @@ type FieldMemoryWithSource = Prisma.ApplicationFieldMemoryGetPayload<{
   };
 }>;
 
-export default async function ApplicationFieldLearningPage() {
+export default async function ApplicationFieldLearningPage({ searchParams }: { searchParams?: { host?: string; applicationId?: string } }) {
+  const host = searchParams?.host?.trim() || undefined;
+  const applicationId = searchParams?.applicationId?.trim() || undefined;
   const memories = await prisma.applicationFieldMemory.findMany({
+    where: {
+      ...(host ? { host } : {}),
+      ...(applicationId ? { sourceApplicationId: applicationId } : {}),
+    },
     include: {
       sourceApplication: {
         select: {
@@ -58,6 +65,12 @@ export default async function ApplicationFieldLearningPage() {
           title="Field Learning"
           description="Review what the assistant learned from fields you filled. Low-risk fields can auto-fill; sensitive or custom answers stay here until you approve or disable them."
         />
+        {host || applicationId ? (
+          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+            {host ? <Chip size="small" variant="outlined" label={`Host: ${host}`} /> : null}
+            {applicationId ? <Chip size="small" variant="outlined" label="Current application" /> : null}
+          </Stack>
+        ) : null}
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" }, gap: 2 }}>
           <MetricCard label="Needs review" value={needsReview.length} tone="warning" />
           <MetricCard label="Auto-fill active" value={active.length} tone="success" />
@@ -99,6 +112,7 @@ function MemorySection({
             <Typography variant="h3">{title}</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{description}</Typography>
           </Box>
+          <FieldMemoryBulkActions memoryIds={safeReviewMemoryIds(memories)} />
           {memories.length ? (
             <Stack spacing={1.25}>
               {memories.map((memory) => (
@@ -132,4 +146,12 @@ function MemorySection({
       </CardContent>
     </Card>
   );
+}
+
+function safeReviewMemoryIds(memories: FieldMemoryWithSource[]) {
+  const ids: string[] = [];
+  for (const memory of memories) {
+    if (memory.status === "NEEDS_REVIEW" && memory.sensitivity !== "HIGH") ids.push(memory.id);
+  }
+  return ids;
 }

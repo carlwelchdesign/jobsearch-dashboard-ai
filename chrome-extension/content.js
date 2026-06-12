@@ -1,6 +1,13 @@
 function textFrom(selector) {
   const element = document.querySelector(selector);
-  return element?.textContent?.replace(/\s+/g, " ").trim() || "";
+  return cleanPageText(element?.textContent || "");
+}
+
+function cleanPageText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/\bwindow\.dataLayer\b[\s\S]*$/i, "")
+    .trim();
 }
 
 function meta(name) {
@@ -79,6 +86,7 @@ function inferLocation() {
 function inferDescription() {
   const ats = atsSpecificFields();
   if (ats.description) return ats.description;
+  if (isApplicationFormPage()) return "";
 
   const selection = window.getSelection()?.toString()?.replace(/\s+/g, " ").trim();
   if (selection && selection.length > 80) return selection;
@@ -106,12 +114,19 @@ function atsSpecificFields() {
   return {};
 }
 
+function isApplicationFormPage() {
+  const url = window.location.href.toLowerCase();
+  return /\/form(?:[?#]|$)|\/apply(?:[?#/]|$)|\/application(?:[?#/]|$)/i.test(url)
+    && document.querySelector("form, input, textarea, select");
+}
+
 function greenhouseFields() {
+  const onFormPage = isApplicationFormPage();
   return {
     title: textFrom(".app-title") || textFrom("h1"),
     company: textFrom(".company-name") || cleanCompanyFromTitle(document.title),
     location: textFrom(".location"),
-    description: textFrom("#content") || textFrom(".job__description") || textFrom("main")
+    description: onFormPage ? "" : textFrom("#content") || textFrom(".job__description") || textFrom("main")
   };
 }
 
@@ -192,7 +207,7 @@ function fillApplicationFromPackage(assistantPackage) {
       continue;
     }
     const descriptor = fieldDescriptor(field);
-    const value = valueForDescriptor(descriptor, values, field);
+    const value = valueForDescriptor(descriptor, values, field) || valueForFieldMemory(descriptor, assistantPackage, field);
     if (!value) {
       result.skipped += 1;
       continue;
@@ -299,9 +314,13 @@ function fieldDescriptor(field) {
     field.name,
     field.placeholder,
     field.getAttribute("aria-label"),
+    field.getAttribute("aria-labelledby") ? textFromIds(field.getAttribute("aria-labelledby")) : "",
+    field.getAttribute("aria-describedby") ? textFromIds(field.getAttribute("aria-describedby")) : "",
     field.closest("label")?.textContent,
     labelFor(field),
-    field.closest("fieldset")?.textContent?.slice(0, 500)
+    field.closest("fieldset")?.textContent?.slice(0, 500),
+    field.closest(".field, .field-wrapper, .form-group, .application-field, [role='group']")?.textContent?.slice(0, 500),
+    nearbyText(field)
   ];
   return parts.filter(Boolean).join(" ").replace(/\s+/g, " ").trim().toLowerCase();
 }
@@ -309,6 +328,25 @@ function fieldDescriptor(field) {
 function labelFor(field) {
   if (!field.id) return "";
   return document.querySelector(`label[for="${CSS.escape(field.id)}"]`)?.textContent || "";
+}
+
+function textFromIds(value) {
+  return String(value || "")
+    .split(/\s+/)
+    .map((id) => document.getElementById(id)?.textContent || "")
+    .join(" ");
+}
+
+function nearbyText(field) {
+  const values = [];
+  let current = field.parentElement;
+  for (let index = 0; current && index < 4; index += 1, current = current.parentElement) {
+    const previous = current.previousElementSibling?.textContent?.trim() || "";
+    if (previous && previous.length < 300) values.push(previous);
+    const own = current.textContent?.trim() || "";
+    if (own && own.length < 400) values.push(own);
+  }
+  return values.join(" ");
 }
 
 function valueForDescriptor(descriptor, values, field) {
@@ -337,6 +375,50 @@ function answerForSelectedQuestion(descriptor, selectedAnswers) {
     if (overlap >= Math.min(3, tokens.length)) return item.answer || "";
   }
   return "";
+}
+
+function valueForFieldMemory(descriptor, assistantPackage, field) {
+  const memories = assistantPackage.learning?.fieldMemories;
+  if (!Array.isArray(memories) || sensitiveLearningDescriptor(descriptor)) return "";
+  const normalized = normalizeForMatch(descriptor);
+  const selector = stableFieldSelector(field);
+  for (const memory of memories) {
+    if (!memorySafeToAutofill(memory)) continue;
+    const answer = String(memory.answer || "").trim();
+    if (!answer) continue;
+    const memoryLabel = normalizeForMatch(memory.label || "");
+    const memoryCategory = normalizeForMatch(memory.category || "");
+    const memorySelector = String(memory.selector || "");
+    if (memorySelector && selector && memorySelector === selector) return answer;
+    const overlap = tokenOverlap(memoryLabel, normalized);
+    if (memoryLabel && overlap >= 0.65) return answer;
+    if (memoryCategory && normalized.includes(memoryCategory)) return answer;
+  }
+  return "";
+}
+
+function memorySafeToAutofill(memory) {
+  const sensitivity = String(memory.sensitivity || "").toUpperCase();
+  if (sensitivity !== "LOW" && sensitivity !== "MEDIUM") return false;
+  if (String(memory.reusePolicy || "") !== "AUTO_USE") return false;
+  if (Number(memory.confidence || 0) < 82) return false;
+  const descriptor = `${memory.category || ""} ${memory.label || ""} ${memory.selector || ""} ${memory.inputType || ""}`;
+  return !sensitiveLearningDescriptor(descriptor);
+}
+
+function normalizeForMatch(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function tokenOverlap(left, right) {
+  const leftTokens = new Set(normalizeForMatch(left).split(/\s+/).filter((token) => token.length > 2));
+  const rightTokens = new Set(normalizeForMatch(right).split(/\s+/).filter((token) => token.length > 2));
+  if (!leftTokens.size || !rightTokens.size) return 0;
+  let overlap = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) overlap += 1;
+  }
+  return overlap / leftTokens.size;
 }
 
 function fillField(field, value) {
@@ -408,7 +490,7 @@ function observedFieldValue(field) {
 }
 
 function sensitiveLearningDescriptor(value) {
-  return /\b(password|captcha|token|secret|ssn|social security|payment|credit card|resume|cover letter|salary|compensation|pay|sponsor|sponsorship|visa|authorization|authorized|legal|attest|certify|convict|felony|criminal|race|ethnic|gender|sex|veteran|disab|orientation|pronoun|religion|age|birth|citizenship|nationality)\b/i.test(value);
+  return /\b(password|captcha|recaptcha|hcaptcha|verification|verify|otp|one time|one-time|security code|verification code|auth code|token|secret|ssn|social security|payment|credit card|resume|cover letter|salary|compensation|pay|sponsor|sponsorship|visa|authorization|authorized|legal|attest|certify|convict|felony|criminal|race|ethnic|gender|sex|veteran|disab|orientation|pronoun|religion|age|birth|citizenship|nationality|cookie|cookies|vendor|consent|privacy preference|ot-group|onetrust)\b/i.test(value);
 }
 
 function fieldCategory(value) {

@@ -36,6 +36,9 @@ export type AssistantRunDiagnostics = {
     detected: number | null;
     filled: number | null;
     learned: number | null;
+    ignored: number | null;
+    activeForAutofill: number | null;
+    needsReview: number | null;
     uploaded: number | null;
     skipped: number | null;
     observed: number | null;
@@ -674,11 +677,17 @@ function assistantRunCounts(log: string, workflowState?: Prisma.JsonValue | null
   const demographicFilled = lastNumber(log, /Filled (\d+) configured demographic field/i) ?? 0;
   const uploaded = lastNumber(log, /Uploaded (\d+) material file/i);
   const learned = lastNumber(log, /Field learning updated: saved (\d+)/i);
+  const ignored = lastNumber(log, /Field learning updated: saved \d+, ignored (\d+)/i);
+  const activeForAutofill = lastNumber(log, /Field learning updated: saved \d+, ignored \d+, active (\d+)/i);
+  const needsReview = lastNumber(log, /Field learning updated: saved \d+, ignored \d+, active \d+, review (\d+)/i);
   const workflowCounts = workflowCountsFromState(workflowState);
   return {
     detected: workflowCounts.detected ?? detected,
     filled: workflowCounts.filled ?? nonZeroOrNull(safeFilled + learnedFilled + memoryFilled + demographicFilled),
     learned,
+    ignored,
+    activeForAutofill,
+    needsReview,
     uploaded,
     skipped: workflowCounts.skipped,
     observed: workflowCounts.observed,

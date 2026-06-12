@@ -91,6 +91,8 @@ describe("storeObservedFieldLearning", () => {
       sensitivity: "MEDIUM",
       reusePolicy: "AUTO_USE",
     }));
+    expect(result.activeForAutofill).toBe(1);
+    expect(result.needsReview).toBe(0);
   });
 
   it("keeps high-risk repeated answers review-gated", async () => {
@@ -129,5 +131,82 @@ describe("storeObservedFieldLearning", () => {
       }),
     }));
     expect(upsertAnswerMemoryMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores OTP and cookie controls instead of storing them", async () => {
+    const result = await storeObservedFieldLearning({
+      userId: "user_1",
+      applicationId: "app_1",
+      atsProvider: "unknown",
+      host: "explore.jobs.netflix.net",
+      fields: [
+        {
+          label: "please enter otp character 1",
+          inputType: "text",
+          answer: "3",
+        },
+        {
+          label: "advertising cookies ot-group-id-c0004",
+          inputType: "checkbox",
+          answer: "checked",
+        },
+      ],
+    });
+
+    expect(result.saved).toBe(0);
+    expect(result.ignored).toBe(2);
+    expect(upsertMemoryMock).not.toHaveBeenCalled();
+    expect(upsertAnswerMemoryMock).not.toHaveBeenCalled();
+  });
+
+  it("mirrors promoted safe repeated application questions into answer memory", async () => {
+    findMemoryMock.mockResolvedValue({
+      id: "memory_1",
+      userId: "user_1",
+      host: "explore.jobs.netflix.net",
+      fieldKey: "input_22",
+      category: "custom",
+      label: "Which collaboration style do you prefer?",
+      inputType: "text",
+      selector: "input#input-22",
+      answer: "Async-first with clear written context.",
+      sensitivity: "MEDIUM",
+      reusePolicy: "ASK_FIRST",
+      status: "NEEDS_REVIEW",
+      confidence: 84,
+      successCount: 1,
+    } as Awaited<ReturnType<typeof prisma.applicationFieldMemory.findUnique>>);
+    (upsertMemoryMock as unknown as { mockImplementation: (fn: (input: { update: object }) => Promise<unknown>) => void }).mockImplementation(async (input) => ({
+      id: "memory_1",
+      ...(input.update as object),
+      userId: "user_1",
+      host: "explore.jobs.netflix.net",
+      fieldKey: "input_22",
+      category: "custom",
+      label: "Which collaboration style do you prefer?",
+      answer: "Async-first with clear written context.",
+    }));
+
+    await storeObservedFieldLearning({
+      userId: "user_1",
+      applicationId: "app_1",
+      atsProvider: "unknown",
+      host: "explore.jobs.netflix.net",
+      fields: [{
+        fieldKey: "input_22",
+        category: "custom",
+        label: "Which collaboration style do you prefer?",
+        inputType: "text",
+        selector: "input#input-22",
+        answer: "Async-first with clear written context.",
+        confidence: 84,
+      }],
+    });
+
+    expect(upsertAnswerMemoryMock).toHaveBeenCalledWith(expect.objectContaining({
+      questionText: "Which collaboration style do you prefer?",
+      answer: "Async-first with clear written context.",
+      reusePolicy: "AUTO_USE",
+    }));
   });
 });

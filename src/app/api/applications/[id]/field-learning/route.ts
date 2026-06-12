@@ -54,9 +54,12 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({
       saved: result.saved,
       ignored: result.ignored,
+      activeForAutofill: result.activeForAutofill,
+      needsReview: result.needsReview,
       decisions: result.decisions.map((decision) => ({
         action: decision.action,
         reason: decision.reason,
+        reuseEligibility: decision.reuseEligibility ?? null,
         memoryId: decision.memory?.id ?? null,
         status: decision.memory?.status ?? null,
         sensitivity: decision.memory?.sensitivity ?? null,

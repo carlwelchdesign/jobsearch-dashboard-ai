@@ -68,4 +68,32 @@ describe("application field learning", () => {
       answer: "resume.pdf",
     })).toMatchObject({ blocked: true });
   });
+
+  it("blocks Netflix-style OTP, CAPTCHA, and cookie controls", () => {
+    for (const label of [
+      "please enter otp character 1",
+      "g-recaptcha-response g-recaptcha-response-100000",
+      "advertising cookies ot-group-id-c0004",
+      "vendor-search-handler cookie list search",
+    ]) {
+      expect(classifyObservedField({
+        label,
+        inputType: "text",
+        answer: "checked",
+      })).toMatchObject({ blocked: true });
+    }
+  });
+
+  it("keeps demographic and legal fields review-gated", () => {
+    expect(classifyObservedField({
+      label: "I identify as one or more of the classifications of protected veteran listed above",
+      inputType: "radio",
+      answer: "I am a US veteran in a protected status",
+    })).toMatchObject({
+      blocked: false,
+      sensitivity: "HIGH",
+      reusePolicy: "ASK_FIRST",
+      status: "NEEDS_REVIEW",
+    });
+  });
 });

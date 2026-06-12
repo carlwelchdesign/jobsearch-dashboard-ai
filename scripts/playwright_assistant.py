@@ -975,6 +975,7 @@ def detect_fields(page: Any) -> list[dict[str, str]]:
             if input_type == "hidden":
                 continue
             descriptor = field_descriptor(element)
+            human_label = human_field_label(element, descriptor)
             category = field_category(descriptor)
             status = "empty"
             if input_type == "file":
@@ -987,7 +988,8 @@ def detect_fields(page: Any) -> list[dict[str, str]]:
             fields.append({
                 "type": input_type,
                 "category": category,
-                "label": descriptor[:140] or "(unlabeled field)",
+                "label": human_label[:140] or descriptor[:140] or "(unlabeled field)",
+                "descriptor": descriptor[:300],
                 "status": status,
                 "selector": stable_field_selector(element),
             })
@@ -1019,11 +1021,12 @@ def snapshot_fields(page: Any) -> list[dict[str, str]]:
             descriptor = field_descriptor(element)
             if SENSITIVE_PATTERNS.search(descriptor) or blocked_learning_descriptor(descriptor):
                 continue
+            human_label = human_field_label(element, descriptor)
             value = observed_field_value(element, input_type)
             fields.append({
                 "fieldKey": canonical_field_key(stable_field_selector(element) or descriptor),
                 "category": field_category(descriptor),
-                "label": descriptor[:300] or "(unlabeled field)",
+                "label": human_label[:300] or descriptor[:300] or "(unlabeled field)",
                 "inputType": input_type,
                 "selector": stable_field_selector(element),
                 "answer": value,
@@ -1265,16 +1268,16 @@ def fill_learned_field_memories(page: Any, package: dict[str, Any]) -> int:
         answer = str(memory.get("answer") or "").strip()
         if not answer:
             continue
-        if fill_memory_by_selector(page, memory, answer):
+        if fill_memory_by_label(page, memory, answer):
             filled += 1
             continue
-        if fill_memory_by_label(page, memory, answer):
+        if fill_memory_by_selector(page, memory, answer):
             filled += 1
     return filled
 
 
 def memory_safe_to_autofill(memory: dict[str, Any]) -> bool:
-    if str(memory.get("sensitivity") or "").upper() != "LOW":
+    if str(memory.get("sensitivity") or "").upper() not in {"LOW", "MEDIUM"}:
         return False
     if str(memory.get("reusePolicy") or "") != "AUTO_USE":
         return False
@@ -1782,8 +1785,9 @@ def canonical_field_key(value: str) -> str:
 
 def blocked_learning_descriptor(value: str) -> bool:
     return re.search(
-        r"password|captcha|token|secret|ssn|social security|payment|credit card|card number|"
-        r"upload|resume|cover letter|salary|compensation|sponsor|sponsorship|visa|"
+        r"password|captcha|recaptcha|hcaptcha|verification|verify|otp|one time|one-time|security code|verification code|auth code|token|secret|ssn|social security|payment|credit card|card number|"
+        r"upload|resume|cover letter|salary|compensation|sponsor|sponsorship|visa|cookie|cookies|vendor|consent|privacy preference|ot-group|onetrust|"
+        r"performance and functionality|advertising cookies|cookie list search|select all hosts|select all vendor|chkbox-id|"
         r"race|ethnic|gender|veteran|disab|birth|age|citizenship|nationality|legal|attest|certify",
         value,
         re.I,
@@ -1797,6 +1801,58 @@ def field_label_similarity(left: str, right: str) -> float:
         return 0.0
     overlap = len(left_tokens & right_tokens)
     return overlap / max(len(left_tokens), 1)
+
+
+def human_field_label(element: Any, fallback: str = "") -> str:
+    try:
+        label = str(element.evaluate(
+            """node => {
+              const clean = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+              const generic = (value) => /^input[-_\\s]*\\d+\\s+(select|input|text|combobox)?$/i.test(clean(value));
+              const direct = [
+                node.getAttribute('aria-label'),
+                node.getAttribute('placeholder'),
+                node.labels && node.labels.length ? Array.from(node.labels).map((label) => label.innerText).join(' ') : '',
+              ].map(clean).find((value) => value && !generic(value));
+              if (direct) return direct;
+
+              const labelledBy = clean((node.getAttribute('aria-labelledby') || '')
+                .split(/\\s+/)
+                .map((id) => document.getElementById(id)?.innerText || '')
+                .join(' '));
+              if (labelledBy && !generic(labelledBy)) return labelledBy;
+
+              const describedBy = clean((node.getAttribute('aria-describedby') || '')
+                .split(/\\s+/)
+                .map((id) => document.getElementById(id)?.innerText || '')
+                .join(' '));
+              if (describedBy && !generic(describedBy)) return describedBy;
+
+              const fieldish = node.closest('[role="group"], fieldset, .form-group, .field-wrapper, .css-1f2j16u, .css-1s2u09g');
+              const candidates = [];
+              if (fieldish) {
+                candidates.push(...Array.from(fieldish.querySelectorAll('legend,label,[data-testid*="label"],[class*="label"],[class*="question"],p,span,div'))
+                  .map((item) => clean(item.innerText || item.textContent || ''))
+                  .filter((value) => value && value.length <= 220));
+              }
+              let parent = node.parentElement;
+              for (let index = 0; parent && index < 5; index += 1, parent = parent.parentElement) {
+                const previous = parent.previousElementSibling ? clean(parent.previousElementSibling.innerText || parent.previousElementSibling.textContent || '') : '';
+                if (previous && previous.length <= 220) candidates.push(previous);
+                const own = clean(parent.innerText || parent.textContent || '');
+                if (own && own.length <= 220) candidates.push(own);
+              }
+              return candidates.find((value) => value && !generic(value) && !/select\\s*$/i.test(value)) || '';
+            }"""
+        ) or "").strip()
+        if label:
+            return re.sub(r"\s+", " ", label).strip().lower()
+    except Exception:
+        pass
+    normalized_fallback = re.sub(r"\s+", " ", fallback).strip().lower()
+    if re.match(r"^input[-_\s]*\d+\s+(select|input|text|combobox)?$", normalized_fallback, re.I):
+        return ""
+    return normalized_fallback
 
 
 def open_embedded_application_form(page: Any) -> None:
@@ -2426,7 +2482,10 @@ def maybe_report_field_learning(browser: Any, state: dict[str, Any] | None) -> N
             f"{app_url.rstrip('/')}/api/applications/{application_id}/field-learning",
             {"host": host.removeprefix("www."), "fields": candidates},
         )
-        print(f"Field learning updated: saved {result.get('saved', 0)}, ignored {result.get('ignored', 0)} observed manual field(s).")
+        print(
+            f"Field learning updated: saved {result.get('saved', 0)}, ignored {result.get('ignored', 0)}, "
+            f"active {result.get('activeForAutofill', 0)}, review {result.get('needsReview', 0)} observed manual field(s)."
+        )
         post_workflow_event(
             state,
             "manual_input_observed",

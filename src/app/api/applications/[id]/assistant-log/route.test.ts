@@ -78,7 +78,7 @@ describe("GET /api/applications/[id]/assistant-log", () => {
         blockerType: null,
         lastEventType: "workflow_started",
         lastEventMessage: "Started.",
-        counts: { detected: null, filled: null, learned: null, uploaded: null, skipped: null, observed: null },
+        counts: { detected: null, filled: null, learned: null, ignored: null, activeForAutofill: null, needsReview: null, uploaded: null, skipped: null, observed: null },
       },
       timeline: [{ type: "workflow_started", message: "Started.", severity: "info" }],
     });

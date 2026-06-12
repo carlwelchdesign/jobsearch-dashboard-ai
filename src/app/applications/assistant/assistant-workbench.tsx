@@ -87,6 +87,9 @@ type AssistantRunDiagnostics = {
     detected: number | null;
     filled: number | null;
     learned: number | null;
+    ignored: number | null;
+    activeForAutofill: number | null;
+    needsReview: number | null;
     uploaded: number | null;
     skipped: number | null;
     observed: number | null;
@@ -237,27 +240,21 @@ export function AssistantWorkbench({
     () => applications.filter((application) => !deletedIds.includes(application.id) && !appliedIds.includes(application.id)),
     [applications, appliedIds, deletedIds],
   );
-  const selected = useMemo(() => visibleApplications.find((application) => application.id === selectedId), [visibleApplications, selectedId]);
+  const activeSelectedId = visibleApplications.some((application) => application.id === selectedId) ? selectedId : visibleApplications[0]?.id ?? "";
+  const selected = useMemo(() => visibleApplications.find((application) => application.id === activeSelectedId), [activeSelectedId, visibleApplications]);
   const selectedBlocker = selected?.blocker ?? null;
   const selectedRunState = selected?.automationRun ? automationRunState(selected.automationRun) : null;
   const selectedWorkflow = workflowStatusForApplication(selected, launch);
-  const selectedPrimaryAction = selected ? primarySprintAction(selected, Boolean(launch?.application?.id ?? selectedId)) : null;
-  const selectedFeedback = runFeedback?.applicationId === selectedId ? runFeedback : null;
+  const selectedPrimaryAction = selected ? primarySprintAction(selected, Boolean(launch?.application?.id ?? activeSelectedId)) : null;
+  const selectedFeedback = runFeedback?.applicationId === activeSelectedId ? runFeedback : null;
   const queueProgress = useMemo(() => visibleApplications.map((application) => ({
     ...application,
     progress: sprintProgressForApplication(application),
   })), [visibleApplications]);
   const selectedRunActive = selected?.automationRun?.status === "RUNNING" || isLearningWorkflow(selectedWorkflow);
 
-  useEffect(() => {
-    if (!selectedId || visibleApplications.some((application) => application.id === selectedId)) return;
-    setSelectedId(visibleApplications[0]?.id ?? "");
-    setLaunch(null);
-    setRunFeedback(null);
-  }, [selectedId, visibleApplications]);
-
   async function launchSelected(next = false) {
-    const endpoint = next ? "/api/applications/next-ready/launch-assistant" : `/api/applications/${selectedId}/launch-assistant`;
+    const endpoint = next ? "/api/applications/next-ready/launch-assistant" : `/api/applications/${activeSelectedId}/launch-assistant`;
     setLoading(true);
     setRunFeedback(null);
     try {
@@ -266,7 +263,7 @@ export function AssistantWorkbench({
       if (!response.ok) throw new Error(payload.error ?? "Assistant launch failed.");
       setLaunch(payload);
       setNotice(payload.message ?? "Assistant launched.");
-      const appId = payload.application?.id ?? selectedId;
+      const appId = payload.application?.id ?? activeSelectedId;
       window.setTimeout(() => void refreshLog(appId), 1200);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Assistant launch failed.");
@@ -275,7 +272,7 @@ export function AssistantWorkbench({
     }
   }
 
-  const refreshLog = useCallback(async (applicationId = selectedId) => {
+  const refreshLog = useCallback(async (applicationId = activeSelectedId) => {
     if (!applicationId) return;
     const response = await fetch(`/api/applications/${applicationId}/assistant-log`);
     const payload = await response.json().catch(() => ({})) as AssistantLogResponse;
@@ -288,16 +285,16 @@ export function AssistantWorkbench({
       });
     }
     if (response.ok && payload.automationRun?.workflowStateJson) refresh();
-  }, [refresh, selectedId]);
+  }, [activeSelectedId, refresh]);
 
   useEffect(() => {
-    if (!selectedId || !selectedRunActive) return;
-    void refreshLog(selectedId);
-    const timer = window.setInterval(() => void refreshLog(selectedId), 5000);
+    if (!activeSelectedId || !selectedRunActive) return;
+    void refreshLog(activeSelectedId);
+    const timer = window.setInterval(() => void refreshLog(activeSelectedId), 5000);
     return () => window.clearInterval(timer);
-  }, [refreshLog, selectedId, selectedRunActive]);
+  }, [activeSelectedId, refreshLog, selectedRunActive]);
 
-  async function markApplied(applicationId = launch?.application?.id ?? selectedId) {
+  async function markApplied(applicationId = launch?.application?.id ?? activeSelectedId) {
     if (!applicationId) return;
     setMarkingApplied(true);
     try {
@@ -393,7 +390,7 @@ export function AssistantWorkbench({
       const response = await fetch("/api/applications/question-helper", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question, applicationId: selectedId || undefined }),
+        body: JSON.stringify({ question, applicationId: activeSelectedId || undefined }),
       });
       const payload = (await response.json().catch(() => ({}))) as QuestionHelperResponse;
       if (!response.ok) throw new Error(payload.error ?? "Unable to generate answer options.");
@@ -433,7 +430,7 @@ export function AssistantWorkbench({
           answer,
           sensitivity: "MEDIUM",
           reusePolicy: "ASK_FIRST",
-          sourceApplicationId: selectedId || undefined,
+          sourceApplicationId: activeSelectedId || undefined,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -470,7 +467,7 @@ export function AssistantWorkbench({
               <TextField
                 select
                 label="Ready application"
-                value={selectedId}
+                value={activeSelectedId}
                 onChange={(event) => setSelectedId(event.target.value)}
                 disabled={visibleApplications.length === 0}
               >
@@ -656,10 +653,10 @@ export function AssistantWorkbench({
                         key={application.id}
                         sx={{
                           border: 1,
-                          borderColor: application.id === selectedId ? "primary.main" : "divider",
+                          borderColor: application.id === activeSelectedId ? "primary.main" : "divider",
                           borderRadius: 1,
                           p: 1.25,
-                          bgcolor: application.id === selectedId ? "rgba(37, 99, 235, 0.06)" : "background.paper",
+                          bgcolor: application.id === activeSelectedId ? "rgba(37, 99, 235, 0.06)" : "background.paper",
                         }}
                       >
                         <Stack spacing={1}>
@@ -678,7 +675,7 @@ export function AssistantWorkbench({
                           />
                           <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", justifyContent: "space-between", alignItems: "center" }}>
                             <Typography variant="caption" color="text.secondary">{application.progress.detail}</Typography>
-                            <Button size="small" variant={application.id === selectedId ? "contained" : "outlined"} onClick={() => setSelectedId(application.id)}>
+                            <Button size="small" variant={application.id === activeSelectedId ? "contained" : "outlined"} onClick={() => setSelectedId(application.id)}>
                               Select
                             </Button>
                           </Stack>
@@ -716,12 +713,13 @@ export function AssistantWorkbench({
               ) : (
                 <Alert severity="info">Launch an application to see fill, upload, learning, and blocker results here.</Alert>
               )}
-              <AssistantRunPanel
-                diagnostics={selectedFeedback?.diagnostics ?? null}
-                timeline={selectedFeedback?.timeline ?? []}
-                log={selectedFeedback?.log ?? ""}
-                onCopyLog={copyRawLog}
-              />
+                  <AssistantRunPanel
+                    diagnostics={selectedFeedback?.diagnostics ?? null}
+                    timeline={selectedFeedback?.timeline ?? []}
+                    log={selectedFeedback?.log ?? ""}
+                    fieldLearningHref={selected ? fieldLearningHref(selected) : "/applications/field-learning"}
+                    onCopyLog={copyRawLog}
+                  />
             </Stack>
           </CardContent>
         </Card>
@@ -877,11 +875,13 @@ function AssistantRunPanel({
   diagnostics,
   timeline,
   log,
+  fieldLearningHref,
   onCopyLog,
 }: {
   diagnostics: AssistantRunDiagnostics | null;
   timeline: AssistantRunTimelineItem[];
   log: string;
+  fieldLearningHref: string;
   onCopyLog: () => Promise<void>;
 }) {
   const metricItems = diagnostics ? [
@@ -889,6 +889,9 @@ function AssistantRunPanel({
     { label: "Filled", value: diagnostics.counts.filled },
     { label: "Uploaded", value: diagnostics.counts.uploaded },
     { label: "Learned", value: diagnostics.counts.learned ?? diagnostics.counts.observed },
+    { label: "Ignored", value: diagnostics.counts.ignored },
+    { label: "Auto-fill", value: diagnostics.counts.activeForAutofill },
+    { label: "Review", value: diagnostics.counts.needsReview },
     { label: "Skipped", value: diagnostics.counts.skipped },
   ] : [];
 
@@ -927,6 +930,10 @@ function AssistantRunPanel({
           </Box>
         ))}
       </Box>
+
+      <Button component={Link} href={fieldLearningHref} variant="outlined" size="small" sx={{ alignSelf: "flex-start" }}>
+        Review learned fields
+      </Button>
 
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" }, gap: 1 }}>
         <RunMeta label="Last update" value={formatDateTime(timeline.at(-1)?.at ?? diagnostics.finishedAt ?? diagnostics.startedAt)} />
@@ -1241,6 +1248,18 @@ function isLearningWorkflow(workflow: WorkflowStatus | null) {
 
 function titleCase(value: string) {
   return value.replace(/\w\S*/g, (word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`);
+}
+
+function fieldLearningHref(application: ReadyApplication) {
+  const params = new URLSearchParams({ applicationId: application.id });
+  if (application.applicationUrl) {
+    try {
+      params.set("host", new URL(application.applicationUrl).hostname.replace(/^www\./, ""));
+    } catch {
+      // Keep the application filter even if the employer URL is malformed.
+    }
+  }
+  return `/applications/field-learning?${params.toString()}`;
 }
 
 function formatDateTime(value?: string | null) {

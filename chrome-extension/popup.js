@@ -1,5 +1,5 @@
 const DEFAULT_APP_URL = "http://localhost:3000";
-const STORAGE_KEYS = ["jobSearchOsToken", "jobSearchOsAppUrl", "jobSearchOsLastSavedJob"];
+const STORAGE_KEYS = ["jobSearchOsToken", "jobSearchOsAppUrl", "jobSearchOsLastSavedJob", "jobSearchOsSelectedReadyApplicationId"];
 const fields = {
   title: document.querySelector("#title"),
   company: document.querySelector("#company"),
@@ -37,8 +37,10 @@ function assistantPackageByUrlEndpoint(pageUrl) {
   return `${normalizeAppUrl(fields.apiUrl.value)}/api/applications/assistant-package/by-url?url=${encodeURIComponent(pageUrl)}`;
 }
 
-function readyApplicationsEndpoint() {
-  return `${normalizeAppUrl(fields.apiUrl.value)}/api/applications/ready-for-extension`;
+function readyApplicationsEndpoint(currentUrl = "") {
+  const url = new URL(`${normalizeAppUrl(fields.apiUrl.value)}/api/applications/ready-for-extension`);
+  if (currentUrl) url.searchParams.set("currentUrl", currentUrl);
+  return url.toString();
 }
 
 function selectedAssistantPackageEndpoint(applicationId, currentUrl) {
@@ -104,7 +106,43 @@ function formatReadyApplication(application) {
   return `${application.company || "Unknown company"} — ${application.title || "Untitled role"}${location}${score}`;
 }
 
-function renderReadyApplications() {
+function applyReadyApplicationToCaptureFields(application) {
+  if (!application) return;
+  fields.title.value = application.title || fields.title.value;
+  fields.company.value = application.company || fields.company.value;
+  fields.location.value = application.location || fields.location.value;
+  fields.description.value = application.description || fields.description.value;
+}
+
+function normalizeUrlForMatch(value) {
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    url.searchParams.sort();
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return String(value || "").trim().replace(/\/$/, "");
+  }
+}
+
+function readyApplicationForCurrentUrl(currentUrl) {
+  const normalizedCurrent = normalizeUrlForMatch(currentUrl);
+  if (!normalizedCurrent) return null;
+  return readyApplications.find((application) => normalizeUrlForMatch(application.applicationUrl) === normalizedCurrent)
+    || readyApplications.find((application) => {
+      try {
+        const current = new URL(normalizedCurrent);
+        const stored = new URL(application.applicationUrl || "");
+        return current.hostname === stored.hostname && current.pathname === stored.pathname;
+      } catch {
+        return false;
+      }
+    })
+    || null;
+}
+
+function renderReadyApplications(preferredApplicationId = "") {
+  const previousSelection = preferredApplicationId || fields.readyApplications.value;
   fields.readyApplications.innerHTML = "";
   if (!readyApplications.length) {
     const option = document.createElement("option");
@@ -120,6 +158,9 @@ function renderReadyApplications() {
     option.textContent = formatReadyApplication(application);
     fields.readyApplications.append(option);
   }
+  if (previousSelection && readyApplications.some((application) => application.id === previousSelection)) {
+    fields.readyApplications.value = previousSelection;
+  }
   fillSelectedApplicationButton.disabled = false;
 }
 
@@ -128,18 +169,21 @@ function setLastFilledApplication(applicationId) {
   saveLearnedFieldsButton.disabled = !lastFilledApplicationId;
 }
 
-async function loadReadyApplications() {
+async function loadReadyApplications(preferredApplicationId = "", currentUrl = "") {
   try {
     const appUrl = normalizeAppUrl(fields.apiUrl.value);
     const token = fields.token.value.trim();
     await chrome.storage.local.set({ jobSearchOsToken: token, jobSearchOsAppUrl: appUrl });
-    const response = await fetch(readyApplicationsEndpoint(), {
+    const response = await fetch(readyApplicationsEndpoint(currentUrl), {
       headers: tokenHeaders(),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Unable to load ready applications.");
     readyApplications = Array.isArray(payload.applications) ? payload.applications : [];
-    renderReadyApplications();
+    const stored = await chrome.storage.local.get(["jobSearchOsSelectedReadyApplicationId"]);
+    const currentMatch = readyApplicationForCurrentUrl(currentUrl);
+    const selectedId = preferredApplicationId || currentMatch?.id || stored.jobSearchOsSelectedReadyApplicationId || "";
+    renderReadyApplications(selectedId);
   } catch (error) {
     readyApplications = [];
     renderReadyApplications();
@@ -232,7 +276,8 @@ async function loadCapture() {
     fields.location.value = payload.location || "";
     fields.description.value = payload.description || "";
     setOpenJobLink(null);
-    await loadReadyApplications();
+    await loadReadyApplications("", tab.url);
+    applyReadyApplicationToCaptureFields(readyApplicationForCurrentUrl(tab.url));
     const applyText = lastSavedJob ? " Apply Now is available for the last saved job." : "";
     const readyText = readyApplications.length ? ` ${readyApplications.length} ready application(s) available for selected fill.` : "";
     setStatus(`Review fields before saving.${applyText}${readyText}`);
@@ -353,7 +398,7 @@ async function fillSelectedApplication() {
   try {
     const token = fields.token.value.trim();
     const appUrl = normalizeAppUrl(fields.apiUrl.value);
-    await chrome.storage.local.set({ jobSearchOsToken: token, jobSearchOsAppUrl: appUrl });
+    await chrome.storage.local.set({ jobSearchOsToken: token, jobSearchOsAppUrl: appUrl, jobSearchOsSelectedReadyApplicationId: applicationId });
     const tab = await getActiveTab();
     if (!tab?.id || !tab.url) throw new Error("No active application tab found.");
     const response = await fetch(selectedAssistantPackageEndpoint(applicationId, tab.url), {
@@ -371,7 +416,7 @@ async function fillSelectedApplication() {
     const uploadText = uploads ? ` Uploaded ${uploads} file(s).` : "";
     const warning = uploadNeedsManual ? ` ${uploadNeedsManual} upload field(s) still need manual file selection.` : "";
     setStatus(`Filled ${filled} field(s) for ${payload.job?.company || "selected job"}.${uploadText} Skipped ${skipped}.${warning} Complete missed fields, then click Save learned fields before submitting manually.`);
-    await loadReadyApplications();
+    await loadReadyApplications(applicationId, tab.url);
   } catch (error) {
     setStatus(contentScriptError(error));
   } finally {
@@ -443,6 +488,10 @@ fields.apiUrl.addEventListener("change", () => {
 
 fields.token.addEventListener("change", () => {
   void loadReadyApplications();
+});
+
+fields.readyApplications.addEventListener("change", () => {
+  void chrome.storage.local.set({ jobSearchOsSelectedReadyApplicationId: fields.readyApplications.value });
 });
 
 void loadCapture();

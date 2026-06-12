@@ -141,6 +141,7 @@ Detected 7 application field(s).
 Filled 4 safe text fields.
 Filled 1 learned recurring field(s).
 Uploaded 2 material file(s).
+Field learning updated: saved 3, ignored 2, active 1, review 2 observed manual field(s).
 Review every field in the browser. Submit manually only if everything is correct.
 `,
       run: { status: "READY_TO_SUBMIT" },
@@ -153,6 +154,10 @@ Review every field in the browser. Submit manually only if everything is correct
         detected: 7,
         filled: 5,
         uploaded: 2,
+        learned: 3,
+        ignored: 2,
+        activeForAutofill: 1,
+        needsReview: 2,
       },
     });
     expect(feedback.timeline.some((item) => item.type === "uploaded_materials")).toBe(true);

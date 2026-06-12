@@ -315,6 +315,26 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
           </CardContent>
         </Card>
 
+        <MaterialCard
+          title="Job description"
+          icon={<BusinessOutlinedIcon />}
+          body={application.jobPosting.description}
+          format="description"
+          emptyTitle="No job description saved"
+          emptyBody="The application tracker exists, but this job posting does not have a captured description yet."
+          actions={(
+            <>
+              <ActionButton href={`/jobs/${application.jobPostingId}`} size="small" endIcon={<OpenInNewIcon />}>Open job</ActionButton>
+              {application.jobPosting.applicationUrl ? (
+                <ActionButton href={application.jobPosting.applicationUrl} size="small" endIcon={<OpenInNewIcon />}>Employer form</ActionButton>
+              ) : null}
+              {application.jobPosting.source?.baseUrl ? (
+                <ActionButton href={application.jobPosting.source.baseUrl} size="small" endIcon={<OpenInNewIcon />}>{application.jobPosting.source.name}</ActionButton>
+              ) : null}
+            </>
+          )}
+        />
+
         <Card>
           <CardContent>
             <Stack spacing={2}>
@@ -925,7 +945,23 @@ function applicationWorkflowProgress({
   };
 }
 
-function MaterialCard({ title, icon, body, emptyTitle, emptyBody, actions }: { title: string; icon: React.ReactNode; body: string; emptyTitle: string; emptyBody: string; actions?: React.ReactNode }) {
+function MaterialCard({
+  title,
+  icon,
+  body,
+  emptyTitle,
+  emptyBody,
+  actions,
+  format = "pre",
+}: {
+  title: string;
+  icon: React.ReactNode;
+  body: string;
+  emptyTitle: string;
+  emptyBody: string;
+  actions?: React.ReactNode;
+  format?: "pre" | "description";
+}) {
   return (
     <Card>
       <CardContent>
@@ -938,7 +974,9 @@ function MaterialCard({ title, icon, body, emptyTitle, emptyBody, actions }: { t
             {actions ? <Stack direction="row" spacing={0.5}>{actions}</Stack> : null}
           </Stack>
           <Divider />
-          {body ? (
+          {body && format === "description" ? (
+            <FormattedJobDescription body={body} />
+          ) : body ? (
             <Typography
               component="pre"
               sx={{
@@ -959,6 +997,80 @@ function MaterialCard({ title, icon, body, emptyTitle, emptyBody, actions }: { t
       </CardContent>
     </Card>
   );
+}
+
+function FormattedJobDescription({ body }: { body: string }) {
+  const blocks = formattedDescriptionBlocks(body);
+  return (
+    <Stack spacing={1.25} sx={{ maxHeight: 640, overflow: "auto", pr: 0.5 }}>
+      {blocks.map((block, index) => {
+        if (block.kind === "heading") {
+          return <Typography key={`${block.kind}-${index}-${block.text}`} variant="h4" sx={{ pt: index ? 1 : 0 }}>{block.text}</Typography>;
+        }
+        if (block.kind === "list") {
+          return (
+            <Stack key={`${block.kind}-${index}-${block.items.join("-")}`} component="ul" spacing={0.5} sx={{ m: 0, pl: 2.5 }}>
+              {block.items.map((item) => (
+                <Typography key={item} component="li" variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>
+                  {item}
+                </Typography>
+              ))}
+            </Stack>
+          );
+        }
+        return (
+          <Typography key={`${block.kind}-${index}-${block.text}`} variant="body2" color="text.secondary" sx={{ lineHeight: 1.75 }}>
+            {block.text}
+          </Typography>
+        );
+      })}
+    </Stack>
+  );
+}
+
+function formattedDescriptionBlocks(body: string) {
+  type DescriptionBlock = { kind: "heading"; text: string } | { kind: "paragraph"; text: string } | { kind: "list"; items: string[] };
+  const normalized = body
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/([.!?])\s+(?=(?:What|Who|About|Responsibilities|Requirements|Qualifications|Benefits|Nice to|You will|You are|We are|This role|Compensation|Salary|Location)\b)/g, "$1\n\n");
+  const blocks: DescriptionBlock[] = [];
+  let listItems: string[] = [];
+
+  function flushList() {
+    if (listItems.length) {
+      blocks.push({ kind: "list", items: listItems });
+      listItems = [];
+    }
+  }
+
+  for (const rawLine of normalized.split(/\n+/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      flushList();
+      continue;
+    }
+    const listMatch = /^[-*•]\s+(.+)$/.exec(line) ?? /^\d+[.)]\s+(.+)$/.exec(line);
+    if (listMatch) {
+      listItems.push(listMatch[1].trim());
+      continue;
+    }
+    flushList();
+    if (isDescriptionHeading(line)) {
+      blocks.push({ kind: "heading", text: line.replace(/:$/, "") });
+    } else {
+      blocks.push({ kind: "paragraph", text: line });
+    }
+  }
+  flushList();
+  return blocks;
+}
+
+function isDescriptionHeading(line: string) {
+  if (line.length > 90) return false;
+  if (/[.!?]$/.test(line)) return false;
+  return /^(about|who are we|what you'll do|what you will do|responsibilities|requirements|qualifications|preferred|nice to|benefits|compensation|salary|location|the role|you will|you are|we are looking|minimum qualifications|bonus points)/i.test(line)
+    || /:$/.test(line);
 }
 
 function SignalSection({ title, items, color }: { title: string; items: string[]; color: "primary" | "success" | "warning" }) {

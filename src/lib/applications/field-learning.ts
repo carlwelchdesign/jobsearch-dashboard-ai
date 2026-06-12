@@ -26,14 +26,20 @@ export type FieldLearningDecision = {
   action: "ignored" | "saved";
   reason?: string;
   memory?: ApplicationFieldMemory;
+  reuseEligibility?: {
+    activeForAutofill: boolean;
+    reason: string;
+  };
 };
 
 const blockedInputTypes = new Set(["hidden", "password", "file"]);
-const blockedCategoryPatterns = /\b(password|captcha|token|secret|ssn|social_security|payment|credit_card|file|resume|cover_letter)\b/i;
+const blockedCategoryPatterns = /\b(password|captcha|recaptcha|hcaptcha|verification|verify|otp|one time|one-time|security code|verification code|auth code|token|secret|ssn|social_security|payment|credit_card|file|resume|cover_letter)\b/i;
+const nonApplicationControlPattern = /\b(cookie|cookies|vendor|consent|privacy preference|ot-group|onetrust|performance and functionality|advertising cookies|cookie list search|select all hosts|select all vendor|chkbox-id)\b/i;
 const highSensitivityPattern = /\b(salary|compensation|pay|wage|bonus|equity|sponsor|sponsorship|visa|authorization|authorized|work permit|legal|attest|certify|convict|felony|criminal|background|clearance)\b/i;
 const demographicPattern = /\b(race|ethnic|gender|sex|veteran|disab|orientation|pronoun|religion|age|birth|citizenship|nationality)\b/i;
 const lowSensitivityPattern = /\b(first name|last name|full name|name|email|phone|mobile|location|city|country|linkedin|github|portfolio|website|url|source|referral|hear about|start date|availability|timezone)\b/i;
 const customQuestionPattern = /\?|why|describe|explain|interesting|contribution|professional context|applying|role|experience|project|challenge|built|made major contributions/i;
+const genericControlLabelPattern = /^input[-_\s]*\d+\s+(select|input|text|combobox)$/i;
 
 export function classifyObservedField(field: ObservedApplicationField): {
   blocked: boolean;
@@ -54,6 +60,7 @@ export function classifyObservedField(field: ObservedApplicationField): {
   if (!label) return blocked("Missing field label.");
   if (!answer) return blocked("Missing observed answer.");
   if (blockedInputTypes.has(inputType)) return blocked(`Blocked input type: ${inputType}.`);
+  if (nonApplicationControlPattern.test(descriptor)) return blocked("Non-application browser or cookie control.");
   if (blockedCategoryPatterns.test(descriptor)) return blocked("Blocked field category.");
   if (answer.length > 4000) return blocked("Observed answer is too long to save safely.");
 
@@ -159,11 +166,13 @@ export async function storeObservedFieldLearning(input: StoreObservedFieldLearni
       }).catch(() => null);
     }
 
-    decisions.push({ field, action: "saved", memory });
+    decisions.push({ field, action: "saved", memory, reuseEligibility: reuseEligibilityForMemory(memory) });
   }
   return {
     saved: decisions.filter((decision) => decision.action === "saved").length,
     ignored: decisions.filter((decision) => decision.action === "ignored").length,
+    activeForAutofill: decisions.filter((decision) => decision.reuseEligibility?.activeForAutofill).length,
+    needsReview: decisions.filter((decision) => decision.action === "saved" && !decision.reuseEligibility?.activeForAutofill).length,
     decisions,
   };
 }
@@ -236,7 +245,8 @@ function shouldMirrorToAnswerMemory(memory: Pick<ApplicationFieldMemory, "catego
   if (memory.answer.length > 1200) return false;
   if (memory.sensitivity === "HIGH") return false;
   if (safeCategory(memory.category)) return false;
-  return /\?|why|describe|explain|authorized|sponsor|source|hear about|available|start/i.test(memory.label);
+  if (genericControlLabelPattern.test(memory.label)) return false;
+  return memory.reusePolicy === "AUTO_USE" || /\?|why|describe|explain|authorized|sponsor|source|hear about|available|start|select|question/i.test(memory.label);
 }
 
 function progressiveAutoUseAllowed(
@@ -283,6 +293,22 @@ function blocked(reason: string) {
     confidence: 0,
     reason,
   };
+}
+
+function reuseEligibilityForMemory(memory: Pick<ApplicationFieldMemory, "status" | "reusePolicy" | "sensitivity" | "confidence">) {
+  if (memory.status !== "ACTIVE") {
+    return { activeForAutofill: false, reason: "Needs review before auto-fill." };
+  }
+  if (memory.reusePolicy !== "AUTO_USE") {
+    return { activeForAutofill: false, reason: "Reuse policy requires approval." };
+  }
+  if (memory.sensitivity === "HIGH") {
+    return { activeForAutofill: false, reason: "High-sensitivity fields require explicit approval." };
+  }
+  if (memory.confidence < 82) {
+    return { activeForAutofill: false, reason: "Confidence is too low for auto-fill." };
+  }
+  return { activeForAutofill: true, reason: "Available for future safe auto-fill." };
 }
 
 function normalizeCategory(category: string | null | undefined, label: string) {
@@ -340,5 +366,8 @@ function learningMetadata(field: ObservedApplicationField) {
   return {
     source: field.source ?? "manual_observation",
     observedAt: new Date().toISOString(),
+    stableFieldKey: field.fieldKey ? canonicalFieldKey(field.fieldKey) : null,
+    humanLabel: field.label.trim().slice(0, 300),
+    selector: field.selector?.trim().slice(0, 240) || null,
   };
 }

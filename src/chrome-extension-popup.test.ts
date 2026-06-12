@@ -18,6 +18,7 @@ describe("Chrome extension ready application fill", () => {
     const script = readFileSync(resolve(extensionRoot, "popup.js"), "utf8");
 
     expect(script).toContain("/api/applications/ready-for-extension");
+    expect(script).toContain("currentUrl");
     expect(script).toContain("/extension-package");
     expect(script).toContain("currentUrl");
     expect(script).toContain("tokenHeaders()");
@@ -28,6 +29,11 @@ describe("Chrome extension ready application fill", () => {
     expect(script).toContain("resumePdfUrl");
     expect(script).toContain("coverLetterPdfUrl");
     expect(script).toContain("pass any security verification manually");
+    expect(script).toContain("jobSearchOsSelectedReadyApplicationId");
+    expect(script).toContain("readyApplicationForCurrentUrl");
+    expect(script).toContain("loadReadyApplications(applicationId, tab.url)");
+    expect(script).toContain("applyReadyApplicationToCaptureFields");
+    expect(script).toContain("fields.description.value = application.description || fields.description.value");
   });
 
   it("attaches generated PDF files to matching upload fields", () => {
@@ -39,5 +45,18 @@ describe("Chrome extension ready application fill", () => {
     expect(contentScript).toContain("uploadNeedsManual");
     expect(contentScript).toContain("collectApplicationFieldLearning");
     expect(contentScript).toContain("sensitiveLearningDescriptor");
+    expect(contentScript).toContain("valueForFieldMemory");
+    expect(contentScript).toContain("memorySafeToAutofill");
+    expect(contentScript).toContain("textFromIds");
+  });
+
+  it("does not scrape full application form pages as job descriptions", () => {
+    const contentScript = readFileSync(resolve(extensionRoot, "content.js"), "utf8");
+
+    expect(contentScript).toContain("function isApplicationFormPage()");
+    expect(contentScript).toContain("if (isApplicationFormPage()) return \"\"");
+    expect(contentScript).toContain("description: onFormPage ? \"\"");
+    expect(contentScript).toContain("function cleanPageText");
+    expect(contentScript).toContain("window\\.dataLayer");
   });
 });
