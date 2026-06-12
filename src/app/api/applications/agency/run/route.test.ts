@@ -41,25 +41,25 @@ describe("/api/applications/agency/run", () => {
     await expect(response.json()).resolves.toMatchObject({ agentRunId: "agent_run_1" });
   });
 
-  it("accepts larger manual batches up to 100", async () => {
+  it("accepts larger manual batches up to 250", async () => {
     runRecruitingAgencyMock.mockResolvedValue({
       agentRunId: "agent_run_2",
-      requested: { minimumScore: 90, limit: 100, triggeredBy: "manual" },
-      approved: 100,
-      prepared: 100,
+      requested: { minimumScore: 90, limit: 250, triggeredBy: "manual" },
+      approved: 250,
+      prepared: 250,
       failed: 0,
       skipped: 0,
       results: [],
-      message: "Recruiting agency prepared 100 application packages from 100 approved matches. 0 failed.",
+      message: "Recruiting agency prepared 250 application packages from 250 approved matches. 0 failed.",
     });
 
     const response = await POST(new NextRequest("http://localhost/api/applications/agency/run", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ minimumScore: 90, limit: 100, triggeredBy: "manual" }),
+      body: JSON.stringify({ minimumScore: 90, limit: 250, triggeredBy: "manual" }),
     }));
 
-    expect(runRecruitingAgencyMock).toHaveBeenCalledWith({ minimumScore: 90, limit: 100, triggeredBy: "manual" });
+    expect(runRecruitingAgencyMock).toHaveBeenCalledWith({ minimumScore: 90, limit: 250, triggeredBy: "manual" });
     expect(response.status).toBe(200);
   });
 

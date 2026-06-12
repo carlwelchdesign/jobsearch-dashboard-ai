@@ -1,6 +1,4 @@
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutlineOutlined";
-import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
@@ -23,7 +21,7 @@ import { ScoreChip } from "@/components/ui/score-chip";
 import { formatStatus } from "@/components/ui/status-chip";
 import { agentUserRequestHref, agentUserRequestTypeLabel, listOpenAgentUserRequests } from "@/lib/agent-user-requests";
 import { auditApplicationIntegrity } from "@/lib/applications/integrity";
-import { applicationJobKeySet, hasApplicationForJob, submittedApplicationStatuses } from "@/lib/applications/job-filters";
+import { submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
@@ -53,7 +51,7 @@ type DailyPlanOutput = {
 };
 
 export default async function DashboardPage() {
-  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, trackedApplicationsForAgency, agencyCandidateMatches, latestDailyPlanRun, latestMarketRuns, latestManualSearchRun, latestCronSearchRun, agentUserRequests, integrityReport, notificationSettings] = await Promise.all([
+  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, latestDailyPlanRun, latestMarketRuns, latestManualSearchRun, latestCronSearchRun, agentUserRequests, integrityReport, notificationSettings] = await Promise.all([
     prisma.jobSearchProfile.findMany({ where: { enabled: true }, orderBy: { name: "asc" } }),
     prisma.jobSearchRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.application.groupBy({ by: ["status"], _count: { status: true } }),
@@ -76,30 +74,6 @@ export default async function DashboardPage() {
       },
       orderBy: [{ overallScore: "desc" }, { createdAt: "desc" }],
       take: 50,
-    }),
-    prisma.application.findMany({
-      select: {
-        status: true,
-        jobPosting: {
-          select: {
-            company: true,
-            title: true,
-            location: true,
-            lastSeenAt: true,
-          },
-        },
-      },
-    }),
-    prisma.jobProfileMatch.findMany({
-      where: {
-        status: "needs_review",
-        jobPosting: {
-          applicationUrl: { not: null },
-        },
-      },
-      include: { jobPosting: true, jobSearchProfile: { select: { userId: true } } },
-      orderBy: [{ overallScore: "desc" }, { updatedAt: "desc" }],
-      take: 100,
     }),
     prisma.agentRun.findFirst({
       where: { agentType: "DAILY_COMMAND_CENTER", status: "COMPLETED" },
@@ -124,15 +98,7 @@ export default async function DashboardPage() {
   ]);
   const suppressionStates = await loadJobSuppressionStatesByUserIds([
     ...needsReview.map((match) => match.jobSearchProfile.userId),
-    ...agencyCandidateMatches.map((match) => match.jobSearchProfile.userId),
   ]);
-  const agencyJobKeys = applicationJobKeySet(trackedApplicationsForAgency);
-  const agencyCandidateCount = uniqueMatchesByCanonicalJob(
-    agencyCandidateMatches.filter((match) => {
-      const suppressionState = suppressionStates.get(match.jobSearchProfile.userId);
-      return !hasApplicationForJob(match.jobPosting, agencyJobKeys) && (!suppressionState || !isJobSuppressed(match.jobPosting, suppressionState));
-    }),
-  ).length;
   const visibleNeedsReview = uniqueMatchesByCanonicalJob(
     needsReview.filter((match) => {
       const suppressionState = suppressionStates.get(match.jobSearchProfile.userId);
@@ -152,15 +118,6 @@ export default async function DashboardPage() {
   const marketTrendSeries = buildMarketTrendSeries(latestMarketRuns.map((run) => run.outputJson));
   const cronExpression = profiles.find((profile) => profile.cronExpression)?.cronExpression ?? "0 14 * * *";
   const scheduledProfileCount = profiles.filter((profile) => profile.scheduleEnabled).length;
-  const nextAction = getNextAction({
-    agentUserRequestCount: agentUserRequests.length,
-    dailyPlan,
-    readyToApply,
-    needsReviewCount,
-    agencyCandidateCount,
-    latestRunStartedAt: latestRun?.startedAt ?? null,
-  });
-
   const ns = notificationSettings as { pushoverEnabled?: boolean; emailEnabled?: boolean } | null;
   const anyNotificationConfigured = Boolean(ns?.pushoverEnabled || ns?.emailEnabled);
   const fallbacks = getServiceFallbacks(["openai", "brave", "notifications"], {
@@ -181,48 +138,6 @@ export default async function DashboardPage() {
           }
         />
         <ServiceFallbackBanners items={fallbacks} />
-
-        <Card sx={{ borderColor: nextAction.color === "warning" ? "warning.main" : "primary.main", bgcolor: nextAction.color === "warning" ? "rgba(245, 158, 11, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
-          <CardContent>
-            <Stack direction={{ xs: "column", lg: "row" }} spacing={2} sx={{ alignItems: { lg: "center" }, justifyContent: "space-between" }}>
-              <Box>
-                <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", mb: 1 }}>
-                  <Chip size="small" color={nextAction.color} label="Next action" />
-                  {typeof nextAction.count === "number" ? <Chip size="small" variant="outlined" label={nextAction.count} /> : null}
-                </Stack>
-                <Typography variant="h2">{nextAction.title}</Typography>
-                <Typography color="text.secondary" sx={{ mt: 0.5 }}>{nextAction.detail}</Typography>
-              </Box>
-              {nextAction.postTo === "/api/applications/agency/run" ? (
-                <Box sx={{ minWidth: { lg: 380 } }}>
-                  <AgencyRunControl
-                    label={nextAction.label}
-                    color="primary"
-                    minimumScore={nextAction.body.minimumScore}
-                    limit={nextAction.body.limit}
-                    showLatestOnMount={false}
-                  />
-                </Box>
-              ) : nextAction.postTo ? (
-                <ActionButton
-                  postTo={nextAction.postTo}
-                  body={nextAction.body}
-                  variant="contained"
-                  color={nextAction.color}
-                  startIcon={nextAction.icon}
-                  runInBackground={nextAction.runInBackground}
-                  loadingLabel={nextAction.loadingLabel}
-                >
-                  {nextAction.label}
-                </ActionButton>
-              ) : (
-                <ActionButton href={nextAction.href ?? "/dashboard"} variant="contained" color={nextAction.color} endIcon={<ArrowForwardIcon />}>
-                  {nextAction.label}
-                </ActionButton>
-              )}
-            </Stack>
-          </CardContent>
-        </Card>
 
         <SearchRunCommandCenter initialRun={latestRun ? serializeSearchRun(latestRun) : null} />
 
@@ -564,91 +479,6 @@ function serializeSearchRun(run: {
     jobsAfterFilters: run.jobsAfterFilters,
     jobsSaved: run.jobsSaved,
     progress: Array.isArray(run.progress) ? run.progress as Array<{ at: string; message: string; stats?: { jobsFetched?: number; jobsAfterDedupe?: number; jobsAfterFilters?: number; jobsSaved?: number } }> : [],
-  };
-}
-
-function getNextAction({
-  agentUserRequestCount,
-  dailyPlan,
-  readyToApply,
-  needsReviewCount,
-  agencyCandidateCount,
-  latestRunStartedAt,
-}: {
-  agentUserRequestCount: number;
-  dailyPlan: DailyPlanOutput | null;
-  readyToApply: number;
-  needsReviewCount: number;
-  agencyCandidateCount: number;
-  latestRunStartedAt: Date | null;
-}) {
-  if (agentUserRequestCount > 0) {
-    return {
-      color: "warning" as const,
-      title: "Resolve the agent blocker",
-      detail: "An agent needs your answer before it can continue the workflow.",
-      href: "/needs-me",
-      label: "Open blockers",
-      count: agentUserRequestCount,
-    };
-  }
-
-  const dailyAction = dailyPlan?.actions?.[0];
-  if (dailyAction) {
-    return {
-      color: "primary" as const,
-      title: dailyAction.title,
-      detail: dailyAction.detail,
-      href: dailyAction.href,
-      label: "Start",
-      count: dailyAction.count,
-    };
-  }
-
-  if (readyToApply > 0) {
-    return {
-      color: "primary" as const,
-      title: "Work the Apply Sprint queue",
-      detail: "Application materials are ready. Start the assistant on the next ready application.",
-      href: "/applications/assistant",
-      label: "Open Apply Sprint",
-      count: readyToApply,
-    };
-  }
-
-  if (agencyCandidateCount > 0) {
-    return {
-      color: "primary" as const,
-      title: "Run the recruiting agency",
-      detail: "Eligible saved matches are waiting. Prepare them directly for Apply Sprint.",
-      postTo: "/api/applications/agency/run",
-      body: { minimumScore: 0, limit: Math.min(Math.max(agencyCandidateCount, 1), 100), triggeredBy: "manual" },
-      runInBackground: true,
-      loadingLabel: "Agency running...",
-      icon: <AutoAwesomeOutlinedIcon />,
-      label: "Run agency",
-      count: agencyCandidateCount,
-    };
-  }
-
-  if (needsReviewCount > 0) {
-    return {
-      color: "primary" as const,
-      title: "Review agency exceptions",
-      detail: "The agency leaves uncertain jobs here when it needs your judgment before approving or rejecting.",
-      href: "/jobs",
-      label: "Review exceptions",
-      count: needsReviewCount,
-    };
-  }
-
-  const latestRunIsStale = !latestRunStartedAt || Date.now() - latestRunStartedAt.getTime() > 86_400_000;
-  return {
-    color: "primary" as const,
-    title: latestRunIsStale ? "Run job discovery" : "Open Apply Sprint",
-    detail: latestRunIsStale ? "Refresh discovery; eligible saved matches will be prepared for Apply Sprint after search finishes." : "Discovery is fresh. Work ready applications or monitor agency activity.",
-    href: latestRunIsStale ? "/runs" : "/applications/assistant",
-    label: latestRunIsStale ? "Run search" : "Open Apply Sprint",
   };
 }
 

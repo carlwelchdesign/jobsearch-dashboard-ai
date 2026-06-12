@@ -30,6 +30,7 @@ export type RecruitingAgencyRunResult = {
   prepared: number;
   failed: number;
   skipped: number;
+  candidateDiagnostics?: AgencyCandidateDiagnostics;
   results: Array<{
     matchId: string;
     jobId: string;
@@ -43,7 +44,18 @@ export type RecruitingAgencyRunResult = {
   message: string;
 };
 
-type AgencyCandidate = Awaited<ReturnType<typeof findAgencyCandidates>>[number];
+type AgencyCandidateSearchResult = Awaited<ReturnType<typeof findAgencyCandidates>>;
+type AgencyCandidate = AgencyCandidateSearchResult["candidates"][number];
+
+type AgencyCandidateDiagnostics = {
+  rawMatches: number;
+  excludedExistingApplication: number;
+  flaggedBySuppressionHistory: number;
+  uniqueEligible: number;
+  selected: number;
+  limit: number;
+  summary: string;
+};
 
 type RecruitingAgencyWorkflowState = {
   agentRunId: string;
@@ -54,6 +66,7 @@ type RecruitingAgencyWorkflowState = {
   triggeredBy: RecruitingAgencyTrigger;
   currentNode: string;
   candidates: AgencyCandidate[];
+  candidateDiagnostics: AgencyCandidateDiagnostics | null;
   results: RecruitingAgencyRunResult["results"];
   output: RecruitingAgencyRunResult | null;
   error: string | null;
@@ -79,6 +92,7 @@ export async function runRecruitingAgency(input: RecruitingAgencyRunInput = {}):
     triggeredBy,
     currentNode: "start",
     candidates: [],
+    candidateDiagnostics: null,
     results: [],
     output: null,
     error: null,
@@ -165,6 +179,7 @@ async function buildRecruitingAgencyGraph() {
       reducer: (_, right) => right,
       default: () => [],
     }),
+    candidateDiagnostics: Annotation<AgencyCandidateDiagnostics | null>(),
     results: Annotation<RecruitingAgencyRunResult["results"]>({
       reducer: (_, right) => right,
       default: () => [],
@@ -207,14 +222,18 @@ async function loadAgencyPolicyNode(state: RecruitingAgencyWorkflowState): Promi
 }
 
 async function findAgencyCandidatesNode(state: RecruitingAgencyWorkflowState): Promise<Partial<RecruitingAgencyWorkflowState>> {
-  const candidates = await findAgencyCandidates({ userId: state.userId, minimumScore: state.minimumScore, limit: state.limit });
-  await createAgencyRunEvent(state.agentRunId, "candidates_found", `Found ${candidates.length} eligible agency candidate${candidates.length === 1 ? "" : "s"}.`, {
+  const { candidates, diagnostics } = await findAgencyCandidates({ userId: state.userId, minimumScore: state.minimumScore, limit: state.limit });
+  const message = candidates.length
+    ? `Found ${candidates.length} eligible agency candidate${candidates.length === 1 ? "" : "s"}.`
+    : diagnostics.summary;
+  await createAgencyRunEvent(state.agentRunId, "candidates_found", message, {
     count: candidates.length,
     requestedLimit: state.limit,
+    diagnostics,
   });
-  const next = { ...state, candidates, currentNode: "findCandidates" };
+  const next = { ...state, candidates, candidateDiagnostics: diagnostics, currentNode: "findCandidates" };
   await persistAgencyWorkflowState(next);
-  return { candidates, currentNode: next.currentNode };
+  return { candidates, candidateDiagnostics: diagnostics, currentNode: next.currentNode };
 }
 
 async function processAgencyCandidatesNode(state: RecruitingAgencyWorkflowState): Promise<Partial<RecruitingAgencyWorkflowState>> {
@@ -289,7 +308,10 @@ async function processAgencyCandidatesNode(state: RecruitingAgencyWorkflowState)
 async function finalizeAgencyRunNode(state: RecruitingAgencyWorkflowState): Promise<Partial<RecruitingAgencyWorkflowState>> {
   const prepared = state.results.filter((result) => result.status === "ready_to_apply").length;
   const failed = state.results.filter((result) => result.status === "failed").length;
-  const skipped = Math.max(0, state.limit - state.results.length);
+  const skipped = Math.max(0, state.candidates.length - state.results.length);
+  const message = state.candidates.length
+    ? `Recruiting agency prepared ${prepared} application package${prepared === 1 ? "" : "s"} from ${state.results.length} approved match${state.results.length === 1 ? "" : "es"}. ${failed} failed.`
+    : `Recruiting agency found no eligible candidates to prepare. ${state.candidateDiagnostics?.summary ?? "No matches met the agency criteria."}`;
   const output: RecruitingAgencyRunResult = {
     agentRunId: state.agentRunId,
     requested: { minimumScore: state.minimumScore, limit: state.limit, triggeredBy: state.triggeredBy },
@@ -298,14 +320,16 @@ async function finalizeAgencyRunNode(state: RecruitingAgencyWorkflowState): Prom
     failed,
     skipped,
     results: state.results,
-    message: `Recruiting agency prepared ${prepared} application package${prepared === 1 ? "" : "s"} from ${state.results.length} approved match${state.results.length === 1 ? "" : "es"}. ${failed} failed.`,
+    candidateDiagnostics: state.candidateDiagnostics ?? undefined,
+    message,
   };
 
   if (skipped > 0) {
-    await createAgencyRunEvent(state.agentRunId, "candidate_skipped", `${skipped} requested slot${skipped === 1 ? " was" : "s were"} skipped because no eligible untracked match was available.`, {
+    await createAgencyRunEvent(state.agentRunId, "candidate_skipped", `${skipped} selected candidate${skipped === 1 ? " was" : "s were"} skipped before packaging.`, {
       skipped,
       requestedLimit: state.limit,
       processed: state.results.length,
+      selected: state.candidates.length,
     });
   }
   await createAgencyRunEvent(state.agentRunId, "run_completed", output.message, {
@@ -434,7 +458,7 @@ async function persistAgencyWorkflowState(state: RecruitingAgencyWorkflowState) 
   });
 }
 
-function candidateEventPayload(candidate: Awaited<ReturnType<typeof findAgencyCandidates>>[number]) {
+function candidateEventPayload(candidate: AgencyCandidate) {
   return {
     matchId: candidate.id,
     jobId: candidate.jobPostingId,
@@ -464,6 +488,8 @@ async function findAgencyCandidates({ userId, minimumScore, limit }: { userId: s
             company: true,
             title: true,
             location: true,
+            applicationUrl: true,
+            duplicateGroupId: true,
             lastSeenAt: true,
           },
         },
@@ -492,7 +518,53 @@ async function findAgencyCandidates({ userId, minimumScore, limit }: { userId: s
     loadJobSuppressionState(userId),
   ]);
   const applicationKeys = applicationJobKeySet(applications);
-  return uniqueMatchesByCanonicalJob(
-    rawMatches.filter((match) => !hasApplicationForJob(match.jobPosting, applicationKeys) && !isJobSuppressed(match.jobPosting, suppressionState)),
-  ).slice(0, limit);
+  let excludedExistingApplication = 0;
+  let flaggedBySuppressionHistory = 0;
+  const eligibleMatches = rawMatches.filter((match) => {
+    if (hasApplicationForJob(match.jobPosting, applicationKeys)) {
+      excludedExistingApplication += 1;
+      return false;
+    }
+    if (isJobSuppressed(match.jobPosting, suppressionState)) {
+      flaggedBySuppressionHistory += 1;
+    }
+    return true;
+  });
+  const uniqueEligible = uniqueMatchesByCanonicalJob(eligibleMatches);
+  const candidates = uniqueEligible.slice(0, limit);
+  return {
+    candidates,
+    diagnostics: {
+      rawMatches: rawMatches.length,
+      excludedExistingApplication,
+      flaggedBySuppressionHistory,
+      uniqueEligible: uniqueEligible.length,
+      selected: candidates.length,
+      limit,
+      summary: agencyCandidateDiagnosticsSummary({
+        rawMatches: rawMatches.length,
+        excludedExistingApplication,
+        flaggedBySuppressionHistory,
+        uniqueEligible: uniqueEligible.length,
+        selected: candidates.length,
+        limit,
+      }),
+    },
+  };
+}
+
+function agencyCandidateDiagnosticsSummary(input: Omit<AgencyCandidateDiagnostics, "summary">) {
+  if (input.selected > 0) {
+    const suppressionNote = input.flaggedBySuppressionHistory > 0
+      ? ` ${input.flaggedBySuppressionHistory} candidate${input.flaggedBySuppressionHistory === 1 ? " matches" : "s match"} suppression history, but reviewable matches remain eligible for agency approval.`
+      : "";
+    return `Selected ${input.selected} of ${input.uniqueEligible} eligible review candidate${input.uniqueEligible === 1 ? "" : "s"}.${suppressionNote}`;
+  }
+  if (input.excludedExistingApplication > 0) {
+    return `No eligible agency candidates were selected. ${input.excludedExistingApplication} match${input.excludedExistingApplication === 1 ? " already has" : "es already have"} a tracked application.`;
+  }
+  if (input.rawMatches === 0) {
+    return "No needs-review matches met the agency score threshold and application URL requirement.";
+  }
+  return `No eligible agency candidates were selected from ${input.rawMatches} needs-review match${input.rawMatches === 1 ? "" : "es"}.`;
 }

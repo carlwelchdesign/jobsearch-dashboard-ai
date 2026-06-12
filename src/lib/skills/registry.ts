@@ -1,7 +1,6 @@
 import { JobMatchStatus, Prisma, type SkillAdjustment } from "@prisma/client";
 import { z } from "zod";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
-import { isJobSuppressed, loadJobSuppressionState } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 import { applyNumericThresholdAdjustments, applyQualityProposalRuleAdjustments } from "@/lib/skills/adjustments";
 import type { SkillDefinition, SkillId } from "@/lib/skills/types";
@@ -283,21 +282,15 @@ async function approveAgencyMatch(input: { userId: string; matchId: string; mini
   }
   if (!candidate.jobPosting.applicationUrl) throw new Error("Agency match does not have an application URL.");
 
-  const [existingApplications, suppressionState] = await Promise.all([
-    prisma.application.findMany({
+  const existingApplications = await prisma.application.findMany({
     where: { userId: input.userId },
     select: {
       status: true,
-      jobPosting: { select: { company: true, title: true, location: true, lastSeenAt: true } },
+      jobPosting: { select: { company: true, title: true, location: true, applicationUrl: true, duplicateGroupId: true, lastSeenAt: true } },
     },
-    }),
-    loadJobSuppressionState(input.userId),
-  ]);
+  });
   if (hasApplicationForJob(candidate.jobPosting, applicationJobKeySet(existingApplications))) {
     throw new Error("This job is already tracked as an application.");
-  }
-  if (isJobSuppressed(candidate.jobPosting, suppressionState)) {
-    throw new Error("This job is suppressed by a previous rejection, application, archive, or company cooldown.");
   }
 
   await prisma.jobProfileMatch.update({

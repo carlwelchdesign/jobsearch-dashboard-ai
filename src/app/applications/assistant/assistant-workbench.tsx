@@ -1391,10 +1391,10 @@ function RunMeta({ label, value }: { label: string; value: string }) {
 
 function RawLogPanel({ log, onCopyLog }: { log: string; onCopyLog: () => Promise<void> }) {
   return (
-    <Box component="details" sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
-      <Box component="summary" sx={{ cursor: "pointer", fontWeight: 850 }}>
+    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+      <Typography sx={{ fontWeight: 850 }}>
         Raw log
-      </Box>
+      </Typography>
       <Stack spacing={1} sx={{ mt: 1.5 }}>
         <Button
           variant="outlined"

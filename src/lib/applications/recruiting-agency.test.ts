@@ -186,10 +186,60 @@ describe("runRecruitingAgency", () => {
 
     expect(updateMatchMock).not.toHaveBeenCalled();
     expect(preparePackageMock).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ approved: 0, prepared: 0, failed: 0, skipped: 10 });
-    expect(createAgentRunEventMock).toHaveBeenCalledWith(expect.objectContaining({
+    expect(result).toMatchObject({
+      approved: 0,
+      prepared: 0,
+      failed: 0,
+      skipped: 0,
+      candidateDiagnostics: expect.objectContaining({
+        rawMatches: 1,
+        excludedExistingApplication: 1,
+        selected: 0,
+      }),
+    });
+    expect(createAgentRunEventMock).not.toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ type: "candidate_skipped" }),
     }));
+  });
+
+  it("keeps needs-review matches eligible even when they match suppression history", async () => {
+    findUserMock.mockResolvedValue({ id: "user_1" } as Awaited<ReturnType<typeof prisma.user.findFirst>>);
+    findApplicationsMock.mockResolvedValue([]);
+    findApplicationMock.mockResolvedValue(null);
+    const agencyMatch = match({ id: "match_1", jobPostingId: "job_1", score: 94, company: "Acme", title: "Senior Frontend Engineer" });
+    const rejectedHistoryMatch = {
+      ...match({ id: "old_match_1", jobPostingId: "old_job_1", score: 20, company: "Acme", title: "Senior Frontend Engineer" }),
+      status: "rejected",
+    };
+    findMatchesMock.mockImplementation(((input: { where?: { status?: unknown } }) => (
+      input.where?.status === "needs_review"
+        ? Promise.resolve([agencyMatch])
+        : Promise.resolve([rejectedHistoryMatch])
+    )) as never);
+    findMatchMock.mockResolvedValue(agencyMatch as Awaited<ReturnType<typeof prisma.jobProfileMatch.findUnique>>);
+    updateMatchMock.mockResolvedValue({ id: "match_1" } as Awaited<ReturnType<typeof prisma.jobProfileMatch.update>>);
+    createApplicationMock.mockResolvedValue({ id: "app_1" } as Awaited<ReturnType<typeof prisma.application.create>>);
+    createEventMock.mockResolvedValue({ id: "event_1" } as Awaited<ReturnType<typeof prisma.applicationEvent.create>>);
+    preparePackageMock.mockResolvedValue({
+      application: { id: "app_1" },
+      resume: { id: "resume_1" },
+      coverLetter: { id: "cover_1" },
+    } as Awaited<ReturnType<typeof prepareApplicationPackage>>);
+
+    const result = await runRecruitingAgency({ minimumScore: 90, limit: 10 });
+
+    expect(preparePackageMock).toHaveBeenCalledWith("job_1");
+    expect(result).toMatchObject({
+      approved: 1,
+      prepared: 1,
+      failed: 0,
+      skipped: 0,
+      candidateDiagnostics: expect.objectContaining({
+        rawMatches: 1,
+        flaggedBySuppressionHistory: 1,
+        selected: 1,
+      }),
+    });
   });
 
   it("leaves approved applications visible when package preparation fails", async () => {
