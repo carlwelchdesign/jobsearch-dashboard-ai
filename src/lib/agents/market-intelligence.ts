@@ -9,6 +9,9 @@ export type MarketIntelligenceInput = {
   userId?: string;
   lookbackDays?: number;
   researchDepth?: "standard" | "deep";
+  triggeredBy?: "manual" | "cron" | "jolene" | "search_auto";
+  jobSearchRunId?: string;
+  source?: string;
 };
 
 export type MarketIntelligenceOutput = {

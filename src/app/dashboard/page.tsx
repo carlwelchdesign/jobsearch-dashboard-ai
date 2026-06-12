@@ -30,7 +30,9 @@ import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/s
 import { prisma } from "@/lib/prisma";
 import { getServiceFallbacks } from "@/lib/service-fallbacks";
 import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
+import type { MarketIntelligenceOutput } from "@/lib/agents/market-intelligence";
 import { RunDailyPlanButton } from "./daily-plan-card";
+import { MarketAnalysisCard } from "./market-analysis-card";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +53,7 @@ type DailyPlanOutput = {
 };
 
 export default async function DashboardPage() {
-  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, trackedApplicationsForAgency, agencyCandidateMatches, latestDailyPlanRun, agentUserRequests, integrityReport, notificationSettings] = await Promise.all([
+  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, trackedApplicationsForAgency, agencyCandidateMatches, latestDailyPlanRun, latestMarketRun, latestManualSearchRun, latestCronSearchRun, agentUserRequests, integrityReport, notificationSettings] = await Promise.all([
     prisma.jobSearchProfile.findMany({ where: { enabled: true }, orderBy: { name: "asc" } }),
     prisma.jobSearchRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.application.groupBy({ by: ["status"], _count: { status: true } }),
@@ -103,6 +105,18 @@ export default async function DashboardPage() {
       where: { agentType: "DAILY_COMMAND_CENTER", status: "COMPLETED" },
       orderBy: { createdAt: "desc" },
     }),
+    prisma.agentRun.findFirst({
+      where: { agentType: "MARKET_INTELLIGENCE", status: "COMPLETED" },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.jobSearchRun.findFirst({
+      where: { triggeredBy: "manual" },
+      orderBy: { startedAt: "desc" },
+    }),
+    prisma.jobSearchRun.findFirst({
+      where: { triggeredBy: "cron" },
+      orderBy: { startedAt: "desc" },
+    }),
     listOpenAgentUserRequests(5),
     auditApplicationIntegrity().catch(() => null),
     prisma.user.findFirst({ select: { notificationSettings: true } }),
@@ -132,6 +146,9 @@ export default async function DashboardPage() {
     needsReview: needsReviewCount,
     readyToApply,
   });
+  const latestMarket = isRecord(latestMarketRun?.outputJson) ? latestMarketRun.outputJson as MarketIntelligenceOutput : null;
+  const cronExpression = profiles.find((profile) => profile.cronExpression)?.cronExpression ?? "0 14 * * *";
+  const scheduledProfileCount = profiles.filter((profile) => profile.scheduleEnabled).length;
   const nextAction = getNextAction({
     agentUserRequestCount: agentUserRequests.length,
     dailyPlan,
@@ -205,6 +222,17 @@ export default async function DashboardPage() {
         </Card>
 
         <SearchRunCommandCenter initialRun={latestRun ? serializeSearchRun(latestRun) : null} />
+
+        <MarketAnalysisCard
+          latest={latestMarket}
+          latestRunCreatedAt={latestMarketRun?.createdAt ?? null}
+          searchHealth={{
+            latestManualSearchAt: latestManualSearchRun?.startedAt ?? null,
+            latestCronSearchAt: latestCronSearchRun?.startedAt ?? null,
+            cronExpression,
+            scheduledProfileCount,
+          }}
+        />
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
           <Metric label="Enabled profiles" value={profiles.length.toString()} helper="Active campaigns" />
@@ -413,8 +441,12 @@ export default async function DashboardPage() {
                       sx={{ py: 1.5 }}
                     >
                       <ListItemText
-                        primary={<Typography component="span" sx={{ fontWeight: 800, fontSize: 14, textTransform: "capitalize" }}>{formatStatus(status)}</Typography>}
-                        secondary={<Typography component="span" variant="caption" color="text.secondary">Application workflow status</Typography>}
+                        primary={formatStatus(status)}
+                        secondary="Application workflow status"
+                        slotProps={{
+                          primary: { sx: { fontWeight: 800, fontSize: 14, textTransform: "capitalize" } },
+                          secondary: { variant: "caption", color: "text.secondary" },
+                        }}
                       />
                     </ListItem>
                   ))}
@@ -451,6 +483,10 @@ export default async function DashboardPage() {
 
 function dailyPlanOutput(value: unknown): DailyPlanOutput | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as DailyPlanOutput : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function filterDailyPlanForCurrentState(

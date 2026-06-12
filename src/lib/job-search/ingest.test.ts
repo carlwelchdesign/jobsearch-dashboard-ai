@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
 import { runRecruitingAgency } from "@/lib/applications/recruiting-agency";
-import { autoRunAgencyAfterSearch } from "@/lib/job-search/ingest";
+import { autoRunAgencyAfterSearch, autoRunMarketIntelligenceAfterSearch } from "@/lib/job-search/ingest";
 import { prisma } from "@/lib/prisma";
 
 vi.mock("@/lib/applications/recruiting-agency", () => ({
@@ -23,7 +24,12 @@ vi.mock("@/lib/agents/job-fit-scorer", () => ({
   runJobFitScoringAgent: vi.fn(),
 }));
 
+vi.mock("@/lib/agents/market-intelligence", () => ({
+  runMarketIntelligenceAgent: vi.fn(),
+}));
+
 const runAgencyMock = vi.mocked(runRecruitingAgency);
+const runMarketIntelligenceMock = vi.mocked(runMarketIntelligenceAgent);
 const agentRunFindFirstMock = vi.mocked(prisma.agentRun.findFirst);
 const matchCountMock = vi.mocked(prisma.jobProfileMatch.count);
 const searchRunFindUniqueMock = vi.mocked(prisma.jobSearchRun.findUnique);
@@ -189,6 +195,120 @@ describe("autoRunAgencyAfterSearch", () => {
               status: "failed",
               reason: "agency_failed",
               error: "packet generation failed",
+            }),
+          }),
+        ]),
+      }),
+    }));
+  });
+});
+
+describe("autoRunMarketIntelligenceAfterSearch", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    searchRunFindUniqueMock.mockResolvedValue({ progress: [] } as never);
+    searchRunUpdateMock.mockResolvedValue({ id: "search_1" } as never);
+    runMarketIntelligenceMock.mockResolvedValue({
+      run: { id: "market_1" },
+      output: {
+        marketTemperature: [{ lane: "AI product/frontend" }],
+        recommendedActions: [{ title: "Tune profile" }, { title: "Prioritize AI product roles" }],
+      },
+    } as never);
+  });
+
+  it("runs market intelligence after a completed manual search", async () => {
+    const result = await autoRunMarketIntelligenceAfterSearch({
+      runId: "search_1",
+      userId: "user_1",
+      triggeredBy: "manual",
+      status: "completed",
+      stats: stats(),
+    });
+
+    expect(runMarketIntelligenceMock).toHaveBeenCalledWith({
+      userId: "user_1",
+      researchDepth: "standard",
+      triggeredBy: "manual",
+      jobSearchRunId: "search_1",
+      source: "search_completion",
+    });
+    expect(result).toMatchObject({ started: true, agentRunId: "market_1" });
+    expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        progress: expect.arrayContaining([
+          expect.objectContaining({
+            message: expect.stringContaining("Market intelligence completed"),
+            marketIntelligence: expect.objectContaining({
+              status: "completed",
+              reason: "started",
+              agentRunId: "market_1",
+            }),
+          }),
+        ]),
+      }),
+    }));
+  });
+
+  it("runs market intelligence after a partial cron search", async () => {
+    await autoRunMarketIntelligenceAfterSearch({
+      runId: "search_1",
+      userId: "user_1",
+      triggeredBy: "cron",
+      status: "partial",
+      stats: stats(),
+    });
+
+    expect(runMarketIntelligenceMock).toHaveBeenCalledWith(expect.objectContaining({
+      triggeredBy: "cron",
+      jobSearchRunId: "search_1",
+      source: "search_completion",
+    }));
+  });
+
+  it("skips market intelligence after a failed search", async () => {
+    const result = await autoRunMarketIntelligenceAfterSearch({
+      runId: "search_1",
+      userId: "user_1",
+      triggeredBy: "manual",
+      status: "failed",
+      stats: stats(),
+    });
+
+    expect(result).toMatchObject({ started: false, reason: "search_not_successful" });
+    expect(runMarketIntelligenceMock).not.toHaveBeenCalled();
+    expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        progress: expect.arrayContaining([
+          expect.objectContaining({
+            marketIntelligence: expect.objectContaining({ status: "skipped", reason: "search_not_successful" }),
+          }),
+        ]),
+      }),
+    }));
+  });
+
+  it("records market intelligence failure without throwing", async () => {
+    runMarketIntelligenceMock.mockRejectedValue(new Error("research source failed"));
+
+    const result = await autoRunMarketIntelligenceAfterSearch({
+      runId: "search_1",
+      userId: "user_1",
+      triggeredBy: "manual",
+      status: "completed",
+      stats: stats(),
+    });
+
+    expect(result).toMatchObject({ started: false, reason: "market_intelligence_failed", error: "research source failed" });
+    expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        progress: expect.arrayContaining([
+          expect.objectContaining({
+            message: expect.stringContaining("Market intelligence failed"),
+            marketIntelligence: expect.objectContaining({
+              status: "failed",
+              reason: "market_intelligence_failed",
+              error: "research source failed",
             }),
           }),
         ]),

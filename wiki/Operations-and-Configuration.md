@@ -5,13 +5,11 @@
 The app now emphasizes the active operating surfaces:
 
 - Command Center
-- Jobs
 - Apply Sprint
-- Field Learning
 - Applications
 - Settings
 
-Older supporting pages remain accessible from Settings as admin/supporting tools. `Needs Me` still exists for compatibility and hard blockers, but it is no longer a primary navigation surface.
+Field Learning now lives under Settings -> Learning. Jobs remains available as admin/exception tooling. `Needs Me` still exists for compatibility and hard blockers, but it is no longer a primary navigation surface.
 
 ## Settings
 
@@ -90,7 +88,7 @@ The Chrome extension uses `POST /api/jobs/capture` for saving job pages and `POS
 
 ## Market Intelligence Research
 
-The market intelligence brief runs from the Profiles page or `POST /api/market-intelligence/run`. It fetches trusted source pages, discovers relevant articles, extracts readable content, and stores only metadata, claims, summaries, short excerpts, and synthesis in `AgentRun.outputJson`.
+The market intelligence brief runs from the Command Center, the Profiles page, `POST /api/market-intelligence/run`, and automatically after successful or partial manual/cron job searches. It fetches trusted source pages, discovers relevant articles, extracts readable content, and stores only metadata, claims, summaries, short excerpts, and synthesis in the latest completed `MARKET_INTELLIGENCE` `AgentRun.outputJson`. Automatic search-triggered runs use standard depth and record the source search run in `inputJson.jobSearchRunId`.
 
 Optional configuration:
 
@@ -100,6 +98,8 @@ MARKET_INTELLIGENCE_MAX_ARTICLES=8
 ```
 
 `MARKET_INTELLIGENCE_EXTRA_SOURCES` is newline-separated. Keep it limited to trusted research, hiring-lab, labor-market, or role-trend sources. The app does not store full article snapshots.
+
+The Command Center market analysis card shows the latest report and cron/search health. The cron endpoint can be configured correctly but still not have run; the reliable signal is a recorded `JobSearchRun` whose `triggeredBy` value is `cron`.
 
 ## Database
 

@@ -174,6 +174,7 @@ describe("GET /api/applications/[id]/assistant-package", () => {
     expect(body.application.packetId).toBe("packet_1");
     expect(body.job.applicationHost).toBe("linear.app");
     expect(body.learning.fieldMemories).toEqual([]);
+    expect(body.workflow.fieldAnswerUrl).toBe("http://localhost/api/applications/app_1/field-answer");
     expect(body.ashbyRisk).toBeNull();
     expect(findFieldMemoriesMock).toHaveBeenCalledWith(expect.objectContaining({
       atsProvider: "greenhouse",

@@ -719,7 +719,7 @@ export function AssistantWorkbench({
                     diagnostics={selectedFeedback?.diagnostics ?? null}
                     timeline={selectedFeedback?.timeline ?? []}
                     log={selectedFeedback?.log ?? ""}
-                    fieldLearningHref={selected ? fieldLearningHref(selected) : "/applications/field-learning"}
+                    fieldLearningHref={selected ? fieldLearningHref(selected) : "/settings/learning#settings-field-learning"}
                     onCopyLog={copyRawLog}
                   />
             </Stack>
@@ -1265,7 +1265,7 @@ function fieldLearningHref(application: ReadyApplication) {
       // Keep the application filter even if the employer URL is malformed.
     }
   }
-  return `/applications/field-learning?${params.toString()}`;
+  return `/settings/learning?${params.toString()}#settings-field-learning`;
 }
 
 function formatDateTime(value?: string | null) {

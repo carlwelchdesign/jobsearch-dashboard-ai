@@ -5,6 +5,7 @@ import NotificationsActiveOutlinedIcon from "@mui/icons-material/NotificationsAc
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import SettingsSuggestOutlinedIcon from "@mui/icons-material/SettingsSuggestOutlined";
 import SourceOutlinedIcon from "@mui/icons-material/SourceOutlined";
+import type { Prisma } from "@prisma/client";
 import Link from "next/link";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -16,18 +17,36 @@ import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { PageHeader } from "@/components/ui/page-header";
+import { FieldMemoryActions } from "@/app/applications/field-learning/field-memory-actions";
+import { FieldMemoryBulkActions } from "@/app/applications/field-learning/field-memory-bulk-actions";
 import { getLocalAssistantAvailability } from "@/lib/applications/local-assistant-availability";
 import { getLearningImpact } from "@/lib/observability/learning-impact";
 import { getOutcomeCalibration, getOutcomeCalibrationTrends, getOutcomeRegressionTriage } from "@/lib/observability/outcome-calibration";
 import { getLearningRollbackAudit } from "@/lib/observability/rollback-audit";
 import { prisma } from "@/lib/prisma";
-import { FieldMemoryDisableButton } from "./field-memory-disable-button";
 import { SettingsClient } from "./settings-client";
 import type { ServiceHealthSettings, ServiceStatus } from "./service-health-panel";
 
 export const dynamic = "force-dynamic";
 
 export type SettingsRouteGroup = "overview" | "system" | "search" | "application" | "learning" | "admin";
+
+type SettingsSearchParams = {
+  highlight?: string;
+  host?: string;
+  applicationId?: string;
+};
+
+type FieldMemoryWithSource = Prisma.ApplicationFieldMemoryGetPayload<{
+  include: {
+    sourceApplication: {
+      select: {
+        id: true;
+        jobPosting: { select: { company: true; title: true } };
+      };
+    };
+  };
+}>;
 
 const SETTINGS_ROUTES: Array<{ href: string; label: string; description: string; group: Exclude<SettingsRouteGroup, "overview"> }> = [
   { href: "/settings/system", label: "System", description: "Service health, AI provider, email sync, and notifications.", group: "system" },
@@ -75,7 +94,7 @@ export async function SettingsRouteContent({
   searchParams,
 }: {
   group?: SettingsRouteGroup;
-  searchParams?: { highlight?: string };
+  searchParams?: SettingsSearchParams;
 }) {
   const user = await prisma.user.findFirst({
     include: { automationSettings: true, notificationSettings: true, profile: { include: { githubRepositories: true } } },
@@ -148,9 +167,21 @@ export async function SettingsRouteContent({
           take: 12,
         }),
         prisma.applicationFieldMemory.findMany({
-          where: { userId: user.id },
-          orderBy: [{ status: "asc" }, { updatedAt: "desc" }],
-          take: 12,
+          where: {
+            userId: user.id,
+            ...(searchParams?.host?.trim() ? { host: searchParams.host.trim() } : {}),
+            ...(searchParams?.applicationId?.trim() ? { sourceApplicationId: searchParams.applicationId.trim() } : {}),
+          },
+          include: {
+            sourceApplication: {
+              select: {
+                id: true,
+                jobPosting: { select: { company: true, title: true } },
+              },
+            },
+          },
+          orderBy: [{ status: "desc" }, { lastSeenAt: "desc" }, { confidence: "desc" }],
+          take: 250,
         }),
       ])
     : [[], [], []];
@@ -845,35 +876,42 @@ export async function SettingsRouteContent({
                   <Chip size="small" color="primary" label="Field learning" />
                   <Chip size="small" variant="outlined" label={`${fieldMemories.filter((item) => item.status === "ACTIVE").length} auto-fill`} />
                   <Chip size="small" variant="outlined" label={`${fieldMemories.filter((item) => item.status === "NEEDS_REVIEW").length} review`} />
+                  <Chip size="small" variant="outlined" label={`${fieldMemories.filter((item) => item.status === "DISABLED").length} disabled`} />
                 </Stack>
                 <Typography variant="h3">Application field memories</Typography>
                 <Typography color="text.secondary" sx={{ mt: 0.75 }}>
-                  The local assistant saves safe fields you manually fill, then reuses low-sensitivity high-confidence memories on future applications.
+                  The assistant saves safe fields you manually fill, generates safe context-aware answers for new questions, and reuses approved memories on future applications.
                 </Typography>
               </Box>
-              {fieldMemories.length ? (
-                <Stack spacing={1.25}>
-                  {fieldMemories.map((memory) => (
-                    <Box key={memory.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1.25 }}>
-                      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
-                        <Chip size="small" label={memory.category.replace(/_/g, " ")} />
-                        <Chip size="small" variant="outlined" label={memory.host} />
-                        <Chip size="small" color={memory.status === "ACTIVE" ? "success" : memory.status === "NEEDS_REVIEW" ? "warning" : "default"} label={memory.status.toLowerCase().replace(/_/g, " ")} />
-                        <Chip size="small" variant="outlined" label={`${memory.confidence}%`} />
-                      </Stack>
-                      <Typography variant="body2">{memory.label}</Typography>
-                      <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between", mt: 0.5 }}>
-                        <Typography variant="caption" color="text.secondary">
-                          {memory.sensitivity.toLowerCase()} · {memory.reusePolicy.toLowerCase().replace(/_/g, " ")} · seen {memory.lastSeenAt.toLocaleString()}
-                        </Typography>
-                        {memory.status !== "DISABLED" ? <FieldMemoryDisableButton memoryId={memory.id} /> : null}
-                      </Stack>
-                    </Box>
-                  ))}
+              {searchParams?.host || searchParams?.applicationId ? (
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                  {searchParams?.host ? <Chip size="small" variant="outlined" label={`Host: ${searchParams.host}`} /> : null}
+                  {searchParams?.applicationId ? <Chip size="small" variant="outlined" label="Current application" /> : null}
                 </Stack>
-              ) : (
-                <Typography variant="body2" color="text.secondary">No application field memories have been learned yet.</Typography>
-              )}
+              ) : null}
+              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" }, gap: 2 }}>
+                <FieldMemoryMetric label="Needs review" value={fieldMemories.filter((memory) => memory.status === "NEEDS_REVIEW").length} tone="warning" />
+                <FieldMemoryMetric label="Auto-fill active" value={fieldMemories.filter((memory) => memory.status === "ACTIVE").length} tone="success" />
+                <FieldMemoryMetric label="Disabled" value={fieldMemories.filter((memory) => memory.status === "DISABLED").length} tone="default" />
+              </Box>
+              <FieldMemorySection
+                title="Review Before Auto-Fill"
+                description="These fields were learned, but the system will not auto-use them until you approve them."
+                memories={fieldMemories.filter((memory) => memory.status === "NEEDS_REVIEW")}
+              />
+              <FieldMemorySection
+                title="Active Auto-Fill Memories"
+                description="These approved memories are available to the assistant on matching application forms."
+                memories={fieldMemories.filter((memory) => memory.status === "ACTIVE")}
+              />
+              {fieldMemories.some((memory) => memory.status === "DISABLED") ? (
+                <FieldMemorySection
+                  title="Disabled Memories"
+                  description="These memories will not be reused."
+                  memories={fieldMemories.filter((memory) => memory.status === "DISABLED")}
+                />
+              ) : null}
+              {!fieldMemories.length ? <Typography variant="body2" color="text.secondary">No application field memories have been learned yet.</Typography> : null}
             </Stack>
           </CardContent>
         </Card>
@@ -1362,6 +1400,78 @@ function SettingsOverview({ nextAction }: { nextAction: SettingsNextAction }) {
       ))}
     </Box>
   );
+}
+
+function FieldMemoryMetric({ label, value, tone }: { label: string; value: number; tone: "success" | "warning" | "default" }) {
+  return (
+    <Card sx={{ borderColor: tone === "success" ? "success.main" : tone === "warning" ? "warning.main" : "divider" }}>
+      <CardContent>
+        <Typography variant="body2" color="text.secondary">{label}</Typography>
+        <Typography variant="h1" sx={{ mt: 0.5 }}>{value}</Typography>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FieldMemorySection({
+  title,
+  description,
+  memories,
+}: {
+  title: string;
+  description: string;
+  memories: FieldMemoryWithSource[];
+}) {
+  return (
+    <Card variant="outlined">
+      <CardContent>
+        <Stack spacing={2}>
+          <Box>
+            <Typography variant="h3">{title}</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{description}</Typography>
+          </Box>
+          <FieldMemoryBulkActions memoryIds={safeReviewMemoryIds(memories)} />
+          {memories.length ? (
+            <Stack spacing={1.25}>
+              {memories.map((memory) => (
+                <Box key={memory.id} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5, bgcolor: "background.paper" }}>
+                  <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                    <Chip size="small" color={memory.status === "ACTIVE" ? "success" : memory.status === "NEEDS_REVIEW" ? "warning" : "default"} label={memory.status.toLowerCase().replace(/_/g, " ")} />
+                    <Chip size="small" label={memory.category.replace(/_/g, " ")} />
+                    <Chip size="small" variant="outlined" label={memory.host} />
+                    <Chip size="small" variant="outlined" label={`${memory.confidence}% confidence`} />
+                    <Chip size="small" variant="outlined" label={memory.sensitivity.toLowerCase()} />
+                    <Chip size="small" variant="outlined" label={memory.reusePolicy.toLowerCase().replace(/_/g, " ")} />
+                  </Stack>
+                  <Typography sx={{ fontWeight: 850 }}>{memory.label}</Typography>
+                  <Typography variant="body2" sx={{ mt: 0.75, whiteSpace: "pre-wrap" }}>{memory.answer}</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+                    Learned from {memory.sourceApplication?.jobPosting.company ?? "unknown company"} - {memory.sourceApplication?.jobPosting.title ?? "unknown role"} · seen {memory.lastSeenAt.toLocaleString()}
+                    {memory.useCount ? ` · used ${memory.useCount} time${memory.useCount === 1 ? "" : "s"}` : ""}
+                  </Typography>
+                  {memory.status !== "DISABLED" ? (
+                    <Box sx={{ mt: 1.25 }}>
+                      <FieldMemoryActions memoryId={memory.id} canApprove={memory.status === "NEEDS_REVIEW"} />
+                    </Box>
+                  ) : null}
+                </Box>
+              ))}
+            </Stack>
+          ) : (
+            <Typography variant="body2" color="text.secondary">Nothing here yet.</Typography>
+          )}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function safeReviewMemoryIds(memories: FieldMemoryWithSource[]) {
+  const ids: string[] = [];
+  for (const memory of memories) {
+    if (memory.status === "NEEDS_REVIEW" && memory.sensitivity !== "HIGH") ids.push(memory.id);
+  }
+  return ids;
 }
 
 function SettingsRouteNav({ activeGroup }: { activeGroup: SettingsRouteGroup }) {

@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { findReusableAnswerMemories } from "@/lib/application-answer-memory";
 import { createAgentUserRequest } from "@/lib/agent-user-requests";
+import { resolveApplicationFieldAnswer } from "@/lib/applications/field-answer-resolver";
 import { storeObservedFieldLearning, type ObservedApplicationField } from "@/lib/applications/field-learning";
 import { recordApplicationOutcome } from "@/lib/applications/outcomes";
 import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
@@ -234,6 +235,9 @@ export async function recordApplicationAssistantWorkflowCommandResult(input: {
       ? { ...field, result: input.result, valuePreview: input.valuePreview ?? field.valuePreview ?? null }
       : field)
     : state.fields;
+  const generatedLearning = input.result === "success" && state.currentNode === "resolveGeneratedFieldAnswer" && state.pendingCommand?.type === "fill" && fieldId
+    ? await rememberAcceptedGeneratedAnswer(run, state.fields.find((field) => field.fieldId === fieldId) ?? null, state.pendingCommand.value ?? input.valuePreview ?? "").catch(() => null)
+    : null;
   const nextState: AssistantWorkflowState = {
     ...state,
     currentNode: input.result === "success" ? "decideNextField" : "validatePage",
@@ -256,6 +260,14 @@ export async function recordApplicationAssistantWorkflowCommandResult(input: {
         fieldId,
         result: input.result,
       }),
+      ...(generatedLearning?.saved
+        ? [workflowEvent("generated_answer_learned", "Generated answer accepted and learned for future reuse.", {
+            fieldId,
+            saved: generatedLearning.saved,
+            activeForAutofill: generatedLearning.activeForAutofill,
+            needsReview: generatedLearning.needsReview,
+          })]
+        : []),
     ],
   };
   const commandedState = await traceWorkflowStep(
@@ -275,6 +287,36 @@ export async function recordApplicationAssistantWorkflowCommandResult(input: {
     workflow: serializeWorkflowStatus(await prisma.applicationAutomationRun.findUniqueOrThrow({ where: { id: run.id } })),
     command: commandedState.pendingCommand,
   };
+}
+
+async function rememberAcceptedGeneratedAnswer(
+  run: Awaited<ReturnType<typeof latestWorkflowRun>>,
+  field: AssistantWorkflowField | null,
+  answer: string,
+) {
+  const value = answer.trim();
+  if (!field || !value) return null;
+  const jobPosting = await prisma.jobPosting.findUnique({
+    where: { id: run.jobPostingId },
+    select: { atsProvider: true, applicationUrl: true },
+  });
+  if (!jobPosting) return null;
+  return storeObservedFieldLearning({
+    userId: run.userId,
+    applicationId: run.applicationId,
+    atsProvider: jobPosting.atsProvider,
+    host: hostFromUrl(run.currentUrl ?? jobPosting.applicationUrl),
+    fields: [{
+      fieldKey: field.fieldId,
+      category: field.category,
+      label: field.label,
+      inputType: field.inputType,
+      selector: field.selector,
+      answer: value,
+      source: "assistant_confirmation",
+      confidence: 88,
+    }],
+  });
 }
 
 export async function persistWorkflowState(automationRunId: string, state: AssistantWorkflowState) {
@@ -709,7 +751,35 @@ async function decideCommandForField(
   }
 
   if (field.required || questionLike(field)) {
-    if (!requiresSensitiveApproval(field)) {
+    const resolved = await resolveApplicationFieldAnswer({
+      applicationId: run.applicationId,
+      field: {
+        fieldId: field.fieldId,
+        selector: field.selector,
+        label: field.label,
+        inputType: field.inputType,
+        category: field.category,
+        context: field.context,
+      },
+    }).catch(() => null);
+    if (resolved?.answer && resolved.autoFillAllowed && !requiresSensitiveApproval(field)) {
+      return {
+        currentNode: "resolveGeneratedFieldAnswer",
+        command: command("fill", {
+          fieldId: field.fieldId,
+          selector: field.selector,
+          value: resolved.answer,
+          reason: resolved.reason,
+        }),
+        message: resolved.source === "generated"
+          ? `Generated answer for field: ${field.label}`
+          : `Resolved field from ${resolved.source.replace("_", " ")}: ${field.label}`,
+        confidence: resolved.confidence,
+        memoryMatchId: resolved.memoryMatchId ?? reusable[0]?.id ?? null,
+      };
+    }
+
+    if (!requiresSensitiveApproval(field) && !resolved?.answer) {
       return {
         currentNode: "observeManualInput",
         command: command("observe", {
@@ -718,12 +788,12 @@ async function decideCommandForField(
           reason: "Unknown required or custom field will be learned from manual input instead of interrupting the queue.",
         }),
         message: `Observing manual input for field: ${field.label}`,
-        confidence: reusable[0]?.matchScore ?? 0,
+        confidence: resolved?.confidence ?? reusable[0]?.matchScore ?? 0,
         memoryMatchId: reusable[0]?.id ?? null,
       };
     }
 
-    const suggestedAnswer = reusable[0]?.answer ?? "";
+    const suggestedAnswer = resolved?.answer ?? reusable[0]?.answer ?? "";
     const request = await createAgentUserRequest({
       userId: run.userId,
       applicationId: run.applicationId,
@@ -734,6 +804,7 @@ async function decideCommandForField(
         source: "application_assistant_field_command",
         field,
         suggestedAnswer,
+        fieldAnswerResolution: resolved,
         answerMemory: reusable[0] ?? null,
       } as Prisma.InputJsonValue,
     });
@@ -744,7 +815,7 @@ async function decideCommandForField(
         selector: field.selector,
         value: suggestedAnswer,
         reason: suggestedAnswer
-          ? "A similar saved answer exists, but this field needs user approval before reuse."
+          ? "A generated or saved answer exists, but this field needs user approval before reuse."
           : "Sensitive application field needs user approval before the assistant can continue.",
         requiresUserApproval: true,
       }),
@@ -863,6 +934,15 @@ function fieldIdFor(input: { selector?: string | null; label?: string | null; in
 
 function canonicalKey(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 120) || "unknown";
+}
+
+function hostFromUrl(url: string | null) {
+  if (!url) return "unknown";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "unknown";
+  }
 }
 
 function questionLike(field: AssistantWorkflowField) {

@@ -77,11 +77,11 @@ After a Chrome save, the extension stores the last saved job id locally and expo
 
 ## Market Intelligence
 
-The Profiles page includes a weekly market intelligence brief. The `MARKET_INTELLIGENCE` agent compares recent matched jobs, profile health, application outcomes, skill mentions, and company patterns against curated external labor-market sources.
+The Command Center and Profiles page include a weekly market intelligence brief. The `MARKET_INTELLIGENCE` agent compares recent matched jobs, profile health, application outcomes, skill mentions, and company patterns against curated external labor-market sources.
 
 The research layer fetches trusted source/index pages, discovers recent relevant articles, extracts readable text, and stores only metadata, claims, summaries, short excerpts, implications, and synthesis in the `AgentRun` output. When OpenAI is configured, it produces a structured cross-source synthesis; otherwise it falls back to deterministic synthesis from the same article summaries and local pipeline data.
 
-The report is advisory. It shows lane demand, skill-signal charts, research synthesis, cited article cards, data freshness, confidence, and review-only actions for profile tuning, positioning, company targeting, and outreach. It does not automatically create, edit, pause, or delete search profiles.
+The report is stored as the latest completed `MARKET_INTELLIGENCE` `AgentRun.outputJson`. Manual and scheduled searches automatically start a standard-depth report after search completion, duplicate/stale detection, and Apply Sprint handoff. The report is advisory. It shows lane demand, skill-signal charts, research synthesis, cited article cards, data freshness, confidence, and review-only actions for profile tuning, positioning, company targeting, and outreach. It does not automatically create, edit, pause, or delete search profiles.
 
 ## Duplicate and Stale Detection
 

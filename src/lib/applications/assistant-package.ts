@@ -177,6 +177,7 @@ export async function buildApplicationAssistantPackage(application: AssistantPac
         eventUrl: `${origin}/api/applications/${application.id}/assistant-workflow/events`,
         commandUrl: `${origin}/api/applications/${application.id}/assistant-workflow/command`,
         commandResultUrl: `${origin}/api/applications/${application.id}/assistant-workflow/command-result`,
+        fieldAnswerUrl: `${origin}/api/applications/${application.id}/field-answer`,
       },
     },
   };

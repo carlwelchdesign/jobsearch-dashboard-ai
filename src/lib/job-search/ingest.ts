@@ -1,5 +1,6 @@
 import { JobSearchRun, NotificationSettings, Prisma, User } from "@prisma/client";
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
+import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
 import { MAX_RECRUITING_AGENCY_LIMIT } from "@/lib/applications/recruiting-agency-constants";
 import { runRecruitingAgency } from "@/lib/applications/recruiting-agency";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
@@ -16,6 +17,7 @@ type ProgressEvent = {
   message: string;
   stats?: JobSearchStats;
   agencyHandoff?: AgencyHandoffProgress;
+  marketIntelligence?: MarketIntelligenceProgress;
 };
 
 type JobSearchStats = {
@@ -51,6 +53,13 @@ type AgencyHandoffProgress = {
     failed: number;
     skipped: number;
   };
+  error?: string;
+};
+
+type MarketIntelligenceProgress = {
+  status: "completed" | "failed" | "skipped";
+  reason: "started" | "search_not_successful" | "market_intelligence_failed";
+  agentRunId?: string;
   error?: string;
 };
 
@@ -250,6 +259,13 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
     jobsSaved: stats.jobsSaved,
     stats,
   });
+  await autoRunMarketIntelligenceAfterSearch({
+    runId: run.id,
+    userId: user?.id ?? null,
+    triggeredBy,
+    status,
+    stats,
+  });
 
   if (user?.notificationSettings) {
     await notifyAfterRun(user, user.notificationSettings, updatedRun, newMatches);
@@ -361,6 +377,53 @@ export async function autoRunAgencyAfterSearch(input: {
   }
 }
 
+export async function autoRunMarketIntelligenceAfterSearch(input: {
+  runId: string;
+  userId?: string | null;
+  triggeredBy: "manual" | "cron";
+  status: "completed" | "partial" | "failed";
+  stats: JobSearchStats;
+}) {
+  if (!["completed", "partial"].includes(input.status)) {
+    await appendProgress(input.runId, "Market intelligence skipped because the search did not finish successfully.", input.stats, undefined, {
+      status: "skipped",
+      reason: "search_not_successful",
+    });
+    return { started: false, reason: "search_not_successful" as const };
+  }
+
+  try {
+    await appendProgress(input.runId, "Market intelligence started after search completion.", input.stats);
+    const result = await runMarketIntelligenceAgent({
+      userId: input.userId ?? undefined,
+      researchDepth: "standard",
+      triggeredBy: input.triggeredBy,
+      jobSearchRunId: input.runId,
+      source: "search_completion",
+    });
+    await appendProgress(
+      input.runId,
+      `Market intelligence completed with ${result.output.marketTemperature.length} lane signal(s) and ${result.output.recommendedActions.length} recommendation(s).`,
+      input.stats,
+      undefined,
+      {
+        status: "completed",
+        reason: "started",
+        agentRunId: result.run.id,
+      },
+    );
+    return { started: true, reason: "started" as const, agentRunId: result.run.id };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown market intelligence failure";
+    await appendProgress(input.runId, `Market intelligence failed after search completion: ${message}`, input.stats, undefined, {
+      status: "failed",
+      reason: "market_intelligence_failed",
+      error: message,
+    });
+    return { started: false, reason: "market_intelligence_failed" as const, error: message };
+  }
+}
+
 function jobIdentity(job: Pick<NormalizedJobPosting, "company" | "title" | "location" | "applicationUrl">) {
   return {
     company: job.company,
@@ -408,8 +471,9 @@ async function appendProgress(
   message: string,
   stats?: JobSearchStats,
   agencyHandoff?: AgencyHandoffProgress,
+  marketIntelligence?: MarketIntelligenceProgress,
 ) {
-  const progress = await nextProgress(runId, progressEvent(message, stats, agencyHandoff));
+  const progress = await nextProgress(runId, progressEvent(message, stats, agencyHandoff, marketIntelligence));
   await prisma.jobSearchRun.update({
     where: { id: runId },
     data: {
@@ -431,12 +495,14 @@ function progressEvent(
   message: string,
   stats?: JobSearchStats,
   agencyHandoff?: AgencyHandoffProgress,
+  marketIntelligence?: MarketIntelligenceProgress,
 ): ProgressEvent {
   return {
     at: new Date().toISOString(),
     message,
     ...(stats ? { stats } : {}),
     ...(agencyHandoff ? { agencyHandoff } : {}),
+    ...(marketIntelligence ? { marketIntelligence } : {}),
   };
 }
 

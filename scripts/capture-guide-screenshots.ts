@@ -18,7 +18,7 @@ const PAGES = [
   { name: "needs-me", path: "/needs-me" },
   { name: "jobs", path: "/jobs" },
   { name: "apply-sprint", path: "/applications/assistant" },
-  { name: "field-learning", path: "/applications/field-learning" },
+  { name: "field-learning", path: "/settings/learning#settings-field-learning" },
   { name: "applications", path: "/applications" },
   { name: "evidence", path: "/evidence" },
   { name: "profiles", path: "/profiles" },

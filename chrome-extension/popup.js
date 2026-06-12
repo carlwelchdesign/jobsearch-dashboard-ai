@@ -371,15 +371,17 @@ async function fillApplicationFromPackage() {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Unable to load an application package for this page.");
     const packagePayload = await packageWithMaterialFiles(payload);
-    const result = await chrome.tabs.sendMessage(tab.id, { type: "FILL_APPLICATION_FROM_PACKAGE", package: packagePayload });
+    const result = await chrome.tabs.sendMessage(tab.id, { type: "FILL_APPLICATION_FROM_PACKAGE", package: packagePayload, auth: { token } });
     setLastFilledApplication(payload.application?.id || "");
     const filled = Number(result?.filled || 0);
     const skipped = Number(result?.skipped || 0);
     const uploads = Number(result?.uploads || 0);
     const uploadNeedsManual = Number(result?.uploadNeedsManual || 0);
+    const generated = Number(result?.generated || 0);
     const uploadText = uploads ? ` Uploaded ${uploads} file(s).` : "";
+    const generatedText = generated ? ` Generated ${generated} safe answer(s).` : "";
     const warning = uploadNeedsManual ? ` ${uploadNeedsManual} upload field(s) still need manual file selection.` : "";
-    setStatus(`Filled ${filled} field(s).${uploadText} Skipped ${skipped}.${warning} Complete missed fields, then click Save learned fields before submitting manually.`);
+    setStatus(`Filled ${filled} field(s).${generatedText}${uploadText} Skipped ${skipped}.${warning} Complete missed fields, then click Save learned fields before submitting manually.`);
   } catch (error) {
     setStatus(contentScriptError(error));
   } finally {
@@ -407,15 +409,17 @@ async function fillSelectedApplication() {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Unable to load the selected application package.");
     const packagePayload = await packageWithMaterialFiles(payload);
-    const result = await chrome.tabs.sendMessage(tab.id, { type: "FILL_APPLICATION_FROM_PACKAGE", package: packagePayload });
+    const result = await chrome.tabs.sendMessage(tab.id, { type: "FILL_APPLICATION_FROM_PACKAGE", package: packagePayload, auth: { token } });
     setLastFilledApplication(payload.application?.id || applicationId);
     const filled = Number(result?.filled || 0);
     const skipped = Number(result?.skipped || 0);
     const uploads = Number(result?.uploads || 0);
     const uploadNeedsManual = Number(result?.uploadNeedsManual || 0);
+    const generated = Number(result?.generated || 0);
     const uploadText = uploads ? ` Uploaded ${uploads} file(s).` : "";
+    const generatedText = generated ? ` Generated ${generated} safe answer(s).` : "";
     const warning = uploadNeedsManual ? ` ${uploadNeedsManual} upload field(s) still need manual file selection.` : "";
-    setStatus(`Filled ${filled} field(s) for ${payload.job?.company || "selected job"}.${uploadText} Skipped ${skipped}.${warning} Complete missed fields, then click Save learned fields before submitting manually.`);
+    setStatus(`Filled ${filled} field(s) for ${payload.job?.company || "selected job"}.${generatedText}${uploadText} Skipped ${skipped}.${warning} Complete missed fields, then click Save learned fields before submitting manually.`);
     await loadReadyApplications(applicationId, tab.url);
   } catch (error) {
     setStatus(contentScriptError(error));

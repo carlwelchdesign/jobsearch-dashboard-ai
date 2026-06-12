@@ -102,7 +102,7 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
           title="Apply Sprint"
           description="Run the local application assistant on ready packets. It fills what it safely knows, learns from fields you complete manually, stops only for real blockers, and never submits without you."
           actions={(
-            <Button component={Link} href="/applications/field-learning" variant="outlined">
+            <Button component={Link} href="/settings/learning#settings-field-learning" variant="outlined">
               Review field learning
             </Button>
           )}

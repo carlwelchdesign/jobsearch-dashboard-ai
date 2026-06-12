@@ -95,12 +95,12 @@ Current graph responsibilities:
 - checkpoint workflow state in Postgres
 - persist current node, events, field inventory, pending command, and counts on `ApplicationAutomationRun.workflowStateJson`
 - create or resume field-level commands when the assistant needs a known value, upload, skip, or user answer
-- enter learning mode for ordinary unknown required/custom fields instead of opening an interruption queue item
+- generate high-confidence low/medium-risk answers for ordinary unknown required/custom fields, and enter learning mode when no safe answer is available
 - stop at `READY_TO_SUBMIT` for manual review
 - emit optional redacted LangSmith traces for launch, field inventory, command decisions, command results, learning observation, blocker resume, browser close, submit detection, and reset
 - capture failures, repairs, manual corrections, and user mistake reports as redacted quality examples for local evaluation
 
-The Playwright runner remains the browser execution bridge. It opens the employer application URL, fills safe known fields, uploads files, reports field inventory to the workflow, polls for commands, executes fill/upload/skip commands, observes manual input, and watches for submit confirmation.
+The Playwright runner remains the browser execution bridge. It opens the employer application URL, fills safe known fields, uploads files, reports field inventory to the workflow, polls for commands, executes fill/upload/skip commands, uses generated safe answers when confidence is high, observes manual input, and watches for submit confirmation.
 
 The current implementation intentionally keeps the older broad fill pass before the field-command loop. This preserves coverage for known fields, learned form rules, saved field memories, demographic settings, and uploads. LangGraph then handles remaining unresolved fields through learning mode or hard-blocker pauses.
 
@@ -108,13 +108,14 @@ Apply Sprint derives structured run feedback from the assistant log and latest a
 
 ### Field Learning
 
-When the user manually fills a field, the assistant can store that answer as application field memory.
+Field Learning now lives under **Settings -> Learning**. When the user manually fills or edits a field, the assistant can store that answer as application field memory.
 
 Memory policy:
 
 - low-risk profile/contact fields may become `AUTO_USE`
 - repeated medium-risk custom answers can promote to `AUTO_USE` after consistent observations
 - sensitive answers stay `ASK_FIRST`
+- generated answers are auto-filled only for safe low/medium-risk fields and are learned from the final observed value after user review/editing
 - blocked fields such as passwords, CAPTCHA, SSN, payment, secrets, resumes, and cover letters are not saved as reusable field memories
 
 ### Test Reset

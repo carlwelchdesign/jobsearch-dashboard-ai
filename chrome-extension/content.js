@@ -156,7 +156,9 @@ function cleanCompanyFromTitle(title) {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "FILL_APPLICATION_FROM_PACKAGE") {
-    sendResponse(fillApplicationFromPackage(message.package || {}));
+    fillApplicationFromPackage(message.package || {}, message.auth || {})
+      .then(sendResponse)
+      .catch((error) => sendResponse({ filled: 0, skipped: 0, uploads: 0, uploadNeedsManual: 0, error: error?.message || "Fill failed" }));
     return true;
   }
 
@@ -185,10 +187,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-function fillApplicationFromPackage(assistantPackage) {
+async function fillApplicationFromPackage(assistantPackage, auth = {}) {
   const values = packageValues(assistantPackage);
   const materialFiles = packageMaterialFiles(assistantPackage);
-  const result = { filled: 0, skipped: 0, uploads: 0, uploadNeedsManual: 0 };
+  const result = { filled: 0, skipped: 0, generated: 0, uploads: 0, uploadNeedsManual: 0 };
   const fields = Array.from(document.querySelectorAll("input:not([type=hidden]), textarea, select"));
   for (const field of fields) {
     if (!isFillable(field)) {
@@ -207,7 +209,14 @@ function fillApplicationFromPackage(assistantPackage) {
       continue;
     }
     const descriptor = fieldDescriptor(field);
-    const value = valueForDescriptor(descriptor, values, field) || valueForFieldMemory(descriptor, assistantPackage, field);
+    let value = valueForDescriptor(descriptor, values, field) || valueForFieldMemory(descriptor, assistantPackage, field);
+    if (!value) {
+      const generated = await generatedFieldAnswer(descriptor, assistantPackage, field, auth);
+      if (generated) {
+        value = generated;
+        result.generated += 1;
+      }
+    }
     if (!value) {
       result.skipped += 1;
       continue;
@@ -215,6 +224,32 @@ function fillApplicationFromPackage(assistantPackage) {
     if (fillField(field, value)) result.filled += 1;
   }
   return result;
+}
+
+async function generatedFieldAnswer(descriptor, assistantPackage, field, auth = {}) {
+  const endpoint = assistantPackage.workflow?.fieldAnswerUrl;
+  if (!endpoint || sensitiveLearningDescriptor(descriptor) || !questionLikeDescriptor(descriptor, field)) return "";
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(auth.token ? { "x-job-search-os-token": auth.token } : {})
+      },
+      body: JSON.stringify({
+        label: descriptor.slice(0, 800),
+        inputType: String(field.type || field.tagName || "").toLowerCase(),
+        category: fieldCategory(descriptor),
+        selector: stableFieldSelector(field),
+        context: nearbyText(field).slice(0, 800)
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.autoFillAllowed) return "";
+    return String(payload.answer || "").trim();
+  } catch {
+    return "";
+  }
 }
 
 function packageMaterialFiles(assistantPackage) {
@@ -395,6 +430,10 @@ function valueForFieldMemory(descriptor, assistantPackage, field) {
     if (memoryCategory && normalized.includes(memoryCategory)) return answer;
   }
   return "";
+}
+
+function questionLikeDescriptor(descriptor, field) {
+  return field.tagName === "TEXTAREA" || /\?|why|describe|explain|tell us|interest|experience|project|challenge|contribution|about you|anything else/i.test(descriptor);
 }
 
 function memorySafeToAutofill(memory) {

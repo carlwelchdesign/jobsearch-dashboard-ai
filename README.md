@@ -188,7 +188,7 @@ Chrome-captured jobs also feed search strategy. If a job saved from the browser 
 
 The Chrome extension also supports **Apply Now** after a job has been saved. The popup remembers the last saved job, so you can save the job-description page, navigate to the actual ATS/application form, reopen the extension, and launch Apply Now from the current tab URL. The app updates the saved job's application URL, prepares or reuses the custom resume and cover letter, creates a `ready_to_apply` application, and starts the local application assistant with the same manual-submit safety gates as Apply Sprint.
 
-Profiles also include a weekly Market Intelligence brief. The `MARKET_INTELLIGENCE` agent compares recent jobs, profile health, applications, and outcome signals against curated external labor-market sources such as BLS, Indeed Hiring Lab, Lightcast/Stanford AI Index coverage, and selected role-trend reporting. It now fetches trusted source/index pages, discovers recent relevant articles, extracts readable text, keeps only summaries/claims/short excerpts, and uses OpenAI structured synthesis when configured. The brief shows research synthesis, role-lane demand, skill-signal charts, cited article cards, source links, and review-only actions for search profiles, positioning, company targeting, and outreach. It does not auto-edit profiles.
+The Command Center and Profiles page include a weekly Market Intelligence brief. The `MARKET_INTELLIGENCE` agent compares recent jobs, profile health, applications, and outcome signals against curated external labor-market sources such as BLS, Indeed Hiring Lab, Lightcast/Stanford AI Index coverage, and selected role-trend reporting. It fetches trusted source/index pages, discovers recent relevant articles, extracts readable text, keeps only summaries/claims/short excerpts, and uses OpenAI structured synthesis when configured. The report is stored as the latest completed `MARKET_INTELLIGENCE` `AgentRun.outputJson`, appears as a compact Command Center market analysis card, and still has the detailed Profiles page view. Manual and scheduled search runs automatically start a standard-depth market brief after search, duplicate/stale detection, and Apply Sprint packet handoff complete. The brief shows research synthesis, role-lane demand, skill-signal charts, cited article cards, source links, and review-only actions for search profiles, positioning, company targeting, and outreach. It does not auto-edit profiles.
 
 Optional market research tuning:
 
@@ -197,7 +197,7 @@ MARKET_INTELLIGENCE_EXTRA_SOURCES="https://example.com/research"
 MARKET_INTELLIGENCE_MAX_ARTICLES=8
 ```
 
-Scheduled job search runs are configured in `vercel.json` and call `/api/cron/job-search` daily at `14:00 UTC`. Scheduled runs only use enabled profiles where scheduling is enabled. Set `CRON_SECRET` in the deployment environment to require `Authorization: Bearer <CRON_SECRET>` on cron requests.
+Scheduled job search runs are configured in `vercel.json` and call `/api/cron/job-search` daily at `14:00 UTC`. Scheduled runs only use enabled profiles where scheduling is enabled. Set `CRON_SECRET` in the deployment environment to require `Authorization: Bearer <CRON_SECRET>` on cron requests. Command Center shows the latest manual search, latest cron-triggered search, configured cron expression, scheduled-profile count, and latest market brief; cron is only proven to be working when the database contains a `JobSearchRun` with `triggeredBy: "cron"`.
 
 ## Local Playwright Application Assistant
 

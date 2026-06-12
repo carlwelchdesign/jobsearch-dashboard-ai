@@ -8,6 +8,7 @@ describe("AppShell navigation", () => {
 
     expect(source).toContain('{ href: "/applications/assistant", label: "Apply Sprint"');
     expect(source).not.toContain('{ href: "/jobs", label: "Jobs"');
+    expect(source).not.toContain('{ href: "/applications/field-learning", label: "Field Learning"');
     expect(source).not.toContain('eyebrow: "Review matches"');
   });
 });

@@ -23,6 +23,7 @@ describe("Chrome extension ready application fill", () => {
     expect(script).toContain("currentUrl");
     expect(script).toContain("tokenHeaders()");
     expect(script).toContain("FILL_APPLICATION_FROM_PACKAGE");
+    expect(script).toContain('auth: { token }');
     expect(script).toContain("COLLECT_APPLICATION_FIELD_LEARNING");
     expect(script).toContain("/field-learning");
     expect(script).toContain("packageWithMaterialFiles");
@@ -47,6 +48,9 @@ describe("Chrome extension ready application fill", () => {
     expect(contentScript).toContain("sensitiveLearningDescriptor");
     expect(contentScript).toContain("valueForFieldMemory");
     expect(contentScript).toContain("memorySafeToAutofill");
+    expect(contentScript).toContain("generatedFieldAnswer");
+    expect(contentScript).toContain("fieldAnswerUrl");
+    expect(contentScript).toContain("autoFillAllowed");
     expect(contentScript).toContain("textFromIds");
   });
 

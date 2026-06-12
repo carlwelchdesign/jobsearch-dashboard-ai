@@ -7,11 +7,9 @@ The product is not a blind mass-apply bot. It is designed around verified candid
 ## Primary Surfaces
 
 - **Command Center**: daily operating view with live search updates, blockers, pipeline state, and prioritized actions.
-- **Jobs**: scored role review queue with signals, fit, status, and approval/rejection flows.
 - **Apply Sprint**: controlled browser-assistant launch surface for approved applications, learning sessions, and hard blockers.
-- **Field Learning**: review learned application-field memories and decide what can auto-fill.
 - **Applications**: application tracker, packets, outcomes, prep, and automation state.
-- **Settings**: provider config, cron, email, automation gates, company policies, sources, and admin links.
+- **Settings**: provider config, cron, email, automation gates, field learning, company policies, sources, and admin links.
 - **Jolene**: persistent context-aware assistant available on every screen with text and voice interaction.
 
 ## Core Capabilities
@@ -28,7 +26,7 @@ The product is not a blind mass-apply bot. It is designed around verified candid
 - Email response ingestion through IMAP and OAuth foundation for Gmail/Outlook.
 - Outcome tracking, canonical application reconciliation, application state integrity repair, and outcome-learning recommendations.
 - Local Playwright application assistant with LangGraph-backed durable workflow state and safety gates.
-- Agency-first search flow: completed searches hand strong matches to the recruiting agency automatically, show the linked agency activity on Dashboard, and keep borderline matches in the Jobs exception queue.
+- Agency-first search flow: completed searches prepare eligible saved matches for Apply Sprint automatically and keep exceptions in admin tooling.
 - LangGraph-backed recruiting agency workflow with live `AgentRun` activity, packet-preparation state, and explicit repair/retry/cancel controls.
 - MCP server exposing app tools to local agents.
 - Chrome extension for capturing externally found jobs into the system.
