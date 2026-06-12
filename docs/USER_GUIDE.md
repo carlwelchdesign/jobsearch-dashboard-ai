@@ -1743,7 +1743,7 @@ The Chrome extension lets you capture jobs you find while browsing and submit ap
 3. Click **Capture Job**.
 4. The job is sent to your app, scored, and added to your Jobs queue.
 
-> **Bonus feature:** If the captured job matches zero of your current profiles, the system automatically creates a new profile tailored to that job type and scores it immediately. This means the system learns from jobs you find interesting.
+> **Bonus feature:** If the captured job matches zero of your current profiles, the system automatically creates a new profile tailored to that job type and scores it immediately. This means the system learns from jobs you find interesting. Saved Chrome jobs with a persisted match are also marked approved and get an application tracker automatically, so they can be prepared through Apply Sprint.
 
 #### Launching Apply Sprint from the extension
 

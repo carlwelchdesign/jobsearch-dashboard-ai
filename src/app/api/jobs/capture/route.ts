@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
 import { apiError } from "@/lib/api";
+import { approveBestCapturedJobMatch } from "@/lib/applications/approval";
 import { captureManualJob } from "@/lib/jobs/manual-capture";
 import { createProfileFromZeroMatchCapture } from "@/lib/profiles/capture-profile-learning";
 
@@ -58,6 +59,9 @@ export async function POST(request: Request) {
         }).then((agentResult) => agentResult.output).catch(() => null)
       : null;
     const matches = learnedMatch ? [...result.matches, learnedMatch] : result.matches;
+    const approval = result.suppressed ? null : await approveBestCapturedJobMatch({
+      jobPostingId: result.job.id,
+    });
 
     return NextResponse.json({
       ...result,
@@ -71,6 +75,9 @@ export async function POST(request: Request) {
       profileCreated: Boolean(learnedProfile?.created),
       profileName: learnedProfile?.profile?.name ?? null,
       profileUrl: learnedProfile?.profile ? "/profiles" : null,
+      approved: Boolean(approval?.application),
+      application: approval?.application ?? null,
+      applicationUrl: approval?.application ? `/applications/${approval.application.id}` : null,
       message: result.created ? "Captured job from browser." : "Updated existing captured job.",
     }, { status: result.created ? 201 : 200 });
   } catch (error) {

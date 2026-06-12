@@ -2,6 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { POST } from "./route";
 
+vi.mock("@/lib/applications/reconciliation", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/applications/reconciliation")>(),
+  reconcileApplicationCanonicalState: vi.fn().mockResolvedValue({ inspected: 1, groups: 1, archivedDuplicates: 0, syncedMatches: 0 }),
+}));
+
+vi.mock("@/lib/jobs/suppression", () => ({
+  clearJobSuppressionForApproval: vi.fn(),
+}));
+
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     user: {
@@ -103,6 +112,7 @@ describe("POST /api/jobs/[id]/approve", () => {
         userId: "user_1",
         jobPostingId: "job_1",
         approvedAt: null,
+        status: "approved",
         notes: "Existing note.",
         jobPosting: {
           company: "Acme",

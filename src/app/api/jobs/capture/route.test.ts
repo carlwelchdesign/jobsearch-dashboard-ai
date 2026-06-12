@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
+import { approveBestCapturedJobMatch } from "@/lib/applications/approval";
 import { captureManualJob } from "@/lib/jobs/manual-capture";
 import { createProfileFromZeroMatchCapture } from "@/lib/profiles/capture-profile-learning";
 import { POST } from "./route";
@@ -12,11 +13,16 @@ vi.mock("@/lib/jobs/manual-capture", () => ({
   captureManualJob: vi.fn(),
 }));
 
+vi.mock("@/lib/applications/approval", () => ({
+  approveBestCapturedJobMatch: vi.fn(),
+}));
+
 vi.mock("@/lib/profiles/capture-profile-learning", () => ({
   createProfileFromZeroMatchCapture: vi.fn(),
 }));
 
 const captureManualJobMock = vi.mocked(captureManualJob);
+const approveBestCapturedJobMatchMock = vi.mocked(approveBestCapturedJobMatch);
 const createProfileFromZeroMatchCaptureMock = vi.mocked(createProfileFromZeroMatchCapture);
 const runJobFitScoringAgentMock = vi.mocked(runJobFitScoringAgent);
 
@@ -24,8 +30,10 @@ describe("/api/jobs/capture", () => {
   beforeEach(() => {
     runJobFitScoringAgentMock.mockReset();
     captureManualJobMock.mockReset();
+    approveBestCapturedJobMatchMock.mockReset();
     createProfileFromZeroMatchCaptureMock.mockReset();
     createProfileFromZeroMatchCaptureMock.mockResolvedValue({ created: false, profile: null, reason: "No profile needed." });
+    approveBestCapturedJobMatchMock.mockResolvedValue(null);
     runJobFitScoringAgentMock.mockResolvedValue({
       output: { evaluationId: "eval_1", fitScore: 82, opportunityScore: 80, confidenceScore: 72 },
     } as unknown as Awaited<ReturnType<typeof runJobFitScoringAgent>>);
@@ -67,6 +75,7 @@ describe("/api/jobs/capture", () => {
       jobPostingId: "job_1",
       jobSearchProfileId: "profile_1",
     });
+    expect(approveBestCapturedJobMatchMock).toHaveBeenCalledWith({ jobPostingId: "job_1" });
     await expect(response.json()).resolves.toMatchObject({
       job: { id: "job_1" },
       jobId: "job_1",
@@ -76,7 +85,40 @@ describe("/api/jobs/capture", () => {
       profileCreated: true,
       profileName: "AI-Native Enterprise Product Frontend",
       profileUrl: "/profiles",
+      approved: false,
+      application: null,
+      applicationUrl: null,
       message: "Captured job from browser.",
+    });
+  });
+
+  it("approves the persisted captured match and returns the application tracker", async () => {
+    captureManualJobMock.mockResolvedValue({
+      job: { id: "job_1", company: "Acme", title: "Senior Frontend Engineer" },
+      matches: [{ id: "match_1" }],
+      created: true,
+    } as unknown as Awaited<ReturnType<typeof captureManualJob>>);
+    approveBestCapturedJobMatchMock.mockResolvedValue({
+      match: { id: "match_1" },
+      application: { id: "app_1", status: "approved" },
+    } as unknown as Awaited<ReturnType<typeof approveBestCapturedJobMatch>>);
+
+    const response = await POST(new Request("http://localhost/api/jobs/capture", {
+      method: "POST",
+      body: JSON.stringify({
+        pageUrl: "https://acme.example/jobs/123",
+        pageTitle: "Senior Frontend Engineer | Acme",
+        company: "Acme",
+        selectedText: "React TypeScript product UI role.",
+      }),
+    }));
+
+    expect(response.status).toBe(201);
+    expect(approveBestCapturedJobMatchMock).toHaveBeenCalledWith({ jobPostingId: "job_1" });
+    await expect(response.json()).resolves.toMatchObject({
+      approved: true,
+      application: { id: "app_1", status: "approved" },
+      applicationUrl: "/applications/app_1",
     });
   });
 

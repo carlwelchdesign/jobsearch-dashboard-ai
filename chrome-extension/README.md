@@ -10,7 +10,7 @@ Local Chrome extension for saving job pages into the app and filling ready appli
 4. Choose Load unpacked.
 5. Select this `chrome-extension` folder.
 
-Open a job page, click the extension, review the extracted fields, and save. The extension posts to `POST /api/jobs/capture`, which runs the same dedupe and scoring path as manual job paste.
+Open a job page, click the extension, review the extracted fields, and save. The extension posts to `POST /api/jobs/capture`, which runs the same dedupe and scoring path as manual job paste. Saved Chrome jobs with a persisted match are approved automatically and get an `approved` application tracker, so the Applications page can move them into Apply Sprint without a separate manual job approval step.
 
 If the saved job has zero matching search profiles, the app creates an enabled captured-intent profile for similar roles, scores the captured job against it immediately, and reports that profile name in the popup status. The default lane is `AI-Native Enterprise Product Frontend`.
 
