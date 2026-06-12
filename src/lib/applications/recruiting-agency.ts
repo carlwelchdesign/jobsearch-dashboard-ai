@@ -364,6 +364,8 @@ function serializeRecruitingAgencyRun(run: AgentRun & { events: Array<{ id: stri
     createdAt: event.createdAt.toISOString(),
   }));
   const totals = agencyTotalsFromEvents(events);
+  const output = objectValue(run.outputJson);
+  const outputResults = Array.isArray(output.results) ? output.results : [];
   return {
     id: run.id,
     status: run.status,
@@ -374,6 +376,10 @@ function serializeRecruitingAgencyRun(run: AgentRun & { events: Array<{ id: stri
     startedAt: run.createdAt.toISOString(),
     updatedAt: run.updatedAt.toISOString(),
     totals,
+    ...(output.requested || outputResults.length ? {
+      requested: objectValue(output.requested),
+      results: outputResults,
+    } : {}),
     current: currentAgencyActivity(events),
     events,
   };

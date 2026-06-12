@@ -14,9 +14,11 @@ import { recoverStaleApplicationAutomationRuns, syncRunningApplicationAutomation
 import { buildAshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 import { hasApplicationForJob, submittedApplicationJobKeySet, submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from "@/lib/applications/reconciliation";
+import { buildApplySprintTrustFunnel } from "@/lib/applications/apply-sprint-funnel";
 import { AssistantWorkbench } from "./assistant-workbench";
 import { getServiceFallbacks } from "@/lib/service-fallbacks";
 import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
+import { loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +29,7 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
     recoverStaleApplicationAutomationRuns(),
   ]);
 
-  const [applications, submittedApplications, atsBlockers] = await Promise.all([
+  const [applications, submittedApplications, atsBlockers, latestSearchRun, latestAgencyRun, funnelMatches, funnelApplications] = await Promise.all([
     prisma.application.findMany({
     where: {
       status: "ready_to_apply",
@@ -85,12 +87,92 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
       },
     }),
     summarizeAutomationBlockers(200),
+    prisma.jobSearchRun.findFirst({
+      orderBy: { startedAt: "desc" },
+    }),
+    prisma.agentRun.findFirst({
+      where: { agentType: "RECRUITING_AGENCY" },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        status: true,
+        outputJson: true,
+        updatedAt: true,
+      },
+    }),
+    prisma.jobProfileMatch.findMany({
+      where: {
+        status: {
+          in: [
+            "needs_review",
+            "approved",
+            "resume_generated",
+            "cover_letter_generated",
+            "ready_to_apply",
+            "rejected",
+            "archived",
+            "saved_for_later",
+          ],
+        },
+      },
+      include: {
+        jobPosting: {
+          select: {
+            id: true,
+            company: true,
+            title: true,
+            location: true,
+            applicationUrl: true,
+            duplicateGroupId: true,
+            lastSeenAt: true,
+          },
+        },
+        jobSearchProfile: {
+          select: {
+            name: true,
+            userId: true,
+          },
+        },
+      },
+      orderBy: [
+        { overallScore: "desc" },
+        { updatedAt: "desc" },
+      ],
+      take: 500,
+    }),
+    prisma.application.findMany({
+      include: {
+        jobPosting: {
+          select: {
+            id: true,
+            company: true,
+            title: true,
+            location: true,
+            applicationUrl: true,
+            duplicateGroupId: true,
+            lastSeenAt: true,
+          },
+        },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 1000,
+    }),
   ]);
   const submittedJobKeys = submittedApplicationJobKeySet(submittedApplications);
   const canonicalApplications = visibleCanonicalApplications(applications);
   const visibleApplications = canonicalApplications.filter((application) => (
     !hasApplicationForJob(application.jobPosting, submittedJobKeys)
   ));
+  const funnelUserIds = Array.from(new Set(funnelMatches.map((match) => match.jobSearchProfile.userId)));
+  const suppressionByUserId = await loadJobSuppressionStatesByUserIds(funnelUserIds);
+  const trustFunnel = buildApplySprintTrustFunnel({
+    latestSearchRun,
+    latestAgencyRun,
+    matches: funnelMatches,
+    applications: funnelApplications,
+    visibleReadyApplicationIds: new Set(visibleApplications.map((application) => application.id)),
+    suppressionByUserId,
+  });
 
   const fallbacks = getServiceFallbacks(["openai", "playwright"]);
 
@@ -111,6 +193,7 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
         <AssistantWorkbench
           initialApplicationId={searchParams?.applicationId}
           atsBlockers={atsBlockers}
+          trustFunnel={trustFunnel}
           applications={visibleApplications.map((application) => ({
             id: application.id,
             jobPostingId: application.jobPostingId,

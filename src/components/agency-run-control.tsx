@@ -31,6 +31,8 @@ type AgencyRunStatus = {
     failed: number;
     skipped: number;
   };
+  requested?: unknown;
+  results?: unknown[];
   current: { type: string; message: string; payload: unknown } | null;
   events: Array<{
     id: string;

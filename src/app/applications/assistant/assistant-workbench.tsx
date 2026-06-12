@@ -13,16 +13,20 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
+import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import LinearProgress from "@mui/material/LinearProgress";
 import MenuItem from "@mui/material/MenuItem";
 import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
+import Tab from "@mui/material/Tab";
+import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AgencyRunControl } from "@/components/agency-run-control";
 import { RejectionReasonDialog, type RejectionReasonCode } from "@/components/job-reject-button";
 import type { AshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 import { summarizeApplicationJobDescription } from "@/lib/applications/job-summary";
@@ -56,6 +60,85 @@ type ReadyApplication = {
   } | null;
   assistantLaunched: boolean;
   ashbyRisk?: AshbyRiskAssessment | null;
+};
+
+type ApplySprintReasonCode =
+  | "below_profile_threshold"
+  | "existing_match_not_new"
+  | "profile_max_results_cap"
+  | "no_application_url"
+  | "unsupported_application_url"
+  | "duplicate_or_suppressed"
+  | "already_has_application"
+  | "agency_already_running"
+  | "packet_generation_failed"
+  | "missing_resume_or_cover_letter"
+  | "hidden_by_canonical_duplicate_reconciliation";
+
+type ApplySprintTrustFunnel = {
+  latestSearchRun: {
+    id: string;
+    status: string;
+    triggeredBy: string;
+    startedAt: string;
+    finishedAt: string | null;
+  } | null;
+  latestAgencyRun: {
+    id: string;
+    status: string;
+    updatedAt: string;
+  } | null;
+  summary: {
+    fetched: number;
+    newAfterDedupe: number;
+    matched: number;
+    saved: number;
+    eligibleForAgency: number;
+    agencyPrepared: number;
+    agencyFailedSkipped: number;
+    visibleReady: number;
+    belowProfileThreshold: number;
+    suppressed: number;
+    listingPagesSuppressed: number;
+    agencyAlreadyRunning: boolean;
+  };
+  candidates: Array<{
+    matchId: string;
+    jobId: string;
+    company: string;
+    title: string;
+    location: string | null;
+    applicationUrl: string | null;
+    profileName: string;
+    score: number;
+    updatedAt: string;
+    reasons: ApplySprintReasonCode[];
+    canPrepare: boolean;
+  }>;
+  agencyResults: Array<{
+    matchId?: string | null;
+    jobId?: string | null;
+    applicationId?: string | null;
+    company: string;
+    title: string;
+    score?: number | null;
+    status: "ready_to_apply" | "approved" | "skipped" | "failed";
+    error?: string | null;
+    reason?: string | null;
+  }>;
+  hidden: Array<{
+    id: string;
+    kind: "match" | "application" | "summary";
+    company: string;
+    title: string;
+    location: string | null;
+    applicationUrl: string | null;
+    profileName?: string | null;
+    score?: number | null;
+    status?: string | null;
+    reasons: ApplySprintReasonCode[];
+    detail: string;
+  }>;
 };
 
 type LaunchResponse = {
@@ -212,10 +295,12 @@ type AtsBlockerSummary = {
 export function AssistantWorkbench({
   applications,
   atsBlockers,
+  trustFunnel,
   initialApplicationId,
 }: {
   applications: ReadyApplication[];
   atsBlockers: AtsBlockerSummary[];
+  trustFunnel: ApplySprintTrustFunnel;
   initialApplicationId?: string;
 }) {
   const { refresh } = useRouter();
@@ -231,13 +316,14 @@ export function AssistantWorkbench({
   const [resetting, setResetting] = useState(false);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [appliedIds, setAppliedIds] = useState<string[]>([]);
-  const [question, setQuestion] = useState("");
-  const [questionLoading, setQuestionLoading] = useState(false);
-  const [questionHelper, setQuestionHelper] = useState<QuestionHelperResponse | null>(null);
-  const [savingMemoryIndex, setSavingMemoryIndex] = useState<number | null>(null);
   const [copyingCoverLetterId, setCopyingCoverLetterId] = useState<string | null>(null);
   const [pendingRejectionFeedback, setPendingRejectionFeedback] = useState<Pick<ReadyApplication, "id" | "company" | "title"> | null>(null);
   const [notice, setNotice] = useState("");
+  const [funnelUi, setFunnelUi] = useState<{
+    queueTab: "ready" | "candidates" | "agency" | "hidden";
+    selectedCandidateIds: string[];
+    preparingCandidates: boolean;
+  }>({ queueTab: "ready", selectedCandidateIds: [], preparingCandidates: false });
   const visibleApplications = useMemo(
     () => applications.filter((application) => !deletedIds.includes(application.id) && !appliedIds.includes(application.id)),
     [applications, appliedIds, deletedIds],
@@ -254,6 +340,10 @@ export function AssistantWorkbench({
     progress: sprintProgressForApplication(application),
   })), [visibleApplications]);
   const selectedRunActive = selected?.automationRun?.status === "RUNNING" || isLearningWorkflow(selectedWorkflow);
+  const visibleCandidateIds = useMemo(() => trustFunnel.candidates.reduce<string[]>((ids, candidate) => {
+    if (candidate.canPrepare) ids.push(candidate.matchId);
+    return ids;
+  }, []), [trustFunnel.candidates]);
 
   async function launchSelected(next = false) {
     const endpoint = next ? "/api/applications/next-ready/launch-assistant" : `/api/applications/${activeSelectedId}/launch-assistant`;
@@ -385,27 +475,6 @@ export function AssistantWorkbench({
     await deleteApplication(pendingRejectionFeedback, reasons, note);
   }
 
-  async function generateQuestionOptions() {
-    setQuestionLoading(true);
-    setQuestionHelper(null);
-    try {
-      const response = await fetch("/api/applications/question-helper", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ question, applicationId: activeSelectedId || undefined }),
-      });
-      const payload = (await response.json().catch(() => ({}))) as QuestionHelperResponse;
-      if (!response.ok) throw new Error(payload.error ?? "Unable to generate answer options.");
-      setQuestionHelper(payload);
-      setNotice(payload.savedToPacket ? "Answer options saved to the application packet." : "Answer options generated.");
-      refresh();
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Unable to generate answer options.");
-    } finally {
-      setQuestionLoading(false);
-    }
-  }
-
   async function copyCoverLetter(coverLetterId: string) {
     setCopyingCoverLetterId(coverLetterId);
     try {
@@ -421,27 +490,28 @@ export function AssistantWorkbench({
     }
   }
 
-  async function saveAnswerMemory(index: number, answer: string) {
-    setSavingMemoryIndex(index);
+  async function prepareSelectedCandidates() {
+    const matchIds = funnelUi.selectedCandidateIds.filter((id) => visibleCandidateIds.includes(id));
+    if (!matchIds.length) {
+      setNotice("Select at least one eligible candidate to prepare.");
+      return;
+    }
+    setFunnelUi((current) => ({ ...current, preparingCandidates: true }));
     try {
-      const response = await fetch("/api/application-answer-memory", {
+      const response = await fetch("/api/applications/assistant/prepare-candidates", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          questionText: question,
-          answer,
-          sensitivity: "MEDIUM",
-          reusePolicy: "ASK_FIRST",
-          sourceApplicationId: activeSelectedId || undefined,
-        }),
+        body: JSON.stringify({ matchIds }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error ?? "Unable to save reusable answer.");
-      setNotice(payload.message ?? "Reusable answer saved.");
+      if (!response.ok) throw new Error(payload.error ?? "Unable to prepare selected candidates.");
+      setFunnelUi((current) => ({ ...current, selectedCandidateIds: [] }));
+      setNotice(`Prepared ${payload.prepared ?? 0} selected candidate${payload.prepared === 1 ? "" : "s"}${payload.failed ? `; ${payload.failed} failed` : ""}.`);
+      refresh();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Unable to save reusable answer.");
+      setNotice(error instanceof Error ? error.message : "Unable to prepare selected candidates.");
     } finally {
-      setSavingMemoryIndex(null);
+      setFunnelUi((current) => ({ ...current, preparingCandidates: false }));
     }
   }
 
@@ -456,6 +526,26 @@ export function AssistantWorkbench({
 
   return (
     <>
+      <ApplySprintFunnelPanel trustFunnel={trustFunnel} readyCount={visibleApplications.length} />
+
+      <Card sx={{ mb: 2 }}>
+        <CardContent sx={{ pb: "16px !important" }}>
+          <Tabs
+            value={funnelUi.queueTab}
+            onChange={(_, value) => setFunnelUi((current) => ({ ...current, queueTab: value }))}
+            variant="scrollable"
+            scrollButtons="auto"
+            aria-label="Apply Sprint visibility tabs"
+          >
+            <Tab value="ready" label={`Ready (${visibleApplications.length})`} />
+            <Tab value="candidates" label={`Candidates (${trustFunnel.candidates.length})`} />
+            <Tab value="agency" label={`Agency Results (${trustFunnel.agencyResults.length})`} />
+            <Tab value="hidden" label={`Hidden / Suppressed (${trustFunnel.hidden.length})`} />
+          </Tabs>
+        </CardContent>
+      </Card>
+
+      {funnelUi.queueTab === "ready" ? (
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "380px 1fr" }, gap: 2 }}>
       <Card>
         <CardContent>
@@ -726,95 +816,33 @@ export function AssistantWorkbench({
           </CardContent>
         </Card>
       </Box>
+      ) : null}
 
-      <Card sx={{ mt: 2 }}>
-        <CardContent>
-          <Stack spacing={2}>
-            <Box>
-              <Typography variant="h3">Application question helper</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Paste a written application prompt and generate three grounded answer options from your approved profile, verified bullets, projects, and synced GitHub work.
-              </Typography>
-            </Box>
-            <TextField
-              multiline
-              minRows={3}
-              label="Application question"
-              placeholder="Example: Which project or challenge are you most proud of and why?"
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              fullWidth
-            />
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "center" }, justifyContent: "space-between" }}>
-              <Button
-                variant="contained"
-                startIcon={<AutoAwesomeOutlinedIcon />}
-                disabled={questionLoading || question.trim().length < 10}
-                onClick={() => void generateQuestionOptions()}
-              >
-                {questionLoading ? "Generating..." : "Generate options"}
-              </Button>
-              {questionHelper?.context ? (
-                <Typography variant="caption" color="text.secondary">
-                  Used {questionHelper.context.bulletsConsidered} bullets, {questionHelper.context.projectsConsidered} projects, {questionHelper.context.githubRepositoriesConsidered} repos
-                  {questionHelper.savedToPacket ? ` · saved to packet (${questionHelper.packetAnswerCount ?? 1})` : ""}.
-                </Typography>
-              ) : null}
-            </Stack>
-            {questionLoading ? <LinearProgress /> : null}
-            {questionHelper?.answerMemory?.length ? (
-              <Alert severity={questionHelper.answerMemory.some((memory) => memory.autoUsable) ? "success" : "info"}>
-                Found {questionHelper.answerMemory.length} saved answer match{questionHelper.answerMemory.length === 1 ? "" : "es"}.
-                {questionHelper.answerMemory.slice(0, 2).map((memory) => (
-                  <Box key={memory.id} sx={{ mt: 1 }}>
-                    <Typography variant="body2" sx={{ fontWeight: 850 }}>
-                      {memory.matchScore}% match · {memory.reusePolicy.replace(/_/g, " ").toLowerCase()} · {memory.sensitivity.toLowerCase()}
-                    </Typography>
-                    <Typography variant="body2">{memory.questionText}</Typography>
-                  </Box>
-                ))}
-              </Alert>
-            ) : null}
-            {questionHelper?.options?.length ? (
-              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(3, 1fr)" }, gap: 2 }}>
-                {questionHelper.options.map((option, index) => (
-                  <Card key={`${option.title}-${option.answer.slice(0, 40)}`} variant="outlined">
-                    <CardContent>
-                      <Stack spacing={1.5}>
-                        <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
-                          <Typography variant="h3">{option.title}</Typography>
-                          <Chip size="small" variant="outlined" label={`Option ${index + 1}`} />
-                        </Stack>
-                        <Typography sx={{ whiteSpace: "pre-wrap", lineHeight: 1.65 }}>{option.answer}</Typography>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          disabled={savingMemoryIndex === index}
-                          onClick={() => void saveAnswerMemory(index, option.answer)}
-                        >
-                          {savingMemoryIndex === index ? "Saving..." : "Save reusable answer"}
-                        </Button>
-                        <Divider />
-                        <Box>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>Evidence</Typography>
-                          <Stack spacing={0.5} sx={{ mt: 0.75 }}>
-                            {option.evidence.length ? option.evidence.map((item, itemIndex) => (
-                              <Typography key={`${option.title}-evidence-${itemIndex}`} variant="body2" color="text.secondary">- {item}</Typography>
-                            )) : <Typography variant="body2" color="text.secondary">No specific evidence returned.</Typography>}
-                          </Stack>
-                        </Box>
-                        <Alert severity={option.cautions.length ? "warning" : "info"}>
-                          {option.cautions.length ? option.cautions.join(" ") : option.tone}
-                        </Alert>
-                      </Stack>
-                    </CardContent>
-                  </Card>
-                ))}
-              </Box>
-            ) : null}
-          </Stack>
-        </CardContent>
-      </Card>
+      {funnelUi.queueTab === "candidates" ? (
+        <CandidatesPanel
+          candidates={trustFunnel.candidates}
+          selectedCandidateIds={funnelUi.selectedCandidateIds}
+          visibleCandidateIds={visibleCandidateIds}
+          preparing={funnelUi.preparingCandidates}
+          onToggle={(matchId) => setFunnelUi((current) => ({
+            ...current,
+            selectedCandidateIds: current.selectedCandidateIds.includes(matchId)
+              ? current.selectedCandidateIds.filter((id) => id !== matchId)
+              : [...current.selectedCandidateIds, matchId],
+          }))}
+          onToggleAll={() => setFunnelUi((current) => ({
+            ...current,
+            selectedCandidateIds: current.selectedCandidateIds.length === visibleCandidateIds.length ? [] : visibleCandidateIds,
+          }))}
+          onPrepareSelected={() => void prepareSelectedCandidates()}
+        />
+      ) : null}
+
+      {funnelUi.queueTab === "agency" ? <AgencyResultsPanel results={trustFunnel.agencyResults} latestAgencyRun={trustFunnel.latestAgencyRun} /> : null}
+
+      {funnelUi.queueTab === "hidden" ? <HiddenSuppressedPanel items={trustFunnel.hidden} /> : null}
+
+      <ApplicationQuestionHelper applicationId={activeSelectedId || undefined} onNotice={setNotice} />
       {atsBlockers.length ? (
         <Card>
           <CardContent>
@@ -870,6 +898,392 @@ export function AssistantWorkbench({
         submitLabel="Reject application"
       />
     </>
+  );
+}
+
+function ApplySprintFunnelPanel({ trustFunnel, readyCount }: { trustFunnel: ApplySprintTrustFunnel; readyCount: number }) {
+  const metrics = [
+    { label: "Fetched", value: trustFunnel.summary.fetched },
+    { label: "New", value: trustFunnel.summary.newAfterDedupe },
+    { label: "Matched", value: trustFunnel.summary.matched },
+    { label: "Saved", value: trustFunnel.summary.saved },
+    { label: "Agency eligible", value: trustFunnel.summary.eligibleForAgency },
+    { label: "Prepared", value: trustFunnel.summary.agencyPrepared },
+    { label: "Failed/skipped", value: trustFunnel.summary.agencyFailedSkipped },
+    { label: "Ready", value: readyCount },
+  ];
+
+  return (
+    <Card sx={{ mb: 2 }}>
+      <CardContent>
+        <Stack spacing={1.5}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+            <Box>
+              <Typography variant="h3">Search-to-Apply Sprint funnel</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Latest search and agency decisions, including candidates that are not yet ready.
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+              {trustFunnel.latestSearchRun ? (
+                <Chip size="small" variant="outlined" label={`Search ${trustFunnel.latestSearchRun.status}`} />
+              ) : null}
+              {trustFunnel.latestAgencyRun ? (
+                <Chip
+                  size="small"
+                  color={trustFunnel.summary.agencyAlreadyRunning ? "warning" : "default"}
+                  variant="outlined"
+                  label={`Agency ${trustFunnel.latestAgencyRun.status.toLowerCase()}`}
+                />
+              ) : null}
+            </Stack>
+          </Stack>
+
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "repeat(4, 1fr)", xl: "repeat(8, 1fr)" }, gap: 1 }}>
+            {metrics.map((metric) => (
+              <Box key={metric.label} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25, minWidth: 0 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>{metric.label}</Typography>
+                <Typography variant="h3">{metric.value}</Typography>
+              </Box>
+            ))}
+          </Box>
+
+          {(trustFunnel.summary.belowProfileThreshold || trustFunnel.summary.suppressed || trustFunnel.summary.listingPagesSuppressed) ? (
+            <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+              {trustFunnel.summary.belowProfileThreshold ? <Chip size="small" variant="outlined" label={`${trustFunnel.summary.belowProfileThreshold} below threshold`} /> : null}
+              {trustFunnel.summary.suppressed ? <Chip size="small" variant="outlined" label={`${trustFunnel.summary.suppressed} duplicate/suppressed`} /> : null}
+              {trustFunnel.summary.listingPagesSuppressed ? <Chip size="small" variant="outlined" label={`${trustFunnel.summary.listingPagesSuppressed} listing pages suppressed`} /> : null}
+            </Stack>
+          ) : null}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CandidatesPanel({
+  candidates,
+  selectedCandidateIds,
+  visibleCandidateIds,
+  preparing,
+  onToggle,
+  onToggleAll,
+  onPrepareSelected,
+}: {
+  candidates: ApplySprintTrustFunnel["candidates"];
+  selectedCandidateIds: string[];
+  visibleCandidateIds: string[];
+  preparing: boolean;
+  onToggle: (matchId: string) => void;
+  onToggleAll: () => void;
+  onPrepareSelected: () => void;
+}) {
+  return (
+    <Card>
+      <CardContent>
+        <Stack spacing={2}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+            <Box>
+              <Typography variant="h3">Candidates</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Eligible needs-review matches that have usable application URLs and can still be prepared for Apply Sprint.
+              </Typography>
+            </Box>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              <Button variant="outlined" disabled={!visibleCandidateIds.length} onClick={onToggleAll}>
+                {selectedCandidateIds.length === visibleCandidateIds.length ? "Clear selection" : "Select visible"}
+              </Button>
+              <Button variant="contained" disabled={preparing || !selectedCandidateIds.length} onClick={onPrepareSelected}>
+                {preparing ? "Preparing..." : "Prepare selected"}
+              </Button>
+            </Stack>
+          </Stack>
+
+          <AgencyRunControl
+            label="Run agency for visible candidates"
+            minimumScore={0}
+            limit={Math.max(1, Math.min(visibleCandidateIds.length || 1, 100))}
+            variant="outlined"
+            showLatestOnMount={false}
+          />
+
+          {candidates.length ? (
+            <Stack spacing={1}>
+              {candidates.map((candidate) => (
+                <Box key={candidate.matchId} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+                    <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start", minWidth: 0 }}>
+                      <Checkbox
+                        checked={selectedCandidateIds.includes(candidate.matchId)}
+                        onChange={() => onToggle(candidate.matchId)}
+                        disabled={!candidate.canPrepare}
+                        size="small"
+                        slotProps={{ input: { "aria-label": `Select ${candidate.company} ${candidate.title}` } }}
+                      />
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography sx={{ fontWeight: 850 }}>{candidate.company}</Typography>
+                        <Typography variant="body2" color="text.secondary">{candidate.title}</Typography>
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mt: 0.75 }}>
+                          <Chip size="small" label={`${candidate.score} score`} />
+                          <Chip size="small" variant="outlined" label={candidate.profileName} />
+                          {candidate.location ? <Chip size="small" variant="outlined" label={candidate.location} /> : null}
+                        </Stack>
+                      </Box>
+                    </Stack>
+                    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                      <Button component={Link} href={`/jobs?jobId=${candidate.jobId}`} size="small" variant="outlined">
+                        Open job
+                      </Button>
+                      <Button component="a" href={candidate.applicationUrl ?? undefined} target="_blank" rel="noreferrer" size="small" variant="outlined" disabled={!candidate.applicationUrl}>
+                        Application
+                      </Button>
+                    </Stack>
+                  </Stack>
+                </Box>
+              ))}
+            </Stack>
+          ) : (
+            <Alert severity="info">No eligible candidates are waiting. Check Hidden / Suppressed for jobs that were filtered out before packet prep.</Alert>
+          )}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AgencyResultsPanel({ results, latestAgencyRun }: { results: ApplySprintTrustFunnel["agencyResults"]; latestAgencyRun: ApplySprintTrustFunnel["latestAgencyRun"] }) {
+  return (
+    <Card>
+      <CardContent>
+        <Stack spacing={2}>
+          <Box>
+            <Typography variant="h3">Agency Results</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Latest recruiting-agency packet preparation output, including failures that do not appear in Ready.
+            </Typography>
+            {latestAgencyRun ? (
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                Run {latestAgencyRun.id} · {latestAgencyRun.status.toLowerCase()} · updated {formatDateTime(latestAgencyRun.updatedAt)}
+              </Typography>
+            ) : null}
+          </Box>
+          {results.length ? (
+            <Stack spacing={1}>
+              {results.map((result, index) => (
+                <Box key={`${result.matchId ?? result.jobId ?? index}-${result.status}`} sx={{ border: 1, borderColor: result.status === "failed" ? "error.main" : "divider", borderRadius: 1, p: 1.25 }}>
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontWeight: 850 }}>{result.company}</Typography>
+                      <Typography variant="body2" color="text.secondary">{result.title}</Typography>
+                      {result.error || result.reason ? <Typography variant="caption" color="error">{result.error ?? result.reason}</Typography> : null}
+                    </Box>
+                    <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                      {result.score ? <Chip size="small" label={`${result.score} score`} /> : null}
+                      <Chip size="small" color={result.status === "failed" ? "error" : result.status === "ready_to_apply" ? "success" : "default"} label={result.status.replace(/_/g, " ")} />
+                      {result.applicationId ? (
+                        <Button component={Link} href={`/applications/${result.applicationId}`} size="small" variant="outlined">
+                          Application
+                        </Button>
+                      ) : null}
+                    </Stack>
+                  </Stack>
+                </Box>
+              ))}
+            </Stack>
+          ) : (
+            <Alert severity="info">No agency result rows are available yet. Run search or run the agency for visible candidates.</Alert>
+          )}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function HiddenSuppressedPanel({ items }: { items: ApplySprintTrustFunnel["hidden"] }) {
+  return (
+    <Card>
+      <CardContent>
+        <Stack spacing={2}>
+          <Box>
+            <Typography variant="h3">Hidden / Suppressed</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Jobs and applications excluded from Ready, with the reason the agent or safety filter used.
+            </Typography>
+          </Box>
+          {items.length ? (
+            <Stack spacing={1}>
+              {items.map((item) => (
+                <Box key={`${item.kind}-${item.id}-${item.reasons.join("-")}`} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontWeight: 850 }}>{item.company}</Typography>
+                      <Typography variant="body2" color="text.secondary">{item.title}</Typography>
+                      <Typography variant="caption" color="text.secondary">{item.detail}</Typography>
+                    </Box>
+                    <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", justifyContent: { md: "flex-end" } }}>
+                      {item.status ? <Chip size="small" variant="outlined" label={item.status.replace(/_/g, " ")} /> : null}
+                      {item.score ? <Chip size="small" label={`${item.score} score`} /> : null}
+                      {item.reasons.map((reason) => <Chip key={reason} size="small" color={reason === "packet_generation_failed" ? "error" : "default"} variant="outlined" label={applySprintReasonLabel(reason)} />)}
+                      {item.applicationUrl ? (
+                        <Button component="a" href={item.applicationUrl} target="_blank" rel="noreferrer" size="small" variant="outlined">
+                          Open
+                        </Button>
+                      ) : null}
+                    </Stack>
+                  </Stack>
+                </Box>
+              ))}
+            </Stack>
+          ) : (
+            <Alert severity="success">No hidden or suppressed rows were found in the current Apply Sprint window.</Alert>
+          )}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ApplicationQuestionHelper({ applicationId, onNotice }: { applicationId?: string; onNotice: (message: string) => void }) {
+  const { refresh } = useRouter();
+  const [question, setQuestion] = useState("");
+  const [questionLoading, setQuestionLoading] = useState(false);
+  const [questionHelper, setQuestionHelper] = useState<QuestionHelperResponse | null>(null);
+  const [savingMemoryIndex, setSavingMemoryIndex] = useState<number | null>(null);
+
+  async function generateQuestionOptions() {
+    setQuestionLoading(true);
+    setQuestionHelper(null);
+    try {
+      const response = await fetch("/api/applications/question-helper", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question, applicationId }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as QuestionHelperResponse;
+      if (!response.ok) throw new Error(payload.error ?? "Unable to generate answer options.");
+      setQuestionHelper(payload);
+      onNotice(payload.savedToPacket ? "Answer options saved to the application packet." : "Answer options generated.");
+      refresh();
+    } catch (error) {
+      onNotice(error instanceof Error ? error.message : "Unable to generate answer options.");
+    } finally {
+      setQuestionLoading(false);
+    }
+  }
+
+  async function saveAnswerMemory(index: number, answer: string) {
+    setSavingMemoryIndex(index);
+    try {
+      const response = await fetch("/api/application-answer-memory", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          questionText: question,
+          answer,
+          sensitivity: "MEDIUM",
+          reusePolicy: "ASK_FIRST",
+          sourceApplicationId: applicationId,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? "Unable to save reusable answer.");
+      onNotice(payload.message ?? "Reusable answer saved.");
+    } catch (error) {
+      onNotice(error instanceof Error ? error.message : "Unable to save reusable answer.");
+    } finally {
+      setSavingMemoryIndex(null);
+    }
+  }
+
+  return (
+    <Card sx={{ mt: 2 }}>
+      <CardContent>
+        <Stack spacing={2}>
+          <Box>
+            <Typography variant="h3">Application question helper</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Paste a written application prompt and generate three grounded answer options from your approved profile, verified bullets, projects, and synced GitHub work.
+            </Typography>
+          </Box>
+          <TextField
+            multiline
+            minRows={3}
+            label="Application question"
+            placeholder="Example: Which project or challenge are you most proud of and why?"
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            fullWidth
+          />
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "center" }, justifyContent: "space-between" }}>
+            <Button
+              variant="contained"
+              startIcon={<AutoAwesomeOutlinedIcon />}
+              disabled={questionLoading || question.trim().length < 10}
+              onClick={() => void generateQuestionOptions()}
+            >
+              {questionLoading ? "Generating..." : "Generate options"}
+            </Button>
+            {questionHelper?.context ? (
+              <Typography variant="caption" color="text.secondary">
+                Used {questionHelper.context.bulletsConsidered} bullets, {questionHelper.context.projectsConsidered} projects, {questionHelper.context.githubRepositoriesConsidered} repos
+                {questionHelper.savedToPacket ? ` · saved to packet (${questionHelper.packetAnswerCount ?? 1})` : ""}.
+              </Typography>
+            ) : null}
+          </Stack>
+          {questionLoading ? <LinearProgress /> : null}
+          {questionHelper?.answerMemory?.length ? (
+            <Alert severity={questionHelper.answerMemory.some((memory) => memory.autoUsable) ? "success" : "info"}>
+              Found {questionHelper.answerMemory.length} saved answer match{questionHelper.answerMemory.length === 1 ? "" : "es"}.
+              {questionHelper.answerMemory.slice(0, 2).map((memory) => (
+                <Box key={memory.id} sx={{ mt: 1 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 850 }}>
+                    {memory.matchScore}% match · {memory.reusePolicy.replace(/_/g, " ").toLowerCase()} · {memory.sensitivity.toLowerCase()}
+                  </Typography>
+                  <Typography variant="body2">{memory.questionText}</Typography>
+                </Box>
+              ))}
+            </Alert>
+          ) : null}
+          {questionHelper?.options?.length ? (
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(3, 1fr)" }, gap: 2 }}>
+              {questionHelper.options.map((option, index) => (
+                <Card key={`${option.title}-${option.answer.slice(0, 40)}`} variant="outlined">
+                  <CardContent>
+                    <Stack spacing={1.5}>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+                        <Typography variant="h3">{option.title}</Typography>
+                        <Chip size="small" variant="outlined" label={`Option ${index + 1}`} />
+                      </Stack>
+                      <Typography sx={{ whiteSpace: "pre-wrap", lineHeight: 1.65 }}>{option.answer}</Typography>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        disabled={savingMemoryIndex === index}
+                        onClick={() => void saveAnswerMemory(index, option.answer)}
+                      >
+                        {savingMemoryIndex === index ? "Saving..." : "Save reusable answer"}
+                      </Button>
+                      <Divider />
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>Evidence</Typography>
+                        <Stack spacing={0.5} sx={{ mt: 0.75 }}>
+                          {option.evidence.length ? option.evidence.map((item, itemIndex) => (
+                            <Typography key={`${option.title}-evidence-${itemIndex}`} variant="body2" color="text.secondary">- {item}</Typography>
+                          )) : <Typography variant="body2" color="text.secondary">No specific evidence returned.</Typography>}
+                        </Stack>
+                      </Box>
+                      <Alert severity={option.cautions.length ? "warning" : "info"}>
+                        {option.cautions.length ? option.cautions.join(" ") : option.tone}
+                      </Alert>
+                    </Stack>
+                  </CardContent>
+                </Card>
+              ))}
+            </Box>
+          ) : null}
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1246,6 +1660,23 @@ function primarySprintAction(application: ReadyApplication, canMarkApplied: bool
 
 function summarizeReadyJobDescription(application: Pick<ReadyApplication, "description" | "title" | "company">) {
   return summarizeApplicationJobDescription(application);
+}
+
+function applySprintReasonLabel(reason: ApplySprintReasonCode) {
+  const labels: Record<ApplySprintReasonCode, string> = {
+    below_profile_threshold: "below profile threshold",
+    existing_match_not_new: "existing match, not new",
+    profile_max_results_cap: "per-profile maxResultsPerRun cap",
+    no_application_url: "no application URL",
+    unsupported_application_url: "unsupported URL",
+    duplicate_or_suppressed: "duplicate/suppressed",
+    already_has_application: "already has application",
+    agency_already_running: "agency already running",
+    packet_generation_failed: "packet generation failed",
+    missing_resume_or_cover_letter: "missing resume or cover letter",
+    hidden_by_canonical_duplicate_reconciliation: "hidden by canonical duplicate reconciliation",
+  };
+  return labels[reason];
 }
 
 function isLearningWorkflow(workflow: WorkflowStatus | null) {
