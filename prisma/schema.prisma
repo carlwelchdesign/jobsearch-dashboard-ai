@@ -541,6 +541,11 @@ model UserProfile {
   phone               String?
   location            String?
   linkedinUrl         String?
+  linkedinSubject     String?
+  linkedinPictureUrl  String?
+  linkedinLocale      String?
+  linkedinEmailVerified Boolean?
+  linkedinConnectedAt DateTime?
   githubUrl           String?
   portfolioUrl        String?
   raceAnswer          String?

@@ -110,7 +110,7 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
         <PageHeader
           eyebrow="Source management"
           title="Company Sources"
-          description="Manage curated company sources and broad open-web provider coverage. LinkedIn is treated as a discovery signal: the app does not scrape LinkedIn directly, but it searches for original employer, ATS, and career-page postings behind LinkedIn-visible roles."
+          description="Manage curated company sources and broad open-web provider coverage. LinkedIn is treated as a discovery signal: the app does not scrape LinkedIn directly, but captured LinkedIn leads can generate original employer, ATS, and career-page searches."
         />
         <ServiceFallbackBanners items={fallbacks} />
 
@@ -206,7 +206,7 @@ export default async function SourcesPage({ searchParams }: { searchParams?: { q
                         : "Targeted open-web queries require the `Search Query Backlog` source to be enabled and BRAVE_SEARCH_API_KEY to be configured."}
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                  LinkedIn jobs should be captured through their original company or ATS pages when possible; this backlog broadens discovery across ATS partners and job boards without account scraping.
+                  LinkedIn jobs should be captured through their original company or ATS pages when possible. Bare LinkedIn job URLs are review-only leads; rich captures with company, title, and selected text can be scored and can add original-posting queries here. LinkedIn OIDC in Settings imports profile basics only and does not grant job-search API access.
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
                   Search charts now separate raw fetched volume from detail candidates, qualified matches, new profile matches, agency-eligible jobs, and review-only broad matches so source coverage gains do not look like silent failures.

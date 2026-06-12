@@ -82,6 +82,18 @@ The search-query source carries roadmap coverage for high-friction sources throu
 
 LinkedIn is not scraped directly. Treat LinkedIn as a discovery signal and use the search-query backlog to find original employer, ATS, or career-page postings behind LinkedIn-visible roles when those postings are publicly discoverable.
 
+Optional LinkedIn OIDC profile enrichment is configured separately from job discovery:
+
+```bash
+LINKEDIN_CLIENT_ID=...
+LINKEDIN_CLIENT_SECRET=...
+LINKEDIN_OIDC_REDIRECT_URI=http://localhost:3000/api/auth/linkedin/callback
+```
+
+The callback stores durable `UserProfile` metadata such as LinkedIn subject, picture URL, locale, email verification status, and connection time. It does not store LinkedIn access or refresh tokens. LinkedIn Apply with LinkedIn, Apply Connect, and Job Posting APIs remain blocked or partner-only for this candidate-side app.
+
+Captured `linkedin.com/jobs/view/...` URLs are LinkedIn leads. Rich leads with company, title, and selected job text go through normal manual capture, scoring, and approval. Bare LinkedIn URLs are saved as review-only lead records and do not become scored jobs until the user provides enough text or the original employer/ATS link. When the lead has enough company/title/location signal, the app generates original-posting queries, excludes `site:linkedin.com`, and merges them into Search Query Backlog without overwriting existing custom queries.
+
 Existing `Search Query Backlog` configs are merged with new default query templates when seed or `/sources` runs, preserving custom user-added queries while adding newly supported provider coverage.
 
 The search-query adapter suppresses likely list/search result pages before scoring. If a listing page can be expanded into individual job URLs, those jobs continue through normal scoring. If expansion is blocked or no individual jobs are parseable, the listing URL is recorded in `JobSearchRun.progress` with `listingPagesSuppressed` stats and is not saved as an active job.

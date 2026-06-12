@@ -1,10 +1,11 @@
-import { AtsProvider, RemoteType } from "@prisma/client";
+import { AtsProvider, Prisma, RemoteType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
 import { apiError } from "@/lib/api";
 import { approveBestCapturedJobMatch } from "@/lib/applications/approval";
 import { captureManualJob } from "@/lib/jobs/manual-capture";
+import { appendLinkedInLeadQueriesToSearchBacklog, captureLinkedInReviewLead, linkedInLeadHasEnoughDetail, linkedInLeadMetadata, linkedInJobUrl } from "@/lib/linkedin/job-leads";
 import { createProfileFromZeroMatchCapture } from "@/lib/profiles/capture-profile-learning";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +33,34 @@ export async function POST(request: Request) {
     }
 
     const body = captureSchema.parse(await request.json());
+    const leadUrl = linkedInJobUrl(body);
+    const linkedInMetadata = linkedInLeadMetadata(body);
+    if (linkedInMetadata?.originalPostingQueries.length) {
+      await appendLinkedInLeadQueriesToSearchBacklog(linkedInMetadata.originalPostingQueries);
+    }
+
+    if (leadUrl && !linkedInLeadHasEnoughDetail(body)) {
+      const rawData = {
+        pageTitle: body.pageTitle ?? null,
+        selectedText: body.selectedText ?? null,
+        metadata: body.metadata,
+      } as Prisma.InputJsonValue;
+      const lead = await captureLinkedInReviewLead({
+        ...body,
+        rawData,
+      });
+      return NextResponse.json({
+        job: lead.job,
+        jobId: lead.job.id,
+        jobUrl: `/jobs/${lead.job.id}`,
+        leadSource: "linkedin",
+        linkedInJobUrl: leadUrl,
+        needsManualText: true,
+        originalPostingQueries: linkedInMetadata?.originalPostingQueries ?? [],
+        message: "Saved LinkedIn job lead for review. Paste selected job text or open the original employer/ATS apply link so it can be scored.",
+      }, { status: lead.created ? 202 : 200 });
+    }
+
     const result = await captureManualJob({
       company: body.company,
       title: body.title ?? inferTitleFromPageTitle(body.pageTitle),
@@ -47,6 +76,7 @@ export async function POST(request: Request) {
         pageTitle: body.pageTitle ?? null,
         selectedText: body.selectedText ?? null,
         metadata: body.metadata,
+        ...(linkedInMetadata ?? {}),
       },
     });
     const learnedProfile = result.matches.length === 0
@@ -78,6 +108,10 @@ export async function POST(request: Request) {
       approved: Boolean(approval?.application),
       application: approval?.application ?? null,
       applicationUrl: approval?.application ? `/applications/${approval.application.id}` : null,
+      leadSource: linkedInMetadata?.leadSource ?? null,
+      linkedInJobUrl: linkedInMetadata?.linkedInJobUrl ?? null,
+      needsManualText: linkedInMetadata?.needsManualText ?? false,
+      originalPostingQueries: linkedInMetadata?.originalPostingQueries ?? [],
       message: result.created ? "Captured job from browser." : "Updated existing captured job.",
     }, { status: result.created ? 201 : 200 });
   } catch (error) {

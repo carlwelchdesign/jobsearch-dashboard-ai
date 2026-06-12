@@ -79,6 +79,12 @@ type SettingsClientProps = {
   };
   profileSettings: {
     linkedinUrl: string;
+    linkedinSubject: string | null;
+    linkedinPictureUrl: string | null;
+    linkedinLocale: string | null;
+    linkedinEmailVerified: boolean | null;
+    linkedinConnectedAt: string | null;
+    linkedinOidcConfigured: boolean;
     githubUrl: string;
     raceAnswer: string;
     genderAnswer: string;
@@ -863,10 +869,10 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
                 <LinkOutlinedIcon color="primary" />
                 <Typography variant="h3">Application profile links</Typography>
               </Stack>
-              <StatusChip status={profile.linkedinUrl ? "configured" : "provider_missing"} />
+              <StatusChip status={profile.linkedinSubject ? "configured" : profile.linkedinOidcConfigured ? "provider_missing" : "disabled"} />
             </Stack>
             <Typography color="text.secondary">
-              These URLs are used by the local application assistant when it fills employer forms.
+              These URLs are used by the local application assistant when it fills employer forms. LinkedIn connection imports identity basics only; it does not grant job-search, saved-jobs, or auto-apply access.
             </Typography>
             <TextField
               fullWidth
@@ -875,6 +881,40 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
               value={profile.linkedinUrl}
               onChange={(event) => setProfile((previous) => ({ ...previous, linkedinUrl: event.target.value }))}
             />
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={1.5}
+              sx={{ alignItems: { sm: "center" }, border: 1, borderColor: "divider", borderRadius: 1, p: 1.5 }}
+            >
+              {profile.linkedinPictureUrl ? (
+                <Box
+                  component="img"
+                  src={profile.linkedinPictureUrl}
+                  alt=""
+                  sx={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover", border: 1, borderColor: "divider" }}
+                />
+              ) : null}
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{ fontWeight: 850 }}>
+                  {profile.linkedinSubject ? "LinkedIn connected" : "LinkedIn identity connection"}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {profile.linkedinSubject
+                    ? `Connected${profile.linkedinConnectedAt ? ` ${profile.linkedinConnectedAt}` : ""}${profile.linkedinLocale ? ` · locale ${profile.linkedinLocale}` : ""}${profile.linkedinEmailVerified ? " · email verified" : ""}`
+                    : profile.linkedinOidcConfigured
+                      ? "Connect to import LinkedIn OIDC name, email, photo, and locale as profile enrichment context."
+                      : "Set LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET to enable this connection."}
+                </Typography>
+              </Box>
+              <Button
+                component={Link}
+                href="/api/auth/linkedin/start"
+                variant={profile.linkedinSubject ? "outlined" : "contained"}
+                disabled={!profile.linkedinOidcConfigured}
+              >
+                {profile.linkedinSubject ? "Reconnect LinkedIn" : "Connect LinkedIn"}
+              </Button>
+            </Stack>
           </Stack>
         </CardContent>
       </Card>

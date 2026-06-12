@@ -1037,6 +1037,12 @@ export async function SettingsRouteContent({
           }}
           profileSettings={{
             linkedinUrl: user?.profile?.linkedinUrl ?? "",
+            linkedinSubject: user?.profile?.linkedinSubject ?? null,
+            linkedinPictureUrl: user?.profile?.linkedinPictureUrl ?? null,
+            linkedinLocale: user?.profile?.linkedinLocale ?? null,
+            linkedinEmailVerified: user?.profile?.linkedinEmailVerified ?? null,
+            linkedinConnectedAt: user?.profile?.linkedinConnectedAt?.toLocaleString() ?? null,
+            linkedinOidcConfigured: Boolean(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET),
             githubUrl: user?.profile?.githubUrl ?? "https://github.com/carlwelchdesign",
             raceAnswer: user?.profile?.raceAnswer ?? "",
             genderAnswer: user?.profile?.genderAnswer ?? "",

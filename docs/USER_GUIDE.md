@@ -541,6 +541,7 @@ The MCP server always runs as a local process on your machine. When your app is 
 | **OpenAI API** | Strongly recommended | Add `OPENAI_API_KEY` to `.env` | Add to Vercel env vars | AI features degrade to rule-based fallbacks; Jolene becomes generic |
 | **Email sync** | Strongly recommended | Configure IMAP or OAuth in `.env` | Configure in Vercel env vars; cron runs automatically | Outcome tracking is 100% manual |
 | **Brave Search API** | Recommended | Add `BRAVE_SEARCH_API_KEY` to `.env` | Add to Vercel env vars | Lose broad ATS, job-board, startup, remote-board, and LinkedIn-original-source discovery |
+| **LinkedIn OIDC** | Optional | Add `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET` to `.env` | Add to Vercel env vars and set the production callback URL | No LinkedIn identity/photo/locale enrichment; job search is unaffected |
 | **Python + Playwright** | Recommended | `npm run assistant:install` on your machine | Same — always runs locally even with production app | Apply Sprint won't auto-fill forms |
 | **Pushover** | Optional | Add keys to `.env` or Settings UI | Add to Vercel env vars or Settings UI | No phone push alerts |
 | **Resend or Postmark** | Optional | Add API key to `.env` | Add to Vercel env vars | No email digests |
@@ -580,8 +581,9 @@ Do these seven steps before your first job search. Each one builds on the last.
 
 1. Click **Settings** in the left sidebar (`/settings`).
 2. Scroll down to the **Application profile links** card and fill in your LinkedIn URL.
-3. Scroll down to the **GitHub work context** card and fill in your GitHub profile URL (covered in detail in [Part 9](#part-9--github-integration-adding-your-projects-as-evidence)).
-4. Click **Save settings**.
+3. Optional: if `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET` are configured, click **Connect LinkedIn** to import identity basics. This imports profile metadata only; it does not grant LinkedIn job-search or auto-apply access.
+4. Scroll down to the **GitHub work context** card and fill in your GitHub profile URL (covered in detail in [Part 9](#part-9--github-integration-adding-your-projects-as-evidence)).
+5. Click **Save settings**.
 
 ### Step 4 — Create at least one Search Profile
 
@@ -761,6 +763,8 @@ The full **Market Analysis** brief now lives on the Command Center. Click **Run 
 When you enable **Search Query Backlog** (requires a `BRAVE_SEARCH_API_KEY`), the system runs targeted Brave web searches covering platforms that do not have direct ATS integrations — including Workday, SmartRecruiters, iCIMS, Jobvite, Bullhorn, Oracle Taleo, SAP SuccessFactors, BambooHR, Teamtailor, Jobylon, Join, Jobtrain, Wellfound, ZipRecruiter, Dice, Monster, CareerBuilder, SimplyHired, Adzuna, Built In, Levels.fyi, Hacker News, USAJOBS, and many others.
 
 LinkedIn itself is not scraped directly because it requires an authenticated account workflow and has high automation risk. If you see a role on LinkedIn, the search backlog is designed to find the original employer, ATS, or careers-page version of that role when it is publicly discoverable.
+
+When the Chrome extension or manual capture receives a `linkedin.com/jobs/view/...` URL, the app treats it as a LinkedIn lead. If you captured the company, title, and selected job text, it is saved, scored, and approved through the normal pipeline. If you captured only the LinkedIn URL, the app saves a review-only lead instead of pretending it scraped the job; paste the selected job text or use the original employer/ATS link to make it scoreable. Company/title/location leads also generate safe original-posting queries that are merged into Search Query Backlog and exclude `site:linkedin.com`.
 
 To enable it:
 1. Get a [Brave Search API key](https://api.search.brave.com/).

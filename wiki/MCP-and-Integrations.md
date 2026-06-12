@@ -50,6 +50,8 @@ The MCP server can prepare packages and update local tracking state. It does not
 
 The Chrome extension captures jobs found outside the app and sends them into Job Search OS for review. After a save, it can also launch **Apply Now** for the last saved job from the current active tab URL, which lets the user save a job-description page and then navigate to the real application form before preparing materials and starting the local assistant.
 
+LinkedIn job URLs captured through Chrome are handled as leads, not scraped pages. A capture with company, title, and selected job text continues through normal scoring and approval. A bare `linkedin.com/jobs/view/...` URL is saved as a review-only lead with guidance to paste selected text or use the original employer/ATS link. The app also generates safe open-web original-posting queries from the lead metadata and merges them into Search Query Backlog.
+
 Package:
 
 ```bash
@@ -73,6 +75,8 @@ Apply Now sends the current tab URL to the local app, updates the saved job's ap
 ## GitHub Context
 
 Settings can sync public GitHub repository context into the candidate profile.
+
+Settings can also connect LinkedIn through OIDC when `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET` are configured. This imports basic identity/profile metadata (`openid profile email`) and stores durable profile fields only; it does not store long-lived LinkedIn tokens or provide LinkedIn job-search, saved-job, Apply with LinkedIn, Apply Connect, or Job Posting API access.
 
 Uses:
 
