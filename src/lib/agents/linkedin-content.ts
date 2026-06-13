@@ -1,8 +1,8 @@
 import type { AgentRun, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { runAgent } from "@/lib/agents/run-agent";
+import { buildLinkedInContentMemoryPack, jsonValue, type LinkedInContentMemoryPack } from "@/lib/agents/linkedin-content-memory";
 import { parseStructuredOutput } from "@/lib/ai/openai";
-import { sourceCatalog } from "@/lib/job-search/source-catalog";
 import { prisma } from "@/lib/prisma";
 
 export type LinkedInContentInput = {
@@ -15,8 +15,17 @@ export type LinkedInContentPillar = "app_progress" | "search_learning" | "archit
 export type LinkedInScreenshotAsset = {
   label: string;
   path: string;
-  mimeType: "image/svg+xml";
+  mimeType: "image/png";
   description: string;
+  route: string;
+  privacyStatus: "PASS" | "NEEDS_REVIEW";
+  warnings: string[];
+};
+
+export type LinkedInAgentReview = {
+  agent: "Documentarian" | "Analytics Narrator" | "Product Strategist" | "Editor" | "Visual Producer" | "Privacy Reviewer";
+  summary: string;
+  recommendation: string;
 };
 
 export type LinkedInPrivacyReview = {
@@ -31,27 +40,19 @@ export type LinkedInContentOutput = {
   hook: string;
   body: string;
   hashtags: string[];
+  disclosureText: string;
   contentPillar: LinkedInContentPillar;
   sourceFacts: string[];
+  memorySources: Array<{ type: string; ref: string; label: string }>;
+  analyticsSources: Array<{ type: string; ref: string; label: string }>;
+  agentReviews: LinkedInAgentReview[];
+  claims: Array<{ text: string; provenance: string; status: "grounded" | "ungrounded" }>;
+  risks: string[];
   screenshotAssets: LinkedInScreenshotAsset[];
+  selectedScreenshots: LinkedInScreenshotAsset[];
   privacyReview: LinkedInPrivacyReview;
   mode: "llm" | "deterministic";
   draftId?: string;
-};
-
-type LinkedInContentContext = {
-  pillar: LinkedInContentPillar;
-  generatedAt: string;
-  sourceFacts: string[];
-  searchRuns: Array<{ jobsFetched: number; jobsSaved: number; status: string; createdAt: string }>;
-  agentRuns: Array<{ agentType: string; status: string; createdAt: string; summary: string }>;
-  sourceCoverage: {
-    activeSources: number;
-    querySources: number;
-    manualSources: number;
-    priorityOneSources: number;
-  };
-  docsSignals: string[];
 };
 
 const generatedLinkedInPostSchema = z.object({
@@ -61,7 +62,9 @@ const generatedLinkedInPostSchema = z.object({
   hashtags: z.array(z.string().min(1).max(40)).max(8),
 });
 
-const defaultHashtags = ["#BuildInPublic", "#AgenticAI", "#JobSearch", "#ProductEngineering"];
+const defaultHashtags = ["#BuildInPublic", "#AgenticAI", "#CreatorTools", "#ProductEngineering"];
+const defaultDisclosure = "Prepared by my agent content team from the Job Search OS build log.";
+const allowedScreenshotRoutes = new Set(["/dashboard", "/sources", "/runs", "/applications/assistant", "/settings/learning", "/linkedin-content"]);
 
 export async function runLinkedInContentAgent(input: LinkedInContentInput = {}) {
   const user = input.userId
@@ -69,23 +72,36 @@ export async function runLinkedInContentAgent(input: LinkedInContentInput = {}) 
     : await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });
   if (!user) throw new Error("No user exists. Run seed first.");
 
-  const context = await loadLinkedInContentContext(input.contentPillar ?? "app_progress");
+  const memoryPack = await buildLinkedInContentMemoryPack(user.id);
+  const pillar = input.contentPillar ?? "app_progress";
   return runAgent<LinkedInContentInput, LinkedInContentOutput>({
     agentType: "LINKEDIN_CONTENT",
-    input: { ...input, contentPillar: context.pillar },
+    input: { ...input, contentPillar: pillar },
     userId: user.id,
     execute: async (run) => {
-      const generated = await generateLinkedInContent(context);
-      const screenshotAssets = await createSafeLinkedInScreenshotAssets(context, generated);
+      const generated = await generateLinkedInContent({ pillar, memoryPack });
+      const agentReviews = buildAgentReviews(memoryPack, generated);
+      const screenshotAssets = await createSafeLinkedInScreenshotAssets(memoryPack);
+      const selectedScreenshots = screenshotAssets.filter((asset) => asset.privacyStatus === "PASS").slice(0, 1);
+      const claims = buildClaims(generated, memoryPack);
       const privacyReview = reviewLinkedInPostPrivacy({
         body: generated.body,
         hook: generated.hook,
+        disclosureText: defaultDisclosure,
         sourceFacts: generated.sourceFacts,
-        screenshotAssets,
+        screenshotAssets: selectedScreenshots,
+        claims,
       });
       const output: LinkedInContentOutput = {
         ...generated,
+        disclosureText: defaultDisclosure,
+        memorySources: memoryPack.memorySources,
+        analyticsSources: memoryPack.analyticsSources,
+        agentReviews,
+        claims,
+        risks: privacyReview.warnings,
         screenshotAssets,
+        selectedScreenshots,
         privacyReview,
       };
       const draft = await persistLinkedInPostDraft(user.id, run, output);
@@ -94,29 +110,32 @@ export async function runLinkedInContentAgent(input: LinkedInContentInput = {}) 
   });
 }
 
-export async function generateLinkedInContent(context: LinkedInContentContext): Promise<Omit<LinkedInContentOutput, "screenshotAssets" | "privacyReview" | "draftId">> {
-  const fallback = buildLinkedInContentFallback(context);
+export async function generateLinkedInContent(input: {
+  pillar: LinkedInContentPillar;
+  memoryPack: LinkedInContentMemoryPack;
+}): Promise<Omit<LinkedInContentOutput, "screenshotAssets" | "selectedScreenshots" | "privacyReview" | "draftId" | "disclosureText" | "memorySources" | "analyticsSources" | "agentReviews" | "claims" | "risks">> {
+  const fallback = buildLinkedInContentFallback(input);
   try {
     const generated = await parseStructuredOutput({
       schema: generatedLinkedInPostSchema,
-      schemaName: "generate_linkedin_content_post",
+      schemaName: "generate_linkedin_content_team_post",
       system:
-        "Write a LinkedIn post draft for a senior product engineer building a job-search operating system. " +
-        "Use an engaging senior builder voice: candid, practical, technically credible, and useful to other builders. " +
-        "Do not imply the post was published. Do not claim LinkedIn API job-search access. Do not mention private names, emails, salaries, companies, job URLs, or application details. " +
-        "Avoid hype, cliches, emojis, em dashes, and unverifiable claims. Keep the post useful even to someone not using the app.",
+        "Write a LinkedIn post draft as an agent content team documenting Job Search OS work. " +
+        "Use a candid senior builder voice, disclose that agents prepared the update, and ground every public claim in the provided memory pack. " +
+        "Use aggregate analytics only. Do not mention company names, recruiters, salaries, emails, job URLs, private application outcomes, or unsupported traction. " +
+        "Avoid hype, cliches, emojis, em dashes, and unverifiable claims.",
       input: {
-        pillar: context.pillar,
-        generatedAt: context.generatedAt,
-        sourceFacts: context.sourceFacts,
-        recentSearchRuns: context.searchRuns,
-        recentAgents: context.agentRuns,
-        sourceCoverage: context.sourceCoverage,
-        docsSignals: context.docsSignals,
+        pillar: input.pillar,
+        publicPolicy: input.memoryPack.publicPolicy,
+        aggregateFacts: input.memoryPack.aggregateFacts,
+        recentDecisions: input.memoryPack.recentDecisions,
+        lessonsLearned: input.memoryPack.lessonsLearned,
+        storyAngles: input.memoryPack.storyAngles,
+        doNotClaim: input.memoryPack.doNotClaim,
         requiredOutput: {
           title: "Short internal title for the draft.",
           hook: "Strong first line.",
-          body: "LinkedIn post body, 180-450 words, grounded only in sourceFacts.",
+          body: "LinkedIn post body, 180-450 words, grounded only in memoryPack facts.",
           hashtags: "3-6 relevant hashtags.",
         },
       },
@@ -127,8 +146,8 @@ export async function generateLinkedInContent(context: LinkedInContentContext): 
       hook: cleanLine(generated.hook),
       body: stripUnsafeStyle(generated.body),
       hashtags: normalizeHashtags(generated.hashtags),
-      contentPillar: context.pillar,
-      sourceFacts: context.sourceFacts,
+      contentPillar: input.pillar,
+      sourceFacts: input.memoryPack.aggregateFacts,
       mode: "llm",
     };
   } catch {
@@ -136,29 +155,31 @@ export async function generateLinkedInContent(context: LinkedInContentContext): 
   }
 }
 
-export function buildLinkedInContentFallback(context: LinkedInContentContext): Omit<LinkedInContentOutput, "screenshotAssets" | "privacyReview" | "draftId"> {
-  const coverage = context.sourceCoverage;
-  const latestSearch = context.searchRuns[0];
-  const savedLine = latestSearch
-    ? `The latest search run processed ${latestSearch.jobsFetched} raw results and saved ${latestSearch.jobsSaved} pipeline-ready matches after dedupe, scoring, and review gates.`
-    : "The current work is focused on making the pipeline easier to understand before adding more automation.";
+export function buildLinkedInContentFallback(input: {
+  pillar: LinkedInContentPillar;
+  memoryPack: Pick<LinkedInContentMemoryPack, "aggregateFacts" | "analytics" | "storyAngles">;
+}): Omit<LinkedInContentOutput, "screenshotAssets" | "selectedScreenshots" | "privacyReview" | "draftId" | "disclosureText" | "memorySources" | "analyticsSources" | "agentReviews" | "claims" | "risks"> {
+  const latest = input.memoryPack.analytics.latestSearchRun;
+  const funnelLine = latest
+    ? `The latest run moved through ${latest.funnel.map((item) => `${item.label.toLowerCase()} ${item.value}`).join(", ")}.`
+    : "The current work is focused on making the app's workflow memory useful enough to explain itself.";
   const body = [
-    "I have been building Job Search OS as a practical experiment in agentic software: not an auto-apply bot, but a workflow that makes job discovery, scoring, materials, and review easier to reason about.",
+    "I have been using Job Search OS as a practical testbed for a bigger product question: what happens when agents do not just generate output, but document the workflow they are part of?",
     "",
-    savedLine,
-    `The source layer now tracks ${coverage.activeSources} active sources, including direct ATS adapters and open-web query coverage, while keeping high-risk or account-gated surfaces manual.`,
+    funnelLine,
+    latest?.drops.length ? `The more interesting signal was the drop-off pattern: ${latest.drops.slice(0, 4).map((item) => `${item.label.toLowerCase()} ${item.value}`).join(", ")}.` : "The useful part is not just the count; it is whether the system can explain what changed and why.",
     "",
-    "The lesson that keeps showing up: useful agents need clear boundaries. The system should explain why a job was filtered, preserve review gates where judgment matters, and generate artifacts a person can inspect before anything external happens.",
+    "That is where I think creator tooling is going. A content system should remember work, decisions, analytics, drafts, edits, screenshots, and review gates. Then agents can turn that memory into material a human can inspect instead of starting from a blank page every time.",
     "",
-    "That is the shape I want from AI tooling in serious workflows: more leverage, better diagnostics, and fewer hidden decisions.",
+    "The boundary matters: aggregate numbers are fair game, private operational details are not. The goal is leverage without pretending the agents own the judgment.",
   ].join("\n");
   return {
-    title: "Building a safer job-search operating system",
-    hook: "The most useful job-search agent is not the one that clicks the fastest.",
+    title: "Turning app memory into public product notes",
+    hook: "The next content system should remember the work before it writes about it.",
     body,
     hashtags: defaultHashtags,
-    contentPillar: context.pillar,
-    sourceFacts: context.sourceFacts,
+    contentPillar: input.pillar,
+    sourceFacts: input.memoryPack.aggregateFacts,
     mode: "deterministic",
   };
 }
@@ -166,21 +187,33 @@ export function buildLinkedInContentFallback(context: LinkedInContentContext): O
 export function reviewLinkedInPostPrivacy(input: {
   body: string;
   hook: string;
+  disclosureText?: string;
   sourceFacts: string[];
-  screenshotAssets: LinkedInScreenshotAsset[];
+  screenshotAssets: Array<Pick<LinkedInScreenshotAsset, "label" | "description" | "route" | "privacyStatus" | "warnings">>;
+  claims?: Array<{ text: string; provenance: string; status: "grounded" | "ungrounded" }>;
 }): LinkedInPrivacyReview {
-  const text = [input.hook, input.body, ...input.sourceFacts, ...input.screenshotAssets.map((asset) => `${asset.label} ${asset.description}`)].join("\n");
+  const text = [
+    input.hook,
+    input.body,
+    input.disclosureText ?? "",
+    ...input.sourceFacts,
+    ...input.screenshotAssets.map((asset) => `${asset.label} ${asset.description} ${asset.route} ${asset.warnings.join(" ")}`),
+  ].join("\n");
   const blockedPatterns: Array<[RegExp, string]> = [
     [/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i, "email address"],
     [/https?:\/\/(?!localhost|127\.0\.0\.1)[^\s)]+/i, "external URL"],
     [/\$\s?\d[\d,]*(?:k|K)?\b/, "salary or compensation"],
     [/\b(applied|interviewing|rejected|offer|screening)\s+at\s+[A-Z][A-Za-z0-9&.\- ]+/i, "application outcome with company"],
     [/\blinkedin\.com\/jobs\/view\/\d+/i, "LinkedIn job URL"],
+    [/\b(recruiter|hiring manager)\s+[A-Z][A-Za-z]+\b/i, "named recruiter or hiring contact"],
   ];
   const blockedTerms = blockedPatterns.flatMap(([pattern, label]) => pattern.test(text) ? [label] : []);
+  const ungroundedClaims = (input.claims ?? []).filter((claim) => claim.status !== "grounded");
+  const screenshotWarnings = input.screenshotAssets.flatMap((asset) => asset.privacyStatus === "PASS" ? [] : asset.warnings);
   const warnings = [
     ...blockedTerms.map((term) => `Potential private ${term} detected.`),
-    ...(input.screenshotAssets.length === 0 ? ["No safe screenshot asset was generated."] : []),
+    ...screenshotWarnings,
+    ...ungroundedClaims.map((claim) => `Ungrounded public claim: ${claim.text}`),
   ];
   return {
     status: warnings.length ? "NEEDS_REVIEW" : "PASS",
@@ -190,78 +223,75 @@ export function reviewLinkedInPostPrivacy(input: {
   };
 }
 
-export async function loadLinkedInContentContext(pillar: LinkedInContentPillar): Promise<LinkedInContentContext> {
-  const [searchRuns, agentRuns] = await Promise.all([
-    prisma.jobSearchRun.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      select: { jobsFetched: true, jobsSaved: true, status: true, createdAt: true },
-    }),
-    prisma.agentRun.findMany({
-      where: { status: "COMPLETED" },
-      orderBy: { createdAt: "desc" },
-      take: 8,
-      select: { agentType: true, status: true, createdAt: true, outputJson: true },
-    }),
-  ]);
-  const activeSources = sourceCatalog.filter((item) => item.status === "active");
-  const querySources = sourceCatalog.filter((item) => item.connector === "search_query");
-  const manualSources = sourceCatalog.filter((item) => item.status === "manual");
-  const sourceFacts = [
-    `Job Search OS has ${activeSources.length} active source entries and ${querySources.length} open-web query-covered source entries.`,
-    "LinkedIn is treated as a discovery signal, not a scrape target; OIDC imports profile basics only.",
-    "Apply and content workflows keep external actions behind manual review.",
-    "Search analytics explain fetched, deduped, matched, saved, review-only, and agency-eligible stages.",
-  ];
-  return {
-    pillar,
-    generatedAt: new Date().toISOString(),
-    sourceFacts,
-    searchRuns: searchRuns.map((run) => ({
-      jobsFetched: run.jobsFetched,
-      jobsSaved: run.jobsSaved,
-      status: run.status,
-      createdAt: run.createdAt.toISOString(),
-    })),
-    agentRuns: agentRuns.map((run) => ({
-      agentType: run.agentType,
-      status: run.status,
-      createdAt: run.createdAt.toISOString(),
-      summary: summarizeAgentOutput(run.outputJson),
-    })),
-    sourceCoverage: {
-      activeSources: activeSources.length,
-      querySources: querySources.length,
-      manualSources: manualSources.length,
-      priorityOneSources: sourceCatalog.filter((item) => item.priority === 1).length,
-    },
-    docsSignals: [
-      "Draft-only LinkedIn content is a manual-review artifact.",
-      "Share on LinkedIn API posting is intentionally deferred.",
-      "Screenshots should use aggregate or sanitized app views.",
-    ],
-  };
+export async function createSafeLinkedInScreenshotAssets(memoryPack: LinkedInContentMemoryPack): Promise<LinkedInScreenshotAsset[]> {
+  const recommendations = memoryPack.screenshotRecommendations.filter((item) => allowedScreenshotRoutes.has(item.route)).slice(0, 2);
+  const output: LinkedInScreenshotAsset[] = [];
+  for (const recommendation of recommendations) {
+    const captured = await captureRouteScreenshot(recommendation.route, recommendation.reason);
+    if (captured) output.push(captured);
+  }
+  return output;
 }
 
-export async function createSafeLinkedInScreenshotAssets(
-  context: LinkedInContentContext,
-  generated: Pick<LinkedInContentOutput, "title" | "hook" | "contentPillar">,
-): Promise<LinkedInScreenshotAsset[]> {
-  const fs = await import("fs/promises");
-  const path = await import("path");
-  const dir = path.join(process.cwd(), "public", "generated", "linkedin-content");
-  await fs.mkdir(dir, { recursive: true });
-  const filename = `${Date.now()}-${generated.contentPillar}.svg`;
-  const filePath = path.join(dir, filename);
-  const publicPath = `/generated/linkedin-content/${filename}`;
-  const svg = safeScreenshotSvg(context, generated);
-  await fs.writeFile(filePath, svg, "utf8");
-  return [{
-    label: "Safe progress card",
-    path: publicPath,
-    mimeType: "image/svg+xml",
-    description: "Redacted aggregate Job Search OS progress card with source coverage and latest search counts.",
-  }];
+function buildAgentReviews(memoryPack: LinkedInContentMemoryPack, generated: Pick<LinkedInContentOutput, "title" | "body">): LinkedInAgentReview[] {
+  const latest = memoryPack.analytics.latestSearchRun;
+  return [
+    { agent: "Documentarian", summary: memoryPack.recentDecisions.slice(0, 2).join(" "), recommendation: "Anchor the post in recent system decisions rather than generic AI commentary." },
+    { agent: "Analytics Narrator", summary: latest ? `Latest funnel has ${latest.funnel.length} stages and ${latest.drops.length} visible drop-off reasons.` : "No latest search analytics are available.", recommendation: "Use aggregate funnel numbers only." },
+    { agent: "Product Strategist", summary: memoryPack.storyAngles[0] ?? "The product angle is creator workflow memory.", recommendation: "Frame this as a content operating system learning from its own work." },
+    { agent: "Editor", summary: `Draft title: ${generated.title}.`, recommendation: "Keep the post concrete, non-hype, and readable without internal app knowledge." },
+    { agent: "Visual Producer", summary: memoryPack.screenshotRecommendations.map((item) => item.route).join(", "), recommendation: "Attach one redacted app screenshot only when privacy review passes." },
+    { agent: "Privacy Reviewer", summary: memoryPack.publicPolicy, recommendation: "Block named entities, private outcomes, external URLs, and unsupported claims before publishing." },
+  ];
+}
+
+function buildClaims(generated: Pick<LinkedInContentOutput, "body" | "sourceFacts">, memoryPack: LinkedInContentMemoryPack) {
+  const facts = new Set(memoryPack.aggregateFacts);
+  return generated.sourceFacts.slice(0, 6).map((fact) => ({
+    text: fact,
+    provenance: facts.has(fact) ? "memory_pack.aggregateFacts" : "missing",
+    status: facts.has(fact) ? "grounded" as const : "ungrounded" as const,
+  }));
+}
+
+async function captureRouteScreenshot(route: string, reason: string): Promise<LinkedInScreenshotAsset | null> {
+  try {
+    const fs = await import("fs/promises");
+    const path = await import("path");
+    const { chromium } = await import("playwright");
+    const baseUrl = (process.env.JOB_SEARCH_OS_APP_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/+$/, "");
+    const dir = path.join(process.cwd(), "public", "generated", "linkedin-content");
+    await fs.mkdir(dir, { recursive: true });
+    const filename = `${Date.now()}-${route.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}.png`;
+    const filePath = path.join(dir, filename);
+    const browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 860 }, colorScheme: "light" });
+    await page.goto(`${baseUrl}${route}`, { waitUntil: "networkidle", timeout: 15_000 });
+    await page.addStyleTag({ content: privacyScreenshotCss });
+    const pageText = await page.locator("body").innerText({ timeout: 5_000 }).catch(() => "");
+    const warnings = privacyWarnings(pageText);
+    await page.screenshot({ path: filePath });
+    await browser.close();
+    return {
+      label: `App screenshot: ${route}`,
+      path: `/generated/linkedin-content/${filename}`,
+      mimeType: "image/png",
+      route,
+      description: `Real redacted Job Search OS screenshot for ${reason}`,
+      privacyStatus: warnings.length ? "NEEDS_REVIEW" : "PASS",
+      warnings,
+    };
+  } catch (error) {
+    return {
+      label: `Screenshot unavailable: ${route}`,
+      path: "",
+      mimeType: "image/png",
+      route,
+      description: `Unable to capture real app screenshot for ${route}.`,
+      privacyStatus: "NEEDS_REVIEW",
+      warnings: [error instanceof Error ? error.message : "Screenshot capture failed."],
+    };
+  }
 }
 
 async function persistLinkedInPostDraft(userId: string, run: AgentRun, output: LinkedInContentOutput) {
@@ -275,46 +305,18 @@ async function persistLinkedInPostDraft(userId: string, run: AgentRun, output: L
       hashtags: output.hashtags as Prisma.InputJsonValue,
       contentPillar: output.contentPillar,
       sourceFacts: output.sourceFacts as Prisma.InputJsonValue,
-      screenshotAssets: output.screenshotAssets as unknown as Prisma.InputJsonValue,
-      privacyReview: output.privacyReview as unknown as Prisma.InputJsonValue,
-      status: "DRAFT",
+      screenshotAssets: jsonValue(output.screenshotAssets),
+      privacyReview: jsonValue(output.privacyReview),
+      disclosureText: output.disclosureText,
+      memorySources: jsonValue(output.memorySources),
+      analyticsSources: jsonValue(output.analyticsSources),
+      agentReviews: jsonValue(output.agentReviews),
+      claims: jsonValue(output.claims),
+      risks: jsonValue(output.risks),
+      selectedScreenshots: jsonValue(output.selectedScreenshots),
+      status: output.privacyReview.status === "PASS" ? "DRAFT" : "NEEDS_REVIEW",
     },
   });
-}
-
-function safeScreenshotSvg(context: LinkedInContentContext, generated: Pick<LinkedInContentOutput, "title" | "hook">) {
-  const latest = context.searchRuns[0];
-  const fetched = latest?.jobsFetched ?? 0;
-  const saved = latest?.jobsSaved ?? 0;
-  const coverage = context.sourceCoverage;
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Job Search OS safe progress card">
-  <rect width="1200" height="675" fill="#fffdf8"/>
-  <rect x="60" y="60" width="1080" height="555" rx="18" fill="#ffffff" stroke="#d8d1c4" stroke-width="2"/>
-  <text x="96" y="128" fill="#0f766e" font-family="Arial, sans-serif" font-size="28" font-weight="700">Job Search OS</text>
-  <text x="96" y="178" fill="#111827" font-family="Arial, sans-serif" font-size="44" font-weight="800">${escapeXml(generated.title)}</text>
-  <text x="96" y="226" fill="#4b5563" font-family="Arial, sans-serif" font-size="24">${escapeXml(generated.hook.slice(0, 95))}</text>
-  ${metricBlock(96, 300, "Raw results", fetched)}
-  ${metricBlock(356, 300, "Saved matches", saved)}
-  ${metricBlock(616, 300, "Active sources", coverage.activeSources)}
-  ${metricBlock(876, 300, "Query sources", coverage.querySources)}
-  <rect x="96" y="500" width="1008" height="1" fill="#e5e7eb"/>
-  <text x="96" y="548" fill="#374151" font-family="Arial, sans-serif" font-size="22">Redacted share preview: aggregate metrics only, no names, companies, salaries, job URLs, or applications.</text>
-</svg>`;
-}
-
-function metricBlock(x: number, y: number, label: string, value: number) {
-  return `<g>
-    <rect x="${x}" y="${y}" width="210" height="132" rx="14" fill="#f8fafc" stroke="#e5e7eb"/>
-    <text x="${x + 24}" y="${y + 50}" fill="#6b7280" font-family="Arial, sans-serif" font-size="20">${escapeXml(label)}</text>
-    <text x="${x + 24}" y="${y + 98}" fill="#111827" font-family="Arial, sans-serif" font-size="44" font-weight="800">${value}</text>
-  </g>`;
-}
-
-function summarizeAgentOutput(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return "Completed agent run.";
-  const record = value as Record<string, unknown>;
-  return String(record.summary ?? record.rationale ?? record.reasoningSummary ?? "Completed agent run.").slice(0, 300);
 }
 
 function normalizeHashtags(values: string[]) {
@@ -334,10 +336,17 @@ function stripUnsafeStyle(value: string) {
   return value.replace(/—/g, "-").replace(/[🚀✨🔥💡]/g, "").trim();
 }
 
-function escapeXml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+function privacyWarnings(value: string) {
+  const warnings: string[] = [];
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value)) warnings.push("Screenshot text may include an email address.");
+  if (/\$\s?\d[\d,]*(?:k|K)?\b/.test(value)) warnings.push("Screenshot text may include compensation.");
+  if (/\blinkedin\.com\/jobs\/view\/\d+/i.test(value)) warnings.push("Screenshot text may include a LinkedIn job URL.");
+  if (/\b(interviewing|applied|offer|rejected)\s+at\s+[A-Z][A-Za-z0-9&.\- ]+/i.test(value)) warnings.push("Screenshot text may include an application outcome with company.");
+  return warnings;
 }
+
+const privacyScreenshotCss = `
+  [data-private], [data-sensitive], input, textarea, [href*="linkedin.com/jobs"], [href^="mailto:"] {
+    filter: blur(10px) !important;
+  }
+`;

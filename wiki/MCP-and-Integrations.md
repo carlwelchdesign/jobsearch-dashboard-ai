@@ -76,9 +76,9 @@ Apply Now sends the current tab URL to the local app, updates the saved job's ap
 
 Settings can sync public GitHub repository context into the candidate profile.
 
-Settings can also connect LinkedIn through OIDC when `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET` are configured. This imports basic identity/profile metadata (`openid profile email`) and stores durable profile fields only; it does not store long-lived LinkedIn tokens or provide LinkedIn job-search, saved-job, Apply with LinkedIn, Apply Connect, or Job Posting API access.
+Settings can connect LinkedIn in two separate ways when `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET` are configured. The identity connection imports basic profile metadata (`openid profile email`) and stores durable profile fields only. The publishing connection uses `LINKEDIN_SHARE_REDIRECT_URI`, requests `openid profile email w_member_social`, stores a separate `LinkedInShareConnection`, and allows approved `/linkedin-content` drafts to publish through Share on LinkedIn. These connections do not provide LinkedIn job-search, saved-job, Apply with LinkedIn, Apply Connect, Job Posting API, scraping, or automated LinkedIn browsing access.
 
-The LinkedIn Content agent is a draft-only publishing assistant. It generates copyable posts and redacted aggregate screenshot-style assets from app progress and workflow lessons. It does not call Share on LinkedIn, does not request `w_member_social`, and does not publish externally.
+The LinkedIn Content studio is a memory-aware publishing assistant. It uses aggregate app analytics, agent run history, learning-loop context, and redacted Playwright screenshots to create editable posts. Drafts must pass privacy and provenance checks before approval can publish them. Public posts use aggregate analytics only and include a subtle agent-team disclosure.
 
 Uses:
 

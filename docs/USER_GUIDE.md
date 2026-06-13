@@ -76,6 +76,8 @@ There are two ways to run this app. Read the table below before you start.
 
 > **Most people start locally.** Even if you eventually deploy to production, do the local setup first to get everything configured and working, then deploy.
 
+LinkedIn publishing is optional. To use `/linkedin-content` as a publishing studio, configure a LinkedIn Developer app with the Share on LinkedIn product, set `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, and `LINKEDIN_SHARE_REDIRECT_URI`, then connect publishing from Settings or the LinkedIn Content page. Approved drafts publish immediately after privacy and provenance checks pass.
+
 ---
 
 ### Option 1: Local Setup (run on your own computer)

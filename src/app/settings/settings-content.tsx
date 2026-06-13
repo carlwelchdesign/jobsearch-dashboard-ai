@@ -153,6 +153,9 @@ export async function SettingsRouteContent({
         orderBy: { provider: "asc" },
       })
     : [];
+  const linkedinShareConnection = user
+    ? await prisma.linkedInShareConnection.findUnique({ where: { userId: user.id } })
+    : null;
   const [skillFeedback, skillAdjustments, fieldMemories] = user && group === "learning"
     ? await Promise.all([
         prisma.skillFeedback.findMany({
@@ -1043,6 +1046,9 @@ export async function SettingsRouteContent({
             linkedinEmailVerified: user?.profile?.linkedinEmailVerified ?? null,
             linkedinConnectedAt: user?.profile?.linkedinConnectedAt?.toLocaleString() ?? null,
             linkedinOidcConfigured: Boolean(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET),
+            linkedinShareConnected: linkedinShareConnection?.status === "CONNECTED" && Array.isArray(linkedinShareConnection.scopes) && linkedinShareConnection.scopes.includes("w_member_social"),
+            linkedinShareStatus: linkedinShareConnection?.status ?? null,
+            linkedinShareLastPublishedAt: linkedinShareConnection?.lastPublishedAt?.toLocaleString() ?? null,
             githubUrl: user?.profile?.githubUrl ?? "https://github.com/carlwelchdesign",
             raceAnswer: user?.profile?.raceAnswer ?? "",
             genderAnswer: user?.profile?.genderAnswer ?? "",

@@ -25,7 +25,26 @@ describe("/api/linkedin-content/drafts/[id]", () => {
     expect(response.status).toBe(200);
     expect(draftUpdateMock).toHaveBeenCalledWith({
       where: { id: "draft_1" },
-      data: { status: "ARCHIVED" },
+      data: { status: "ARCHIVED", publishError: null },
+    });
+  });
+
+  it("saves editable draft fields", async () => {
+    const response = await PATCH(new Request("http://localhost/api/linkedin-content/drafts/draft_1", {
+      method: "PATCH",
+      body: JSON.stringify({ title: "Updated", hook: "Hook", body: "Body", hashtags: ["#AI"], disclosureText: "Prepared by agents." }),
+    }), { params: { id: "draft_1" } });
+
+    expect(response.status).toBe(200);
+    expect(draftUpdateMock).toHaveBeenCalledWith({
+      where: { id: "draft_1" },
+      data: expect.objectContaining({
+        title: "Updated",
+        hook: "Hook",
+        body: "Body",
+        hashtags: ["#AI"],
+        disclosureText: "Prepared by agents.",
+      }),
     });
   });
 });

@@ -41,6 +41,7 @@ yarn-error.log*
 .assistant-downloads/
 .assistant-logs/
 .venv-assistant/
+public/generated/linkedin-content/*.png
 
 # python cache
 __pycache__/
