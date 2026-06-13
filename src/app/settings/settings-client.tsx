@@ -85,6 +85,9 @@ type SettingsClientProps = {
     linkedinEmailVerified: boolean | null;
     linkedinConnectedAt: string | null;
     linkedinOidcConfigured: boolean;
+    linkedinShareConnected: boolean;
+    linkedinShareStatus: string | null;
+    linkedinShareLastPublishedAt: string | null;
     githubUrl: string;
     raceAnswer: string;
     genderAnswer: string;
@@ -914,6 +917,33 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
                 disabled={!profile.linkedinOidcConfigured}
               >
                 {profile.linkedinSubject ? "Reconnect LinkedIn" : "Connect LinkedIn"}
+              </Button>
+            </Stack>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={1.5}
+              sx={{ alignItems: { sm: "center" }, border: 1, borderColor: "divider", borderRadius: 1, p: 1.5 }}
+            >
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{ fontWeight: 850 }}>
+                  {profile.linkedinShareConnected ? "LinkedIn publishing connected" : "LinkedIn publishing connection"}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {profile.linkedinShareConnected
+                    ? `Share on LinkedIn is enabled for approved content drafts${profile.linkedinShareLastPublishedAt ? ` · last published ${profile.linkedinShareLastPublishedAt}` : ""}.`
+                    : profile.linkedinOidcConfigured
+                      ? "Connect publishing to grant w_member_social. Approved LinkedIn content drafts will publish immediately after privacy and provenance gates pass."
+                      : "Set LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET to enable Share on LinkedIn publishing."}
+                </Typography>
+              </Box>
+              <StatusChip status={profile.linkedinShareConnected ? "configured" : profile.linkedinOidcConfigured ? "provider_missing" : "disabled"} />
+              <Button
+                component={Link}
+                href="/api/auth/linkedin/share/start"
+                variant={profile.linkedinShareConnected ? "outlined" : "contained"}
+                disabled={!profile.linkedinOidcConfigured}
+              >
+                {profile.linkedinShareConnected ? "Reconnect publishing" : "Connect publishing"}
               </Button>
             </Stack>
           </Stack>
