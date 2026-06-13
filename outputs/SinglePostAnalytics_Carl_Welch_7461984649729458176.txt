@@ -1,0 +1,54 @@
+Source: SinglePostAnalytics_Carl Welch_7461984649729458176.xlsx
+
+=== Post analytics ===
+Post URL	https://www.linkedin.com/posts/carlwelch_i-recently-paid-over-160-to-various-job-ugcPost-7461984646755487744-g86U
+Post Date	5/17/2026
+Post Publish Time	8:42 PM
+Post Performance
+Impressions	527
+Members reached	192
+Profile activity
+Profile viewers from this post	9
+Followers gained from this post	0
+Engagement
+Social engagements	18
+Reactions	14
+Comments	3
+Reposts	1
+Saves	0
+Sends on LinkedIn	0
+Link engagements	0
+Premium custom button engagements	0
+Post viewer demographics
+Category	Value	%
+Job title	Software Engineer	16%
+Job title	Technical Recruiter	4%
+Job title	Founder	4%
+Location	Los Angeles Metropolitan Area	26%
+Location	San Francisco Bay Area	9%
+Location	New York City Metropolitan Area	5%
+Location	Washington DC-Baltimore Area	4%
+Location	Greater Seattle Area	3%
+Seniority	Senior	45%
+Seniority	Entry	22%
+Seniority	Director	8%
+Seniority	Manager	7%
+Seniority	CXO	4%
+Seniority	Owner	4%
+Company	Yubico	7%
+Company	UBS	5%
+Industry	Software Development	25%
+Industry	IT Services and IT Consulting	17%
+Industry	Technology, Information and Internet	14%
+Industry	Design Services	7%
+Industry	Advertising Services	6%
+Industry	Financial Services	6%
+Industry	Staffing and Recruiting	3%
+Company size	51-200 employees	16%
+Company size	10,001+ employees	16%
+Company size	201-500 employees	15%
+Company size	11-50 employees	10%
+Company size	501-1,000 employees	7%
+Company size	2-10 employees	5%
+Company size	1,001-5,000 employees	5%
+Company size	5,001-10,000 employees	5%
