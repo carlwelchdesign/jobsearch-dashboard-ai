@@ -76,7 +76,7 @@ There are two ways to run this app. Read the table below before you start.
 
 > **Most people start locally.** Even if you eventually deploy to production, do the local setup first to get everything configured and working, then deploy.
 
-LinkedIn publishing is optional. To use `/linkedin-content` as a publishing studio, configure a LinkedIn Developer app with the Share on LinkedIn product, set `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, and `LINKEDIN_SHARE_REDIRECT_URI`, then connect publishing from Settings or the LinkedIn Content page. Approved drafts publish immediately after privacy and provenance checks pass.
+LinkedIn publishing and analytics are optional. To use `/linkedin-content` as a publishing studio, configure a LinkedIn Developer app with the Share on LinkedIn product, set `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, and `LINKEDIN_SHARE_REDIRECT_URI`, then connect publishing from Settings or the LinkedIn Content page. Approved drafts publish immediately after privacy and provenance checks pass. To track post performance on Command Center, also add the LinkedIn member post analytics product when available, set `LINKEDIN_ANALYTICS_REDIRECT_URI`, and connect analytics; if LinkedIn has not granted `r_member_postAnalytics`, paste CSV metrics into the dashboard instead.
 
 ---
 
@@ -544,6 +544,8 @@ The MCP server always runs as a local process on your machine. When your app is 
 | **Email sync** | Strongly recommended | Configure IMAP or OAuth in `.env` | Configure in Vercel env vars; cron runs automatically | Outcome tracking is 100% manual |
 | **Brave Search API** | Recommended | Add `BRAVE_SEARCH_API_KEY` to `.env` | Add to Vercel env vars | Lose broad ATS, job-board, startup, remote-board, and LinkedIn-original-source discovery |
 | **LinkedIn OIDC** | Optional | Add `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET` to `.env` | Add to Vercel env vars and set the production callback URL | No LinkedIn identity/photo/locale enrichment; job search is unaffected |
+| **LinkedIn Publishing** | Optional | Add Share on LinkedIn product and `LINKEDIN_SHARE_REDIRECT_URI` | Add production callback URL to LinkedIn app and Vercel env vars | `/linkedin-content` remains editable/copyable but cannot publish directly |
+| **LinkedIn Analytics** | Optional | Add member post analytics product and `LINKEDIN_ANALYTICS_REDIRECT_URI` | Add production callback URL to LinkedIn app and Vercel env vars | Command Center can still track post metrics through CSV paste import |
 | **Python + Playwright** | Recommended | `npm run assistant:install` on your machine | Same — always runs locally even with production app | Apply Sprint won't auto-fill forms |
 | **Pushover** | Optional | Add keys to `.env` or Settings UI | Add to Vercel env vars or Settings UI | No phone push alerts |
 | **Resend or Postmark** | Optional | Add API key to `.env` | Add to Vercel env vars | No email digests |
@@ -587,11 +589,13 @@ Do these seven steps before your first job search. Each one builds on the last.
 4. Scroll down to the **GitHub work context** card and fill in your GitHub profile URL (covered in detail in [Part 9](#part-9--github-integration-adding-your-projects-as-evidence)).
 5. Click **Save settings**.
 
-### Optional — Generate LinkedIn content drafts
+### Optional — Generate and publish LinkedIn content
 
 Open `/linkedin-content` from Settings -> Admin -> LinkedIn content. The LinkedIn Content agent writes draft-only posts about Job Search OS progress, what the app is learning, architecture decisions, source/search improvements, and workflow lessons that could help other builders.
 
-The app does not post these drafts to LinkedIn. Share on LinkedIn API posting is intentionally deferred; v1 gives you copyable text and downloadable safe aggregate screenshot-style attachments. Screenshot downloads are available only after privacy review passes.
+The app can publish approved drafts when the Share on LinkedIn connection is active. You can edit the draft, review the agent-team notes, inspect provenance and privacy warnings, then click **Approve and publish**. Approval is the final user action. If privacy/provenance checks pass and the publishing token includes `w_member_social`, the app posts to LinkedIn and stores the returned post id. If LinkedIn fails, the draft stays saved with a retryable error.
+
+The Command Center also includes LinkedIn post analytics. If LinkedIn grants `r_member_postAnalytics`, connect analytics and click **Refresh** to sync published-post metrics. If that permission is not available yet, paste CSV rows with headers such as `postUrn,date,impressions,membersReached,reactions,comments,reshares,postSaves,postSends,linkClicks,followersGainedFromContent,profileViewsFromContent`. The dashboard stores aggregate snapshots only, shows KPI cards and charts, and feeds aggregate performance back into future content-agent memory. It never stores viewer identities, commenter identities, recruiter names, job URLs, salaries, or private application-specific outcomes.
 
 ### Step 4 — Create at least one Search Profile
 

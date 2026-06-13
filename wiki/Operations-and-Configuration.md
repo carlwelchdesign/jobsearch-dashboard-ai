@@ -88,13 +88,17 @@ Optional LinkedIn OIDC profile enrichment is configured separately from job disc
 LINKEDIN_CLIENT_ID=...
 LINKEDIN_CLIENT_SECRET=...
 LINKEDIN_OIDC_REDIRECT_URI=http://localhost:3000/api/auth/linkedin/callback
+LINKEDIN_SHARE_REDIRECT_URI=http://localhost:3000/api/auth/linkedin/share/callback
+LINKEDIN_ANALYTICS_REDIRECT_URI=http://localhost:3000/api/auth/linkedin/analytics/callback
 ```
 
 The callback stores durable `UserProfile` metadata such as LinkedIn subject, picture URL, locale, email verification status, and connection time. It does not store LinkedIn access or refresh tokens. LinkedIn Apply with LinkedIn, Apply Connect, and Job Posting APIs remain blocked or partner-only for this candidate-side app.
 
 Captured `linkedin.com/jobs/view/...` URLs are LinkedIn leads. Rich leads with company, title, and selected job text go through normal manual capture, scoring, and approval. Bare LinkedIn URLs are saved as review-only lead records and do not become scored jobs until the user provides enough text or the original employer/ATS link. When the lead has enough company/title/location signal, the app generates original-posting queries, excludes `site:linkedin.com`, and merges them into Search Query Backlog without overwriting existing custom queries.
 
-The LinkedIn Content agent uses the activated LinkedIn developer products conservatively. OIDC remains identity-only. Share on LinkedIn is not used in v1, so the app does not request `w_member_social`, store share tokens, or publish posts. `/linkedin-content` creates manual-review drafts plus safe aggregate SVG screenshot attachments; downloads stay blocked if privacy review detects names, emails, companies, salaries, job URLs, or application-specific details.
+The LinkedIn Content agent uses the activated LinkedIn developer products conservatively. OIDC remains identity-only. Share on LinkedIn requests `w_member_social` through a separate publishing connection, stores a share token, and publishes only after the user clicks **Approve and publish** on a draft that passes privacy and provenance checks. `/linkedin-content` creates manual-review drafts plus safe aggregate screenshots; screenshots and publishing stay blocked if privacy review detects names, emails, companies, salaries, job URLs, or application-specific details.
+
+LinkedIn analytics are also separate from publishing. The analytics connection requests `r_member_postAnalytics` and stores a `LinkedInAnalyticsConnection`; `/api/linkedin-analytics/sync` refreshes aggregate post metrics when that permission is available. If LinkedIn has not granted analytics access, Command Center can still import CSV rows through `/api/linkedin-analytics/import`. The dashboard stores aggregate metric snapshots only and never stores viewer identities, commenter identities, or private profile data. Optional `LINKEDIN_API_VERSION` controls the `Linkedin-Version` request header, and `LINKEDIN_ANALYTICS_SYNC_SECRET` can protect non-Vercel scheduled sync calls when `CRON_SECRET` is not used.
 
 Existing `Search Query Backlog` configs are merged with new default query templates when seed or `/sources` runs, preserving custom user-added queries while adding newly supported provider coverage.
 

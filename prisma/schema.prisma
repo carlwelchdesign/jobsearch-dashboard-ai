@@ -455,6 +455,8 @@ model User {
   thankYouDrafts        ThankYouDraft[]
   linkedinPostDrafts   LinkedInPostDraft[]
   linkedinShareConnection LinkedInShareConnection?
+  linkedinAnalyticsConnection LinkedInAnalyticsConnection?
+  linkedinAnalyticsSnapshots LinkedInPostMetricSnapshot[]
   jobSuppressions       JobSuppression[]
 }
 
@@ -1679,6 +1681,7 @@ model LinkedInPostDraft {
   updatedAt          DateTime  @updatedAt
   agentRun           AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  metricSnapshots    LinkedInPostMetricSnapshot[]
 
   @@index([userId, status, createdAt])
   @@index([agentRunId])
@@ -1700,6 +1703,59 @@ model LinkedInShareConnection {
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([status, updatedAt])
+}
+
+model LinkedInAnalyticsConnection {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  linkedinSubject  String?
+  personUrn        String?
+  accessToken      String
+  expiresAt        DateTime?
+  scopes           Json     @default("[]")
+  status           String   @default("CONNECTED")
+  connectedAt      DateTime @default(now())
+  lastSyncedAt     DateTime?
+  lastError        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, updatedAt])
+}
+
+model LinkedInPostMetricSnapshot {
+  id                       String              @id @default(cuid())
+  userId                   String
+  linkedInPostDraftId      String?
+  linkedInPostUrn          String
+  linkedInPostId           String?
+  source                   String
+  aggregation              String
+  dateStart                DateTime?
+  dateEnd                  DateTime?
+  capturedAt               DateTime            @default(now())
+  impressions              Int                 @default(0)
+  membersReached           Int                 @default(0)
+  reactions                Int                 @default(0)
+  comments                 Int                 @default(0)
+  reshares                 Int                 @default(0)
+  postSaves                Int                 @default(0)
+  postSends                Int                 @default(0)
+  linkClicks               Int                 @default(0)
+  premiumCtaClicks         Int                 @default(0)
+  followersGainedFromContent Int               @default(0)
+  profileViewsFromContent  Int                 @default(0)
+  rawPayload               Json                @default("{}")
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+  draft                    LinkedInPostDraft?  @relation(fields: [linkedInPostDraftId], references: [id], onDelete: SetNull)
+  user                     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, linkedInPostUrn, source, aggregation, dateStart, dateEnd])
+  @@index([userId, capturedAt])
+  @@index([linkedInPostDraftId])
+  @@index([linkedInPostUrn])
 }
 
 model NotificationSettings {

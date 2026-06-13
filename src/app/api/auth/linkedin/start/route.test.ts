@@ -7,6 +7,9 @@ describe("/api/auth/linkedin/start", () => {
   });
 
   it("returns a setup error when LinkedIn OIDC env vars are missing", async () => {
+    vi.stubEnv("LINKEDIN_CLIENT_ID", "");
+    vi.stubEnv("LINKEDIN_CLIENT_SECRET", "");
+
     const response = await GET(new Request("http://localhost:3000/api/auth/linkedin/start"));
 
     expect(response.status).toBe(400);

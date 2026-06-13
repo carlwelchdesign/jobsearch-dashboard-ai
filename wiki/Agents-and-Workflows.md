@@ -86,7 +86,7 @@ Evaluation runs score examples and cluster repeated failure categories into prop
 
 ## LinkedIn Content Team Workflow
 
-The LinkedIn Content Team turns recent Job Search OS work into approved public posts. It is intentionally memory-aware: before drafting, the workflow builds a public-safe memory and analytics pack from recent `AgentRun` and `AgentRunEvent` history, search-run analytics, application/outcome counts, Market Intelligence output, active `SkillAdjustment` rules, prior LinkedIn drafts, approved edits, archived drafts, and screenshot metadata.
+The LinkedIn Content Team turns recent Job Search OS work into approved public posts. It is intentionally memory-aware: before drafting, the workflow builds a public-safe memory and analytics pack from recent `AgentRun` and `AgentRunEvent` history, search-run analytics, application/outcome counts, Market Intelligence output, aggregate LinkedIn post performance, active `SkillAdjustment` rules, prior LinkedIn drafts, approved edits, archived drafts, and screenshot metadata.
 
 The team roles are:
 
@@ -98,7 +98,7 @@ The team roles are:
 - `Privacy Reviewer` for sensitive-data and unsupported-claim gates.
 - `Publisher` for the final Share on LinkedIn call after approval.
 
-Public policy is aggregate-only. The agents can cite jobs fetched, filtered, scored, saved, drop-off reasons, application status counts, source coverage, and learning-loop signals. They cannot publish company names, job URLs, salaries, recruiters, emails, or application-specific outcomes unless a future approval layer explicitly allows named examples.
+Public policy is aggregate-only. The agents can cite jobs fetched, filtered, scored, saved, drop-off reasons, application status counts, source coverage, learning-loop signals, impressions, reach, engagement, and content-pillar performance. They cannot publish company names, job URLs, salaries, recruiters, emails, application-specific outcomes, viewer identities, or commenter identities unless a future approval layer explicitly allows named examples.
 
 Approval is the publishing gate. The user can edit the draft, review agent notes and provenance, and then click **Approve and publish**. If the draft passes privacy/provenance checks and a LinkedIn publishing connection with `w_member_social` exists, the app immediately publishes the post and stores the LinkedIn post id. Failures move the draft to `FAILED` with a retryable error.
 

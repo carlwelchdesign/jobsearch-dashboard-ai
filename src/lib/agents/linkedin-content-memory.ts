@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { buildSearchRunAnalytics } from "@/lib/job-search/run-analytics";
 import { sourceCatalog } from "@/lib/job-search/source-catalog";
+import { getLinkedInAnalyticsSummary } from "@/lib/linkedin/analytics";
 import { prisma } from "@/lib/prisma";
 
 export type LinkedInContentMemoryPack = {
@@ -29,7 +30,7 @@ export type LinkedInContentMemoryPack = {
 };
 
 export async function buildLinkedInContentMemoryPack(userId: string): Promise<LinkedInContentMemoryPack> {
-  const [latestSearchRun, recentSearchRuns, recentAgentRuns, applicationsByStatus, outcomesByType, activeAdjustments, priorDrafts] = await Promise.all([
+  const [latestSearchRun, recentSearchRuns, recentAgentRuns, applicationsByStatus, outcomesByType, activeAdjustments, priorDrafts, linkedInAnalytics] = await Promise.all([
     prisma.jobSearchRun.findFirst({ orderBy: { createdAt: "desc" } }),
     prisma.jobSearchRun.findMany({ orderBy: { createdAt: "desc" }, take: 5 }),
     prisma.agentRun.findMany({
@@ -52,6 +53,7 @@ export async function buildLinkedInContentMemoryPack(userId: string): Promise<Li
       take: 8,
       select: { id: true, title: true, status: true, updatedAt: true, publishError: true },
     }),
+    getLinkedInAnalyticsSummary(userId, "90d").catch(() => null),
   ]);
 
   const activeSources = sourceCatalog.filter((item) => item.status === "active");
@@ -83,6 +85,9 @@ export async function buildLinkedInContentMemoryPack(userId: string): Promise<Li
     `Application status mix: ${formatCounts(applicationStatusCounts) || "no applications tracked yet"}.`,
     `Outcome signals: ${formatCounts(outcomeCounts) || "no explicit outcomes recorded yet"}.`,
     `Source coverage includes ${activeSources.length} active sources, ${querySources.length} query-covered sources, ${manualSources.length} manual sources, and ${sourceCatalog.filter((item) => item.priority === 1).length} priority-one sources.`,
+    linkedInAnalytics && linkedInAnalytics.kpis.impressions > 0
+      ? `LinkedIn post analytics: impressions ${linkedInAnalytics.kpis.impressions}, reach ${linkedInAnalytics.kpis.membersReached}, engagement ${linkedInAnalytics.kpis.engagement}, engagement rate ${Math.round(linkedInAnalytics.kpis.engagementRate * 1000) / 10}%.`
+      : "No LinkedIn post analytics are available yet.",
   ];
 
   return {
@@ -103,6 +108,7 @@ export async function buildLinkedInContentMemoryPack(userId: string): Promise<Li
       "A creator operating system should turn work history and analytics into reviewable content, not force humans to start from a blank page.",
       "The same gating patterns used for job applications can make AI-assisted publishing safer.",
       "Aggregate funnel analytics can tell a useful product story without exposing private job-search details.",
+      linkedInAnalytics?.topPosts[0] ? `Top LinkedIn post signal: ${linkedInAnalytics.topPosts[0].pillar} with ${linkedInAnalytics.topPosts[0].impressions} impressions.` : "LinkedIn analytics will help future content agents compare pillars and hooks.",
     ],
     doNotClaim: [
       "Do not claim LinkedIn job-search, saved-job, Apply Connect, or auto-apply API access.",
@@ -136,6 +142,7 @@ export async function buildLinkedInContentMemoryPack(userId: string): Promise<Li
       ...recentSearchRuns.map((run) => ({ type: "search_run", ref: run.id, label: `${run.status}: fetched ${run.jobsFetched}, saved ${run.jobsSaved}` })),
       { type: "application_counts", ref: userId, label: formatCounts(applicationStatusCounts) || "No application counts" },
       { type: "outcome_counts", ref: userId, label: formatCounts(outcomeCounts) || "No outcome counts" },
+      ...(linkedInAnalytics ? [{ type: "linkedin_post_analytics", ref: userId, label: `90d impressions ${linkedInAnalytics.kpis.impressions}, engagement ${linkedInAnalytics.kpis.engagement}` }] : []),
     ],
   };
 }
