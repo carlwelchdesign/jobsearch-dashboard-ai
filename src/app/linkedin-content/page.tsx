@@ -5,7 +5,7 @@ export const metadata = {
 
 import { AppShell } from "@/app/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
-import { linkedInShareConfigured } from "@/lib/linkedin/share";
+import { linkedInShareConfigured, normalizeLinkedInScopes } from "@/lib/linkedin/share";
 import { prisma } from "@/lib/prisma";
 import { LinkedInContentClient, type LinkedInDraftView, type LinkedInShareConnectionView } from "./linkedin-content-client";
 import type { LinkedInPostDraft, LinkedInShareConnection } from "@prisma/client";
@@ -100,11 +100,12 @@ function privacyReview(value: unknown): LinkedInDraftView["privacyReview"] {
 }
 
 function toShareConnectionView(connection: LinkedInShareConnection | null): LinkedInShareConnectionView {
+  const scopes = normalizeLinkedInScopes(connection?.scopes);
   return {
     configured: linkedInShareConfigured(),
-    connected: Boolean(connection?.status === "CONNECTED" && stringArray(connection.scopes).includes("w_member_social")),
+    connected: Boolean(connection?.status === "CONNECTED" && scopes.includes("w_member_social")),
     status: connection?.status ?? null,
-    scopes: stringArray(connection?.scopes),
+    scopes,
     lastPublishedAt: connection?.lastPublishedAt?.toISOString() ?? null,
   };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLinkedInShareAuthorizeUrl, buildLinkedInUgcPostPayload } from "@/lib/linkedin/share";
+import { buildLinkedInShareAuthorizeUrl, buildLinkedInUgcPostPayload, normalizeLinkedInScopes } from "@/lib/linkedin/share";
 
 describe("LinkedIn share helpers", () => {
   it("builds a write-scope authorization URL", () => {
@@ -36,5 +36,26 @@ describe("LinkedIn share helpers", () => {
         },
       },
     });
+  });
+
+  it("normalizes space and comma separated LinkedIn scopes", () => {
+    expect(normalizeLinkedInScopes("openid profile email w_member_social")).toEqual([
+      "openid",
+      "profile",
+      "email",
+      "w_member_social",
+    ]);
+    expect(normalizeLinkedInScopes("email,openid,profile,w_member_social")).toEqual([
+      "email",
+      "openid",
+      "profile",
+      "w_member_social",
+    ]);
+    expect(normalizeLinkedInScopes(["email,openid,profile,w_member_social"])).toEqual([
+      "email",
+      "openid",
+      "profile",
+      "w_member_social",
+    ]);
   });
 });

@@ -89,7 +89,7 @@ export async function saveLinkedInShareConnection(input: {
   scopes?: string[] | string | null;
   linkedinSubject?: string | null;
 }) {
-  const scopes = normalizeScopes(input.scopes);
+  const scopes = normalizeLinkedInScopes(input.scopes);
   const subject = input.linkedinSubject?.trim() || null;
   const personUrn = subject ? `urn:li:person:${subject}` : null;
   return prisma.linkedInShareConnection.upsert({
@@ -213,7 +213,7 @@ export function buildLinkedInUgcPostPayload(input: {
 
 function assertShareConnection(connection?: LinkedInShareConnection | null) {
   if (!connection || connection.status !== "CONNECTED") throw new Error("LinkedIn publishing connection is not active.");
-  const scopes = normalizeScopes(connection.scopes);
+  const scopes = normalizeLinkedInScopes(connection.scopes);
   if (!scopes.includes("w_member_social")) throw new Error("LinkedIn publishing connection is missing w_member_social.");
   if (!connection.personUrn) throw new Error("LinkedIn publishing connection is missing a person URN.");
   if (connection.expiresAt && connection.expiresAt.getTime() <= Date.now() + 60_000) throw new Error("LinkedIn publishing token is expired. Reconnect LinkedIn publishing.");
@@ -284,10 +284,14 @@ function publicAssetPath(publicPath: string) {
   return path.join(process.cwd(), "public", normalized.replace(/^public\//, ""));
 }
 
-function normalizeScopes(value: unknown): string[] {
-  if (typeof value === "string") return value.split(/\s+/).map((item) => item.trim()).filter(Boolean);
-  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+export function normalizeLinkedInScopes(value: unknown): string[] {
+  if (typeof value === "string") return splitLinkedInScopeString(value);
+  if (Array.isArray(value)) return value.flatMap((item) => typeof item === "string" ? splitLinkedInScopeString(item) : []);
   return linkedInShareScopes;
+}
+
+function splitLinkedInScopeString(value: string) {
+  return value.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
 }
 
 function screenshotAssets(value: unknown): LinkedInShareAsset[] {

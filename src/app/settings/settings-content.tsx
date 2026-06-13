@@ -23,6 +23,7 @@ import { getLocalAssistantAvailability } from "@/lib/applications/local-assistan
 import { getLearningImpact } from "@/lib/observability/learning-impact";
 import { getOutcomeCalibration, getOutcomeCalibrationTrends, getOutcomeRegressionTriage } from "@/lib/observability/outcome-calibration";
 import { getLearningRollbackAudit } from "@/lib/observability/rollback-audit";
+import { normalizeLinkedInScopes } from "@/lib/linkedin/share";
 import { prisma } from "@/lib/prisma";
 import { SettingsClient } from "./settings-client";
 import type { ServiceHealthSettings, ServiceStatus } from "./service-health-panel";
@@ -1046,7 +1047,7 @@ export async function SettingsRouteContent({
             linkedinEmailVerified: user?.profile?.linkedinEmailVerified ?? null,
             linkedinConnectedAt: user?.profile?.linkedinConnectedAt?.toLocaleString() ?? null,
             linkedinOidcConfigured: Boolean(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET),
-            linkedinShareConnected: linkedinShareConnection?.status === "CONNECTED" && Array.isArray(linkedinShareConnection.scopes) && linkedinShareConnection.scopes.includes("w_member_social"),
+            linkedinShareConnected: linkedinShareConnection?.status === "CONNECTED" && normalizeLinkedInScopes(linkedinShareConnection.scopes).includes("w_member_social"),
             linkedinShareStatus: linkedinShareConnection?.status ?? null,
             linkedinShareLastPublishedAt: linkedinShareConnection?.lastPublishedAt?.toLocaleString() ?? null,
             githubUrl: user?.profile?.githubUrl ?? "https://github.com/carlwelchdesign",
