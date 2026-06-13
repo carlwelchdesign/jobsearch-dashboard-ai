@@ -93,7 +93,7 @@ export async function getLatestCareerStandup(userId: string) {
 
 export function formatCareerStandup(standup: CareerStandup) {
   return [
-    `Career CEO standup: sprint score ${standup.sprintScore}/100, income momentum ${standup.incomeMomentum}, attention debt ${standup.attentionDebt}.`,
+    `Jolene standup: sprint score ${standup.sprintScore}/100, income momentum ${standup.incomeMomentum}, attention debt ${standup.attentionDebt}.`,
     standup.proactivePromptReason ? `I noticed: ${standup.proactivePromptReason}` : "No urgent negative delta is showing in the sprint loop.",
     `Top money move: ${standup.moneyMoveStatus[0]?.title ?? "Run a high-income search refresh"}${standup.moneyMoveStatus[0]?.href ? ` (${standup.moneyMoveStatus[0].href})` : ""}.`,
     standup.brief.incomeRisks.length ? `Income risks: ${standup.brief.incomeRisks.join(" ")}` : "Income risks: no major compensation blockers found in the current sprint queue.",

@@ -6,6 +6,7 @@ import { executeJoleneAdkOperator, type JoleneOperatorAction } from "@/lib/jolen
 import { executeJoleneCareerCoaching, isLikelyPastedInterviewPrompt } from "@/lib/jolene/career-coach";
 import { buildCareerCeoBrief, formatCareerCeoBrief } from "@/lib/jolene/career-ceo";
 import { buildCareerStandup, formatCareerStandup } from "@/lib/jolene/career-standup";
+import { runJoleneChiefOfStaffAgent } from "@/lib/jolene/chief-of-staff";
 import {
   buildJoleneGlobalContext,
   retrieveJoleneKnowledge,
@@ -85,12 +86,19 @@ export async function executeJoleneAction(message: string, options: { userId?: s
   if (coaching.handled) return coaching;
 
   if (options.userId && isCareerStandupIntent(message)) {
+    const chief = await runJoleneChiefOfStaffAgent({ userId: options.userId, source: "chat" });
     const standup = await buildCareerStandup(options.userId, { persist: true });
     return {
       handled: true,
-      reply: formatCareerStandup(standup),
+      reply: [
+        `Jolene, Chief of Staff: ${chief.output.summary}`,
+        "",
+        formatCareerStandup(standup).replace(/^Career CEO standup:/, "Jolene standup:"),
+      ].join("\n"),
       actionJson: {
-        action: "career_ceo_standup",
+        action: "jolene_chief_of_staff_standup",
+        chiefRunId: chief.run.id,
+        chiefBrief: chief.output,
         careerStandup: standup,
         sprintScore: standup.sprintScore,
         incomeMomentum: standup.incomeMomentum,
@@ -102,12 +110,19 @@ export async function executeJoleneAction(message: string, options: { userId?: s
   }
 
   if (options.userId && isCareerCeoBriefIntent(message)) {
+    const chief = await runJoleneChiefOfStaffAgent({ userId: options.userId, source: "chat" });
     const brief = await buildCareerCeoBrief(options.userId);
     return {
       handled: true,
-      reply: formatCareerCeoBrief(brief),
+      reply: [
+        `Jolene, Chief of Staff: ${chief.output.summary}`,
+        "",
+        formatCareerCeoBrief(brief).replace(/^Career CEO brief:/, "Jolene career brief:"),
+      ].join("\n"),
       actionJson: {
-        action: "career_ceo_brief",
+        action: "jolene_chief_of_staff_brief",
+        chiefRunId: chief.run.id,
+        chiefBrief: chief.output,
         missionContext: brief.mission,
         moneyMoves: brief.moneyMoves,
         incomeRisks: brief.incomeRisks,

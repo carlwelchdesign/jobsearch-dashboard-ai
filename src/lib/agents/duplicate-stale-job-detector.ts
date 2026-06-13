@@ -10,6 +10,7 @@ export type DuplicateStaleJobDetectorInput = {
   jobPostingId?: string;
   limit?: number;
   userId?: string;
+  parentRunId?: string;
   learningRules?: QualityProposalLearningRules;
 };
 
@@ -45,6 +46,7 @@ export async function runDuplicateStaleJobDetectorAgent(input: DuplicateStaleJob
     agentType: "DUPLICATE_STALE_JOB_DETECTOR",
     input,
     userId: input.userId,
+    parentRunId: input.parentRunId,
     execute: async () => {
       const jobs = await loadJobsForDetection(input);
       const output = buildDuplicateStaleDetection(jobs, new Date(), input.learningRules);

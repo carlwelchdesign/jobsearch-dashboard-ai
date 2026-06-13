@@ -13,6 +13,7 @@ export type MarketIntelligenceInput = {
   triggeredBy?: "manual" | "cron" | "jolene" | "search_auto";
   jobSearchRunId?: string;
   source?: string;
+  parentRunId?: string;
 };
 
 export type MarketIntelligenceOutput = {
@@ -254,6 +255,7 @@ export async function runMarketIntelligenceAgent(input: MarketIntelligenceInput 
     agentType: "MARKET_INTELLIGENCE",
     input: { ...input, lookbackDays, researchDepth },
     userId: input.userId,
+    parentRunId: input.parentRunId,
     execute: async (run) => {
       const since = new Date(Date.now() - lookbackDays * 86_400_000);
       const [profiles, matches, candidateProfile, sources, researchDigest] = await Promise.all([

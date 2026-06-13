@@ -196,6 +196,16 @@ export const skillRegistry = {
     defaultPolicy: lowRiskPolicy,
     execute: async (input: any) => (await (await import("@/lib/agents/daily-command-center")).runDailyCommandCenterAgent(input)).output,
   },
+  jolene_chief_of_staff: {
+    id: "jolene_chief_of_staff",
+    label: "Jolene, Chief of Staff",
+    agentType: "JOLENE_CHIEF_OF_STAFF",
+    riskLevel: "HIGH",
+    inputSchema: z.object({ userId: z.string().optional(), source: z.enum(["manual", "scheduled", "dashboard", "chat"]).optional() }),
+    outputSchema: anyOutput,
+    defaultPolicy: { ...lowRiskPolicy, externalAction: "none" as const },
+    execute: async (input: any) => (await (await import("@/lib/jolene/chief-of-staff")).runJoleneChiefOfStaffAgent(input)).output,
+  },
   recruiting_agency: {
     id: "recruiting_agency",
     label: "Recruiting Agency",

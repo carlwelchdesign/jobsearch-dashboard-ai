@@ -145,7 +145,7 @@ export async function buildCareerCeoBrief(userId: string): Promise<CareerCeoBrie
   return {
     generatedAt: new Date().toISOString(),
     mission,
-    summary: `Career CEO brief: ${careerMissionSummary(mission)} ${moneyMoves[0]?.title ?? "Run a high-income search refresh"}.`,
+    summary: `Jolene career brief: ${careerMissionSummary(mission)} ${moneyMoves[0]?.title ?? "Run a high-income search refresh"}.`,
     moneyMoves,
     incomeRisks,
     pipelineLeverage: {

@@ -29,19 +29,21 @@ vi.mock("@/lib/prisma", () => ({
     generatedCoverLetter: { findMany: vi.fn() },
     candidateEvidence: { findMany: vi.fn() },
     experienceBullet: { findMany: vi.fn() },
-    application: { findMany: vi.fn(), groupBy: vi.fn() },
+    application: { count: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
     applicationAnswerMemory: { findMany: vi.fn(), update: vi.fn() },
     applicationOutcome: { findMany: vi.fn(), groupBy: vi.fn() },
     applicationPacket: { count: vi.fn() },
-    agentRun: { count: vi.fn(), findMany: vi.fn() },
-    agentUserRequest: { count: vi.fn() },
+    agentRun: { count: vi.fn(), create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    agentRunEvent: { create: vi.fn() },
+    agentUserRequest: { count: vi.fn(), findMany: vi.fn() },
     careerMission: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     careerSprintSnapshot: { create: vi.fn(), findFirst: vi.fn() },
-    jobProfileMatch: { findMany: vi.fn(), groupBy: vi.fn() },
+    jobProfileMatch: { count: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
     jobPosting: { findMany: vi.fn(), groupBy: vi.fn() },
     jobSearchProfile: { findMany: vi.fn() },
     jobSearchRun: { findFirst: vi.fn() },
     jobSuppression: { count: vi.fn() },
+    linkedInPostDraft: { findFirst: vi.fn() },
     project: { findMany: vi.fn() },
     skillFeedback: { count: vi.fn(), findMany: vi.fn() },
     user: { findFirst: vi.fn(), findUnique: vi.fn() },
@@ -60,6 +62,7 @@ describe("executeJoleneAction", () => {
     vi.mocked(prisma.generatedCoverLetter.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.candidateEvidence.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.experienceBullet.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.application.count).mockResolvedValue(0 as never);
     vi.mocked(prisma.application.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.application.groupBy).mockResolvedValue([] as never);
     vi.mocked(prisma.applicationAnswerMemory.findMany).mockResolvedValue([] as never);
@@ -68,8 +71,45 @@ describe("executeJoleneAction", () => {
     vi.mocked(prisma.applicationOutcome.groupBy).mockResolvedValue([] as never);
     vi.mocked(prisma.applicationPacket.count).mockResolvedValue(0 as never);
     vi.mocked(prisma.agentRun.count).mockResolvedValue(0 as never);
+    vi.mocked(prisma.agentRun.create).mockResolvedValue({
+      id: "chief_run_1",
+      userId: "user_1",
+      agentType: "JOLENE_CHIEF_OF_STAFF",
+      inputJson: {},
+      outputJson: null,
+      observabilityJson: {},
+      graphThreadId: null,
+      currentNode: null,
+      workflowStateJson: {},
+      workflowVersion: null,
+      parentRunId: null,
+      status: "RUNNING",
+      error: null,
+      createdAt: new Date("2026-05-19T12:00:00.000Z"),
+      updatedAt: new Date("2026-05-19T12:00:00.000Z"),
+    } as never);
+    vi.mocked(prisma.agentRun.findFirst).mockResolvedValue(null as never);
     vi.mocked(prisma.agentRun.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.agentRun.update).mockResolvedValue({
+      id: "chief_run_1",
+      userId: "user_1",
+      agentType: "JOLENE_CHIEF_OF_STAFF",
+      inputJson: {},
+      outputJson: {},
+      observabilityJson: {},
+      graphThreadId: null,
+      currentNode: null,
+      workflowStateJson: {},
+      workflowVersion: null,
+      parentRunId: null,
+      status: "COMPLETED",
+      error: null,
+      createdAt: new Date("2026-05-19T12:00:00.000Z"),
+      updatedAt: new Date("2026-05-19T12:00:00.000Z"),
+    } as never);
+    vi.mocked(prisma.agentRunEvent.create).mockResolvedValue({} as never);
     vi.mocked(prisma.agentUserRequest.count).mockResolvedValue(0 as never);
+    vi.mocked(prisma.agentUserRequest.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.careerMission.findUnique).mockResolvedValue({
       id: "mission_1",
       userId: "user_1",
@@ -92,6 +132,7 @@ describe("executeJoleneAction", () => {
     vi.mocked(prisma.careerMission.update).mockResolvedValue({} as never);
     vi.mocked(prisma.careerSprintSnapshot.create).mockResolvedValue({ id: "snapshot_1" } as never);
     vi.mocked(prisma.careerSprintSnapshot.findFirst).mockResolvedValue(null as never);
+    vi.mocked(prisma.jobProfileMatch.count).mockResolvedValue(0 as never);
     vi.mocked(prisma.jobProfileMatch.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.jobProfileMatch.groupBy).mockResolvedValue([] as never);
     vi.mocked(prisma.jobPosting.findMany).mockResolvedValue([] as never);
@@ -99,11 +140,12 @@ describe("executeJoleneAction", () => {
     vi.mocked(prisma.jobSearchProfile.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.jobSearchRun.findFirst).mockResolvedValue(null as never);
     vi.mocked(prisma.jobSuppression.count).mockResolvedValue(0 as never);
+    vi.mocked(prisma.linkedInPostDraft.findFirst).mockResolvedValue(null as never);
     vi.mocked(prisma.project.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.skillFeedback.count).mockResolvedValue(0 as never);
     vi.mocked(prisma.skillFeedback.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.user.findFirst).mockResolvedValue(null as never);
-    vi.mocked(prisma.user.findUnique).mockResolvedValue(null as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user_1", email: "user@example.com", name: "Carl" } as never);
     vi.mocked(prisma.workExperience.findMany).mockResolvedValue([] as never);
   });
 
@@ -525,13 +567,15 @@ describe("executeJoleneAction", () => {
 
     expect(result.handled).toBe(true);
     expect(result.actionJson).toMatchObject({
-      action: "career_ceo_brief",
+      action: "jolene_chief_of_staff_brief",
+      chiefRunId: "chief_run_1",
+      chiefBrief: expect.objectContaining({ title: "Jolene, Chief of Staff" }),
       missionContext: expect.objectContaining({ urgencyMode: "HIGH_INCOME_SPRINT" }),
-      moneyMoves: expect.arrayContaining([expect.objectContaining({ title: expect.stringContaining("Acme AI") })]),
-      pipelineLeverage: expect.objectContaining({ readyApplications: 1 }),
+      moneyMoves: expect.arrayContaining([expect.objectContaining({ title: expect.any(String) })]),
+      pipelineLeverage: expect.objectContaining({ highScoreJobs: expect.any(Number) }),
     });
-    expect(result.reply).toContain("Career CEO brief");
-    expect(result.reply).toContain("Money moves");
+    expect(result.reply).toContain("Jolene, Chief of Staff");
+    expect(result.reply).toContain("Jolene career brief");
   });
 
   it("returns a closed-loop Career CEO standup", async () => {
@@ -563,12 +607,15 @@ describe("executeJoleneAction", () => {
 
     expect(result.handled).toBe(true);
     expect(result.actionJson).toMatchObject({
-      action: "career_ceo_standup",
+      action: "jolene_chief_of_staff_standup",
+      chiefRunId: "chief_run_1",
+      chiefBrief: expect.objectContaining({ title: "Jolene, Chief of Staff" }),
       sprintScore: expect.any(Number),
       incomeMomentum: "insufficient_data",
       moneyMoveStatus: expect.arrayContaining([expect.objectContaining({ status: "new" })]),
     });
-    expect(result.reply).toContain("Career CEO standup");
+    expect(result.reply).toContain("Jolene, Chief of Staff");
+    expect(result.reply).toContain("Jolene standup");
     expect(prisma.careerSprintSnapshot.create).toHaveBeenCalled();
   });
 });

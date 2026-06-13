@@ -33,6 +33,16 @@ describe("Command Center subnav routes", () => {
     expect(contentSource).toContain("Open LinkedIn Content");
   });
 
+  it("shows Jolene as a proactive Chief of Staff on the dashboard overview", () => {
+    const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
+
+    expect(contentSource).toContain("Jolene, Chief of Staff");
+    expect(contentSource).toContain("/api/jolene/chief-of-staff/run");
+    expect(contentSource).toContain("/api/jolene/chief-of-staff/approve");
+    expect(contentSource).toContain("Ask Jolene");
+    expect(contentSource).toContain("priority.evidence");
+  });
+
   it("keeps market analysis centralized on the market dashboard route", () => {
     const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
     const tabsSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/market-analysis-tabs.tsx"), "utf8");

@@ -32,6 +32,7 @@ import { submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { getLinkedInAnalyticsSummary } from "@/lib/linkedin/analytics";
+import { getLatestJoleneChiefBrief, type JoleneChiefOutput } from "@/lib/jolene/chief-of-staff";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 import { getServiceFallbacks } from "@/lib/service-fallbacks";
@@ -108,8 +109,9 @@ export async function DashboardOverviewPage() {
     }),
     listOpenAgentUserRequests(5),
     prisma.agentRun.findFirst({ where: { agentType: "DAILY_COMMAND_CENTER", status: "COMPLETED" }, orderBy: { createdAt: "desc" } }),
-    prisma.user.findFirst({ select: { notificationSettings: true } }),
+    prisma.user.findFirst({ select: { id: true, notificationSettings: true } }),
   ]);
+  const latestJoleneRun = dashboardUser?.id ? await getLatestJoleneChiefBrief(dashboardUser.id) : null;
   const suppressionStates = await loadJobSuppressionStatesByUserIds(needsReview.map((match) => match.jobSearchProfile.userId));
   const needsReviewCount = uniqueMatchesByCanonicalJob(needsReview.filter((match) => {
     const suppressionState = suppressionStates.get(match.jobSearchProfile.userId);
@@ -123,6 +125,7 @@ export async function DashboardOverviewPage() {
   return (
     <DashboardShell group="overview">
       <ServiceFallbackBanners items={fallbacks} />
+      <JoleneChiefOfStaffCard runId={latestJoleneRun?.id ?? null} brief={joleneChiefOutput(latestJoleneRun?.outputJson)} />
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
         <Metric label="Enabled profiles" value={profiles.length.toString()} helper="Active campaigns" />
         <Metric label="Exceptions" value={needsReviewCount.toString()} helper="Needs your decision" />
@@ -147,6 +150,93 @@ export async function DashboardOverviewPage() {
       </Box>
       <PipelineStatusSummary applicationCountByStatus={applicationCountByStatus} needsReviewCount={needsReviewCount} blockers={agentUserRequests.length} />
     </DashboardShell>
+  );
+}
+
+function JoleneChiefOfStaffCard({ runId, brief }: { runId: string | null; brief: JoleneChiefOutput | null }) {
+  const topPriorities = brief?.priorities.slice(0, 3) ?? [];
+  const proposalsByAction = new Map((brief?.delegatedWork ?? []).map((work) => [work.actionId, work]));
+
+  return (
+    <Card sx={{ borderColor: "primary.main", bgcolor: "rgba(37, 99, 235, 0.06)" }}>
+      <CardContent>
+        <Stack spacing={2}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "flex-start" } }}>
+            <Box>
+              <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                <Chip size="small" color="primary" label="Jolene, Chief of Staff" />
+                <Chip size="small" variant="outlined" label={brief ? `Confidence ${brief.confidence}` : "No brief yet"} />
+              </Stack>
+              <Typography variant="h3">{brief ? brief.summary : "Jolene is ready to brief the operating system."}</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                Jolene reviews agent runs, blockers, pipeline state, market signals, LinkedIn signals, and the career standup before proposing delegated work.
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", justifyContent: { md: "flex-end" } }}>
+              <ActionButton postTo="/api/jolene/chief-of-staff/run" variant="contained" size="small" loadingLabel="Briefing...">
+                Run Brief
+              </ActionButton>
+              <ActionButton href="/agents" variant="outlined" size="small" endIcon={<OpenInNewIcon />}>
+                Agent Board
+              </ActionButton>
+            </Stack>
+          </Stack>
+
+          {topPriorities.length ? (
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(3, 1fr)" }, gap: 1.5 }}>
+              {topPriorities.map((priority) => {
+                const proposal = priority.delegatedActionId ? proposalsByAction.get(priority.delegatedActionId) : null;
+                return (
+                  <Box key={priority.id} sx={{ border: 1, borderColor: "divider", borderRadius: 1, bgcolor: "background.paper", p: 1.5 }}>
+                    <Stack spacing={1.25}>
+                      <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+                        <Chip size="small" variant="outlined" label={`P${priority.priority}`} />
+                        <Chip size="small" variant="outlined" label={priority.category.replace(/_/g, " ")} />
+                      </Stack>
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 850 }}>{priority.title}</Typography>
+                        <Typography variant="caption" color="text.secondary">{priority.detail}</Typography>
+                      </Box>
+                      <Typography variant="caption" color="text.secondary">Why: {priority.rationale}</Typography>
+                      <Stack spacing={0.5}>
+                        {priority.evidence.slice(0, 2).map((item) => (
+                          <Typography key={item} variant="caption" color="text.secondary">Evidence: {item}</Typography>
+                        ))}
+                      </Stack>
+                      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                        <ActionButton href={priority.href} variant="outlined" size="small">Open</ActionButton>
+                        {proposal && runId ? (
+                          <ActionButton
+                            postTo="/api/jolene/chief-of-staff/approve"
+                            body={{ runId, proposalIds: [proposal.id] }}
+                            variant="contained"
+                            size="small"
+                            loadingLabel="Approving..."
+                          >
+                            Approve
+                          </ActionButton>
+                        ) : null}
+                        <ActionButton
+                          postTo="/api/jolene"
+                          body={{ contextPath: "/dashboard", message: `Explain this Jolene Chief of Staff priority: ${priority.title}` }}
+                          variant="text"
+                          size="small"
+                          loadingLabel="Asking..."
+                        >
+                          Ask Jolene
+                        </ActionButton>
+                      </Stack>
+                    </Stack>
+                  </Box>
+                );
+              })}
+            </Box>
+          ) : (
+            <EmptyState title="No Jolene brief yet" body="Run a brief to let Jolene inspect agent activity and propose the next operating priorities." />
+          )}
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -526,6 +616,12 @@ function ProfileHealthCard({ profiles }: { profiles: Array<{ id: string; name: s
 
 function dailyPlanOutput(value: unknown): DailyPlanOutput | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as DailyPlanOutput : null;
+}
+
+function joleneChiefOutput(value: unknown): JoleneChiefOutput | null {
+  if (!isRecord(value)) return null;
+  if (!Array.isArray(value.priorities) || !Array.isArray(value.delegatedWork)) return null;
+  return value as JoleneChiefOutput;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
