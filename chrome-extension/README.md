@@ -12,6 +12,8 @@ Local Chrome extension for saving job pages into the app and filling ready appli
 
 Open a job page, click the extension, review the extracted fields, and save. The extension posts to `POST /api/jobs/capture`, which runs the same dedupe and scoring path as manual job paste. Saved Chrome jobs with a persisted match are approved automatically and get an `approved` application tracker, so the Applications page can move them into Apply Sprint without a separate manual job approval step.
 
+For LinkedIn job pages, the popup shows a dedicated LinkedIn lead result after save. Detailed captures keep the LinkedIn URL as lead metadata, score the visible job text locally, and queue original-posting searches for employer and ATS pages. Bare LinkedIn URLs are saved as review-only leads until you paste selected job text or capture the original employer/ATS apply page.
+
 If the saved job has zero matching search profiles, the app creates an enabled captured-intent profile for similar roles, scores the captured job against it immediately, and reports that profile name in the popup status. The default lane is `AI-Native Enterprise Product Frontend`.
 
 After a successful save, the popup shows **Apply Now** and remembers the last saved job. If the actual application form is on another page, navigate there, reopen the extension, and click **Apply Now**. The extension sends the current tab URL to `POST /api/jobs/:id/apply-now`; the app updates the job's application URL, prepares or reuses the custom resume and cover letter, creates the ready application, and launches the local assistant.
@@ -20,11 +22,11 @@ If the app is running on a different local port, open **Local settings** in the 
 
 ## Assisted Apply
 
-On a ready application page, click **Fill from Job Search OS**. The extension looks up the ready application by the current URL through `GET /api/applications/assistant-package/by-url`, then fills safe known fields such as name, email, phone, links, location, selected application-answer text, and obvious cover-letter fields.
+On a ready application page, open **Application fill tools** and click **Fill current application**. The extension looks up the ready application by the current URL through `GET /api/applications/assistant-package/by-url`, then fills safe known fields such as name, email, phone, links, location, selected application-answer text, and obvious cover-letter fields.
 
 If the current page does not match the stored application URL, use the **Ready applications** dropdown instead. Select the prepared job, click **Fill selected ready job**, and the extension loads that application's package directly. The app also saves the current tab URL as the job's application URL so future URL-matched fills work from the same page.
 
-The extension runs in your regular Chrome profile and does not solve CAPTCHA, use stealth settings, or rotate networks. **Apply Now** launches the local assistant and preserves its manual-submit safety gates. **Fill from Job Search OS** never clicks submit. It attempts to attach the generated resume and cover-letter PDFs to matching file inputs; fields that cannot accept an attachment are highlighted for manual selection. After you complete missed non-sensitive fields, click **Save learned fields** so the app can reuse safe repeated answers on future applications.
+The extension runs in your regular Chrome profile and does not solve CAPTCHA, use stealth settings, or rotate networks. **Apply Now** launches the local assistant and preserves its manual-submit safety gates. Fill actions never click submit. The extension attempts to attach the generated resume and cover-letter PDFs to matching file inputs; fields that cannot accept an attachment are highlighted for manual selection.
 
 ## Package
 

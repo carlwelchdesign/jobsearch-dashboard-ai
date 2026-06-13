@@ -94,7 +94,7 @@ export const sourceCatalog: SourceCatalogItem[] = [
   source("Toptal", "freelance_marketplace", 4, "manual", "marketplace", global, ["contract", "frontend", "fullstack"], true, true, "blocked", "weekly", "Emergency/fractional income source, not core full-time search."),
   source("Braintrust", "freelance_marketplace", 4, "manual", "marketplace", global, ["contract", "frontend", "fullstack"], true, true, "blocked", "weekly", "Contract marketplace."),
 
-  source("LinkedIn Jobs", "general_job_board", 3, "manual", "manual_review", global, seniorEngineeringRoles, true, true, "blocked", "daily", "Major discovery source, but not scraped directly; use open-web queries to find original employer or ATS postings behind LinkedIn-visible roles."),
+  source("LinkedIn Jobs", "general_job_board", 3, "manual", "manual_review", global, seniorEngineeringRoles, true, true, "blocked", "daily", "Major discovery source, but not scraped directly. Optional LinkedIn OIDC imports identity basics only; user-supplied LinkedIn job URLs become lead records and open-web queries for original employer or ATS postings."),
   source("Indeed", "general_job_board", 4, "manual", "manual_review", global, seniorEngineeringRoles, true, false, "blocked", "weekly", "Large volume, high noise, blocked scraping risk."),
   source("Google Jobs", "general_job_board", 3, "manual", "search_query", global, seniorEngineeringRoles, true, false, "blocked", "daily", "Use through browser/search workflow, not direct scraping."),
   source("Glassdoor", "general_job_board", 4, "manual", "manual_review", global, seniorEngineeringRoles, true, true, "blocked", "weekly", "High noise and auth friction."),

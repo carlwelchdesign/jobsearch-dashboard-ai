@@ -228,6 +228,7 @@ enum AgentType {
   DAILY_COMMAND_CENTER
   RECRUITING_AGENCY
   MARKET_INTELLIGENCE
+  LINKEDIN_CONTENT
 }
 
 enum AgentRunStatus {
@@ -452,6 +453,7 @@ model User {
   skillAdjustments      SkillAdjustment[]
   skillFeedback         SkillFeedback[]
   thankYouDrafts        ThankYouDraft[]
+  linkedinPostDrafts   LinkedInPostDraft[]
   jobSuppressions       JobSuppression[]
 }
 
@@ -541,6 +543,11 @@ model UserProfile {
   phone               String?
   location            String?
   linkedinUrl         String?
+  linkedinSubject     String?
+  linkedinPictureUrl  String?
+  linkedinLocale      String?
+  linkedinEmailVerified Boolean?
+  linkedinConnectedAt DateTime?
   githubUrl           String?
   portfolioUrl        String?
   raceAnswer          String?
@@ -1115,6 +1122,7 @@ model AgentRun {
   qualityExamples   AgentQualityExample[]
   qualityEvaluations AgentQualityEvaluation[]
   events            AgentRunEvent[]
+  linkedinPostDrafts LinkedInPostDraft[]
 
   @@index([agentType, createdAt])
   @@index([status, createdAt])
@@ -1638,6 +1646,28 @@ model RecruiterOutreach {
   @@index([userId, status])
   @@index([jobPostingId, createdAt])
   @@index([contactId, createdAt])
+}
+
+model LinkedInPostDraft {
+  id                 String    @id @default(cuid())
+  userId             String
+  agentRunId         String?
+  title              String
+  hook               String
+  body               String
+  hashtags           Json      @default("[]")
+  contentPillar      String
+  sourceFacts        Json      @default("[]")
+  screenshotAssets   Json      @default("[]")
+  privacyReview      Json      @default("{}")
+  status             String    @default("DRAFT")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  agentRun           AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([agentRunId])
 }
 
 model NotificationSettings {

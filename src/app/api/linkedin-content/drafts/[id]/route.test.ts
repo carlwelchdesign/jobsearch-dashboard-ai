@@ -1,0 +1,31 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { prisma } from "@/lib/prisma";
+import { PATCH } from "./route";
+
+vi.mock("@/lib/prisma", () => ({
+  prisma: {
+    linkedInPostDraft: { update: vi.fn() },
+  },
+}));
+
+const draftUpdateMock = vi.mocked(prisma.linkedInPostDraft.update);
+
+describe("/api/linkedin-content/drafts/[id]", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    draftUpdateMock.mockResolvedValue({ id: "draft_1", status: "ARCHIVED" } as never);
+  });
+
+  it("archives a LinkedIn content draft", async () => {
+    const response = await PATCH(new Request("http://localhost/api/linkedin-content/drafts/draft_1", {
+      method: "PATCH",
+      body: JSON.stringify({ status: "ARCHIVED" }),
+    }), { params: { id: "draft_1" } });
+
+    expect(response.status).toBe(200);
+    expect(draftUpdateMock).toHaveBeenCalledWith({
+      where: { id: "draft_1" },
+      data: { status: "ARCHIVED" },
+    });
+  });
+});

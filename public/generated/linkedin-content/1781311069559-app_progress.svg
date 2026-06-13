@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Job Search OS safe progress card">
+  <rect width="1200" height="675" fill="#fffdf8"/>
+  <rect x="60" y="60" width="1080" height="555" rx="18" fill="#ffffff" stroke="#d8d1c4" stroke-width="2"/>
+  <text x="96" y="128" fill="#0f766e" font-family="Arial, sans-serif" font-size="28" font-weight="700">Job Search OS</text>
+  <text x="96" y="178" fill="#111827" font-family="Arial, sans-serif" font-size="44" font-weight="800">Building a Job Search Operating System: Progress and Practical Insights</text>
+  <text x="96" y="226" fill="#4b5563" font-family="Arial, sans-serif" font-size="24">Job search still feels like a fragmented mess-here's how we're tackling that problem head-on.</text>
+  <g>
+    <rect x="96" y="300" width="210" height="132" rx="14" fill="#f8fafc" stroke="#e5e7eb"/>
+    <text x="120" y="350" fill="#6b7280" font-family="Arial, sans-serif" font-size="20">Raw results</text>
+    <text x="120" y="398" fill="#111827" font-family="Arial, sans-serif" font-size="44" font-weight="800">19547</text>
+  </g>
+  <g>
+    <rect x="356" y="300" width="210" height="132" rx="14" fill="#f8fafc" stroke="#e5e7eb"/>
+    <text x="380" y="350" fill="#6b7280" font-family="Arial, sans-serif" font-size="20">Saved matches</text>
+    <text x="380" y="398" fill="#111827" font-family="Arial, sans-serif" font-size="44" font-weight="800">82</text>
+  </g>
+  <g>
+    <rect x="616" y="300" width="210" height="132" rx="14" fill="#f8fafc" stroke="#e5e7eb"/>
+    <text x="640" y="350" fill="#6b7280" font-family="Arial, sans-serif" font-size="20">Active sources</text>
+    <text x="640" y="398" fill="#111827" font-family="Arial, sans-serif" font-size="44" font-weight="800">49</text>
+  </g>
+  <g>
+    <rect x="876" y="300" width="210" height="132" rx="14" fill="#f8fafc" stroke="#e5e7eb"/>
+    <text x="900" y="350" fill="#6b7280" font-family="Arial, sans-serif" font-size="20">Query sources</text>
+    <text x="900" y="398" fill="#111827" font-family="Arial, sans-serif" font-size="44" font-weight="800">42</text>
+  </g>
+  <rect x="96" y="500" width="1008" height="1" fill="#e5e7eb"/>
+  <text x="96" y="548" fill="#374151" font-family="Arial, sans-serif" font-size="22">Redacted share preview: aggregate metrics only, no names, companies, salaries, job URLs, or applications.</text>
+</svg>
