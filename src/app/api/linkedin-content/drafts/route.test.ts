@@ -1,0 +1,67 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { runLinkedInContentAgent } from "@/lib/agents/linkedin-content";
+import { prisma } from "@/lib/prisma";
+import { GET, POST } from "./route";
+
+vi.mock("@/lib/agents/linkedin-content", () => ({
+  runLinkedInContentAgent: vi.fn(),
+}));
+
+vi.mock("@/lib/prisma", () => ({
+  prisma: {
+    user: { findFirst: vi.fn() },
+    linkedInPostDraft: { findMany: vi.fn() },
+  },
+}));
+
+const runLinkedInContentAgentMock = vi.mocked(runLinkedInContentAgent);
+const userFindFirstMock = vi.mocked(prisma.user.findFirst);
+const draftFindManyMock = vi.mocked(prisma.linkedInPostDraft.findMany);
+
+describe("/api/linkedin-content/drafts", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    userFindFirstMock.mockResolvedValue({ id: "user_1" } as never);
+    draftFindManyMock.mockResolvedValue([{ id: "draft_1", title: "Draft" }] as never);
+    runLinkedInContentAgentMock.mockResolvedValue({
+      run: { id: "agent_run_1" },
+      output: {
+        draftId: "draft_1",
+        title: "Draft",
+        hook: "Hook",
+        body: "Body",
+        hashtags: ["#BuildInPublic"],
+        contentPillar: "app_progress",
+        sourceFacts: [],
+        screenshotAssets: [],
+        privacyReview: { status: "PASS", warnings: [], blockedTerms: [], reviewedAt: "2026-06-12T12:00:00Z" },
+        mode: "deterministic",
+      },
+    } as never);
+  });
+
+  it("generates a draft through the LinkedIn content agent", async () => {
+    const response = await POST(new Request("http://localhost/api/linkedin-content/drafts", {
+      method: "POST",
+      body: JSON.stringify({ contentPillar: "architecture" }),
+    }));
+
+    expect(response.status).toBe(201);
+    expect(runLinkedInContentAgentMock).toHaveBeenCalledWith({ contentPillar: "architecture" });
+    await expect(response.json()).resolves.toMatchObject({
+      draftId: "draft_1",
+      agentRunId: "agent_run_1",
+      message: "LinkedIn draft created for manual review.",
+    });
+  });
+
+  it("lists active drafts for the first local user", async () => {
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(draftFindManyMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: { userId: "user_1", status: { not: "ARCHIVED" } },
+    }));
+    await expect(response.json()).resolves.toMatchObject({ drafts: [{ id: "draft_1" }] });
+  });
+});

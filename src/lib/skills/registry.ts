@@ -220,6 +220,19 @@ export const skillRegistry = {
     defaultPolicy: lowRiskPolicy,
     execute: async (input: any) => (await (await import("@/lib/agents/market-intelligence")).runMarketIntelligenceAgent(input)).output,
   },
+  linkedin_content: {
+    id: "linkedin_content",
+    label: "LinkedIn Content",
+    agentType: "LINKEDIN_CONTENT",
+    riskLevel: "LOW",
+    inputSchema: z.object({
+      userId: z.string().optional(),
+      contentPillar: z.enum(["app_progress", "search_learning", "architecture", "workflow_design"]).optional(),
+    }),
+    outputSchema: anyOutput,
+    defaultPolicy: { ...lowRiskPolicy, externalAction: "draft_only" as const },
+    execute: async (input: any) => (await (await import("@/lib/agents/linkedin-content")).runLinkedInContentAgent(input)).output,
+  },
   prepare_application_packet: {
     id: "prepare_application_packet",
     label: "Prepare Application Packet",

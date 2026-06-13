@@ -94,6 +94,8 @@ The callback stores durable `UserProfile` metadata such as LinkedIn subject, pic
 
 Captured `linkedin.com/jobs/view/...` URLs are LinkedIn leads. Rich leads with company, title, and selected job text go through normal manual capture, scoring, and approval. Bare LinkedIn URLs are saved as review-only lead records and do not become scored jobs until the user provides enough text or the original employer/ATS link. When the lead has enough company/title/location signal, the app generates original-posting queries, excludes `site:linkedin.com`, and merges them into Search Query Backlog without overwriting existing custom queries.
 
+The LinkedIn Content agent uses the activated LinkedIn developer products conservatively. OIDC remains identity-only. Share on LinkedIn is not used in v1, so the app does not request `w_member_social`, store share tokens, or publish posts. `/linkedin-content` creates manual-review drafts plus safe aggregate SVG screenshot attachments; downloads stay blocked if privacy review detects names, emails, companies, salaries, job URLs, or application-specific details.
+
 Existing `Search Query Backlog` configs are merged with new default query templates when seed or `/sources` runs, preserving custom user-added queries while adding newly supported provider coverage.
 
 The search-query adapter suppresses likely list/search result pages before scoring. If a listing page can be expanded into individual job URLs, those jobs continue through normal scoring. If expansion is blocked or no individual jobs are parseable, the listing URL is recorded in `JobSearchRun.progress` with `listingPagesSuppressed` stats and is not saved as an active job.

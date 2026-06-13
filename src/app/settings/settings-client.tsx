@@ -463,6 +463,7 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
                 { href: "/evidence", label: "Evidence library" },
                 { href: "/sources", label: "Company sources" },
                 { href: "/agents", label: "Agent board" },
+                { href: "/linkedin-content", label: "LinkedIn content" },
                 { href: "/resumes", label: "Materials workspace" },
                 { href: "/resumes/generated", label: "Generated materials" },
                 { href: "/networking", label: "Networking" },

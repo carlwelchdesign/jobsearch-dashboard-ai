@@ -78,6 +78,8 @@ Settings can sync public GitHub repository context into the candidate profile.
 
 Settings can also connect LinkedIn through OIDC when `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET` are configured. This imports basic identity/profile metadata (`openid profile email`) and stores durable profile fields only; it does not store long-lived LinkedIn tokens or provide LinkedIn job-search, saved-job, Apply with LinkedIn, Apply Connect, or Job Posting API access.
 
+The LinkedIn Content agent is a draft-only publishing assistant. It generates copyable posts and redacted aggregate screenshot-style assets from app progress and workflow lessons. It does not call Share on LinkedIn, does not request `w_member_social`, and does not publish externally.
+
 Uses:
 
 - project evidence

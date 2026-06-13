@@ -22,6 +22,7 @@ export type SkillId =
   | "daily_command_center"
   | "recruiting_agency"
   | "market_intelligence"
+  | "linkedin_content"
   | "prepare_application_packet"
   | "approve_agency_match";
 

@@ -585,6 +585,12 @@ Do these seven steps before your first job search. Each one builds on the last.
 4. Scroll down to the **GitHub work context** card and fill in your GitHub profile URL (covered in detail in [Part 9](#part-9--github-integration-adding-your-projects-as-evidence)).
 5. Click **Save settings**.
 
+### Optional — Generate LinkedIn content drafts
+
+Open `/linkedin-content` from Settings -> Admin -> LinkedIn content. The LinkedIn Content agent writes draft-only posts about Job Search OS progress, what the app is learning, architecture decisions, source/search improvements, and workflow lessons that could help other builders.
+
+The app does not post these drafts to LinkedIn. Share on LinkedIn API posting is intentionally deferred; v1 gives you copyable text and downloadable safe aggregate screenshot-style attachments. Screenshot downloads are available only after privacy review passes.
+
 ### Step 4 — Create at least one Search Profile
 
 A **Search Profile** defines a "version of you" targeting a specific type of role. You need at least one before a job search will run.
