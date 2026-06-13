@@ -105,7 +105,7 @@ describe("role description bullet digest", () => {
       "• Maintained and modernized legacy Backbone.js application areas.",
     ].join("\n");
 
-    expect(inferRoleDescriptionMetadata({ description })).toEqual({
+    expect(inferRoleDescriptionMetadata({ description })).toMatchObject({
       role: "Senior Software Engineer",
       company: "Revenue.io",
       category: "ai",

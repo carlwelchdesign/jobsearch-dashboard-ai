@@ -8,6 +8,7 @@ It shows:
 
 - latest search run state
 - live search progress
+- LinkedIn post analytics KPIs and charts
 - jobs found, deduped, filtered, and saved
 - open blockers
 - application packet review needs
@@ -33,6 +34,17 @@ Tracked run data includes:
 - errors
 
 The goal is for the user to see what the search system is actually doing instead of only seeing a spinner.
+
+## LinkedIn Analytics
+
+Command Center includes a LinkedIn Analytics card for published posts. It supports two data paths:
+
+- API sync through the LinkedIn Member Post Statistics API when the analytics connection has `r_member_postAnalytics`.
+- CSV paste import when API access is unavailable or pending LinkedIn approval.
+
+The card shows executive KPIs for impressions, reach, reactions, comments, reposts, saves, sends, link clicks, premium CTA clicks, follower gains, profile views, and engagement rate. Recharts panels show metric trends, engagement mix, top posts, and reach-versus-engagement scatter. Filters cover date range, metric, and source (`API`, `CSV`, or all).
+
+Only aggregate post metrics are stored. Viewer identities, commenter identities, private profile data, job URLs, salaries, recruiters, and application-specific outcomes are not collected for this dashboard.
 
 The main search action starts the gated search improvement loop. After discovery, scoring, duplicate detection, and recruiting-agency handoff, Command Center shows a Profile Health gate. If unresolved `needs_review` jobs or prepared-but-unworked applications remain, the loop pauses and explains the manual work required. When those gates clear, the Search Profile Manager refreshes health snapshots and Market Intelligence runs from the fresh profile data.
 

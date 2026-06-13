@@ -28,8 +28,10 @@ import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/s
 import { prisma } from "@/lib/prisma";
 import { getServiceFallbacks } from "@/lib/service-fallbacks";
 import { ServiceFallbackBanners } from "@/components/ui/service-fallback-banners";
+import { getLinkedInAnalyticsSummary } from "@/lib/linkedin/analytics";
 import type { MarketIntelligenceOutput } from "@/lib/agents/market-intelligence";
 import { RunDailyPlanButton } from "./daily-plan-card";
+import { LinkedInAnalyticsCard } from "./linkedin-analytics-card";
 import { MarketAnalysisCard, type MarketTrendPoint } from "./market-analysis-card";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +53,7 @@ type DailyPlanOutput = {
 };
 
 export default async function DashboardPage() {
-  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, latestDailyPlanRun, latestMarketRuns, latestManualSearchRun, latestCronSearchRun, agentUserRequests, integrityReport, notificationSettings] = await Promise.all([
+  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, approvedApplicationCount, needsReview, latestDailyPlanRun, latestMarketRuns, latestManualSearchRun, latestCronSearchRun, agentUserRequests, integrityReport, dashboardUser] = await Promise.all([
     prisma.jobSearchProfile.findMany({ where: { enabled: true }, orderBy: { name: "asc" } }),
     prisma.jobSearchRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.application.groupBy({ by: ["status"], _count: { status: true } }),
@@ -94,7 +96,7 @@ export default async function DashboardPage() {
     }),
     listOpenAgentUserRequests(5),
     auditApplicationIntegrity().catch(() => null),
-    prisma.user.findFirst({ select: { notificationSettings: true } }),
+    prisma.user.findFirst({ select: { id: true, notificationSettings: true } }),
   ]);
   const suppressionStates = await loadJobSuppressionStatesByUserIds([
     ...needsReview.map((match) => match.jobSearchProfile.userId),
@@ -118,11 +120,12 @@ export default async function DashboardPage() {
   const marketTrendSeries = buildMarketTrendSeries(latestMarketRuns.map((run) => run.outputJson));
   const cronExpression = profiles.find((profile) => profile.cronExpression)?.cronExpression ?? "0 14 * * *";
   const scheduledProfileCount = profiles.filter((profile) => profile.scheduleEnabled).length;
-  const ns = notificationSettings as { pushoverEnabled?: boolean; emailEnabled?: boolean } | null;
+  const ns = dashboardUser?.notificationSettings as { pushoverEnabled?: boolean; emailEnabled?: boolean } | null;
   const anyNotificationConfigured = Boolean(ns?.pushoverEnabled || ns?.emailEnabled);
   const fallbacks = getServiceFallbacks(["openai", "brave", "notifications"], {
     anyNotificationConfigured,
   });
+  const linkedInAnalyticsSummary = dashboardUser ? await getLinkedInAnalyticsSummary(dashboardUser.id, "30d") : null;
 
   return (
     <AppShell>
@@ -140,6 +143,8 @@ export default async function DashboardPage() {
         <ServiceFallbackBanners items={fallbacks} />
 
         <SearchRunCommandCenter initialRun={latestRun ? serializeSearchRun(latestRun) : null} />
+
+        <LinkedInAnalyticsCard initialSummary={linkedInAnalyticsSummary} />
 
         <MarketAnalysisCard
           latest={latestMarket}
