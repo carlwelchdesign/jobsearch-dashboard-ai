@@ -14,12 +14,13 @@ const captureButton = document.querySelector("#capture");
 const applyNowButton = document.querySelector("#applyNow");
 const fillApplicationButton = document.querySelector("#fillApplication");
 const fillSelectedApplicationButton = document.querySelector("#fillSelectedApplication");
-const saveLearnedFieldsButton = document.querySelector("#saveLearnedFields");
 const openJobLink = document.querySelector("#openJob");
+const linkedinLeadResult = document.querySelector("#linkedinLeadResult");
+const linkedinLeadSummary = document.querySelector("#linkedinLeadSummary");
+const linkedinLeadQueries = document.querySelector("#linkedinLeadQueries");
 let capturedPayload = null;
 let lastSavedJob = null;
 let readyApplications = [];
-let lastFilledApplicationId = "";
 
 function setStatus(message) {
   statusElement.textContent = message;
@@ -49,10 +50,6 @@ function selectedAssistantPackageEndpoint(applicationId, currentUrl) {
   return url.toString();
 }
 
-function fieldLearningEndpoint(applicationId) {
-  return `${normalizeAppUrl(fields.apiUrl.value)}/api/applications/${encodeURIComponent(applicationId)}/field-learning`;
-}
-
 function applyNowEndpoint(jobId) {
   return `${normalizeAppUrl(fields.apiUrl.value)}/api/jobs/${encodeURIComponent(jobId)}/apply-now`;
 }
@@ -65,6 +62,32 @@ function setOpenJobLink(jobUrl) {
   }
   openJobLink.href = `${normalizeAppUrl(fields.apiUrl.value)}${jobUrl}`;
   openJobLink.hidden = false;
+}
+
+function setLinkedInLeadResult(payload) {
+  if (payload?.leadSource !== "linkedin") {
+    linkedinLeadResult.hidden = true;
+    linkedinLeadSummary.textContent = "";
+    linkedinLeadQueries.innerHTML = "";
+    return;
+  }
+
+  const queries = Array.isArray(payload.originalPostingQueries) ? payload.originalPostingQueries : [];
+  const queryText = queries.length
+    ? `Queued ${queries.length} original-posting search${queries.length === 1 ? "" : "es"} for employer and ATS pages.`
+    : "No original-posting searches were queued yet.";
+  const detailText = payload.needsManualText
+    ? "This is review-only until you paste job text or capture an employer/ATS apply page."
+    : "This has enough visible job detail for local scoring. The LinkedIn URL was kept as lead metadata, not the apply target.";
+
+  linkedinLeadSummary.textContent = `${detailText} ${queryText}`;
+  linkedinLeadQueries.innerHTML = "";
+  for (const query of queries.slice(0, 3)) {
+    const item = document.createElement("li");
+    item.textContent = query;
+    linkedinLeadQueries.append(item);
+  }
+  linkedinLeadResult.hidden = false;
 }
 
 function setApplyNowJob(job) {
@@ -162,11 +185,6 @@ function renderReadyApplications(preferredApplicationId = "") {
     fields.readyApplications.value = previousSelection;
   }
   fillSelectedApplicationButton.disabled = false;
-}
-
-function setLastFilledApplication(applicationId) {
-  lastFilledApplicationId = applicationId || "";
-  saveLearnedFieldsButton.disabled = !lastFilledApplicationId;
 }
 
 async function loadReadyApplications(preferredApplicationId = "", currentUrl = "") {
@@ -276,6 +294,7 @@ async function loadCapture() {
     fields.location.value = payload.location || "";
     fields.description.value = payload.description || "";
     setOpenJobLink(null);
+    setLinkedInLeadResult(null);
     await loadReadyApplications("", tab.url);
     applyReadyApplicationToCaptureFields(readyApplicationForCurrentUrl(tab.url));
     const applyText = lastSavedJob ? " Apply Now is available for the last saved job." : "";
@@ -309,6 +328,7 @@ async function saveCapture() {
       await chrome.storage.local.set({ jobSearchOsLastSavedJob: savedJob });
       setApplyNowJob(savedJob);
     }
+    setLinkedInLeadResult(payload);
     const displayedMatchCount = Number.isFinite(payload.initialMatchCount) ? payload.initialMatchCount : payload.matchCount;
     const matchText = Number.isFinite(displayedMatchCount) ? ` ${displayedMatchCount} matching profiles.` : "";
     const profileText = payload.profileCreated && payload.profileName ? ` Created search profile: ${payload.profileName}.` : "";
@@ -372,7 +392,6 @@ async function fillApplicationFromPackage() {
     if (!response.ok) throw new Error(payload.error || "Unable to load an application package for this page.");
     const packagePayload = await packageWithMaterialFiles(payload);
     const result = await chrome.tabs.sendMessage(tab.id, { type: "FILL_APPLICATION_FROM_PACKAGE", package: packagePayload, auth: { token } });
-    setLastFilledApplication(payload.application?.id || "");
     const filled = Number(result?.filled || 0);
     const skipped = Number(result?.skipped || 0);
     const uploads = Number(result?.uploads || 0);
@@ -381,7 +400,7 @@ async function fillApplicationFromPackage() {
     const uploadText = uploads ? ` Uploaded ${uploads} file(s).` : "";
     const generatedText = generated ? ` Generated ${generated} safe answer(s).` : "";
     const warning = uploadNeedsManual ? ` ${uploadNeedsManual} upload field(s) still need manual file selection.` : "";
-    setStatus(`Filled ${filled} field(s).${generatedText}${uploadText} Skipped ${skipped}.${warning} Complete missed fields, then click Save learned fields before submitting manually.`);
+    setStatus(`Filled ${filled} field(s).${generatedText}${uploadText} Skipped ${skipped}.${warning} Review missed fields before submitting manually.`);
   } catch (error) {
     setStatus(contentScriptError(error));
   } finally {
@@ -410,7 +429,6 @@ async function fillSelectedApplication() {
     if (!response.ok) throw new Error(payload.error || "Unable to load the selected application package.");
     const packagePayload = await packageWithMaterialFiles(payload);
     const result = await chrome.tabs.sendMessage(tab.id, { type: "FILL_APPLICATION_FROM_PACKAGE", package: packagePayload, auth: { token } });
-    setLastFilledApplication(payload.application?.id || applicationId);
     const filled = Number(result?.filled || 0);
     const skipped = Number(result?.skipped || 0);
     const uploads = Number(result?.uploads || 0);
@@ -419,50 +437,12 @@ async function fillSelectedApplication() {
     const uploadText = uploads ? ` Uploaded ${uploads} file(s).` : "";
     const generatedText = generated ? ` Generated ${generated} safe answer(s).` : "";
     const warning = uploadNeedsManual ? ` ${uploadNeedsManual} upload field(s) still need manual file selection.` : "";
-    setStatus(`Filled ${filled} field(s) for ${payload.job?.company || "selected job"}.${generatedText}${uploadText} Skipped ${skipped}.${warning} Complete missed fields, then click Save learned fields before submitting manually.`);
+    setStatus(`Filled ${filled} field(s) for ${payload.job?.company || "selected job"}.${generatedText}${uploadText} Skipped ${skipped}.${warning} Review missed fields before submitting manually.`);
     await loadReadyApplications(applicationId, tab.url);
   } catch (error) {
     setStatus(contentScriptError(error));
   } finally {
     fillSelectedApplicationButton.disabled = readyApplications.length === 0;
-  }
-}
-
-async function saveLearnedFields() {
-  if (!lastFilledApplicationId) {
-    setStatus("Fill a ready application first, then save learned fields.");
-    return;
-  }
-  saveLearnedFieldsButton.disabled = true;
-  setStatus("Collecting learned fields from the current tab...");
-  try {
-    const token = fields.token.value.trim();
-    const appUrl = normalizeAppUrl(fields.apiUrl.value);
-    await chrome.storage.local.set({ jobSearchOsToken: token, jobSearchOsAppUrl: appUrl });
-    const tab = await getActiveTab();
-    if (!tab?.id || !tab.url) throw new Error("No active application tab found.");
-    const collected = await chrome.tabs.sendMessage(tab.id, { type: "COLLECT_APPLICATION_FIELD_LEARNING" });
-    const fieldsForLearning = Array.isArray(collected?.fields) ? collected.fields : [];
-    if (!fieldsForLearning.length) {
-      setStatus("No new safe manually completed fields were found.");
-      return;
-    }
-    const host = new URL(tab.url).hostname.replace(/^www\./, "");
-    const response = await fetch(fieldLearningEndpoint(lastFilledApplicationId), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...tokenHeaders(),
-      },
-      body: JSON.stringify({ host, fields: fieldsForLearning }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Unable to save learned fields.");
-    setStatus(`Saved ${payload.saved || 0} learned field(s); ignored ${payload.ignored || 0}. Review and submit manually.`);
-  } catch (error) {
-    setStatus(contentScriptError(error));
-  } finally {
-    saveLearnedFieldsButton.disabled = !lastFilledApplicationId;
   }
 }
 
@@ -480,10 +460,6 @@ fillApplicationButton.addEventListener("click", () => {
 
 fillSelectedApplicationButton.addEventListener("click", () => {
   void fillSelectedApplication();
-});
-
-saveLearnedFieldsButton.addEventListener("click", () => {
-  void saveLearnedFields();
 });
 
 fields.apiUrl.addEventListener("change", () => {

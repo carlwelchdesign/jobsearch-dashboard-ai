@@ -34,6 +34,7 @@ export async function POST(request: Request) {
 
     const body = captureSchema.parse(await request.json());
     const leadUrl = linkedInJobUrl(body);
+    const nonLinkedInApplicationUrl = leadUrl ? nonLinkedInUrl(body.applicationUrl, body.pageUrl) : body.applicationUrl;
     const linkedInMetadata = linkedInLeadMetadata(body);
     if (linkedInMetadata?.originalPostingQueries.length) {
       await appendLinkedInLeadQueriesToSearchBacklog(linkedInMetadata.originalPostingQueries);
@@ -67,14 +68,15 @@ export async function POST(request: Request) {
       location: body.location,
       description: body.description ?? body.selectedText,
       text: body.selectedText,
-      applicationUrl: body.applicationUrl,
-      pageUrl: body.pageUrl,
+      applicationUrl: nonLinkedInApplicationUrl,
+      pageUrl: leadUrl ? undefined : body.pageUrl,
       remoteType: body.remoteType,
       atsProvider: body.atsProvider,
       sourceName: body.sourceName,
       rawData: {
         pageTitle: body.pageTitle ?? null,
         selectedText: body.selectedText ?? null,
+        pageUrl: body.pageUrl ?? null,
         metadata: body.metadata,
         ...(linkedInMetadata ?? {}),
       },
@@ -123,4 +125,8 @@ function inferTitleFromPageTitle(pageTitle?: string) {
   if (!pageTitle) return undefined;
   const [firstPart] = pageTitle.split("|").map((part) => part.trim()).filter(Boolean);
   return firstPart;
+}
+
+function nonLinkedInUrl(...values: Array<string | undefined>) {
+  return values.find((value) => value && !linkedInJobUrl({ pageUrl: value })) ?? undefined;
 }

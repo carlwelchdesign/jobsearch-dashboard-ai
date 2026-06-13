@@ -211,7 +211,10 @@ describe("/api/jobs/capture", () => {
     }));
 
     expect(captureManualJobMock).toHaveBeenCalledWith(expect.objectContaining({
+      applicationUrl: undefined,
+      pageUrl: undefined,
       rawData: expect.objectContaining({
+        pageUrl: "https://www.linkedin.com/jobs/view/123456789",
         leadSource: "linkedin",
         linkedInJobUrl: "https://www.linkedin.com/jobs/view/123456789",
         needsManualText: false,

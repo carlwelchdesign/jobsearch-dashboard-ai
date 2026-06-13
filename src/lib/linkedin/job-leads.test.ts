@@ -1,7 +1,24 @@
-import { describe, expect, it } from "vitest";
-import { buildLinkedInOriginalPostingQueries, isLinkedInJobUrl, linkedInLeadHasEnoughDetail, linkedInLeadMetadata } from "@/lib/linkedin/job-leads";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { appendLinkedInLeadQueriesToSearchBacklog, buildLinkedInOriginalPostingQueries, isLinkedInJobUrl, linkedInLeadHasEnoughDetail, linkedInLeadMetadata } from "@/lib/linkedin/job-leads";
+import { prisma } from "@/lib/prisma";
+
+vi.mock("@/lib/prisma", () => ({
+  prisma: {
+    jobSource: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+    },
+  },
+}));
+
+const findUniqueMock = vi.mocked(prisma.jobSource.findUnique);
+const upsertMock = vi.mocked(prisma.jobSource.upsert);
 
 describe("LinkedIn job leads", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("recognizes LinkedIn job view URLs only", () => {
     expect(isLinkedInJobUrl("https://www.linkedin.com/jobs/view/123")).toBe(true);
     expect(isLinkedInJobUrl("https://linkedin.com/jobs/view/123?trk=public_jobs")).toBe(true);
@@ -46,5 +63,40 @@ describe("LinkedIn job leads", () => {
       needsManualText: true,
       captureGuidance: expect.stringContaining("Paste the job title"),
     });
+  });
+
+  it("keeps LinkedIn exclusion queries when merging lead searches into the backlog", async () => {
+    findUniqueMock.mockResolvedValue({
+      id: "source_1",
+      config: {
+        provider: "brave",
+        queries: ["existing query"],
+        linkedinLeadQueries: ["existing linkedIn query"],
+      },
+    } as never);
+    upsertMock.mockResolvedValue({ id: "source_1" } as never);
+
+    await appendLinkedInLeadQueriesToSearchBacklog([
+      '"Senior Frontend Engineer" "Acme" careers apply -site:linkedin.com',
+      'site:linkedin.com/jobs/view "Senior Frontend Engineer"',
+      "   ",
+    ]);
+
+    expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({
+      update: expect.objectContaining({
+        config: expect.objectContaining({
+          queries: expect.arrayContaining([
+            "existing query",
+            '"Senior Frontend Engineer" "Acme" careers apply -site:linkedin.com',
+          ]),
+          linkedinLeadQueries: expect.arrayContaining([
+            "existing linkedIn query",
+            '"Senior Frontend Engineer" "Acme" careers apply -site:linkedin.com',
+          ]),
+        }),
+      }),
+    }));
+    const config = upsertMock.mock.calls[0]?.[0].update.config as { queries: string[] };
+    expect(config.queries).not.toContain('site:linkedin.com/jobs/view "Senior Frontend Engineer"');
   });
 });

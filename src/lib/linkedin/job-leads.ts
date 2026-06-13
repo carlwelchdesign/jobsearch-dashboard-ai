@@ -122,7 +122,10 @@ export async function captureLinkedInReviewLead(input: LinkedInLeadInput & { raw
 }
 
 export async function appendLinkedInLeadQueriesToSearchBacklog(queries: string[]) {
-  const cleaned = queries.filter((query) => query.trim().length > 0 && !/site:linkedin\.com/i.test(query));
+  const cleaned = queries.filter((query) => {
+    const trimmed = query.trim();
+    return trimmed.length > 0 && !targetsLinkedInSite(trimmed);
+  });
   if (!cleaned.length) return null;
 
   const source = await prisma.jobSource.findUnique({
@@ -158,6 +161,10 @@ function cleanSearchTerm(value?: string | null) {
 
 function quote(value: string) {
   return `"${value}"`;
+}
+
+function targetsLinkedInSite(query: string) {
+  return /(^|\s)(?!-)(?:site:|site=)linkedin\.com\b/i.test(query);
 }
 
 function inferTitleFromPageTitle(pageTitle?: string | null) {

@@ -9,25 +9,53 @@
     <main>
       <header>
         <p class="eyebrow">Job Search OS</p>
-        <h1>Job tools</h1>
+        <h1>Capture job</h1>
       </header>
-      <label>
-        Role
-        <input id="title" type="text">
-      </label>
-      <label>
-        Company
-        <input id="company" type="text">
-      </label>
-      <label>
-        Location
-        <input id="location" type="text">
-      </label>
-      <label>
-        Description
-        <textarea id="description" rows="8"></textarea>
-      </label>
-      <details>
+      <section class="capture-card" aria-label="Captured job fields">
+        <div class="field-row">
+          <label>
+            Role
+            <input id="title" type="text">
+          </label>
+          <label>
+            Company
+            <input id="company" type="text">
+          </label>
+        </div>
+        <label>
+          Location
+          <input id="location" type="text">
+        </label>
+        <label>
+          Description
+          <textarea id="description" rows="7"></textarea>
+        </label>
+      </section>
+      <div class="actions primary-actions">
+        <button id="capture" type="button">Save to Job Search OS</button>
+        <button id="applyNow" class="apply-now" type="button" hidden>Apply Now</button>
+      </div>
+      <section id="linkedinLeadResult" class="linkedin-result" aria-label="LinkedIn lead result" hidden>
+        <p class="result-title">LinkedIn lead captured</p>
+        <p id="linkedinLeadSummary" class="result-copy"></p>
+        <ul id="linkedinLeadQueries" class="query-list"></ul>
+      </section>
+      <p id="status" role="status"></p>
+      <a id="openJob" class="open-job" href="#" target="_blank" rel="noreferrer" hidden>Open captured job</a>
+      <details class="tool-panel">
+        <summary>Application fill tools</summary>
+        <section class="ready-fill" aria-label="Ready application fill">
+          <label>
+            Ready applications
+            <select id="readyApplications">
+              <option value="">Loading ready applications...</option>
+            </select>
+          </label>
+          <button id="fillSelectedApplication" class="secondary" type="button">Fill selected ready job</button>
+          <button id="fillApplication" class="secondary" type="button">Fill current application</button>
+        </section>
+      </details>
+      <details class="settings-panel">
         <summary>Local settings</summary>
         <label>
           App URL
@@ -38,23 +66,6 @@
           <input id="token" type="password" autocomplete="off">
         </label>
       </details>
-      <p id="status" role="status"></p>
-      <a id="openJob" class="open-job" href="#" target="_blank" rel="noreferrer" hidden>Open captured job</a>
-      <section class="ready-fill" aria-label="Ready application fill">
-        <label>
-          Ready applications
-          <select id="readyApplications">
-            <option value="">Loading ready applications...</option>
-          </select>
-        </label>
-        <button id="fillSelectedApplication" class="secondary" type="button">Fill selected ready job</button>
-        <button id="saveLearnedFields" class="secondary" type="button" disabled>Save learned fields</button>
-      </section>
-      <div class="actions">
-        <button id="capture" type="button">Save to Job Search OS</button>
-        <button id="applyNow" class="apply-now" type="button" hidden>Apply Now</button>
-        <button id="fillApplication" class="secondary" type="button">Fill from Job Search OS</button>
-      </div>
     </main>
     <script src="popup.js"></script>
   </body>
