@@ -83,6 +83,8 @@ function screenshotAssets(value: unknown): LinkedInDraftView["screenshotAssets"]
           label: record.label,
           description: typeof record.description === "string" ? record.description : "",
           route: typeof record.route === "string" ? record.route : undefined,
+          assetType: typeof record.assetType === "string" ? record.assetType : undefined,
+          rationale: typeof record.rationale === "string" ? record.rationale : undefined,
           privacyStatus: typeof record.privacyStatus === "string" ? record.privacyStatus : undefined,
           warnings: stringArray(record.warnings),
         }]
