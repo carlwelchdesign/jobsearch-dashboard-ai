@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
-import { syncJobResponseEmail } from "@/lib/email/sync";
+import { runJoleneEmailOperationsAgent } from "@/lib/jolene/email-ops";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,14 +16,20 @@ export async function GET(request: NextRequest) {
     }
 
     const url = new URL(request.url);
-    const result = await syncJobResponseEmail({
+    const result = await runJoleneEmailOperationsAgent({
+      source: "scheduled",
       limit: numberParam(url.searchParams.get("limit")),
       sinceDays: numberParam(url.searchParams.get("sinceDays")),
     });
 
     return NextResponse.json({
-      ...result,
-      message: `Email sync checked ${result.scanned} message(s) and ingested ${result.ingested}.`,
+      run: {
+        id: result.run.id,
+        agentType: result.run.agentType,
+        status: result.run.status,
+      },
+      summary: result.output,
+      message: `Email Ops checked ${result.output.scanned} message(s), ingested ${result.output.ingested}, and created ${result.output.findingsCreated} finding(s).`,
     });
   } catch (error) {
     return apiError(error, 400);

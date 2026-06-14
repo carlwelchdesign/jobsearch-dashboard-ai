@@ -147,6 +147,20 @@ describe("email response agent", () => {
     });
   });
 
+  it("classifies recruiter follow-ups as approval-gated recruiter responses", () => {
+    const result = classifyJobEmail({
+      subject: "Following up on next steps",
+      snippet: "The hiring team asked me to follow up about next steps.",
+      bodyText: null,
+    });
+
+    expect(result).toMatchObject({
+      classification: "RECRUITER_RESPONSE",
+      actionRequired: true,
+      recommendedOutcome: "RECRUITER_SCREEN",
+    });
+  });
+
   it("builds a compact application timeline payload for matched emails", () => {
     const classification = classifyJobEmail({
       subject: "Next step with Acme",

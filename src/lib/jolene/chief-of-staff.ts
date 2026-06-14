@@ -5,10 +5,10 @@ import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-
 import { runLinkedInContentAgent } from "@/lib/agents/linkedin-content";
 import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
 import { runAgent } from "@/lib/agents/run-agent";
-import { syncJobResponseEmail } from "@/lib/email/sync";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
 import { getLinkedInAnalyticsSummary } from "@/lib/linkedin/analytics";
 import { buildCareerStandup, type CareerStandup } from "@/lib/jolene/career-standup";
+import { getLatestEmailOpsSummary, runJoleneEmailOperationsAgent, type JoleneEmailOpsSummary } from "@/lib/jolene/email-ops";
 import { prisma } from "@/lib/prisma";
 
 export type JoleneChiefInput = {
@@ -22,7 +22,7 @@ export type JoleneDelegatedActionId =
   | "run_market_intelligence"
   | "check_duplicates"
   | "generate_linkedin_content"
-  | "sync_email";
+  | "run_email_ops";
 
 export type JoleneChiefPriority = {
   id: string;
@@ -30,7 +30,7 @@ export type JoleneChiefPriority = {
   title: string;
   detail: string;
   href: string;
-  category: "blocker" | "pipeline" | "agent_health" | "content" | "market" | "standup";
+  category: "blocker" | "pipeline" | "agent_health" | "content" | "market" | "standup" | "email";
   rationale: string;
   evidence: string[];
   delegatedActionId?: JoleneDelegatedActionId;
@@ -76,6 +76,7 @@ type JoleneChiefContext = {
   latestMarketRun: { id: string; createdAt: Date; outputJson: Prisma.JsonValue | null } | null;
   latestLinkedInDraft: { id: string; status: string; title: string | null; updatedAt: Date } | null;
   linkedInAnalytics: { posts: number; impressions: number; engagementRate: number | null } | null;
+  emailOps: { runId: string | null; createdAt: Date | null; summary: JoleneEmailOpsSummary | null; pendingFindings: number; calendarDrafts: number } | null;
   careerStandup: CareerStandup | null;
 };
 
@@ -185,6 +186,7 @@ export async function buildJoleneChiefContext(userId: string, source: NonNullabl
     latestMarketRun,
     latestLinkedInDraft,
     linkedInAnalytics,
+    emailOps,
     careerStandup,
   ] = await Promise.all([
     prisma.agentUserRequest.findMany({
@@ -204,6 +206,7 @@ export async function buildJoleneChiefContext(userId: string, source: NonNullabl
     prisma.agentRun.findFirst({ where: { userId, agentType: "MARKET_INTELLIGENCE", status: "COMPLETED" }, orderBy: { createdAt: "desc" } }),
     prisma.linkedInPostDraft.findFirst({ where: { userId }, orderBy: { updatedAt: "desc" }, select: { id: true, status: true, title: true, updatedAt: true } }),
     getLinkedInAnalyticsSummary(userId, "30d").catch(() => null),
+    getLatestEmailOpsSummary(userId).catch(() => null),
     buildCareerStandup(userId, { persist: false }).catch(() => null),
   ]);
 
@@ -247,6 +250,15 @@ export async function buildJoleneChiefContext(userId: string, source: NonNullabl
           engagementRate: linkedInAnalytics.kpis.engagementRate,
         }
       : null,
+    emailOps: emailOps
+      ? {
+          runId: emailOps.latestRun?.id ?? null,
+          createdAt: emailOps.latestRun?.createdAt ?? null,
+          summary: emailOps.summary,
+          pendingFindings: emailOps.findings.filter((finding) => finding.status === "NEEDS_APPROVAL").length,
+          calendarDrafts: emailOps.pendingCalendarProposals.length,
+        }
+      : null,
     careerStandup,
   };
 }
@@ -261,11 +273,13 @@ export function buildJoleneChiefBrief(context: JoleneChiefContext): JoleneChiefO
   const staleRunningRuns = context.recentRuns.filter((run) => run.status === "RUNNING" && context.now.getTime() - run.updatedAt.getTime() > 60 * 60 * 1000).slice(0, 5);
   const latestMarketAgeDays = context.latestMarketRun ? (context.now.getTime() - context.latestMarketRun.createdAt.getTime()) / 86_400_000 : Infinity;
   const latestSearchAgeDays = context.latestSearchRun ? (context.now.getTime() - context.latestSearchRun.startedAt.getTime()) / 86_400_000 : Infinity;
+  const latestEmailOpsAgeDays = context.emailOps?.createdAt ? (context.now.getTime() - context.emailOps.createdAt.getTime()) / 86_400_000 : Infinity;
 
   evidence.push(`${context.openRequests.length} open agent blocker(s).`);
   evidence.push(`${context.readyApplicationCount} ready application(s), ${context.needsReviewCount} job(s) need review.`);
   evidence.push(`${context.recentRuns.length} recent agent run(s) reviewed.`);
   if (context.linkedInAnalytics) evidence.push(`${context.linkedInAnalytics.posts} LinkedIn post analytics snapshot(s), ${context.linkedInAnalytics.impressions} impression(s).`);
+  if (context.emailOps?.summary) evidence.push(`Email Ops: ${context.emailOps.summary.findingsCreated} finding(s), ${context.emailOps.pendingFindings} pending approval(s), ${context.emailOps.calendarDrafts} calendar draft(s).`);
   if (context.careerStandup) evidence.push(`Sprint score ${context.careerStandup.sprintScore}/100, attention debt ${context.careerStandup.attentionDebt}.`);
 
   if (context.openRequests.length) {
@@ -293,6 +307,36 @@ export function buildJoleneChiefBrief(context: JoleneChiefContext): JoleneChiefO
       category: "agent_health",
       rationale: "Jolene should not compound hidden workflow failures.",
       evidence: [...failedRuns, ...staleRunningRuns].slice(0, 4).map((run) => `${run.agentType} ${run.status.toLowerCase()} ${run.error ? `- ${run.error}` : ""}`),
+    }));
+  }
+
+  if (context.emailOps?.pendingFindings || context.emailOps?.calendarDrafts) {
+    blockers.push(`${context.emailOps.pendingFindings} Email Ops finding(s) and ${context.emailOps.calendarDrafts} calendar draft(s) need review.`);
+    priorities.push(priority({
+      id: "review-email-ops",
+      priority: 2,
+      title: "Review inbox-driven job updates",
+      detail: "Jolene's Email Operations team found updates that need approval before stage changes, replies, or calendar writes.",
+      href: "/dashboard/email-ops",
+      category: "email",
+      rationale: "Inbox updates can change application state quickly, but external actions stay gated.",
+      evidence: [
+        `${context.emailOps.pendingFindings} approval-needed finding(s).`,
+        `${context.emailOps.calendarDrafts} in-app calendar draft(s).`,
+      ],
+    }));
+  } else if (latestEmailOpsAgeDays > 1) {
+    addDelegated(delegated, "run_email_ops", "Run Email Operations", "Scan recent job-search email with Jolene's specialist email team.", "/dashboard/email-ops");
+    priorities.push(priority({
+      id: "run-email-ops",
+      priority: 4,
+      title: "Scan recent job-response email",
+      detail: "Jolene can delegate a specialist email sweep for rejections, confirmations, interviews, assessments, and next steps.",
+      href: "/dashboard/email-ops",
+      category: "email",
+      rationale: "Recent inbox updates should update the operating system without requiring manual babysitting.",
+      evidence: [context.emailOps?.createdAt ? `Latest Email Ops run ${context.emailOps.createdAt.toLocaleString()}.` : "No completed Email Ops run found."],
+      delegatedActionId: "run_email_ops",
     }));
   }
 
@@ -460,9 +504,9 @@ async function executeDelegatedWork(work: JoleneDelegatedWork, userId: string, p
     const result = await runLinkedInContentAgent({ userId, parentRunId, contentPillar: "app_progress" });
     return { status: "executed", detail: `Created LinkedIn draft ${result.output.draftId ?? result.run.id} for review.`, href: "/linkedin-content", childRunId: result.run.id };
   }
-  if (work.actionId === "sync_email") {
-    const result = await syncJobResponseEmail();
-    return { status: "executed", detail: `Synced job-response email: ${result.ingested}/${result.scanned} message(s) ingested.`, href: "/applications" };
+  if (work.actionId === "run_email_ops") {
+    const result = await runJoleneEmailOperationsAgent({ userId, parentRunId, source: "jolene" });
+    return { status: "executed", detail: `Email Ops reviewed ${result.output.scanned} message(s), created ${result.output.findingsCreated} finding(s), and drafted ${result.output.calendarDrafts} calendar item(s).`, href: "/dashboard/email-ops", childRunId: result.run.id };
   }
   if (work.actionId === "run_job_search") {
     const result = await startJobSearchRun("manual");

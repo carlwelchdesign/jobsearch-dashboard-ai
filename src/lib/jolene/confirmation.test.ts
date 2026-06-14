@@ -24,8 +24,8 @@ vi.mock("@/lib/applications/integrity", () => ({
   repairApplicationIntegrity: vi.fn(),
 }));
 
-vi.mock("@/lib/email/sync", () => ({
-  syncJobResponseEmail: vi.fn(),
+vi.mock("@/lib/jolene/email-ops", () => ({
+  runJoleneEmailOperationsAgent: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({

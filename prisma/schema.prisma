@@ -230,6 +230,14 @@ enum AgentType {
   MARKET_INTELLIGENCE
   LINKEDIN_CONTENT
   JOLENE_CHIEF_OF_STAFF
+  JOLENE_EMAIL_OPERATIONS
+  EMAIL_INBOX_SCOUT
+  EMAIL_APPLICATION_MATCHER
+  EMAIL_OUTCOME_CLASSIFIER
+  EMAIL_SCHEDULING_COORDINATOR
+  EMAIL_ACTION_DRAFTER
+  EMAIL_PRIVACY_REVIEWER
+  EMAIL_OPS_REPORTER
 }
 
 enum AgentRunStatus {
@@ -367,6 +375,20 @@ enum EmailMessageClassification {
   NEEDS_REVIEW
 }
 
+enum EmailOpsFindingStatus {
+  AUTO_APPLIED
+  NEEDS_APPROVAL
+  APPROVED
+  DISMISSED
+  BLOCKED
+}
+
+enum CalendarProposalStatus {
+  DRAFT
+  APPROVED
+  DISMISSED
+}
+
 enum AgentQualityTarget {
   APPLICATION_ASSISTANT
   RECRUITING_AGENCY
@@ -414,85 +436,87 @@ enum JoleneMessageRole {
 }
 
 model User {
-  id                   String                 @id @default(cuid())
-  email                String                 @unique
-  name                 String?
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
-  agentRuns            AgentRun[]
-  agentUserRequests    AgentUserRequest[]
-  answerMemories       ApplicationAnswerMemory[]
-  automationSettings   ApplicationAutomationSettings?
-  companyAutomationPolicies CompanyAutomationPolicy[]
-  automationRuns       ApplicationAutomationRun[]
-  applicationPackets   ApplicationPacket[]
-  applications         Application[]
-  agentQualityDatasets AgentQualityDataset[]
-  agentQualityExamples AgentQualityExample[]
-  agentQualityEvaluations AgentQualityEvaluation[]
-  agentImprovementProposals AgentImprovementProposal[]
-  careerMission        CareerMission?
-  careerSprintSnapshots CareerSprintSnapshot[]
-  contacts             Contact[]
-  coverLetters         GeneratedCoverLetter[]
-  emailMessages        EmailMessageRecord[]
-  emailOAuthConnections EmailOAuthConnection[]
-  fieldMemories        ApplicationFieldMemory[]
-  formPatterns         ApplicationFormPattern[]
-  interviewPrepTasks   InterviewPrepTask[]
-  joleneConversations  JoleneConversation[]
-  notificationLogs     NotificationLog[]
-  notificationSettings NotificationSettings?
+  id                          String                         @id @default(cuid())
+  email                       String                         @unique
+  name                        String?
+  createdAt                   DateTime                       @default(now())
+  updatedAt                   DateTime                       @updatedAt
+  agentRuns                   AgentRun[]
+  agentUserRequests           AgentUserRequest[]
+  answerMemories              ApplicationAnswerMemory[]
+  automationSettings          ApplicationAutomationSettings?
+  companyAutomationPolicies   CompanyAutomationPolicy[]
+  automationRuns              ApplicationAutomationRun[]
+  applicationPackets          ApplicationPacket[]
+  applications                Application[]
+  agentQualityDatasets        AgentQualityDataset[]
+  agentQualityExamples        AgentQualityExample[]
+  agentQualityEvaluations     AgentQualityEvaluation[]
+  agentImprovementProposals   AgentImprovementProposal[]
+  careerMission               CareerMission?
+  careerSprintSnapshots       CareerSprintSnapshot[]
+  contacts                    Contact[]
+  coverLetters                GeneratedCoverLetter[]
+  emailMessages               EmailMessageRecord[]
+  emailOAuthConnections       EmailOAuthConnection[]
+  emailOpsFindings            EmailOpsFinding[]
+  calendarProposals           CalendarEventProposal[]
+  fieldMemories               ApplicationFieldMemory[]
+  formPatterns                ApplicationFormPattern[]
+  interviewPrepTasks          InterviewPrepTask[]
+  joleneConversations         JoleneConversation[]
+  notificationLogs            NotificationLog[]
+  notificationSettings        NotificationSettings?
   outcomeCalibrationSnapshots OutcomeCalibrationSnapshot[]
-  outcomes             ApplicationOutcome[]
-  profile              UserProfile?
-  recruiterOutreach    RecruiterOutreach[]
-  resumeProfiles       ResumeProfile[]
-  resumeUploads        ResumeUpload[]
-  resumes              GeneratedResume[]
-  searchProfiles       JobSearchProfile[]
-  skillAdjustments      SkillAdjustment[]
-  skillFeedback         SkillFeedback[]
-  thankYouDrafts        ThankYouDraft[]
-  linkedinPostDrafts   LinkedInPostDraft[]
-  linkedinShareConnection LinkedInShareConnection?
+  outcomes                    ApplicationOutcome[]
+  profile                     UserProfile?
+  recruiterOutreach           RecruiterOutreach[]
+  resumeProfiles              ResumeProfile[]
+  resumeUploads               ResumeUpload[]
+  resumes                     GeneratedResume[]
+  searchProfiles              JobSearchProfile[]
+  skillAdjustments            SkillAdjustment[]
+  skillFeedback               SkillFeedback[]
+  thankYouDrafts              ThankYouDraft[]
+  linkedinPostDrafts          LinkedInPostDraft[]
+  linkedinShareConnection     LinkedInShareConnection?
   linkedinAnalyticsConnection LinkedInAnalyticsConnection?
-  linkedinAnalyticsSnapshots LinkedInPostMetricSnapshot[]
-  jobSuppressions       JobSuppression[]
+  linkedinAnalyticsSnapshots  LinkedInPostMetricSnapshot[]
+  jobSuppressions             JobSuppression[]
 }
 
 model CareerMission {
-  id                       String   @id @default(cuid())
-  userId                   String   @unique
-  targetCompensationMin    Int?
-  targetCompensationIdeal  Int?
-  currency                 SalaryCurrency @default(USD)
-  horizonDays              Int      @default(30)
-  urgencyMode              String   @default("HIGH_INCOME_SPRINT")
-  tradeoffPolicy           String   @default("AGGRESSIVE_BUT_TRUTHFUL")
-  roleTracks               Json     @default("[]")
-  dealbreakers             Json     @default("[]")
-  acceptableFallbacks      Json     @default("[]")
-  dailyCapacityMinutes     Int?
-  energyNotes              String?
-  tonePreferences          Json     @default("{}")
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
-  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                      String         @id @default(cuid())
+  userId                  String         @unique
+  targetCompensationMin   Int?
+  targetCompensationIdeal Int?
+  currency                SalaryCurrency @default(USD)
+  horizonDays             Int            @default(30)
+  urgencyMode             String         @default("HIGH_INCOME_SPRINT")
+  tradeoffPolicy          String         @default("AGGRESSIVE_BUT_TRUTHFUL")
+  roleTracks              Json           @default("[]")
+  dealbreakers            Json           @default("[]")
+  acceptableFallbacks     Json           @default("[]")
+  dailyCapacityMinutes    Int?
+  energyNotes             String?
+  tonePreferences         Json           @default("{}")
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  user                    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model CareerSprintSnapshot {
-  id                 String   @id @default(cuid())
-  userId             String
-  missionJson        Json     @default("{}")
-  briefJson          Json     @default("{}")
-  moneyMovesJson     Json     @default("[]")
-  sprintScore        Int      @default(0)
-  incomeMomentum     String   @default("insufficient_data")
-  attentionDebt      Int      @default(0)
-  completedMoveKeys  Json     @default("[]")
-  createdAt          DateTime @default(now())
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String   @id @default(cuid())
+  userId            String
+  missionJson       Json     @default("{}")
+  briefJson         Json     @default("{}")
+  moneyMovesJson    Json     @default("[]")
+  sprintScore       Int      @default(0)
+  incomeMomentum    String   @default("insufficient_data")
+  attentionDebt     Int      @default(0)
+  completedMoveKeys Json     @default("[]")
+  createdAt         DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@index([userId, incomeMomentum, createdAt])
@@ -540,41 +564,41 @@ model JoleneMessage {
 }
 
 model UserProfile {
-  id                  String              @id @default(cuid())
-  userId              String              @unique
-  fullName            String
-  email               String
-  phone               String?
-  location            String?
-  linkedinUrl         String?
-  linkedinSubject     String?
-  linkedinPictureUrl  String?
-  linkedinLocale      String?
+  id                    String              @id @default(cuid())
+  userId                String              @unique
+  fullName              String
+  email                 String
+  phone                 String?
+  location              String?
+  linkedinUrl           String?
+  linkedinSubject       String?
+  linkedinPictureUrl    String?
+  linkedinLocale        String?
   linkedinEmailVerified Boolean?
-  linkedinConnectedAt DateTime?
-  githubUrl           String?
-  portfolioUrl        String?
-  raceAnswer          String?
-  genderAnswer        String?
-  veteranStatusAnswer String?
-  disabilityAnswer    String?
-  masterSummary       String
-  professionalSummary String?
-  yearsExperience     Int?
-  primaryRoles        Json                @default("[]")
-  coreSkills          Json                @default("[]")
-  technicalSkills     Json                @default("[]")
-  industries          Json                @default("[]")
-  domainExpertise     Json                @default("[]")
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-  candidateEvidence   CandidateEvidence[]
-  experienceBullets   ExperienceBullet[]
-  githubRepositories  GithubRepository[]
-  projects            Project[]
-  resumeUploads       ResumeUpload[]
-  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workExperiences     WorkExperience[]
+  linkedinConnectedAt   DateTime?
+  githubUrl             String?
+  portfolioUrl          String?
+  raceAnswer            String?
+  genderAnswer          String?
+  veteranStatusAnswer   String?
+  disabilityAnswer      String?
+  masterSummary         String
+  professionalSummary   String?
+  yearsExperience       Int?
+  primaryRoles          Json                @default("[]")
+  coreSkills            Json                @default("[]")
+  technicalSkills       Json                @default("[]")
+  industries            Json                @default("[]")
+  domainExpertise       Json                @default("[]")
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  candidateEvidence     CandidateEvidence[]
+  experienceBullets     ExperienceBullet[]
+  githubRepositories    GithubRepository[]
+  projects              Project[]
+  resumeUploads         ResumeUpload[]
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workExperiences       WorkExperience[]
 }
 
 model CandidateEvidence {
@@ -644,8 +668,8 @@ model GithubRepository {
   htmlUrl       String
   description   String?
   homepage      String?
-  readmeText     String?
-  wikiText       String?
+  readmeText    String?
+  wikiText      String?
   language      String?
   topics        Json        @default("[]")
   stars         Int         @default(0)
@@ -763,48 +787,50 @@ model JobSource {
 }
 
 model JobPosting {
-  id                 String                 @id @default(cuid())
-  sourceId           String?
-  sourceJobId        String?
-  company            String
-  title              String
-  location           String?
-  country            String?
-  city               String?
-  remoteType         RemoteType             @default(unknown)
-  salaryMin          Int?
-  salaryMax          Int?
-  salaryCurrency     SalaryCurrency?
-  description        String
-  requirements       Json                   @default("[]")
-  niceToHaves        Json                   @default("[]")
-  benefits           Json                   @default("[]")
-  applicationUrl     String?
-  atsProvider        AtsProvider            @default(unknown)
-  rawData            Json                   @default("{}")
-  contentHash        String                 @unique
-  duplicateGroupId   String?
-  staleScore         Int                    @default(0)
-  firstSeenAt        DateTime               @default(now())
-  lastSeenAt         DateTime               @default(now())
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
-  applications       Application[]
-  applicationPackets ApplicationPacket[]
-  agentUserRequests  AgentUserRequest[]
-  automationRuns     ApplicationAutomationRun[]
+  id                   String                     @id @default(cuid())
+  sourceId             String?
+  sourceJobId          String?
+  company              String
+  title                String
+  location             String?
+  country              String?
+  city                 String?
+  remoteType           RemoteType                 @default(unknown)
+  salaryMin            Int?
+  salaryMax            Int?
+  salaryCurrency       SalaryCurrency?
+  description          String
+  requirements         Json                       @default("[]")
+  niceToHaves          Json                       @default("[]")
+  benefits             Json                       @default("[]")
+  applicationUrl       String?
+  atsProvider          AtsProvider                @default(unknown)
+  rawData              Json                       @default("{}")
+  contentHash          String                     @unique
+  duplicateGroupId     String?
+  staleScore           Int                        @default(0)
+  firstSeenAt          DateTime                   @default(now())
+  lastSeenAt           DateTime                   @default(now())
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  applications         Application[]
+  applicationPackets   ApplicationPacket[]
+  agentUserRequests    AgentUserRequest[]
+  automationRuns       ApplicationAutomationRun[]
   agentQualityExamples AgentQualityExample[]
-  coverLetters       GeneratedCoverLetter[]
-  emailMessages      EmailMessageRecord[]
-  evaluations        JobEvaluation[]
-  matches            JobProfileMatch[]
-  outcomes           ApplicationOutcome[]
-  recruiterOutreach  RecruiterOutreach[]
-  resumes            GeneratedResume[]
-  skillFeedback       SkillFeedback[]
+  coverLetters         GeneratedCoverLetter[]
+  emailMessages        EmailMessageRecord[]
+  emailOpsFindings     EmailOpsFinding[]
+  calendarProposals    CalendarEventProposal[]
+  evaluations          JobEvaluation[]
+  matches              JobProfileMatch[]
+  outcomes             ApplicationOutcome[]
+  recruiterOutreach    RecruiterOutreach[]
+  resumes              GeneratedResume[]
+  skillFeedback        SkillFeedback[]
   suppressions         JobSuppression[]
-  thankYouDrafts      ThankYouDraft[]
-  source             JobSource?             @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  thankYouDrafts       ThankYouDraft[]
+  source               JobSource?                 @relation(fields: [sourceId], references: [id], onDelete: SetNull)
 
   @@index([company, title])
   @@index([duplicateGroupId])
@@ -836,7 +862,7 @@ model JobProfileMatch {
   updatedAt          DateTime               @updatedAt
   applications       Application[]
   coverLetters       GeneratedCoverLetter[]
-  suppressions        JobSuppression[]
+  suppressions       JobSuppression[]
   jobPosting         JobPosting             @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
   jobSearchProfile   JobSearchProfile       @relation(fields: [jobSearchProfileId], references: [id], onDelete: Cascade)
   resumes            GeneratedResume[]
@@ -870,40 +896,42 @@ model JobEvaluation {
 }
 
 model Application {
-  id                 String                @id @default(cuid())
-  userId             String
-  jobPostingId       String
-  jobProfileMatchId  String?
-  status             JobMatchStatus        @default(approved)
-  approvedAt         DateTime?
-  appliedAt          DateTime?
-  resumeId           String?
-  coverLetterId      String?
-  notes              String?
-  followUpAt         DateTime?
-  sourceContactId    String?
-  autoSubmitOverride Boolean?
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
-  answerMemories     ApplicationAnswerMemory[]
-  automationRuns     ApplicationAutomationRun[]
+  id                   String                     @id @default(cuid())
+  userId               String
+  jobPostingId         String
+  jobProfileMatchId    String?
+  status               JobMatchStatus             @default(approved)
+  approvedAt           DateTime?
+  appliedAt            DateTime?
+  resumeId             String?
+  coverLetterId        String?
+  notes                String?
+  followUpAt           DateTime?
+  sourceContactId      String?
+  autoSubmitOverride   Boolean?
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  answerMemories       ApplicationAnswerMemory[]
+  automationRuns       ApplicationAutomationRun[]
   agentQualityExamples AgentQualityExample[]
-  applicationPackets ApplicationPacket[]
-  agentUserRequests  AgentUserRequest[]
-  events             ApplicationEvent[]
-  emailMessages      EmailMessageRecord[]
-  fieldMemories      ApplicationFieldMemory[]
-  interviewPrepTasks InterviewPrepTask[]
-  outcomes           ApplicationOutcome[]
-  skillFeedback       SkillFeedback[]
+  applicationPackets   ApplicationPacket[]
+  agentUserRequests    AgentUserRequest[]
+  events               ApplicationEvent[]
+  emailMessages        EmailMessageRecord[]
+  emailOpsFindings     EmailOpsFinding[]
+  calendarProposals    CalendarEventProposal[]
+  fieldMemories        ApplicationFieldMemory[]
+  interviewPrepTasks   InterviewPrepTask[]
+  outcomes             ApplicationOutcome[]
+  skillFeedback        SkillFeedback[]
   suppressions         JobSuppression[]
-  thankYouDrafts      ThankYouDraft[]
-  coverLetter        GeneratedCoverLetter? @relation(fields: [coverLetterId], references: [id])
-  jobPosting         JobPosting            @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
-  jobProfileMatch    JobProfileMatch?      @relation(fields: [jobProfileMatchId], references: [id], onDelete: SetNull)
-  resume             GeneratedResume?      @relation(fields: [resumeId], references: [id])
-  sourceContact      Contact?              @relation(fields: [sourceContactId], references: [id], onDelete: SetNull)
-  user               User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  thankYouDrafts       ThankYouDraft[]
+  coverLetter          GeneratedCoverLetter?      @relation(fields: [coverLetterId], references: [id])
+  jobPosting           JobPosting                 @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  jobProfileMatch      JobProfileMatch?           @relation(fields: [jobProfileMatchId], references: [id], onDelete: SetNull)
+  resume               GeneratedResume?           @relation(fields: [resumeId], references: [id])
+  sourceContact        Contact?                   @relation(fields: [sourceContactId], references: [id], onDelete: SetNull)
+  user                 User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model JobSuppression {
@@ -1105,28 +1133,29 @@ model JobSearchRun {
 }
 
 model AgentRun {
-  id                String         @id @default(cuid())
-  userId            String?
-  agentType         AgentType
-  inputJson         Json
-  outputJson        Json?
-  observabilityJson Json           @default("{}")
-  graphThreadId     String?
-  currentNode       String?
-  workflowStateJson Json           @default("{}")
-  workflowVersion   String?
-  parentRunId       String?
-  status            AgentRunStatus @default(PENDING)
-  error             String?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-  user              User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
-  userRequests      AgentUserRequest[]
-  skillFeedback     SkillFeedback[]
-  qualityExamples   AgentQualityExample[]
+  id                 String                   @id @default(cuid())
+  userId             String?
+  agentType          AgentType
+  inputJson          Json
+  outputJson         Json?
+  observabilityJson  Json                     @default("{}")
+  graphThreadId      String?
+  currentNode        String?
+  workflowStateJson  Json                     @default("{}")
+  workflowVersion    String?
+  parentRunId        String?
+  status             AgentRunStatus           @default(PENDING)
+  error              String?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  user               User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userRequests       AgentUserRequest[]
+  skillFeedback      SkillFeedback[]
+  qualityExamples    AgentQualityExample[]
   qualityEvaluations AgentQualityEvaluation[]
-  events            AgentRunEvent[]
+  events             AgentRunEvent[]
   linkedinPostDrafts LinkedInPostDraft[]
+  emailOpsFindings   EmailOpsFinding[]
 
   @@index([agentType, createdAt])
   @@index([status, createdAt])
@@ -1148,28 +1177,28 @@ model AgentRunEvent {
 }
 
 model SkillFeedback {
-  id               String            @id @default(cuid())
-  userId           String
-  skillId          String
-  agentRunId       String?
-  applicationId    String?
-  jobPostingId     String?
-  joleneMessageId  String?
-  rawMessage       String
-  problemSummary   String
-  expectedBehavior String?
-  confidence       Float             @default(0.5)
-  contextJson      Json              @default("{}")
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  adjustments      SkillAdjustment[]
-  qualityExamples  AgentQualityExample[]
+  id                   String                     @id @default(cuid())
+  userId               String
+  skillId              String
+  agentRunId           String?
+  applicationId        String?
+  jobPostingId         String?
+  joleneMessageId      String?
+  rawMessage           String
+  problemSummary       String
+  expectedBehavior     String?
+  confidence           Float                      @default(0.5)
+  contextJson          Json                       @default("{}")
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  adjustments          SkillAdjustment[]
+  qualityExamples      AgentQualityExample[]
   improvementProposals AgentImprovementProposal[]
-  agentRun         AgentRun?         @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
-  application      Application?      @relation(fields: [applicationId], references: [id], onDelete: SetNull)
-  jobPosting       JobPosting?       @relation(fields: [jobPostingId], references: [id], onDelete: SetNull)
-  joleneMessage    JoleneMessage?    @relation(fields: [joleneMessageId], references: [id], onDelete: SetNull)
-  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentRun             AgentRun?                  @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  application          Application?               @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  jobPosting           JobPosting?                @relation(fields: [jobPostingId], references: [id], onDelete: SetNull)
+  joleneMessage        JoleneMessage?             @relation(fields: [joleneMessageId], references: [id], onDelete: SetNull)
+  user                 User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@index([skillId, createdAt])
@@ -1178,23 +1207,23 @@ model SkillFeedback {
 }
 
 model SkillAdjustment {
-  id               String                    @id @default(cuid())
-  userId           String
-  skillId          String
-  feedbackId       String?
-  supersedesId     String?
-  kind             SkillAdjustmentKind
-  riskLevel        SkillAdjustmentRiskLevel
-  status           SkillAdjustmentStatus     @default(PROPOSED)
-  patchJson        Json                      @default("{}")
-  rationale        String
-  appliedAt        DateTime?
-  createdAt        DateTime                  @default(now())
-  updatedAt        DateTime                  @updatedAt
-  feedback         SkillFeedback?            @relation(fields: [feedbackId], references: [id], onDelete: SetNull)
-  supersedes       SkillAdjustment?          @relation("SkillAdjustmentSupersession", fields: [supersedesId], references: [id], onDelete: SetNull)
-  supersededBy     SkillAdjustment[]         @relation("SkillAdjustmentSupersession")
-  user             User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String                   @id @default(cuid())
+  userId       String
+  skillId      String
+  feedbackId   String?
+  supersedesId String?
+  kind         SkillAdjustmentKind
+  riskLevel    SkillAdjustmentRiskLevel
+  status       SkillAdjustmentStatus    @default(PROPOSED)
+  patchJson    Json                     @default("{}")
+  rationale    String
+  appliedAt    DateTime?
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  feedback     SkillFeedback?           @relation(fields: [feedbackId], references: [id], onDelete: SetNull)
+  supersedes   SkillAdjustment?         @relation("SkillAdjustmentSupersession", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy SkillAdjustment[]        @relation("SkillAdjustmentSupersession")
+  user         User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status, createdAt])
   @@index([skillId, status, createdAt])
@@ -1203,24 +1232,24 @@ model SkillAdjustment {
 }
 
 model AgentUserRequest {
-  id            String                 @id @default(cuid())
-  userId        String
-  agentRunId    String?
-  applicationId String?
-  jobPostingId  String?
-  type          AgentUserRequestType
-  status        AgentUserRequestStatus @default(OPEN)
-  question      String
-  contextJson   Json                   @default("{}")
-  answer        String?
-  resolvedAt    DateTime?
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
-  agentRun      AgentRun?              @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
-  application   Application?           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  id             String                    @id @default(cuid())
+  userId         String
+  agentRunId     String?
+  applicationId  String?
+  jobPostingId   String?
+  type           AgentUserRequestType
+  status         AgentUserRequestStatus    @default(OPEN)
+  question       String
+  contextJson    Json                      @default("{}")
+  answer         String?
+  resolvedAt     DateTime?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  agentRun       AgentRun?                 @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  application    Application?              @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   answerMemories ApplicationAnswerMemory[]
-  jobPosting    JobPosting?            @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
-  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobPosting     JobPosting?               @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  user           User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status, createdAt])
   @@index([applicationId, status])
@@ -1253,30 +1282,30 @@ model ApplicationAnswerMemory {
 }
 
 model ApplicationAutomationRun {
-  id              String                         @id @default(cuid())
-  userId          String
-  applicationId   String
-  jobPostingId    String
-  status          ApplicationAutomationRunStatus @default(RUNNING)
-  currentUrl      String?
-  logPath         String?
-  pid             Int?
-  graphThreadId   String?
-  currentNode     String?
-  blockerType     String?
-  blockerMessage  String?
-  actionsJson     Json                           @default("[]")
-  screenshotsJson Json                           @default("[]")
-  workflowStateJson Json                          @default("{}")
-  observabilityJson Json                          @default("{}")
-  startedAt       DateTime                       @default(now())
-  finishedAt      DateTime?
-  createdAt       DateTime                       @default(now())
-  updatedAt       DateTime                       @updatedAt
-  application     Application                    @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  qualityExamples AgentQualityExample[]
-  jobPosting      JobPosting                     @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
-  user            User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String                         @id @default(cuid())
+  userId            String
+  applicationId     String
+  jobPostingId      String
+  status            ApplicationAutomationRunStatus @default(RUNNING)
+  currentUrl        String?
+  logPath           String?
+  pid               Int?
+  graphThreadId     String?
+  currentNode       String?
+  blockerType       String?
+  blockerMessage    String?
+  actionsJson       Json                           @default("[]")
+  screenshotsJson   Json                           @default("[]")
+  workflowStateJson Json                           @default("{}")
+  observabilityJson Json                           @default("{}")
+  startedAt         DateTime                       @default(now())
+  finishedAt        DateTime?
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
+  application       Application                    @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  qualityExamples   AgentQualityExample[]
+  jobPosting        JobPosting                     @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  user              User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status, startedAt])
   @@index([applicationId, startedAt])
@@ -1285,53 +1314,53 @@ model ApplicationAutomationRun {
 }
 
 model AgentQualityDataset {
-  id             String             @id @default(cuid())
-  userId         String
-  name           String
-  target         AgentQualityTarget @default(APPLICATION_ASSISTANT)
-  description    String?
+  id                 String                   @id @default(cuid())
+  userId             String
+  name               String
+  target             AgentQualityTarget       @default(APPLICATION_ASSISTANT)
+  description        String?
   langSmithDatasetId String?
-  active         Boolean            @default(true)
-  metadataJson   Json               @default("{}")
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  examples       AgentQualityExample[]
-  evaluations    AgentQualityEvaluation[]
+  active             Boolean                  @default(true)
+  metadataJson       Json                     @default("{}")
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  user               User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  examples           AgentQualityExample[]
+  evaluations        AgentQualityEvaluation[]
 
   @@unique([userId, name])
   @@index([userId, target, active])
 }
 
 model AgentQualityExample {
-  id                String                    @id @default(cuid())
-  userId            String
-  datasetId         String?
-  target            AgentQualityTarget        @default(APPLICATION_ASSISTANT)
-  source            AgentQualityExampleSource
-  title             String
-  summary           String
-  failureCategory   String?
-  inputJson         Json                      @default("{}")
-  expectedJson      Json                      @default("{}")
-  actualJson        Json                      @default("{}")
-  metadataJson      Json                      @default("{}")
+  id                 String                    @id @default(cuid())
+  userId             String
+  datasetId          String?
+  target             AgentQualityTarget        @default(APPLICATION_ASSISTANT)
+  source             AgentQualityExampleSource
+  title              String
+  summary            String
+  failureCategory    String?
+  inputJson          Json                      @default("{}")
+  expectedJson       Json                      @default("{}")
+  actualJson         Json                      @default("{}")
+  metadataJson       Json                      @default("{}")
   langSmithExampleId String?
-  skillFeedbackId   String?
-  agentRunId        String?
-  automationRunId   String?
-  applicationId     String?
-  jobPostingId      String?
-  createdAt         DateTime                  @default(now())
-  updatedAt         DateTime                  @updatedAt
-  user              User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  dataset           AgentQualityDataset?      @relation(fields: [datasetId], references: [id], onDelete: SetNull)
-  skillFeedback     SkillFeedback?            @relation(fields: [skillFeedbackId], references: [id], onDelete: SetNull)
-  agentRun          AgentRun?                 @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
-  automationRun     ApplicationAutomationRun? @relation(fields: [automationRunId], references: [id], onDelete: SetNull)
-  application       Application?              @relation(fields: [applicationId], references: [id], onDelete: SetNull)
-  jobPosting        JobPosting?               @relation(fields: [jobPostingId], references: [id], onDelete: SetNull)
-  evaluations       AgentQualityEvaluation[]
+  skillFeedbackId    String?
+  agentRunId         String?
+  automationRunId    String?
+  applicationId      String?
+  jobPostingId       String?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  user               User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dataset            AgentQualityDataset?      @relation(fields: [datasetId], references: [id], onDelete: SetNull)
+  skillFeedback      SkillFeedback?            @relation(fields: [skillFeedbackId], references: [id], onDelete: SetNull)
+  agentRun           AgentRun?                 @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  automationRun      ApplicationAutomationRun? @relation(fields: [automationRunId], references: [id], onDelete: SetNull)
+  application        Application?              @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  jobPosting         JobPosting?               @relation(fields: [jobPostingId], references: [id], onDelete: SetNull)
+  evaluations        AgentQualityEvaluation[]
 
   @@index([userId, target, createdAt])
   @@index([datasetId, createdAt])
@@ -1369,48 +1398,48 @@ model AgentQualityEvaluation {
 }
 
 model AgentImprovementProposal {
-  id               String                         @id @default(cuid())
-  userId           String
-  target           AgentQualityTarget             @default(APPLICATION_ASSISTANT)
-  type             AgentImprovementProposalType
-  status           AgentImprovementProposalStatus @default(PROPOSED)
-  riskLevel        SkillAdjustmentRiskLevel       @default(LOW)
-  title            String
-  summary          String
-  rationale        String
-  affectedExampleIds Json                          @default("[]")
-  patchJson        Json                            @default("{}")
-  metadataJson     Json                            @default("{}")
-  skillFeedbackId  String?
-  acceptedAt       DateTime?
-  dismissedAt      DateTime?
-  createdAt        DateTime                       @default(now())
-  updatedAt        DateTime                       @updatedAt
-  user             User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  skillFeedback    SkillFeedback?                 @relation(fields: [skillFeedbackId], references: [id], onDelete: SetNull)
+  id                 String                         @id @default(cuid())
+  userId             String
+  target             AgentQualityTarget             @default(APPLICATION_ASSISTANT)
+  type               AgentImprovementProposalType
+  status             AgentImprovementProposalStatus @default(PROPOSED)
+  riskLevel          SkillAdjustmentRiskLevel       @default(LOW)
+  title              String
+  summary            String
+  rationale          String
+  affectedExampleIds Json                           @default("[]")
+  patchJson          Json                           @default("{}")
+  metadataJson       Json                           @default("{}")
+  skillFeedbackId    String?
+  acceptedAt         DateTime?
+  dismissedAt        DateTime?
+  createdAt          DateTime                       @default(now())
+  updatedAt          DateTime                       @updatedAt
+  user               User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skillFeedback      SkillFeedback?                 @relation(fields: [skillFeedbackId], references: [id], onDelete: SetNull)
 
   @@index([userId, target, status, createdAt])
   @@index([skillFeedbackId])
 }
 
 model ApplicationFormPattern {
-  id           String      @id @default(cuid())
-  userId       String
-  atsProvider  AtsProvider @default(unknown)
-  host         String
-  fieldKey     String
-  category     String
-  label        String
-  inputType    String?
-  selector     String?
-  successCount Int         @default(0)
-  failureCount Int         @default(0)
-  lastSeenAt   DateTime    @default(now())
-  metadataJson Json        @default("{}")
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id            String                   @id @default(cuid())
+  userId        String
+  atsProvider   AtsProvider              @default(unknown)
+  host          String
+  fieldKey      String
+  category      String
+  label         String
+  inputType     String?
+  selector      String?
+  successCount  Int                      @default(0)
+  failureCount  Int                      @default(0)
+  lastSeenAt    DateTime                 @default(now())
+  metadataJson  Json                     @default("{}")
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
   fieldMemories ApplicationFieldMemory[]
-  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, host, fieldKey, category])
   @@index([userId, atsProvider, lastSeenAt])
@@ -1469,15 +1498,15 @@ model ApplicationAutomationSettings {
 }
 
 model CompanyAutomationPolicy {
-  id              String                      @id @default(cuid())
-  userId          String
-  company         String
-  companyKey      String
-  autoSubmitMode  CompanyAutoSubmitPolicyMode @default(INHERIT)
-  notes           String?
-  createdAt       DateTime                    @default(now())
-  updatedAt       DateTime                    @updatedAt
-  user            User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String                      @id @default(cuid())
+  userId         String
+  company        String
+  companyKey     String
+  autoSubmitMode CompanyAutoSubmitPolicyMode @default(INHERIT)
+  notes          String?
+  createdAt      DateTime                    @default(now())
+  updatedAt      DateTime                    @updatedAt
+  user           User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, companyKey])
   @@index([userId, autoSubmitMode])
@@ -1503,6 +1532,8 @@ model EmailMessageRecord {
   rawMetadataJson      Json                       @default("{}")
   createdAt            DateTime                   @default(now())
   updatedAt            DateTime                   @updatedAt
+  emailOpsFindings     EmailOpsFinding[]
+  calendarProposals    CalendarEventProposal[]
   matchedApplication   Application?               @relation(fields: [matchedApplicationId], references: [id], onDelete: SetNull)
   matchedJobPosting    JobPosting?                @relation(fields: [matchedJobPostingId], references: [id], onDelete: SetNull)
   user                 User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1513,20 +1544,92 @@ model EmailMessageRecord {
   @@index([matchedJobPostingId, receivedAt])
 }
 
+model EmailOpsFinding {
+  id                    String                     @id @default(cuid())
+  userId                String
+  agentRunId            String?
+  emailMessageRecordId  String?
+  matchedApplicationId  String?
+  matchedJobPostingId   String?
+  classification        EmailMessageClassification
+  confidenceScore       Int                        @default(0)
+  status                EmailOpsFindingStatus      @default(NEEDS_APPROVAL)
+  title                 String
+  summary               String
+  recommendedAction     String?
+  reviewReason          String?
+  evidenceJson          Json                       @default("[]")
+  extractedJson         Json                       @default("{}")
+  suggestedMutationJson Json                       @default("{}")
+  provenanceJson        Json                       @default("{}")
+  appliedAt             DateTime?
+  approvedAt            DateTime?
+  dismissedAt           DateTime?
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  agentRun              AgentRun?                  @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  calendarProposals     CalendarEventProposal[]
+  emailMessage          EmailMessageRecord?        @relation(fields: [emailMessageRecordId], references: [id], onDelete: SetNull)
+  matchedApplication    Application?               @relation(fields: [matchedApplicationId], references: [id], onDelete: SetNull)
+  matchedJobPosting     JobPosting?                @relation(fields: [matchedJobPostingId], references: [id], onDelete: SetNull)
+  user                  User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([agentRunId])
+  @@index([emailMessageRecordId])
+  @@index([matchedApplicationId, createdAt])
+  @@index([matchedJobPostingId, createdAt])
+}
+
+model CalendarEventProposal {
+  id                   String                 @id @default(cuid())
+  userId               String
+  findingId            String?
+  emailMessageRecordId String?
+  applicationId        String?
+  jobPostingId         String?
+  status               CalendarProposalStatus @default(DRAFT)
+  title                String
+  startAt              DateTime?
+  endAt                DateTime?
+  timezone             String?
+  location             String?
+  meetingUrl           String?
+  attendeesJson        Json                   @default("[]")
+  sourceSummary        String
+  confidenceScore      Int                    @default(0)
+  metadataJson         Json                   @default("{}")
+  approvedAt           DateTime?
+  dismissedAt          DateTime?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  application          Application?           @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  emailMessage         EmailMessageRecord?    @relation(fields: [emailMessageRecordId], references: [id], onDelete: SetNull)
+  finding              EmailOpsFinding?       @relation(fields: [findingId], references: [id], onDelete: SetNull)
+  jobPosting           JobPosting?            @relation(fields: [jobPostingId], references: [id], onDelete: SetNull)
+  user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([findingId])
+  @@index([emailMessageRecordId])
+  @@index([applicationId, createdAt])
+  @@index([jobPostingId, createdAt])
+}
+
 model EmailOAuthConnection {
-  id             String                     @id @default(cuid())
-  userId         String
-  provider       EmailProvider
-  emailAddress   String?
-  accessToken    String
-  refreshToken   String?
-  expiresAt      DateTime?
-  scopes         Json                       @default("[]")
-  status         EmailOAuthConnectionStatus @default(CONNECTED)
-  lastSyncAt     DateTime?
-  createdAt      DateTime                   @default(now())
-  updatedAt      DateTime                   @updatedAt
-  user           User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String                     @id @default(cuid())
+  userId       String
+  provider     EmailProvider
+  emailAddress String?
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?
+  scopes       Json                       @default("[]")
+  status       EmailOAuthConnectionStatus @default(CONNECTED)
+  lastSyncAt   DateTime?
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+  user         User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, provider])
   @@index([userId, status])
@@ -1653,105 +1756,105 @@ model RecruiterOutreach {
 }
 
 model LinkedInPostDraft {
-  id                 String    @id @default(cuid())
-  userId             String
-  agentRunId         String?
-  title              String
-  hook               String
-  body               String
-  hashtags           Json      @default("[]")
-  contentPillar      String
-  sourceFacts        Json      @default("[]")
-  screenshotAssets   Json      @default("[]")
-  privacyReview      Json      @default("{}")
-  disclosureText     String?
-  memorySources      Json      @default("[]")
-  analyticsSources   Json      @default("[]")
-  agentReviews       Json      @default("[]")
-  claims             Json      @default("[]")
-  risks              Json      @default("[]")
-  selectedScreenshots Json     @default("[]")
-  approvedAt         DateTime?
-  publishedAt        DateTime?
-  linkedInPostUrn    String?
-  linkedInPostId     String?
-  publishError       String?
-  publishPayload     Json      @default("{}")
-  status             String    @default("DRAFT")
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  agentRun           AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
-  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  metricSnapshots    LinkedInPostMetricSnapshot[]
+  id                  String                       @id @default(cuid())
+  userId              String
+  agentRunId          String?
+  title               String
+  hook                String
+  body                String
+  hashtags            Json                         @default("[]")
+  contentPillar       String
+  sourceFacts         Json                         @default("[]")
+  screenshotAssets    Json                         @default("[]")
+  privacyReview       Json                         @default("{}")
+  disclosureText      String?
+  memorySources       Json                         @default("[]")
+  analyticsSources    Json                         @default("[]")
+  agentReviews        Json                         @default("[]")
+  claims              Json                         @default("[]")
+  risks               Json                         @default("[]")
+  selectedScreenshots Json                         @default("[]")
+  approvedAt          DateTime?
+  publishedAt         DateTime?
+  linkedInPostUrn     String?
+  linkedInPostId      String?
+  publishError        String?
+  publishPayload      Json                         @default("{}")
+  status              String                       @default("DRAFT")
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+  agentRun            AgentRun?                    @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  user                User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  metricSnapshots     LinkedInPostMetricSnapshot[]
 
   @@index([userId, status, createdAt])
   @@index([agentRunId])
 }
 
 model LinkedInShareConnection {
-  id               String   @id @default(cuid())
-  userId           String   @unique
-  linkedinSubject  String?
-  personUrn        String?
-  accessToken      String
-  expiresAt        DateTime?
-  scopes           Json     @default("[]")
-  status           String   @default("CONNECTED")
-  connectedAt      DateTime @default(now())
-  lastPublishedAt  DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  linkedinSubject String?
+  personUrn       String?
+  accessToken     String
+  expiresAt       DateTime?
+  scopes          Json      @default("[]")
+  status          String    @default("CONNECTED")
+  connectedAt     DateTime  @default(now())
+  lastPublishedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([status, updatedAt])
 }
 
 model LinkedInAnalyticsConnection {
-  id               String   @id @default(cuid())
-  userId           String   @unique
-  linkedinSubject  String?
-  personUrn        String?
-  accessToken      String
-  expiresAt        DateTime?
-  scopes           Json     @default("[]")
-  status           String   @default("CONNECTED")
-  connectedAt      DateTime @default(now())
-  lastSyncedAt     DateTime?
-  lastError        String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  linkedinSubject String?
+  personUrn       String?
+  accessToken     String
+  expiresAt       DateTime?
+  scopes          Json      @default("[]")
+  status          String    @default("CONNECTED")
+  connectedAt     DateTime  @default(now())
+  lastSyncedAt    DateTime?
+  lastError       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([status, updatedAt])
 }
 
 model LinkedInPostMetricSnapshot {
-  id                       String              @id @default(cuid())
-  userId                   String
-  linkedInPostDraftId      String?
-  linkedInPostUrn          String
-  linkedInPostId           String?
-  source                   String
-  aggregation              String
-  dateStart                DateTime?
-  dateEnd                  DateTime?
-  capturedAt               DateTime            @default(now())
-  impressions              Int                 @default(0)
-  membersReached           Int                 @default(0)
-  reactions                Int                 @default(0)
-  comments                 Int                 @default(0)
-  reshares                 Int                 @default(0)
-  postSaves                Int                 @default(0)
-  postSends                Int                 @default(0)
-  linkClicks               Int                 @default(0)
-  premiumCtaClicks         Int                 @default(0)
-  followersGainedFromContent Int               @default(0)
-  profileViewsFromContent  Int                 @default(0)
-  rawPayload               Json                @default("{}")
-  createdAt                DateTime            @default(now())
-  updatedAt                DateTime            @updatedAt
-  draft                    LinkedInPostDraft?  @relation(fields: [linkedInPostDraftId], references: [id], onDelete: SetNull)
-  user                     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                         String             @id @default(cuid())
+  userId                     String
+  linkedInPostDraftId        String?
+  linkedInPostUrn            String
+  linkedInPostId             String?
+  source                     String
+  aggregation                String
+  dateStart                  DateTime?
+  dateEnd                    DateTime?
+  capturedAt                 DateTime           @default(now())
+  impressions                Int                @default(0)
+  membersReached             Int                @default(0)
+  reactions                  Int                @default(0)
+  comments                   Int                @default(0)
+  reshares                   Int                @default(0)
+  postSaves                  Int                @default(0)
+  postSends                  Int                @default(0)
+  linkClicks                 Int                @default(0)
+  premiumCtaClicks           Int                @default(0)
+  followersGainedFromContent Int                @default(0)
+  profileViewsFromContent    Int                @default(0)
+  rawPayload                 Json               @default("{}")
+  createdAt                  DateTime           @default(now())
+  updatedAt                  DateTime           @updatedAt
+  draft                      LinkedInPostDraft? @relation(fields: [linkedInPostDraftId], references: [id], onDelete: SetNull)
+  user                       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, linkedInPostUrn, source, aggregation, dateStart, dateEnd])
   @@index([userId, capturedAt])

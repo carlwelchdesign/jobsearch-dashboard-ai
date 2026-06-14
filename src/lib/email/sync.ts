@@ -50,12 +50,17 @@ export async function syncJobResponseEmail(input: { limit?: number; sinceDays?: 
 
     if (user && gmailConnection?.status === "CONNECTED") {
       try {
+        const broadRecentQuery = `newer_than:${input.sinceDays ?? Number(process.env.JOB_EMAIL_GMAIL_SINCE_DAYS ?? process.env.JOB_EMAIL_SYNC_SINCE_DAYS ?? 14)}d`;
+        const queries = uniqueQueries([
+          broadRecentQuery,
+          ...watchlist.flatMap((item) => item.gmailQueries),
+        ]);
         providers.push(await syncGmailEmail({
           user,
           connection: gmailConnection,
           limit: input.limit,
           sinceDays: input.sinceDays,
-          queries: watchlist.flatMap((item) => item.gmailQueries),
+          queries,
         }));
       } catch (error) {
         providers.push({ ok: false, provider: "gmail", skipped: true, reason: error instanceof Error ? error.message : "Gmail sync failed." });
@@ -78,6 +83,10 @@ export async function syncJobResponseEmail(input: { limit?: number; sinceDays?: 
     watchlist,
     receivedConfirmations,
   };
+}
+
+function uniqueQueries(queries: string[]) {
+  return Array.from(new Set(queries.map((query) => query.trim()).filter(Boolean)));
 }
 
 function imapEnvConfigured() {
