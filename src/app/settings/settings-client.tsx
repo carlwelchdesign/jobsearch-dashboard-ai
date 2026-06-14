@@ -40,6 +40,7 @@ type SettingsClientProps = {
   aiSettings: {
     configured: boolean;
     model: string;
+    linkedinContentModel: string;
   };
   langSmithSettings: {
     configured: boolean;
@@ -144,6 +145,7 @@ type SettingsClientProps = {
 
 export function SettingsClient({ group, initialSettings, aiSettings, langSmithSettings, emailSyncSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings, automationSettings, companyAutomationPolicies: initialCompanyAutomationPolicies, serviceHealthSettings }: SettingsClientProps) {
   const [settings, setSettings] = useState(initialSettings);
+  const [linkedinContentModelDraft, setLinkedinContentModelDraft] = useState("");
   const [profile, setProfile] = useState(profileSettings);
   const [cron, setCron] = useState(cronSettings);
   const [automation, setAutomation] = useState(automationSettings);
@@ -190,6 +192,11 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(settings),
+      }),
+      fetch("/api/settings/ai", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ linkedinContentModel: linkedinContentModel }),
       }),
       );
     }
@@ -238,6 +245,12 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
           profiles: cronBody.profiles,
         }));
         setCronDirty(false);
+      }
+    }
+    if (showSystem) {
+      const aiBody = bodies.find((body) => body?.settings?.linkedinContentModel);
+      if (aiBody?.settings?.linkedinContentModel) {
+        setLinkedinContentModelDraft(aiBody.settings.linkedinContentModel);
       }
     }
     if (showApplication) {
@@ -409,6 +422,7 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
   const showSearch = group === "search";
   const showApplication = group === "application";
   const showAdmin = group === "admin";
+  const linkedinContentModel = linkedinContentModelDraft || aiSettings.linkedinContentModel;
 
   return (
     <Stack spacing={2}>
@@ -427,12 +441,19 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
             </Stack>
             <Alert severity={aiSettings.configured ? "success" : "warning"}>
               {aiSettings.configured
-                ? `OpenAI is configured. Resume parsing, scoring, tailored resumes, and cover letters use ${aiSettings.model}.`
+                ? `OpenAI is configured. General app generation uses ${aiSettings.model}. LinkedIn content drafts use ${linkedinContentModel}.`
                 : "OpenAI is not configured yet. Add OPENAI_API_KEY to .env, keep OPENAI_MODEL set, then restart the dev server."}
             </Alert>
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)" }, gap: 2 }}>
               <TextField fullWidth label="Environment variable" value="OPENAI_API_KEY" disabled />
-              <TextField fullWidth label="Model" value={aiSettings.model} disabled />
+              <TextField fullWidth label="App-wide model" value={aiSettings.model} disabled helperText="Used by general app features that do not have a dedicated model setting." />
+              <TextField
+                fullWidth
+                label="LinkedIn content model"
+                value={linkedinContentModel}
+                onChange={(event) => setLinkedinContentModelDraft(event.target.value)}
+                helperText="Used only for public LinkedIn draft generation, where higher-quality writing is worth the extra cost."
+              />
             </Box>
             <Alert severity={langSmithSettings.configured ? "success" : "info"}>
               {langSmithSettings.configured

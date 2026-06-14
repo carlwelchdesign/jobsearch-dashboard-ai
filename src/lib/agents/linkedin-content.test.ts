@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { buildLinkedInContentFallback, reviewLinkedInPostPrivacy } from "@/lib/agents/linkedin-content";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 describe("LinkedIn content agent helpers", () => {
+  const source = readFileSync(resolve(process.cwd(), "src/lib/agents/linkedin-content.ts"), "utf8");
+
+  it("uses the dedicated LinkedIn content model for structured generation", () => {
+    expect(source).toContain("getLinkedInContentModel");
+    expect(source).toContain("generationModel");
+    expect(source).toContain("model: input.model");
+    expect(source).toContain("input: { ...input, contentPillar: pillar");
+  });
+
   it("generates a grounded deterministic fallback without posting claims", () => {
     const output = buildLinkedInContentFallback({
       pillar: "app_progress",
@@ -29,6 +40,7 @@ describe("LinkedIn content agent helpers", () => {
     });
 
     expect(output.mode).toBe("deterministic");
+    expect(output.generationModel).toBe("");
     expect(output.body).toContain("Today's content brief");
     expect(output.body).toContain("Jolene Email Operations");
     expect(output.body).toContain("fetched 1000");

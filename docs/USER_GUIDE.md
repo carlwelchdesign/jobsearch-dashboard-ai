@@ -129,7 +129,7 @@ LinkedIn publishing and analytics are optional. To use `/linkedin-content` as a 
    | `SEED_USER_EMAIL` | Your email address — identifies you as the app's single user | Yes |
    | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` for local | Yes |
    | `OPENAI_API_KEY` | Powers AI scoring, resume writing, and Jolene answers | Strongly recommended |
-   | `OPENAI_MODEL` | Which OpenAI model to use. Default: `gpt-4.1-mini` | No |
+   | `OPENAI_MODEL` | Which OpenAI model to use for general app features. Default: `gpt-4.1-mini` | No |
 
    > **Without an OpenAI key:** The app still works. Scoring, duplicate detection, and evidence matching use deterministic (rule-based) fallbacks. Jolene will answer with generic guidance instead of personalized context.
 
@@ -591,7 +591,7 @@ Do these seven steps before your first job search. Each one builds on the last.
 
 ### Optional — Generate and publish LinkedIn content
 
-Open `/linkedin-content` from Settings -> Admin -> LinkedIn content. The LinkedIn Content agent now starts from your brief instead of a fixed dropdown. Tell the documentarian agents what you want posted today, optionally add a post format or visual direction, and they will use recent app work, `/plans` files, aggregate analytics, prior drafts, approved edits, and safe screenshots to create a reviewable post.
+Open `/linkedin-content` from Settings -> Admin -> LinkedIn content. The LinkedIn Content agent now starts from your brief instead of a fixed dropdown. Tell the documentarian agents what you want posted today, optionally add a post format or visual direction, and they will use recent app work, `/plans` files, aggregate analytics, prior drafts, approved edits, and safe screenshots to create a reviewable post. LinkedIn content uses its own editable model setting under **Settings -> System -> AI provider**; it defaults to `gpt-5.5` so public posts can use a higher-quality model than the app-wide default.
 
 The team is designed to avoid repetitive category output. It compares the new brief against recent hooks, titles, screenshots, and overused phrases, then has a narrative strategist, documentarian, editorial challenger, visual producer, analytics narrator, editor, and privacy reviewer select a grounded angle. Plan files are treated as build-log memory, so implementation plans and product decisions can become source material when they are public-safe.
 
@@ -1724,7 +1724,8 @@ Click **Settings** in the left sidebar (`/settings`).
 | Setting | What it controls |
 |---|---|
 | **OpenAI API Key** | AI scoring, resume generation, Jolene, market intelligence |
-| **OpenAI Model** | Which GPT model to use. Default: `gpt-4.1-mini` |
+| **OpenAI Model** | Which GPT model to use for general app features. Default: `gpt-4.1-mini` |
+| **LinkedIn content model** | Which GPT model to use for `/linkedin-content` drafts. Default: `gpt-5.5` |
 | **LangSmith Tracing** | Optional observability for agent runs. Set `LANGSMITH_TRACING=true` and add an API key to enable |
 | **ADK Enabled** | Enables Google Gemini as the "control plane" for the Daily Command Center, Market Intelligence, and Jolene's operator mode |
 
