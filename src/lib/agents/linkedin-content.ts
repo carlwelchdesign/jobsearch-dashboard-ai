@@ -30,9 +30,11 @@ export type LinkedInScreenshotAsset = {
   assetType?: "screenshot" | "diagram" | "ai_polish";
   diagramKind?: string;
   renderEngine?: string;
+  layoutKind?: "topology_legend" | "workflow_columns";
   qualityReview?: DiagramQualityReview;
   imageModel?: string;
   sourceSpec?: unknown;
+  topologySpec?: unknown;
   provenance?: string[];
   rationale?: string;
   privacyStatus: "PASS" | "NEEDS_REVIEW";
@@ -157,9 +159,59 @@ export type DiagramQualityReview = {
     overflow: "PASS" | "NEEDS_REVIEW";
     contrast: "PASS" | "NEEDS_REVIEW";
     provenance: "PASS" | "NEEDS_REVIEW";
+    topology?: "PASS" | "NEEDS_REVIEW";
+    legend?: "PASS" | "NEEDS_REVIEW";
   };
   warnings: string[];
   reviewedAt: string;
+};
+
+export type ArchitectureTopologyGroup = {
+  id: string;
+  label: string;
+  kind: "region" | "boundary" | "layer";
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+export type ArchitectureTopologyNode = {
+  id: string;
+  label: string;
+  icon: string;
+  groupId?: string;
+  x: number;
+  y: number;
+};
+
+export type ArchitectureTopologyEdge = {
+  from: string;
+  to: string;
+  label?: string;
+  style: "solid" | "dashed" | "bidirectional";
+};
+
+export type ArchitectureTopologyLegendItem = {
+  number: number;
+  title: string;
+  bullets: string[];
+  color: string;
+};
+
+export type ArchitectureTopologySpec = {
+  id: string;
+  title: string;
+  subtitle: string;
+  diagramKind: "system_architecture";
+  rationale: string;
+  designIntent: string;
+  groups: ArchitectureTopologyGroup[];
+  nodes: ArchitectureTopologyNode[];
+  edges: ArchitectureTopologyEdge[];
+  legend: ArchitectureTopologyLegendItem[];
+  footer: string;
+  provenance: string[];
 };
 
 const generatedLinkedInPostSchema = z.object({
@@ -492,12 +544,72 @@ export function reviewPromptSatisfaction(input: {
 
 async function createPromptDiagramAssets(direction: LinkedInContentDirection, imageModel: string): Promise<LinkedInScreenshotAsset[]> {
   if (!direction.obligations.requiredVisuals.includes("architecture_diagram")) return [];
+  const topologySpec = buildArchitectureTopologySpec(direction);
   const specs = buildArchitectureDiagramSpecs(direction);
   const assets: LinkedInScreenshotAsset[] = [];
-  for (const spec of specs) assets.push(await captureDiagramAsset(spec));
+  assets.push(await captureTopologyDiagramAsset(topologySpec));
+  for (const spec of specs.filter((item) => item.diagramKind !== "system_architecture")) assets.push(await captureDiagramAsset(spec));
   const polishAsset = await createAiVisualPolishAsset(specs[0], direction, imageModel);
   if (polishAsset) assets.push(polishAsset);
   return assets;
+}
+
+export function buildArchitectureTopologySpec(direction: LinkedInContentDirection): ArchitectureTopologySpec {
+  return {
+    id: "job-search-os-topology",
+    title: "Job Search OS Architecture",
+    subtitle: "Human intent, orchestration, specialist agents, memory, and external approval gates",
+    diagramKind: "system_architecture",
+    rationale: "Shows a traditional system topology for architecture prompts instead of a generic stage-card workflow.",
+    designIntent: "Traditional architecture map with nested boundaries, compact service nodes, connector labels, and a numbered legend.",
+    groups: [
+      { id: "experience", label: "Creator-facing app", kind: "layer", x: 50, y: 80, w: 220, h: 500 },
+      { id: "control", label: "Control plane", kind: "layer", x: 310, y: 80, w: 260, h: 500 },
+      { id: "agents", label: "Agent teams", kind: "region", x: 610, y: 80, w: 300, h: 500 },
+      { id: "memory", label: "Durable memory", kind: "boundary", x: 350, y: 620, w: 360, h: 120 },
+      { id: "external", label: "External gates", kind: "boundary", x: 750, y: 620, w: 220, h: 120 },
+    ],
+    nodes: [
+      { id: "dashboard", label: "Dashboard", icon: "UI", groupId: "experience", x: 95, y: 150 },
+      { id: "linkedin-content", label: "LinkedIn Content", icon: "LI", groupId: "experience", x: 95, y: 300 },
+      { id: "settings", label: "Settings", icon: "ST", groupId: "experience", x: 95, y: 450 },
+      { id: "api-routes", label: "Next.js API Routes", icon: "API", groupId: "control", x: 365, y: 145 },
+      { id: "jolene-loop", label: "Jolene Operating Loop", icon: "JO", groupId: "control", x: 365, y: 295 },
+      { id: "approval-gates", label: "Approval Gates", icon: "OK", groupId: "control", x: 365, y: 445 },
+      { id: "email-ops", label: "Email Ops Team", icon: "EM", groupId: "agents", x: 660, y: 145 },
+      { id: "content-team", label: "Content Team", icon: "CT", groupId: "agents", x: 790, y: 145 },
+      { id: "market-search", label: "Market/Search Agents", icon: "MS", groupId: "agents", x: 660, y: 335 },
+      { id: "diagram-qa", label: "Diagram QA", icon: "QA", groupId: "agents", x: 790, y: 335 },
+      { id: "postgres", label: "Prisma/Postgres", icon: "DB", groupId: "memory", x: 400, y: 665 },
+      { id: "agentrun", label: "AgentRun History", icon: "AR", groupId: "memory", x: 560, y: 665 },
+      { id: "screenshots", label: "Playwright PNGs", icon: "PNG", groupId: "external", x: 790, y: 665 },
+      { id: "linkedin-publish", label: "LinkedIn Publish", icon: "PUB", groupId: "external", x: 900, y: 665 },
+    ],
+    edges: [
+      { from: "dashboard", to: "api-routes", label: "intent", style: "solid" },
+      { from: "linkedin-content", to: "api-routes", label: "draft request", style: "solid" },
+      { from: "api-routes", to: "jolene-loop", label: "plan", style: "solid" },
+      { from: "jolene-loop", to: "email-ops", label: "propose", style: "dashed" },
+      { from: "jolene-loop", to: "content-team", label: "brief", style: "solid" },
+      { from: "content-team", to: "diagram-qa", label: "visual review", style: "solid" },
+      { from: "market-search", to: "agentrun", label: "events", style: "dashed" },
+      { from: "email-ops", to: "agentrun", label: "findings", style: "dashed" },
+      { from: "content-team", to: "postgres", label: "drafts", style: "solid" },
+      { from: "diagram-qa", to: "screenshots", label: "render", style: "solid" },
+      { from: "approval-gates", to: "linkedin-publish", label: "approved only", style: "solid" },
+      { from: "postgres", to: "api-routes", label: "memory", style: "bidirectional" },
+    ],
+    legend: [
+      { number: 1, title: "Creator-facing surfaces", color: "#c7f9e8", bullets: ["Dashboard, settings, and LinkedIn Content collect human intent.", "The user remains the final approval gate."] },
+      { number: 2, title: "Next.js API control plane", color: "#fff0bf", bullets: ["Routes create drafts, run agents, fetch memory, and record approvals.", "No public request shape changes for draft generation."] },
+      { number: 3, title: "Jolene orchestration", color: "#e7d7ff", bullets: ["Jolene plans work and refreshes executive context.", "Specialist teams run only after explicit approval."] },
+      { number: 4, title: "Specialist agent teams", color: "#ffd7e8", bullets: ["Email Ops, content, market/search, and Diagram QA produce grounded work.", "Every public claim must trace back to stored evidence."] },
+      { number: 5, title: "Durable memory", color: "#d8eefc", bullets: ["Prisma/Postgres stores drafts, AgentRun history, analytics, and review records.", "Plans and prior edits become reusable creative memory."] },
+      { number: 6, title: "External gates", color: "#ffe3cb", bullets: ["Playwright renders deterministic diagrams and screenshots.", "LinkedIn publishing stays behind approval and privacy review."] },
+    ],
+    footer: `Prompt: ${direction.prompt}`,
+    provenance: ["LinkedIn content prompt", "Repository architecture context", "AgentRun and LinkedInPostDraft data model", "/plans build log"],
+  };
 }
 
 export function buildArchitectureDiagramSpecs(direction: LinkedInContentDirection): StaffEngineerDiagramSpec[] {
@@ -578,6 +690,129 @@ export function reviewDiagramSpecQuality(spec: StaffEngineerDiagramSpec, layoutW
   };
 }
 
+export function reviewTopologySpecQuality(spec: ArchitectureTopologySpec, layoutWarnings: string[] = []): DiagramQualityReview {
+  const warnings: string[] = [];
+  const nodeById = new Map(spec.nodes.map((node) => [node.id, node]));
+  if (!spec.provenance.length) warnings.push("Topology diagram is missing source provenance.");
+  if (!spec.groups.length) warnings.push("Topology diagram is missing architecture boundaries.");
+  if (spec.nodes.length > 18) warnings.push("Topology diagram has too many nodes for LinkedIn readability.");
+  if (spec.edges.length > 16) warnings.push("Topology diagram has too many connector paths.");
+  if (spec.legend.length > 7) warnings.push("Legend has too many explanation cards.");
+  for (const node of spec.nodes) {
+    if (node.label.length > 30) warnings.push(`Node label is too long: ${node.label}.`);
+    if (node.x < 0 || node.y < 0 || node.x > 980 || node.y > 760) warnings.push(`Node is outside topology bounds: ${node.label}.`);
+    const group = spec.groups.find((item) => item.id === node.groupId);
+    if (group && (node.x < group.x || node.x > group.x + group.w || node.y < group.y || node.y > group.y + group.h)) {
+      warnings.push(`Node is outside its group boundary: ${node.label}.`);
+    }
+  }
+  for (const edge of spec.edges) {
+    if (!nodeById.has(edge.from) || !nodeById.has(edge.to)) warnings.push(`Connector references an unknown node: ${edge.from} to ${edge.to}.`);
+    if ((edge.label ?? "").length > 24) warnings.push(`Connector label is too long: ${edge.label}.`);
+  }
+  for (const item of spec.legend) {
+    if (item.title.length > 42) warnings.push(`Legend title is too long: ${item.title}.`);
+    if (item.bullets.length > 2) warnings.push(`Legend card is too dense: ${item.title}.`);
+    if (item.bullets.some((bullet) => bullet.length > 98)) warnings.push(`Legend bullet is too long: ${item.title}.`);
+  }
+  warnings.push(...layoutWarnings);
+  const typographyFailed = spec.nodes.some((node) => node.label.length > 30) || spec.legend.some((item) => item.title.length > 42 || item.bullets.some((bullet) => bullet.length > 98));
+  const topologyFailed = spec.groups.length === 0 || spec.nodes.length > 18 || spec.edges.length > 16 || spec.nodes.some((node) => node.x < 0 || node.y < 0 || node.x > 980 || node.y > 760);
+  const legendFailed = spec.legend.length > 7 || spec.legend.some((item) => item.bullets.length > 2 || item.bullets.some((bullet) => bullet.length > 98));
+  const checks = {
+    typography: typographyFailed ? "NEEDS_REVIEW" as const : "PASS" as const,
+    spacing: topologyFailed || legendFailed ? "NEEDS_REVIEW" as const : "PASS" as const,
+    overflow: layoutWarnings.length ? "NEEDS_REVIEW" as const : "PASS" as const,
+    contrast: "PASS" as const,
+    provenance: spec.provenance.length ? "PASS" as const : "NEEDS_REVIEW" as const,
+    topology: topologyFailed ? "NEEDS_REVIEW" as const : "PASS" as const,
+    legend: legendFailed ? "NEEDS_REVIEW" as const : "PASS" as const,
+  };
+  const score = Math.max(0, 100 - warnings.length * 10);
+  return {
+    status: warnings.length ? "NEEDS_REVIEW" : "PASS",
+    score,
+    checks,
+    warnings,
+    reviewedAt: new Date().toISOString(),
+  };
+}
+
+async function captureTopologyDiagramAsset(spec: ArchitectureTopologySpec): Promise<LinkedInScreenshotAsset> {
+  try {
+    const fs = await import("fs/promises");
+    const path = await import("path");
+    const { chromium } = await import("playwright");
+    const dir = path.join(process.cwd(), "public", "generated", "linkedin-content");
+    await fs.mkdir(dir, { recursive: true });
+    const filename = `${Date.now()}-${spec.id}.png`;
+    const filePath = path.join(dir, filename);
+    const browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, colorScheme: "light" });
+    await page.setContent(topologyDiagramHtml(spec), { waitUntil: "load" });
+    const layoutWarnings = await page.evaluate(() => {
+      const warnings: string[] = [];
+      document.querySelectorAll<HTMLElement>("[data-topology-node]").forEach((element) => {
+        if (element.scrollHeight > element.clientHeight + 2 || element.scrollWidth > element.clientWidth + 2) {
+          warnings.push(`Topology node overflow: ${element.dataset.topologyNode || "unknown"}.`);
+        }
+      });
+      document.querySelectorAll<HTMLElement>("[data-legend-card]").forEach((element) => {
+        if (element.scrollHeight > element.clientHeight + 2 || element.scrollWidth > element.clientWidth + 2) {
+          warnings.push(`Legend card overflow: ${element.dataset.legendCard || "unknown"}.`);
+        }
+      });
+      document.querySelectorAll<HTMLElement>("[data-qa-text]").forEach((element) => {
+        if (element.scrollWidth > element.clientWidth + 2) {
+          warnings.push(`Text overflow: ${element.textContent?.trim() || "unknown"}.`);
+        }
+      });
+      return warnings;
+    });
+    const qualityReview = reviewTopologySpecQuality(spec, layoutWarnings);
+    await page.screenshot({ path: filePath, fullPage: true });
+    await browser.close();
+    return {
+      label: `Topology diagram: ${spec.title}`,
+      path: `/generated/linkedin-content/${filename}`,
+      mimeType: "image/png",
+      route: `diagram:${spec.id}`,
+      assetType: "diagram",
+      diagramKind: spec.diagramKind,
+      renderEngine: "architecture-topology-v1",
+      layoutKind: "topology_legend",
+      description: spec.subtitle,
+      rationale: spec.rationale,
+      qualityReview,
+      sourceSpec: spec,
+      topologySpec: spec,
+      provenance: spec.provenance,
+      privacyStatus: qualityReview.status,
+      warnings: qualityReview.warnings,
+    };
+  } catch (error) {
+    const qualityReview = reviewTopologySpecQuality(spec, [error instanceof Error ? error.message : "Topology diagram generation failed."]);
+    return {
+      label: `Topology diagram unavailable: ${spec.title}`,
+      path: "",
+      mimeType: "image/png",
+      route: `diagram:${spec.id}`,
+      assetType: "diagram",
+      diagramKind: spec.diagramKind,
+      renderEngine: "architecture-topology-v1",
+      layoutKind: "topology_legend",
+      description: spec.subtitle,
+      rationale: spec.rationale,
+      qualityReview,
+      sourceSpec: spec,
+      topologySpec: spec,
+      provenance: spec.provenance,
+      privacyStatus: "NEEDS_REVIEW",
+      warnings: [error instanceof Error ? error.message : "Topology diagram generation failed."],
+    };
+  }
+}
+
 async function captureDiagramAsset(spec: StaffEngineerDiagramSpec): Promise<LinkedInScreenshotAsset> {
   try {
     const fs = await import("fs/promises");
@@ -615,6 +850,7 @@ async function captureDiagramAsset(spec: StaffEngineerDiagramSpec): Promise<Link
       assetType: "diagram",
       diagramKind: spec.diagramKind,
       renderEngine: "staff-engineer-html-v1",
+      layoutKind: "workflow_columns",
       description: spec.subtitle,
       rationale: spec.rationale,
       qualityReview,
@@ -633,6 +869,7 @@ async function captureDiagramAsset(spec: StaffEngineerDiagramSpec): Promise<Link
       assetType: "diagram",
       diagramKind: spec.diagramKind,
       renderEngine: "staff-engineer-html-v1",
+      layoutKind: "workflow_columns",
       description: spec.subtitle,
       rationale: spec.rationale,
       qualityReview,
@@ -674,6 +911,7 @@ async function createAiVisualPolishAsset(spec: StaffEngineerDiagramSpec, directi
       assetType: "ai_polish",
       diagramKind: spec.diagramKind,
       renderEngine: "openai-image-generation",
+      layoutKind: "workflow_columns",
       description: "Optional non-authoritative polish variant. Exact technical text remains in the deterministic diagram.",
       rationale: "Adds a social cover option without making the image model responsible for architecture labels.",
       imageModel: generated.model,
@@ -696,6 +934,7 @@ function aiPolishWarningAsset(spec: StaffEngineerDiagramSpec, imageModel: string
     assetType: "ai_polish",
     diagramKind: spec.diagramKind,
     renderEngine: "openai-image-generation",
+    layoutKind: "workflow_columns",
     description: "Optional AI polish variant could not be generated; deterministic diagram remains available.",
     rationale: "Image generation failures are non-blocking because text-heavy technical diagrams are rendered deterministically.",
     imageModel,
@@ -729,7 +968,7 @@ function buildAgentReviews(
     { agent: "Product Strategist", summary: memoryPack.storyAngles[0] ?? "The product angle is creator workflow memory.", recommendation: "Frame this as a content operating system learning from its own work." },
     { agent: "Editor", summary: `Draft title: ${generated.title}.`, recommendation: "Keep the post concrete, non-hype, and readable without internal app knowledge." },
     { agent: "Technical Documentation Architect", summary: direction.intent.includes("architecture") ? `Architecture brief: ${direction.obligations.topic}` : "No technical diagram brief required for this prompt.", recommendation: "Use repo-level systems, memory, approval gates, and provenance as the diagram's source of truth.", metadata: { requiredConcepts: direction.obligations.requiredConcepts, requiredVisuals: direction.obligations.requiredVisuals } },
-    { agent: "Diagram Systems Designer", summary: diagramAssets.length ? `${diagramAssets.length} deterministic technical diagram asset(s) generated.` : "No deterministic technical diagram generated.", recommendation: "Prefer the deterministic technical diagram for exact labels and system documentation.", metadata: { diagramAssets: diagramAssets.map((asset) => ({ label: asset.label, diagramKind: asset.diagramKind, renderEngine: asset.renderEngine, provenance: asset.provenance })) } },
+    { agent: "Diagram Systems Designer", summary: diagramAssets.length ? `${diagramAssets.length} deterministic technical diagram asset(s) generated.` : "No deterministic technical diagram generated.", recommendation: "Prefer the deterministic technical diagram for exact labels and system documentation.", metadata: { diagramAssets: diagramAssets.map((asset) => ({ label: asset.label, diagramKind: asset.diagramKind, renderEngine: asset.renderEngine, layoutKind: asset.layoutKind, provenance: asset.provenance })) } },
     { agent: "Visual Design Reviewer", summary: diagramAssets.length ? `Best diagram quality score: ${bestDiagramScore}/100.` : "No diagram typography review available.", recommendation: "Use restrained type, normal-weight body labels, fixed gutters, and high contrast for LinkedIn readability.", metadata: { qualityReviews: diagramReviews } },
     { agent: "Diagram QA Reviewer", summary: diagramWarnings.length ? diagramWarnings.join(" ") : "No text overflow, spacing, contrast, or provenance blockers detected.", recommendation: diagramWarnings.length ? "Do not publish media until the deterministic diagram passes QA." : "Deterministic diagram is publishable from a layout QA perspective.", metadata: { warnings: diagramWarnings } },
     { agent: "AI Visual Polish Producer", summary: aiPolishAssets.length ? aiPolishAssets.map((asset) => `${asset.label}: ${asset.warnings.join(" ") || "generated"}`).join(" | ") : "AI visual polish was not requested for this draft.", recommendation: "Treat AI polish as optional social texture; never rely on it for exact architecture labels.", metadata: { aiPolishAssets: aiPolishAssets.map((asset) => ({ label: asset.label, path: asset.path, imageModel: asset.imageModel, warnings: asset.warnings })) } },
@@ -864,6 +1103,243 @@ function selectBestScreenshots(assets: LinkedInScreenshotAsset[], direction: Lin
     .sort((left, right) => right.score - left.score)
     .slice(0, 1)
     .map((item) => item.asset);
+}
+
+function topologyDiagramHtml(spec: ArchitectureTopologySpec) {
+  const nodeById = new Map(spec.nodes.map((node) => [node.id, node]));
+  const groups = spec.groups.map((group) => `
+    <section class="topologyGroup ${escapeHtml(group.kind)}" style="left:${group.x}px;top:${group.y}px;width:${group.w}px;height:${group.h}px;">
+      <span data-qa-text>${escapeHtml(group.label)}</span>
+    </section>
+  `).join("");
+  const edges = spec.edges.flatMap((edge) => {
+    const from = nodeById.get(edge.from);
+    const to = nodeById.get(edge.to);
+    if (!from || !to) return [];
+    const x1 = from.x + 52;
+    const y1 = from.y + 35;
+    const x2 = to.x + 52;
+    const y2 = to.y + 35;
+    const mx = (x1 + x2) / 2;
+    const my = (y1 + y2) / 2 - 8;
+    const dash = edge.style === "dashed" ? `stroke-dasharray="8 7"` : "";
+    const reverse = edge.style === "bidirectional" ? `marker-start="url(#arrowStart)"` : "";
+    return [`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="edgeLine" ${dash} ${reverse} marker-end="url(#arrowEnd)" />${edge.label ? `<text x="${mx}" y="${my}" class="edgeLabel">${escapeHtml(edge.label)}</text>` : ""}`];
+  }).join("");
+  const nodes = spec.nodes.map((node) => `
+    <article class="topologyNode" data-topology-node="${escapeHtml(node.label)}" style="left:${node.x}px;top:${node.y}px;">
+      <div class="nodeIcon">${escapeHtml(node.icon)}</div>
+      <div class="nodeLabel" data-qa-text>${escapeHtml(node.label)}</div>
+    </article>
+  `).join("");
+  const legend = spec.legend.map((item) => `
+    <article class="legendCard" data-legend-card="${escapeHtml(item.title)}" style="background:${escapeHtml(item.color)};">
+      <h2 data-qa-text>${item.number}. ${escapeHtml(item.title)}</h2>
+      <ul>
+        ${item.bullets.map((bullet) => `<li data-qa-text>${escapeHtml(bullet)}</li>`).join("")}
+      </ul>
+    </article>
+  `).join("");
+  return `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            width: 1600px;
+            height: 900px;
+            overflow: hidden;
+            color: #172033;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background:
+              radial-gradient(circle at 1px 1px, rgba(15, 23, 42, 0.12) 1px, transparent 0) 0 0 / 18px 18px,
+              #f8fafc;
+          }
+          .page {
+            width: 1600px;
+            height: 900px;
+            padding: 34px 46px 36px;
+            display: grid;
+            grid-template-columns: 1010px 1fr;
+            gap: 34px;
+          }
+          .left {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            min-width: 0;
+          }
+          .titleBlock {
+            width: 420px;
+            margin: 0 0 18px;
+            padding: 18px 22px;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
+          }
+          h1 {
+            margin: 0 0 8px;
+            font-size: 27px;
+            line-height: 1.12;
+            font-weight: 760;
+            letter-spacing: 0;
+          }
+          .subtitle {
+            margin: 0;
+            color: #475569;
+            font-size: 13px;
+            line-height: 1.35;
+            font-weight: 430;
+          }
+          .map {
+            position: relative;
+            width: 1010px;
+            height: 770px;
+            border: 2px solid rgba(15, 23, 42, 0.58);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.82);
+            overflow: hidden;
+          }
+          .topologyGroup {
+            position: absolute;
+            border: 2px solid #93c5fd;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.52);
+          }
+          .topologyGroup.boundary { border-color: #86efac; }
+          .topologyGroup.region { border-color: #a5b4fc; }
+          .topologyGroup span {
+            position: absolute;
+            left: 10px;
+            top: 8px;
+            color: #0369a1;
+            font-size: 12px;
+            line-height: 1;
+            font-weight: 760;
+          }
+          .edgeSvg {
+            position: absolute;
+            inset: 0;
+            width: 1010px;
+            height: 770px;
+            pointer-events: none;
+          }
+          .edgeLine {
+            stroke: #475569;
+            stroke-width: 1.8;
+            fill: none;
+          }
+          .edgeLabel {
+            paint-order: stroke;
+            stroke: rgba(255, 255, 255, 0.9);
+            stroke-width: 5px;
+            fill: #334155;
+            font-size: 11px;
+            line-height: 1;
+            font-weight: 650;
+            text-anchor: middle;
+          }
+          .topologyNode {
+            position: absolute;
+            width: 104px;
+            min-height: 78px;
+            display: grid;
+            justify-items: center;
+            gap: 6px;
+            padding: 0 4px;
+            overflow: hidden;
+          }
+          .nodeIcon {
+            width: 43px;
+            height: 43px;
+            display: grid;
+            place-items: center;
+            border-radius: 10px;
+            color: #ffffff;
+            background: linear-gradient(135deg, #7c3aed, #06b6d4);
+            box-shadow: 0 10px 20px rgba(15, 23, 42, 0.16);
+            font-size: 12px;
+            line-height: 1;
+            font-weight: 800;
+          }
+          .nodeLabel {
+            max-width: 104px;
+            color: #111827;
+            font-size: 11px;
+            line-height: 1.13;
+            font-weight: 760;
+            text-align: center;
+            overflow-wrap: anywhere;
+          }
+          .footer {
+            margin-top: 8px;
+            color: #64748b;
+            font-size: 11px;
+            line-height: 1.25;
+          }
+          .legend {
+            display: grid;
+            gap: 12px;
+            align-content: start;
+            padding-top: 52px;
+          }
+          .legendCard {
+            min-height: 90px;
+            padding: 11px 14px 10px;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            overflow: hidden;
+          }
+          .legendCard h2 {
+            margin: 0 0 6px;
+            color: #172033;
+            font-size: 17px;
+            line-height: 1.08;
+            font-weight: 760;
+            letter-spacing: 0;
+          }
+          .legendCard ul {
+            margin: 0;
+            padding-left: 18px;
+          }
+          .legendCard li {
+            color: #263245;
+            font-size: 14px;
+            line-height: 1.18;
+            font-weight: 430;
+            margin: 2px 0;
+          }
+        </style>
+      </head>
+      <body>
+        <main class="page" role="img" aria-label="${escapeHtml(spec.title)}">
+          <section class="left">
+            <header class="titleBlock">
+              <h1 data-qa-text>${escapeHtml(spec.title)}</h1>
+              <p class="subtitle" data-qa-text>${escapeHtml(spec.subtitle)}</p>
+            </header>
+            <section class="map">
+              ${groups}
+              <svg class="edgeSvg" viewBox="0 0 1010 770" aria-hidden="true">
+                <defs>
+                  <marker id="arrowEnd" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                    <path d="M0,0 L8,4 L0,8 Z" fill="#475569"></path>
+                  </marker>
+                  <marker id="arrowStart" markerWidth="8" markerHeight="8" refX="1" refY="4" orient="auto">
+                    <path d="M8,0 L0,4 L8,8 Z" fill="#475569"></path>
+                  </marker>
+                </defs>
+                ${edges}
+              </svg>
+              ${nodes}
+            </section>
+            <footer class="footer" data-qa-text>${escapeHtml(spec.footer)} | Prepared by the Job Search OS agent content team. No private application details included.</footer>
+          </section>
+          <aside class="legend">${legend}</aside>
+        </main>
+      </body>
+    </html>
+  `;
 }
 
 function diagramHtml(spec: StaffEngineerDiagramSpec) {

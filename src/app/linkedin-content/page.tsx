@@ -86,6 +86,7 @@ function screenshotAssets(value: unknown): LinkedInDraftView["screenshotAssets"]
           assetType: typeof record.assetType === "string" ? record.assetType : undefined,
           diagramKind: typeof record.diagramKind === "string" ? record.diagramKind : undefined,
           renderEngine: typeof record.renderEngine === "string" ? record.renderEngine : undefined,
+          layoutKind: typeof record.layoutKind === "string" ? record.layoutKind : undefined,
           qualityReview: qualityReview(record.qualityReview),
           imageModel: typeof record.imageModel === "string" ? record.imageModel : undefined,
           provenance: stringArray(record.provenance),
@@ -104,7 +105,13 @@ function qualityReview(value: unknown): LinkedInDraftView["screenshotAssets"][nu
     status: typeof record.status === "string" ? record.status : undefined,
     score: typeof record.score === "number" ? record.score : undefined,
     warnings: stringArray(record.warnings),
+    topology: isRecord(record.checks) && typeof record.checks.topology === "string" ? record.checks.topology : undefined,
+    legend: isRecord(record.checks) && typeof record.checks.legend === "string" ? record.checks.legend : undefined,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function privacyReview(value: unknown): LinkedInDraftView["privacyReview"] {
