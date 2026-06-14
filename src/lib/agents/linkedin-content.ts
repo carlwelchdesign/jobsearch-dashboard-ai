@@ -4,6 +4,7 @@ import { runAgent } from "@/lib/agents/run-agent";
 import { buildLinkedInContentMemoryPack, jsonValue, type LinkedInContentMemoryPack } from "@/lib/agents/linkedin-content-memory";
 import { parseStructuredOutput } from "@/lib/ai/openai";
 import { prisma } from "@/lib/prisma";
+import { getLinkedInContentModel } from "@/lib/settings/ai-settings";
 
 export type LinkedInContentInput = {
   userId?: string;
@@ -13,6 +14,7 @@ export type LinkedInContentInput = {
   format?: LinkedInContentFormat;
   visualDirection?: string;
   parentRunId?: string;
+  generationModel?: string;
 };
 
 export type LinkedInContentPillar = "app_progress" | "search_learning" | "architecture" | "workflow_design";
@@ -61,6 +63,7 @@ export type LinkedInContentOutput = {
   selectedScreenshots: LinkedInScreenshotAsset[];
   privacyReview: LinkedInPrivacyReview;
   mode: "llm" | "deterministic";
+  generationModel: string;
   draftId?: string;
 };
 
@@ -145,13 +148,14 @@ export async function runLinkedInContentAgent(input: LinkedInContentInput = {}) 
   const memoryPack = await buildLinkedInContentMemoryPack(user.id);
   const pillar = input.contentPillar ?? "app_progress";
   const direction = buildContentDirection(input, memoryPack);
+  const generationModel = await getLinkedInContentModel(user.id);
   return runAgent<LinkedInContentInput, LinkedInContentOutput>({
     agentType: "LINKEDIN_CONTENT",
-    input: { ...input, contentPillar: pillar, prompt: direction.prompt, tone: direction.tone, format: direction.format, visualDirection: direction.visualDirection },
+    input: { ...input, contentPillar: pillar, prompt: direction.prompt, tone: direction.tone, format: direction.format, visualDirection: direction.visualDirection, generationModel },
     userId: user.id,
     parentRunId: input.parentRunId,
     execute: async (run) => {
-      const generated = await generateLinkedInContent({ pillar, memoryPack, direction });
+      const generated = await generateLinkedInContent({ pillar, memoryPack, direction, model: generationModel });
       const screenshotAssets = await createSafeLinkedInScreenshotAssets(memoryPack, direction);
       const diagramAssets = await createPromptDiagramAssets(direction);
       const visualAssets = [...diagramAssets, ...screenshotAssets];
@@ -187,6 +191,7 @@ export async function runLinkedInContentAgent(input: LinkedInContentInput = {}) 
         screenshotAssets: visualAssets,
         selectedScreenshots,
         privacyReview: mergedReview,
+        generationModel,
       };
       const draft = await persistLinkedInPostDraft(user.id, run, output);
       return { ...output, draftId: draft.id };
@@ -198,6 +203,7 @@ export async function generateLinkedInContent(input: {
   pillar: LinkedInContentPillar;
   memoryPack: LinkedInContentMemoryPack;
   direction: LinkedInContentDirection;
+  model: string;
 }): Promise<Omit<LinkedInContentOutput, "screenshotAssets" | "selectedScreenshots" | "privacyReview" | "draftId" | "disclosureText" | "memorySources" | "analyticsSources" | "agentReviews" | "claims" | "risks">> {
   const fallback = buildLinkedInContentFallback(input);
   try {
@@ -237,6 +243,7 @@ export async function generateLinkedInContent(input: {
           hashtags: "3-6 relevant hashtags.",
         },
       },
+      model: input.model,
     });
     if (!generated) return fallback;
     return {
@@ -247,6 +254,7 @@ export async function generateLinkedInContent(input: {
       contentPillar: input.pillar,
       sourceFacts: input.memoryPack.aggregateFacts,
       mode: "llm",
+      generationModel: input.model,
     };
   } catch {
     return fallback;
@@ -256,6 +264,7 @@ export async function generateLinkedInContent(input: {
 export function buildLinkedInContentFallback(input: {
   pillar: LinkedInContentPillar;
   direction?: LinkedInContentDirection;
+  model?: string;
   memoryPack: Pick<LinkedInContentMemoryPack, "aggregateFacts" | "analytics" | "storyAngles" | "planSources" | "noveltySignals">;
 }): Omit<LinkedInContentOutput, "screenshotAssets" | "selectedScreenshots" | "privacyReview" | "draftId" | "disclosureText" | "memorySources" | "analyticsSources" | "agentReviews" | "claims" | "risks"> {
   const direction = input.direction ?? {
@@ -302,6 +311,7 @@ export function buildLinkedInContentFallback(input: {
     contentPillar: input.pillar,
     sourceFacts: input.memoryPack.aggregateFacts,
     mode: "deterministic",
+    generationModel: input.model ?? "",
   };
 }
 
@@ -340,6 +350,7 @@ function buildArchitectureFallback(
       "Architecture context: Next.js App Router, API routes, agent services, Prisma/Postgres, AgentRun observability, privacy review, and LinkedIn approval gates.",
     ],
     mode: "deterministic",
+    generationModel: "",
   };
 }
 

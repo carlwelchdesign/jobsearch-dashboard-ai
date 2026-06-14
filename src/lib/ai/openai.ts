@@ -18,28 +18,30 @@ export async function parseStructuredOutput<TSchema extends z.ZodTypeAny>({
   schemaName,
   system,
   input,
+  model,
 }: {
   schema: TSchema;
   schemaName: string;
   system: string;
   input: unknown;
+  model?: string;
 }): Promise<z.infer<TSchema> | null> {
   if (!isOpenAiConfigured()) return null;
 
   client ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  const model = process.env.OPENAI_MODEL ?? DEFAULT_MODEL;
+  const resolvedModel = model?.trim() || process.env.OPENAI_MODEL || DEFAULT_MODEL;
   const response = await withTimeout(traceAgentOperation(
     `openai.structured.${schemaName}`,
     {
       provider: "openai",
       operation: "responses.parse",
-      model,
+      model: resolvedModel,
       schemaName,
       inputKind: input == null ? "null" : Array.isArray(input) ? "array" : typeof input,
     },
     () => client!.responses.parse({
-      model,
+      model: resolvedModel,
       input: [
         { role: "system", content: system },
         { role: "user", content: JSON.stringify(input) },

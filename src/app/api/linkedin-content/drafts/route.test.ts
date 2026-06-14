@@ -43,6 +43,7 @@ describe("/api/linkedin-content/drafts", () => {
         selectedScreenshots: [],
         privacyReview: { status: "PASS", warnings: [], blockedTerms: [], reviewedAt: "2026-06-12T12:00:00Z" },
         mode: "deterministic",
+        generationModel: "gpt-5.5",
       },
     } as never);
   });
