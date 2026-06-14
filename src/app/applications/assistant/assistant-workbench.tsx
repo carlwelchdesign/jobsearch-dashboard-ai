@@ -31,6 +31,7 @@ import { RejectionReasonDialog, type RejectionReasonCode } from "@/components/jo
 import { SearchRunAnalyticsCharts } from "@/components/search-run-analytics-charts";
 import type { AshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 import { summarizeApplicationJobDescription } from "@/lib/applications/job-summary";
+import { copyTextToClipboard } from "@/lib/browser/clipboard";
 
 type ReadyApplication = {
   id: string;
@@ -488,7 +489,7 @@ export function AssistantWorkbench({
       const response = await fetch(`/api/cover-letters/${coverLetterId}/plain-text`);
       const text = await response.text();
       if (!response.ok) throw new Error(text || "Unable to load cover letter.");
-      await navigator.clipboard.writeText(text);
+      await copyTextToClipboard(text);
       setNotice("Cover letter copied to clipboard.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to copy cover letter.");
@@ -524,7 +525,7 @@ export function AssistantWorkbench({
 
   async function copyRawLog() {
     try {
-      await navigator.clipboard.writeText(selectedFeedback?.log || "");
+      await copyTextToClipboard(selectedFeedback?.log || "");
       setNotice("Assistant log copied.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to copy assistant log.");

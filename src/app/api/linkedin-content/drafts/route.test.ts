@@ -51,17 +51,17 @@ describe("/api/linkedin-content/drafts", () => {
     const response = await POST(new Request("http://localhost/api/linkedin-content/drafts", {
       method: "POST",
       body: JSON.stringify({
-        prompt: "Document the Email Ops agent team as a field note.",
-        format: "field_note",
-        visualDirection: "show Email Ops evidence",
+        prompt: "Document our system architecture with architectural diagrams.",
+        format: "decision_diary",
+        visualDirection: "show architecture diagrams",
       }),
     }));
 
     expect(response.status).toBe(201);
     expect(runLinkedInContentAgentMock).toHaveBeenCalledWith({
-      prompt: "Document the Email Ops agent team as a field note.",
-      format: "field_note",
-      visualDirection: "show Email Ops evidence",
+      prompt: "Document our system architecture with architectural diagrams.",
+      format: "decision_diary",
+      visualDirection: "show architecture diagrams",
     });
     await expect(response.json()).resolves.toMatchObject({
       draftId: "draft_1",

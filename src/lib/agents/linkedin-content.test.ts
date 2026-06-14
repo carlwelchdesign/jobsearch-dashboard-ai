@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLinkedInContentFallback, reviewLinkedInPostPrivacy } from "@/lib/agents/linkedin-content";
+import { buildArchitectureDiagramSpecs, buildLinkedInContentFallback, planLinkedInPromptIntent, reviewLinkedInPostPrivacy, reviewPromptSatisfaction, type LinkedInContentDirection } from "@/lib/agents/linkedin-content";
 
 describe("LinkedIn content agent helpers", () => {
   it("generates a grounded deterministic fallback without posting claims", () => {
@@ -29,10 +29,9 @@ describe("LinkedIn content agent helpers", () => {
     });
 
     expect(output.mode).toBe("deterministic");
-    expect(output.body).toContain("Today's content brief");
     expect(output.body).toContain("Jolene Email Operations");
-    expect(output.body).toContain("fetched 1000");
-    expect(output.body).toContain("below threshold 800");
+    expect(output.body).not.toContain("fetched 1000");
+    expect(output.body).not.toContain("below threshold 800");
     expect(output.body).not.toMatch(/\bposted\b/i);
     expect(output.body).not.toMatch(/—/);
   });
@@ -48,6 +47,14 @@ describe("LinkedIn content agent helpers", () => {
         visualDirection: "show agent run evidence",
         selectedAngle: "Decision diary: documentarians before automation",
         rejectedAngles: ["Generic app progress update"],
+        intent: "workflow_story",
+        obligations: {
+          topic: "agents acting as documentarians",
+          requiredConcepts: ["workflow story", "agents", "evidence"],
+          requiredVisuals: ["app_screenshot"],
+          forbiddenPhrases: ["future CMS"],
+          allowSearchFunnelAnalytics: false,
+        },
       },
       memoryPack: {
         aggregateFacts: [],
@@ -65,7 +72,7 @@ describe("LinkedIn content agent helpers", () => {
     });
 
     expect(output.hook).toContain("product decision");
-    expect(output.body).toContain("Write a decision diary");
+    expect(output.body).not.toContain("Write a decision diary");
     expect(output.body).toContain("documentarians before automation");
   });
 
@@ -90,4 +97,94 @@ describe("LinkedIn content agent helpers", () => {
       blockedTerms: expect.arrayContaining(["email address", "salary or compensation"]),
     });
   });
+
+  it("detects architecture diagram prompts as architecture_diagram intent", () => {
+    expect(planLinkedInPromptIntent("I would like a post documenting our system architecture with architectural diagrams")).toBe("architecture_diagram");
+    expect(planLinkedInPromptIntent("Write about Jolene scanning my email")).toBe("email_ops");
+  });
+
+  it("builds architecture-specific fallback copy without the old generic template", () => {
+    const direction = architectureDirection();
+    const output = buildLinkedInContentFallback({
+      pillar: "architecture",
+      direction,
+      memoryPack: {
+        aggregateFacts: ["Latest search funnel: Fetched 1000, New matches 25."],
+        storyAngles: [],
+        planSources: [{ filename: "ARCH.md", title: "Architecture Plan", summary: "Document system layers and agent handoffs.", themes: ["Architecture"] }],
+        noveltySignals: { recentHooks: [], recentTitles: [], recentPillars: [], recentScreenshotRoutes: [], avoidPhrases: ["future CMS"] },
+        analytics: {
+          latestSearchRun: null,
+          applicationStatusCounts: {},
+          outcomeCounts: {},
+          agentRunCounts: {},
+          sourceCoverage: { activeSources: 0, querySources: 0, manualSources: 0, priorityOneSources: 0 },
+        },
+      },
+    });
+
+    expect(output.body).toContain("Next.js App Router");
+    expect(output.body).toContain("Prisma/Postgres");
+    expect(output.body).toContain("AgentRun");
+    expect(output.body).toContain("diagrams");
+    expect(output.body).not.toContain("Today's content brief");
+    expect(output.body).not.toContain("I would document");
+    expect(output.body).not.toContain("The clearest source is");
+    expect(output.body).not.toContain("Latest search funnel");
+    expect(output.body).not.toContain("practical testbed");
+    expect(output.body).not.toContain("latest run moved through");
+    expect(output.body).not.toContain("blank page");
+  });
+
+  it("reviews architecture prompt satisfaction and requires diagram assets", () => {
+    const direction = architectureDirection();
+    const bad = reviewPromptSatisfaction({
+      direction,
+      generated: {
+        title: "Search funnel notes",
+        hook: "The latest run moved through a lot of jobs.",
+        body: "The latest run moved through fetched 1000 and the boundary matters.",
+      },
+      visualAssets: [],
+    });
+    expect(bad.status).toBe("NEEDS_REVIEW");
+    expect(bad.warnings.join(" ")).toContain("Architecture prompt requires");
+
+    const good = reviewPromptSatisfaction({
+      direction,
+      generated: {
+        title: "System architecture with diagrams",
+        hook: "The architecture diagrams show the agent services and approval gates.",
+        body: "The Next.js API routes coordinate agent services. Prisma/Postgres stores AgentRun memory, and LinkedIn publish approval gates keep external actions reviewed. The diagram shows this architecture.",
+      },
+      visualAssets: [{ label: "Architecture diagram", path: "/generated/test.png", mimeType: "image/png", description: "System Architecture", route: "diagram:system-architecture", assetType: "diagram", privacyStatus: "PASS", warnings: [] }],
+    });
+    expect(good.status).toBe("PASS");
+  });
+
+  it("creates architecture diagram specs for system architecture and content flow", () => {
+    const specs = buildArchitectureDiagramSpecs(architectureDirection());
+    expect(specs.map((spec) => spec.id)).toEqual(["system-architecture", "agent-content-flow"]);
+    expect(specs[0].columns.flatMap((column) => column.items).join(" ")).toContain("Prisma/Postgres");
+  });
 });
+
+function architectureDirection(): LinkedInContentDirection {
+  return {
+    prompt: "I would like a post documenting our system architecture with architectural diagrams",
+    tone: "bold_grounded",
+    format: "decision_diary",
+    legacyPillar: "architecture",
+    visualDirection: "show system architecture diagrams",
+    selectedAngle: "Architecture diagrams for Job Search OS",
+    rejectedAngles: [],
+    intent: "architecture_diagram",
+    obligations: {
+      topic: "system architecture with architectural diagrams",
+      requiredConcepts: ["architecture", "Next.js", "API routes", "agent services", "Prisma/Postgres", "AgentRun", "memory", "approval gates", "LinkedIn publish", "diagram"],
+      requiredVisuals: ["architecture_diagram"],
+      forbiddenPhrases: ["practical testbed", "blank page", "boundary matters", "today's content brief", "i would document", "clearest source", "latest run moved through", "drop-off pattern"],
+      allowSearchFunnelAnalytics: false,
+    },
+  };
+}
