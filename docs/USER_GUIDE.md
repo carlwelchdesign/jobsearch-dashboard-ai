@@ -1592,6 +1592,8 @@ Click any task to expand it with more detail.
 
 **Where to see Jolene first:** Open **Command Center** (`/dashboard`). The **Jolene, Chief of Staff** card shows her latest operating brief with priorities, rationale, evidence, links, approval buttons, and ask-Jolene actions.
 
+The card also shows Jolene's **Operating Loop** status. The operating loop is not a separate assistant; it is the planner/scheduler layer under Jolene that checks system signals, refreshes the Chief of Staff brief, proposes internal child-agent work, and shows what was skipped for safety.
+
 **How to open chat:** Click the floating **Ask Jolene** button in the bottom corner of any page. It opens a slide-out drawer.
 
 ### What Jolene can do
@@ -1599,6 +1601,7 @@ Click any task to expand it with more detail.
 Jolene is aware of where you are in the app and what data is relevant. She can:
 
 - Produce a Chief of Staff brief from recent agent runs, blockers, pipeline state, Email Operations, market signals, LinkedIn content/analytics, and your career mission
+- Run an Operating Loop pass that monitors system freshness, proposes the next internal agents to run, and records skipped/blocked work
 - Show proactive priority cards on the Command Center with rationale, evidence, and links to the relevant page
 - Propose delegated work for other agents, then wait for your approval before launching it
 - Explain why a specific job scored the way it did
@@ -1636,6 +1639,8 @@ This means her answers are grounded in your actual data, not generic advice.
 
 Jolene can propose and execute certain safe actions inside the app. In chat, those appear as **confirmation cards** under her message. On the Command Center, they appear as **Approve** buttons on her Chief of Staff priority cards. You must approve before delegated work runs.
 
+The Operating Loop follows the same rule. Clicking **Run Operating Loop** on `/dashboard` lets Jolene inspect the current system state and create a plan. The loop may refresh Jolene's brief and create approval cards automatically, but specialist teams stay pending until you approve the proposed internal action.
+
 **Actions she can run after confirmation:**
 - Application integrity repair
 - Duplicate/stale job detection
@@ -1649,9 +1654,23 @@ Jolene can propose and execute certain safe actions inside the app. In chat, tho
 **Actions that always remain manual (Jolene explains but does not execute):**
 - Submitting applications
 - Sending email or outreach messages
+- Publishing LinkedIn posts
 - Writing directly to external calendars
 - Approving or rejecting jobs or applications in bulk
 - Changing profile settings
+
+### Jolene Operating Loop
+
+The operating loop is the answer to "Do we have an orchestrator?" Jolene is the visible orchestrator persona, and the operating loop is the internal pass that does the monitoring and planning.
+
+Each loop run:
+- Reads current system signals such as open requests, failed or stale agents, Email Ops freshness, search freshness, market freshness, pipeline counts, ready-to-apply work, LinkedIn draft/analytics status, and career standup signals
+- Creates a `JOLENE_OPERATING_LOOP` agent run
+- Refreshes a `JOLENE_CHIEF_OF_STAFF` brief as a child run
+- Stores recommended actions, skipped actions, approval-needed work, and child-run status
+- Shows the latest status on the Command Center
+
+The default autonomy policy is **propose first**. Scheduled loop runs are useful because they keep Jolene current, but they still create plans and approval cards instead of taking risky action.
 
 ### Jolene Chief of Staff and career standups
 
@@ -1689,6 +1708,13 @@ curl -X POST http://localhost:3000/api/jolene/chief-of-staff/run
 curl -X POST http://localhost:3000/api/jolene/chief-of-staff/approve \
   -H "content-type: application/json" \
   -d '{"runId":"RUN_ID","proposalIds":["proposal_run_market_intelligence"]}'
+curl http://localhost:3000/api/jolene/operating-loop
+curl -X POST http://localhost:3000/api/jolene/operating-loop/run
+curl -X POST http://localhost:3000/api/jolene/operating-loop/approve \
+  -H "content-type: application/json" \
+  -d '{"runId":"RUN_ID","proposalIds":["loop_work_email_ops"]}'
+curl http://localhost:3000/api/cron/jolene-operating-loop \
+  -H "authorization: Bearer $CRON_SECRET"
 ```
 
 Approval only launches app-internal delegated work. Jolene still cannot publish LinkedIn posts, submit applications, send recruiter/employer messages, or make destructive bulk changes without the existing explicit user gates.

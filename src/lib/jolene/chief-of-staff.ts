@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 export type JoleneChiefInput = {
   userId?: string;
   source?: "manual" | "scheduled" | "dashboard" | "chat";
+  parentRunId?: string;
 };
 
 export type JoleneDelegatedActionId =
@@ -64,7 +65,7 @@ export type JoleneChiefOutput = {
   rationale: string;
 };
 
-type JoleneChiefContext = {
+export type JoleneChiefContext = {
   now: Date;
   source: NonNullable<JoleneChiefInput["source"]>;
   openRequests: Array<{ id: string; type: string; summary: string; href: string | null }>;
@@ -90,6 +91,7 @@ export async function runJoleneChiefOfStaffAgent(input: JoleneChiefInput = {}) {
     agentType: "JOLENE_CHIEF_OF_STAFF",
     input: { ...input, source: input.source ?? "manual" },
     userId: user.id,
+    parentRunId: input.parentRunId,
     execute: async (run) => {
       const context = await buildJoleneChiefContext(user.id, input.source ?? "manual");
       const output = buildJoleneChiefBrief(context);
@@ -135,7 +137,7 @@ export async function approveJoleneDelegatedWork(input: {
   const executed: JoleneDelegatedWork[] = [];
   for (const work of selected) {
     try {
-      const result = await executeDelegatedWork(work, input.userId, run.id);
+      const result = await executeJoleneDelegatedWork(work, input.userId, run.id);
       executed.push({ ...work, status: result.status, childRunId: result.childRunId, detail: result.detail, href: result.href ?? work.href });
     } catch (error) {
       executed.push({
@@ -487,7 +489,7 @@ function addDelegated(
   });
 }
 
-async function executeDelegatedWork(work: JoleneDelegatedWork, userId: string, parentRunId: string): Promise<{ status: "executed" | "skipped"; detail: string; href?: string; childRunId?: string }> {
+export async function executeJoleneDelegatedWork(work: JoleneDelegatedWork, userId: string, parentRunId: string): Promise<{ status: "executed" | "skipped"; detail: string; href?: string; childRunId?: string }> {
   if (work.actionId === "run_daily_command_center") {
     const result = await runDailyCommandCenterAgent({ userId, parentRunId });
     return { status: "executed", detail: `Created ${result.output.actions.length} daily priority action(s).`, href: "/dashboard", childRunId: result.run.id };

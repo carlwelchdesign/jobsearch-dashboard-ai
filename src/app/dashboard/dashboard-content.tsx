@@ -34,6 +34,7 @@ import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { getLinkedInAnalyticsSummary } from "@/lib/linkedin/analytics";
 import { getLatestJoleneChiefBrief, type JoleneChiefOutput } from "@/lib/jolene/chief-of-staff";
 import { getLatestEmailOpsSummary } from "@/lib/jolene/email-ops";
+import { getLatestJoleneOperatingLoop, type JoleneOperatingLoopOutput } from "@/lib/jolene/operating-loop";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 import { getServiceFallbacks } from "@/lib/service-fallbacks";
@@ -117,7 +118,12 @@ export async function DashboardOverviewPage() {
     prisma.agentRun.findFirst({ where: { agentType: "DAILY_COMMAND_CENTER", status: "COMPLETED" }, orderBy: { createdAt: "desc" } }),
     prisma.user.findFirst({ select: { id: true, notificationSettings: true } }),
   ]);
-  const latestJoleneRun = dashboardUser?.id ? await getLatestJoleneChiefBrief(dashboardUser.id) : null;
+  const [latestJoleneRun, latestOperatingLoopRun] = dashboardUser?.id
+    ? await Promise.all([
+        getLatestJoleneChiefBrief(dashboardUser.id),
+        getLatestJoleneOperatingLoop(dashboardUser.id),
+      ])
+    : [null, null];
   const suppressionStates = await loadJobSuppressionStatesByUserIds(needsReview.map((match) => match.jobSearchProfile.userId));
   const needsReviewCount = uniqueMatchesByCanonicalJob(needsReview.filter((match) => {
     const suppressionState = suppressionStates.get(match.jobSearchProfile.userId);
@@ -131,7 +137,12 @@ export async function DashboardOverviewPage() {
   return (
     <DashboardShell group="overview">
       <ServiceFallbackBanners items={fallbacks} />
-      <JoleneChiefOfStaffCard runId={latestJoleneRun?.id ?? null} brief={joleneChiefOutput(latestJoleneRun?.outputJson)} />
+      <JoleneChiefOfStaffCard
+        runId={latestJoleneRun?.id ?? null}
+        brief={joleneChiefOutput(latestJoleneRun?.outputJson)}
+        operatingLoopRunId={latestOperatingLoopRun?.id ?? null}
+        operatingLoop={joleneOperatingLoopOutput(latestOperatingLoopRun?.outputJson)}
+      />
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
         <Metric label="Enabled profiles" value={profiles.length.toString()} helper="Active campaigns" />
         <Metric label="Exceptions" value={needsReviewCount.toString()} helper="Needs your decision" />
@@ -159,10 +170,16 @@ export async function DashboardOverviewPage() {
   );
 }
 
-function JoleneChiefOfStaffCard({ runId, brief }: { runId: string | null; brief: JoleneChiefOutput | null }) {
+function JoleneChiefOfStaffCard({ runId, brief, operatingLoopRunId, operatingLoop }: {
+  runId: string | null;
+  brief: JoleneChiefOutput | null;
+  operatingLoopRunId: string | null;
+  operatingLoop: JoleneOperatingLoopOutput | null;
+}) {
   const topPriorities = brief?.priorities.slice(0, 3) ?? [];
   const proposalsByAction = new Map((brief?.delegatedWork ?? []).map((work) => [work.actionId, work]));
   const emailEvidence = brief?.evidence.find((item) => item.startsWith("Email Ops:"));
+  const nextLoopAction = operatingLoop?.recommendedActions.find((action) => action.status === "proposed") ?? null;
 
   return (
     <Card sx={{ borderColor: "primary.main", bgcolor: "rgba(37, 99, 235, 0.06)" }}>
@@ -180,7 +197,10 @@ function JoleneChiefOfStaffCard({ runId, brief }: { runId: string | null; brief:
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", justifyContent: { md: "flex-end" } }}>
-              <ActionButton postTo="/api/jolene/chief-of-staff/run" variant="contained" size="small" loadingLabel="Briefing...">
+              <ActionButton postTo="/api/jolene/operating-loop/run" variant="contained" size="small" loadingLabel="Planning...">
+                Run Operating Loop
+              </ActionButton>
+              <ActionButton postTo="/api/jolene/chief-of-staff/run" variant="outlined" size="small" loadingLabel="Briefing...">
                 Run Brief
               </ActionButton>
               <ActionButton href="/agents" variant="outlined" size="small" endIcon={<OpenInNewIcon />}>
@@ -188,6 +208,49 @@ function JoleneChiefOfStaffCard({ runId, brief }: { runId: string | null; brief:
               </ActionButton>
             </Stack>
           </Stack>
+
+          <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, bgcolor: "background.paper", p: 1.5 }}>
+            <Stack spacing={1.25}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 850 }}>Operating Loop</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {operatingLoop
+                      ? `${operatingLoop.summary} Last run ${new Date(operatingLoop.generatedAt).toLocaleString()}.`
+                      : "No operating loop run yet. Run it to let Jolene monitor signals, refresh the brief, and prepare approval cards."}
+                  </Typography>
+                </Box>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                  <Chip size="small" variant="outlined" label={operatingLoop ? operatingLoop.autonomyPolicy.replace(/_/g, " ") : "propose first"} />
+                  {operatingLoop ? <Chip size="small" variant="outlined" label={`${operatingLoop.approvalRequests.length} approval needed`} /> : null}
+                  {operatingLoop ? <Chip size="small" variant="outlined" label={`${operatingLoop.skippedActions.length} skipped`} /> : null}
+                </Stack>
+              </Stack>
+              {nextLoopAction ? (
+                <Stack direction={{ xs: "column", md: "row" }} spacing={1.25} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Next recommended action</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 800 }}>{nextLoopAction.label}</Typography>
+                    <Typography variant="caption" color="text.secondary">{nextLoopAction.reason}</Typography>
+                  </Box>
+                  <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", justifyContent: { md: "flex-end" } }}>
+                    <ActionButton href={nextLoopAction.href} variant="outlined" size="small">Open</ActionButton>
+                    {operatingLoopRunId ? (
+                      <ActionButton
+                        postTo="/api/jolene/operating-loop/approve"
+                        body={{ runId: operatingLoopRunId, proposalIds: [nextLoopAction.id] }}
+                        variant="contained"
+                        size="small"
+                        loadingLabel="Approving..."
+                      >
+                        Approve
+                      </ActionButton>
+                    ) : null}
+                  </Stack>
+                </Stack>
+              ) : null}
+            </Stack>
+          </Box>
 
           {emailEvidence ? (
             <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, bgcolor: "background.paper", p: 1.5 }}>
@@ -760,6 +823,12 @@ function joleneChiefOutput(value: unknown): JoleneChiefOutput | null {
   if (!isRecord(value)) return null;
   if (!Array.isArray(value.priorities) || !Array.isArray(value.delegatedWork)) return null;
   return value as JoleneChiefOutput;
+}
+
+function joleneOperatingLoopOutput(value: unknown): JoleneOperatingLoopOutput | null {
+  if (!isRecord(value)) return null;
+  if (!Array.isArray(value.recommendedActions) || !Array.isArray(value.skippedActions) || !Array.isArray(value.approvalRequests)) return null;
+  return value as JoleneOperatingLoopOutput;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
