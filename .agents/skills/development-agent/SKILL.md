@@ -1,27 +1,31 @@
 ---
 name: development-agent
-description: Use when the user asks Codex to implement a plan end to end in this repo, update README/wiki docs, run verification, commit, and push to origin main. Captures the repo's preferred development agent workflow for future refinement.
-version: "1.0.0"
+description: Use whenever the user asks Codex to implement a plan in this repo, especially requests that include saving to /plans, creating a branch, updating all documentation, running verification, committing, pushing, opening a PR, and restarting dev. Captures the repo's required release workflow.
+version: "1.1.0"
 ---
 
 # Development Agent
 
-Use this workflow for requests shaped like: "implement this plan, update README and wiki, commit, and push."
+Use this workflow for requests shaped like: "implement this plan", "PLEASE IMPLEMENT THIS PLAN", or "save this to /plans, implement, update documentation, commit, push, create a PR, and restart dev."
 
 ## Workflow
 
 1. Confirm the working tree with `git status --short --branch`.
-2. Read the relevant wiki page(s), README section, schema/API entrypoints, and existing tests before editing.
-3. Implement the smallest complete vertical slice that satisfies the plan.
-4. Update README and wiki in the same commit as the feature.
-5. Add focused tests for new behavior and preserve existing deterministic fallbacks.
-6. Run verification:
+2. If the user provides or references a plan, save it under `plans/` before implementation using a clear uppercase filename.
+3. Create a feature branch from the current base unless the user explicitly says not to.
+4. Read the relevant wiki page(s), README section, schema/API entrypoints, and existing tests before editing.
+5. Implement the smallest complete vertical slice that satisfies the plan.
+6. Update README and wiki/docs in the same commit as the feature when documentation is requested or behavior changes.
+7. Add focused tests for new behavior and preserve existing deterministic fallbacks.
+8. Run verification:
    - relevant `npx vitest run ... --config vitest.config.ts`
    - `npx tsc --noEmit --pretty false`
    - `npx react-doctor@latest --verbose --diff` when React code changed or feature completion warrants it
    - `npm run build`
    - `git diff --check`
-7. Stage only intended files, commit with a terse message, and push `origin main`.
+9. Stage only intended files, commit with a terse message, and push the feature branch.
+10. Open a PR targeting `main` with a meaningful title and a body that includes summary, documentation, tests, safety notes, and known limitations.
+11. Restart the local dev server and verify the changed routes/API surfaces.
 
 ## Repo Rules
 

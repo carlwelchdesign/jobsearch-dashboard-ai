@@ -41,7 +41,7 @@ Here is what it does:
 - Writes tailored resumes and cover letters using only facts you have verified — never makes things up
 - Fills in application forms for you in your browser (but always stops before clicking Submit, so you stay in control)
 - Reads your email to detect rejections, interview invitations, and offers, and updates your tracker automatically
-- Answers your career questions through an AI assistant named **Jolene**, available on every screen
+- Answers your career questions through **Jolene, Chief of Staff**, available on the Command Center and every screen
 
 **What this is NOT:**
 
@@ -1562,14 +1562,19 @@ Click any task to expand it with more detail.
 
 ## Part 16 — Jolene (Your Always-On AI Assistant)
 
-**What this does:** Answers your career and job search questions, helps you navigate the app, and can trigger certain safe actions on your behalf.
+**What this does:** Jolene acts as your Chief of Staff. She reviews agent activity, blockers, pipeline state, market signals, LinkedIn signals, and your career mission, then tells you what deserves attention next.
 
-**How to open Jolene:** Click the floating **Ask Jolene** button in the bottom corner of any page. It opens a slide-out drawer.
+**Where to see Jolene first:** Open **Command Center** (`/dashboard`). The **Jolene, Chief of Staff** card shows her latest operating brief with priorities, rationale, evidence, links, approval buttons, and ask-Jolene actions.
+
+**How to open chat:** Click the floating **Ask Jolene** button in the bottom corner of any page. It opens a slide-out drawer.
 
 ### What Jolene can do
 
 Jolene is aware of where you are in the app and what data is relevant. She can:
 
+- Produce a Chief of Staff brief from recent agent runs, blockers, pipeline state, market signals, LinkedIn content/analytics, and your career mission
+- Show proactive priority cards on the Command Center with rationale, evidence, and links to the relevant page
+- Propose delegated work for other agents, then wait for your approval before launching it
 - Explain why a specific job scored the way it did
 - Show you the cover letter or packet for any application
 - Find an application by company name
@@ -1602,7 +1607,7 @@ This means her answers are grounded in your actual data, not generic advice.
 
 ### Jolene Actions (with your confirmation)
 
-Jolene can propose and execute certain safe actions inside the app. When she suggests an action, it appears as a **confirmation card** under her message. You must click **Confirm** for anything to happen — she will never execute an action automatically.
+Jolene can propose and execute certain safe actions inside the app. In chat, those appear as **confirmation cards** under her message. On the Command Center, they appear as **Approve** buttons on her Chief of Staff priority cards. You must approve before delegated work runs.
 
 **Actions she can run after confirmation:**
 - Application integrity repair
@@ -1610,6 +1615,8 @@ Jolene can propose and execute certain safe actions inside the app. When she sug
 - Job-response email sync
 - Daily Command Center refresh
 - Market Intelligence refresh
+- LinkedIn content draft generation
+- Jolene Chief of Staff brief generation
 - Repair, retry, or cancel an agent run (when she has the run ID)
 
 **Actions that always remain manual (Jolene explains but does not execute):**
@@ -1618,9 +1625,9 @@ Jolene can propose and execute certain safe actions inside the app. When she sug
 - Approving or rejecting jobs or applications in bulk
 - Changing profile settings
 
-### Career CEO mode
+### Jolene Chief of Staff and career standups
 
-Jolene has a special mode for high-urgency job searches focused on income.
+The older Career CEO mode is now part of Jolene's Chief of Staff role. She still tracks the high-urgency income sprint, but it no longer behaves like a separate assistant.
 
 **To set up your Career Mission:**
 
@@ -1632,17 +1639,31 @@ Jolene has a special mode for high-urgency job searches focused on income.
    - Your top 3 acceptable role types
    - Any dealbreakers
 
-**To get a Career CEO brief:**
+**To get a Jolene career brief:**
 Ask Jolene: "Give me a career brief" or "What are my money moves today?"
 
-She will return:
+She will create a Chief of Staff brief and return:
 - Your top income-relevant actions ranked by urgency
 - Current pipeline leverage (how many strong shots you have in progress)
 - Compensation risks (salary gaps, below-target offers)
 - Recommended sprint actions
 
 **Daily standups:**
-Ask Jolene: "Run my career standup". She compares today's state to your last snapshot and tells you whether your income momentum is improving, flat, or regressing.
+Ask Jolene: "Run my career standup". She creates a Chief of Staff run, compares today's state to your last snapshot, and tells you whether your income momentum is improving, flat, or regressing.
+
+### Chief of Staff APIs
+
+Most users do not need these, but they are useful for debugging:
+
+```bash
+curl http://localhost:3000/api/jolene/chief-of-staff
+curl -X POST http://localhost:3000/api/jolene/chief-of-staff/run
+curl -X POST http://localhost:3000/api/jolene/chief-of-staff/approve \
+  -H "content-type: application/json" \
+  -d '{"runId":"RUN_ID","proposalIds":["proposal_run_market_intelligence"]}'
+```
+
+Approval only launches app-internal delegated work. Jolene still cannot publish LinkedIn posts, submit applications, send recruiter/employer messages, or make destructive bulk changes without the existing explicit user gates.
 
 ### Voice mode
 

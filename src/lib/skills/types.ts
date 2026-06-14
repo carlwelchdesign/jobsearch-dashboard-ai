@@ -20,6 +20,7 @@ export type SkillId =
   | "duplicate_stale_job_detector"
   | "search_expansion"
   | "daily_command_center"
+  | "jolene_chief_of_staff"
   | "recruiting_agency"
   | "market_intelligence"
   | "linkedin_content"

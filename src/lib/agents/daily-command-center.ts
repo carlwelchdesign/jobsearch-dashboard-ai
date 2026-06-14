@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 
 export type DailyCommandCenterInput = {
   userId?: string;
+  parentRunId?: string;
 };
 
 export type DailyCommandCenterOutput = {
@@ -37,6 +38,7 @@ export async function runDailyCommandCenterAgent(input: DailyCommandCenterInput 
     agentType: "DAILY_COMMAND_CENTER",
     input,
     userId: input.userId,
+    parentRunId: input.parentRunId,
     execute: async () => {
       const [needsReview, approved, readyApplications, followUps, evidenceNeedsReview, profileOptimizerRun, latestSearchRun, applyNowEvaluations, agencyCandidateCount] = await Promise.all([
         prisma.jobProfileMatch.findMany({

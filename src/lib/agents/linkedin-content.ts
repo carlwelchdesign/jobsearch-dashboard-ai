@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 export type LinkedInContentInput = {
   userId?: string;
   contentPillar?: LinkedInContentPillar;
+  parentRunId?: string;
 };
 
 export type LinkedInContentPillar = "app_progress" | "search_learning" | "architecture" | "workflow_design";
@@ -78,6 +79,7 @@ export async function runLinkedInContentAgent(input: LinkedInContentInput = {}) 
     agentType: "LINKEDIN_CONTENT",
     input: { ...input, contentPillar: pillar },
     userId: user.id,
+    parentRunId: input.parentRunId,
     execute: async (run) => {
       const generated = await generateLinkedInContent({ pillar, memoryPack });
       const agentReviews = buildAgentReviews(memoryPack, generated);

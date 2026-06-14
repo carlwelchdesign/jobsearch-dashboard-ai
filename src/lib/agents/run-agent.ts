@@ -8,6 +8,7 @@ type RunAgentInput<TInput, TOutput> = {
   agentType: AgentType;
   input: TInput;
   userId?: string | null;
+  parentRunId?: string | null;
   execute: (run: AgentRun) => Promise<TOutput>;
 };
 
@@ -16,12 +17,13 @@ export type AgentResult<TOutput> = {
   output: TOutput;
 };
 
-export async function runAgent<TInput, TOutput>({ agentType, input, userId, execute }: RunAgentInput<TInput, TOutput>): Promise<AgentResult<TOutput>> {
+export async function runAgent<TInput, TOutput>({ agentType, input, userId, parentRunId, execute }: RunAgentInput<TInput, TOutput>): Promise<AgentResult<TOutput>> {
   const adkMetadata = adkObservabilityMetadata(agentType);
   const run = await prisma.agentRun.create({
     data: {
       agentType,
       userId: userId ?? undefined,
+      parentRunId: parentRunId ?? undefined,
       inputJson: toJsonValue(input),
       observabilityJson: {
         ...(langSmithTraceMetadata() as Record<string, unknown>),
