@@ -34,11 +34,11 @@ export type LinkedInDraftView = {
   sourceFacts: string[];
   memorySources: Array<{ type: string; ref: string; label: string }>;
   analyticsSources: Array<{ type: string; ref: string; label: string }>;
-  agentReviews: Array<{ agent: string; summary: string; recommendation: string }>;
+  agentReviews: Array<{ agent: string; summary: string; recommendation: string; metadata?: Record<string, unknown> }>;
   claims: Array<{ text: string; provenance: string; status: string }>;
   risks: string[];
-  screenshotAssets: Array<{ path: string; label: string; description: string; route?: string; privacyStatus?: string; warnings?: string[] }>;
-  selectedScreenshots: Array<{ path: string; label: string; description: string; route?: string; privacyStatus?: string; warnings?: string[] }>;
+  screenshotAssets: Array<{ path: string; label: string; description: string; route?: string; assetType?: string; rationale?: string; privacyStatus?: string; warnings?: string[] }>;
+  selectedScreenshots: Array<{ path: string; label: string; description: string; route?: string; assetType?: string; rationale?: string; privacyStatus?: string; warnings?: string[] }>;
   privacyReview: { status: "PASS" | "NEEDS_REVIEW"; warnings: string[] };
   status: string;
   publishError: string | null;
@@ -289,6 +289,9 @@ function DraftCard({ draft, busy, canPublish, onCopy, onSave, onArchive, onAppro
     disclosureText: string;
   }>(null);
   const approvedOrPublished = ["APPROVED", "PUBLISHING", "PUBLISHED"].includes(draft.status);
+  const promptContext = promptContextFromReviews(draft.agentReviews);
+  const promptQuality = promptQualityFromReviews(draft.agentReviews);
+  const visualContext = visualContextFromReviews(draft.agentReviews);
 
   return (
     <Card>
@@ -356,6 +359,11 @@ function DraftCard({ draft, busy, canPublish, onCopy, onSave, onArchive, onAppro
           )}
 
           {draft.publishError ? <Alert severity="error">Publish failed: {draft.publishError}</Alert> : null}
+          {promptQuality ? (
+            <Alert severity={promptQuality.status === "PASS" ? "success" : "warning"}>
+              Prompt match: {promptQuality.score}/100 for {promptQuality.intent}. {promptQuality.warningText || "Draft satisfies the prompt obligations."}
+            </Alert>
+          ) : null}
           {draft.privacyReview.status === "PASS" ? (
             <Alert severity="success">Privacy and provenance checks passed. Approval publishes to LinkedIn immediately.</Alert>
           ) : (
@@ -379,11 +387,21 @@ function DraftCard({ draft, busy, canPublish, onCopy, onSave, onArchive, onAppro
           </Stack>
 
           <Divider />
+          {promptContext ? (
+            <InfoSection title="Generated from prompt" items={[
+              `Prompt: ${promptContext.prompt}`,
+              `Intent: ${promptContext.intent}`,
+              `Format: ${promptContext.format}`,
+              `Selected angle: ${promptContext.selectedAngle}`,
+              ...(promptQuality ? [`Generation mode: ${promptQuality.generationMode}`] : []),
+            ]} />
+          ) : null}
           <InfoSection title="Agent reviews" items={draft.agentReviews.map((review) => `${review.agent}: ${review.recommendation}`)} />
           <InfoSection title="Aggregate analytics used" items={draft.analyticsSources.map((source) => source.label)} />
           <InfoSection title="Plan sources" items={planSourceLabels(draft.memorySources)} />
           <InfoSection title="Memory sources" items={draft.memorySources.map((source) => `${source.type}: ${source.label}`)} />
           <InfoSection title="Grounded claims" items={draft.claims.map((claim) => `${claim.status}: ${claim.text}`)} />
+          {visualContext ? <InfoSection title="Visual rationale" items={[visualContext.visualRationale]} /> : null}
           <ScreenshotSection assets={draft.selectedScreenshots.length ? draft.selectedScreenshots : draft.screenshotAssets} />
         </Stack>
       </CardContent>
@@ -403,6 +421,38 @@ function InfoSection({ title, items }: { title: string; items: string[] }) {
   );
 }
 
+function promptContextFromReviews(reviews: LinkedInDraftView["agentReviews"]) {
+  const metadata = reviews.find((review) => review.agent === "Narrative Strategist")?.metadata;
+  if (!metadata) return null;
+  return {
+    prompt: typeof metadata.prompt === "string" ? metadata.prompt : "",
+    intent: typeof metadata.intent === "string" ? metadata.intent : "",
+    format: typeof metadata.format === "string" ? metadata.format : "",
+    selectedAngle: typeof metadata.selectedAngle === "string" ? metadata.selectedAngle : "",
+  };
+}
+
+function promptQualityFromReviews(reviews: LinkedInDraftView["agentReviews"]) {
+  const metadata = reviews.find((review) => review.agent === "Prompt Fidelity Reviewer")?.metadata;
+  if (!metadata) return null;
+  const warnings = Array.isArray(metadata.warnings) ? metadata.warnings.filter((item): item is string => typeof item === "string") : [];
+  return {
+    status: metadata.status === "PASS" ? "PASS" : "NEEDS_REVIEW",
+    score: typeof metadata.score === "number" ? metadata.score : 0,
+    intent: typeof metadata.intent === "string" ? metadata.intent : "unknown",
+    generationMode: typeof metadata.generationMode === "string" ? metadata.generationMode : "unknown",
+    warningText: warnings.join(" "),
+  };
+}
+
+function visualContextFromReviews(reviews: LinkedInDraftView["agentReviews"]) {
+  const metadata = reviews.find((review) => review.agent === "Visual Producer")?.metadata;
+  if (!metadata) return null;
+  return {
+    visualRationale: typeof metadata.visualRationale === "string" ? metadata.visualRationale : "Selected by the visual producer.",
+  };
+}
+
 function planSourceLabels(sources: LinkedInDraftView["memorySources"]) {
   const labels: string[] = [];
   for (const source of sources) {
@@ -413,16 +463,20 @@ function planSourceLabels(sources: LinkedInDraftView["memorySources"]) {
 
 function ScreenshotSection({ assets }: { assets: LinkedInDraftView["screenshotAssets"] }) {
   if (!assets.length) return null;
+  const diagrams = renderableScreenshotAssets(assets).filter((asset) => asset.assetType === "diagram");
+  const screenshots = renderableScreenshotAssets(assets).filter((asset) => asset.assetType !== "diagram");
+  const renderAssets = [...diagrams, ...screenshots];
   return (
     <Stack spacing={1}>
-      <Typography sx={{ fontWeight: 850 }}>Real app screenshots</Typography>
+      <Typography sx={{ fontWeight: 850 }}>Visuals</Typography>
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
-        {renderableScreenshotAssets(assets).map((asset) => (
+        {renderAssets.map((asset) => (
           <Box key={asset.path} sx={{ width: { xs: "100%", sm: 260 }, border: 1, borderColor: "divider", borderRadius: 1, overflow: "hidden", bgcolor: "background.default" }}>
             <Box component="img" src={asset.path} alt={asset.label} sx={{ display: "block", width: "100%", aspectRatio: "16 / 9", objectFit: "cover" }} />
             <Box sx={{ p: 1 }}>
               <Typography variant="body2" sx={{ fontWeight: 800 }}>{asset.label}</Typography>
-              <Typography variant="caption" color="text.secondary">{asset.privacyStatus ?? "NEEDS_REVIEW"}</Typography>
+              <Typography variant="caption" color="text.secondary">{asset.assetType ?? "screenshot"} - {asset.privacyStatus ?? "NEEDS_REVIEW"}</Typography>
+              {asset.rationale ? <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>{asset.rationale}</Typography> : null}
             </Box>
           </Box>
         ))}
@@ -485,6 +539,8 @@ function screenshotAssets(value: unknown): LinkedInDraftView["screenshotAssets"]
           label: record.label,
           description: typeof record.description === "string" ? record.description : "",
           route: typeof record.route === "string" ? record.route : undefined,
+          assetType: typeof record.assetType === "string" ? record.assetType : undefined,
+          rationale: typeof record.rationale === "string" ? record.rationale : undefined,
           privacyStatus: typeof record.privacyStatus === "string" ? record.privacyStatus : undefined,
           warnings: stringArray(record.warnings),
         }]

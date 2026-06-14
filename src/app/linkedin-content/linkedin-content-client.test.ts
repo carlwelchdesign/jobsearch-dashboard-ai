@@ -11,10 +11,14 @@ describe("LinkedInContentClient UI contract", () => {
     expect(source).toContain("Retry publish");
     expect(source).toContain("Archive");
     expect(source).toContain("Agent reviews");
+    expect(source).toContain("Generated from prompt");
+    expect(source).toContain("Prompt match:");
+    expect(source).toContain("Visual rationale");
     expect(source).toContain("Aggregate analytics used");
     expect(source).toContain("Plan sources");
     expect(source).toContain("Memory sources");
-    expect(source).toContain("Real app screenshots");
+    expect(source).toContain("Visuals");
+    expect(source).toContain("assetType");
     expect(source).toContain("Approval publishes to LinkedIn immediately");
   });
 
