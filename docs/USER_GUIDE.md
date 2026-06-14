@@ -591,7 +591,9 @@ Do these seven steps before your first job search. Each one builds on the last.
 
 ### Optional — Generate and publish LinkedIn content
 
-Open `/linkedin-content` from Settings -> Admin -> LinkedIn content. The LinkedIn Content agent writes draft-only posts about Job Search OS progress, what the app is learning, architecture decisions, source/search improvements, and workflow lessons that could help other builders.
+Open `/linkedin-content` from Settings -> Admin -> LinkedIn content. The LinkedIn Content agent now starts from your brief instead of a fixed dropdown. Tell the documentarian agents what you want posted today, optionally add a post format or visual direction, and they will use recent app work, `/plans` files, aggregate analytics, prior drafts, approved edits, and safe screenshots to create a reviewable post.
+
+The team is designed to avoid repetitive category output. It compares the new brief against recent hooks, titles, screenshots, and overused phrases, then has a narrative strategist, documentarian, editorial challenger, visual producer, analytics narrator, editor, and privacy reviewer select a grounded angle. Plan files are treated as build-log memory, so implementation plans and product decisions can become source material when they are public-safe.
 
 The app can publish approved drafts when the Share on LinkedIn connection is active. You can edit the draft, review the agent-team notes, inspect provenance and privacy warnings, then click **Approve and publish**. Approval is the final user action. If privacy/provenance checks pass and the publishing token includes `w_member_social`, the app posts to LinkedIn and stores the returned post id. If LinkedIn fails, the draft stays saved with a retryable error.
 

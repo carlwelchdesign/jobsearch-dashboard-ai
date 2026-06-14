@@ -8,10 +8,15 @@ import { prisma } from "@/lib/prisma";
 export type LinkedInContentInput = {
   userId?: string;
   contentPillar?: LinkedInContentPillar;
+  prompt?: string;
+  tone?: "bold_grounded" | "practical" | "experimental";
+  format?: LinkedInContentFormat;
+  visualDirection?: string;
   parentRunId?: string;
 };
 
 export type LinkedInContentPillar = "app_progress" | "search_learning" | "architecture" | "workflow_design";
+export type LinkedInContentFormat = "build_log" | "lesson" | "decision_diary" | "teardown" | "before_after" | "contrarian_take" | "field_note" | "visual_walkthrough" | "product_thesis";
 
 export type LinkedInScreenshotAsset = {
   label: string;
@@ -24,7 +29,7 @@ export type LinkedInScreenshotAsset = {
 };
 
 export type LinkedInAgentReview = {
-  agent: "Documentarian" | "Analytics Narrator" | "Product Strategist" | "Editor" | "Visual Producer" | "Privacy Reviewer";
+  agent: "Narrative Strategist" | "Documentarian" | "Editorial Challenger" | "Analytics Narrator" | "Product Strategist" | "Editor" | "Visual Producer" | "Privacy Reviewer";
   summary: string;
   recommendation: string;
 };
@@ -56,6 +61,16 @@ export type LinkedInContentOutput = {
   draftId?: string;
 };
 
+type LinkedInContentDirection = {
+  prompt: string;
+  tone: NonNullable<LinkedInContentInput["tone"]>;
+  format: LinkedInContentFormat;
+  legacyPillar: LinkedInContentPillar;
+  visualDirection: string;
+  selectedAngle: string;
+  rejectedAngles: string[];
+};
+
 const generatedLinkedInPostSchema = z.object({
   title: z.string().min(1).max(120),
   hook: z.string().min(1).max(220),
@@ -65,7 +80,27 @@ const generatedLinkedInPostSchema = z.object({
 
 const defaultHashtags = ["#BuildInPublic", "#AgenticAI", "#CreatorTools", "#ProductEngineering"];
 const defaultDisclosure = "Prepared by my agent content team from the Job Search OS build log.";
-const allowedScreenshotRoutes = new Set(["/dashboard", "/sources", "/runs", "/applications/assistant", "/settings/learning", "/linkedin-content"]);
+const allowedScreenshotRoutes = new Set([
+  "/dashboard",
+  "/dashboard/search",
+  "/dashboard/social",
+  "/dashboard/market",
+  "/dashboard/pipeline",
+  "/dashboard/email-ops",
+  "/sources",
+  "/runs",
+  "/applications",
+  "/applications/assistant",
+  "/jobs",
+  "/profiles",
+  "/evidence",
+  "/resumes",
+  "/needs-me",
+  "/agents",
+  "/settings",
+  "/settings/learning",
+  "/linkedin-content",
+]);
 
 export async function runLinkedInContentAgent(input: LinkedInContentInput = {}) {
   const user = input.userId
@@ -75,16 +110,17 @@ export async function runLinkedInContentAgent(input: LinkedInContentInput = {}) 
 
   const memoryPack = await buildLinkedInContentMemoryPack(user.id);
   const pillar = input.contentPillar ?? "app_progress";
+  const direction = buildContentDirection(input, memoryPack);
   return runAgent<LinkedInContentInput, LinkedInContentOutput>({
     agentType: "LINKEDIN_CONTENT",
-    input: { ...input, contentPillar: pillar },
+    input: { ...input, contentPillar: pillar, prompt: direction.prompt, tone: direction.tone, format: direction.format, visualDirection: direction.visualDirection },
     userId: user.id,
     parentRunId: input.parentRunId,
     execute: async (run) => {
-      const generated = await generateLinkedInContent({ pillar, memoryPack });
-      const agentReviews = buildAgentReviews(memoryPack, generated);
-      const screenshotAssets = await createSafeLinkedInScreenshotAssets(memoryPack);
-      const selectedScreenshots = screenshotAssets.filter((asset) => asset.privacyStatus === "PASS").slice(0, 1);
+      const generated = await generateLinkedInContent({ pillar, memoryPack, direction });
+      const screenshotAssets = await createSafeLinkedInScreenshotAssets(memoryPack, direction);
+      const selectedScreenshots = selectBestScreenshots(screenshotAssets, direction);
+      const agentReviews = buildAgentReviews(memoryPack, generated, direction, selectedScreenshots);
       const claims = buildClaims(generated, memoryPack);
       const privacyReview = reviewLinkedInPostPrivacy({
         body: generated.body,
@@ -115,6 +151,7 @@ export async function runLinkedInContentAgent(input: LinkedInContentInput = {}) 
 export async function generateLinkedInContent(input: {
   pillar: LinkedInContentPillar;
   memoryPack: LinkedInContentMemoryPack;
+  direction: LinkedInContentDirection;
 }): Promise<Omit<LinkedInContentOutput, "screenshotAssets" | "selectedScreenshots" | "privacyReview" | "draftId" | "disclosureText" | "memorySources" | "analyticsSources" | "agentReviews" | "claims" | "risks">> {
   const fallback = buildLinkedInContentFallback(input);
   try {
@@ -123,16 +160,26 @@ export async function generateLinkedInContent(input: {
       schemaName: "generate_linkedin_content_team_post",
       system:
         "Write a LinkedIn post draft as an agent content team documenting Job Search OS work. " +
+        "Use the user's daily brief as the primary assignment. Act as documentarians: observe what was built, what decisions were made, and why it matters. " +
         "Use a candid senior builder voice, disclose that agents prepared the update, and ground every public claim in the provided memory pack. " +
+        "Be more creative than a status update: choose a sharp narrative shape, specific lesson, or field note. Avoid repeating recent hooks, titles, structures, screenshots, or phrases. " +
         "Use aggregate analytics only. Do not mention company names, recruiters, salaries, emails, job URLs, private application outcomes, or unsupported traction. " +
         "Avoid hype, cliches, emojis, em dashes, and unverifiable claims.",
       input: {
+        dailyBrief: input.direction.prompt,
+        tone: input.direction.tone,
+        format: input.direction.format,
+        selectedAngle: input.direction.selectedAngle,
+        rejectedAngles: input.direction.rejectedAngles,
+        visualDirection: input.direction.visualDirection,
         pillar: input.pillar,
         publicPolicy: input.memoryPack.publicPolicy,
         aggregateFacts: input.memoryPack.aggregateFacts,
         recentDecisions: input.memoryPack.recentDecisions,
         lessonsLearned: input.memoryPack.lessonsLearned,
         storyAngles: input.memoryPack.storyAngles,
+        planSources: input.memoryPack.planSources,
+        noveltySignals: input.memoryPack.noveltySignals,
         doNotClaim: input.memoryPack.doNotClaim,
         requiredOutput: {
           title: "Short internal title for the draft.",
@@ -159,25 +206,42 @@ export async function generateLinkedInContent(input: {
 
 export function buildLinkedInContentFallback(input: {
   pillar: LinkedInContentPillar;
-  memoryPack: Pick<LinkedInContentMemoryPack, "aggregateFacts" | "analytics" | "storyAngles">;
+  direction?: LinkedInContentDirection;
+  memoryPack: Pick<LinkedInContentMemoryPack, "aggregateFacts" | "analytics" | "storyAngles" | "planSources" | "noveltySignals">;
 }): Omit<LinkedInContentOutput, "screenshotAssets" | "selectedScreenshots" | "privacyReview" | "draftId" | "disclosureText" | "memorySources" | "analyticsSources" | "agentReviews" | "claims" | "risks"> {
   const latest = input.memoryPack.analytics.latestSearchRun;
+  const direction = input.direction ?? {
+    prompt: "Document recent Job Search OS progress.",
+    tone: "bold_grounded" as const,
+    format: "field_note" as const,
+    legacyPillar: input.pillar,
+    visualDirection: "",
+    selectedAngle: input.memoryPack.storyAngles[0] ?? "A field note from the build log.",
+    rejectedAngles: [],
+  };
   const funnelLine = latest
     ? `The latest run moved through ${latest.funnel.map((item) => `${item.label.toLowerCase()} ${item.value}`).join(", ")}.`
     : "The current work is focused on making the app's workflow memory useful enough to explain itself.";
+  const planLine = input.memoryPack.planSources?.[0]
+    ? `One plan in the build log keeps pulling me back: ${input.memoryPack.planSources[0].title}. ${input.memoryPack.planSources[0].summary}`
+    : "The build log is becoming useful source material, not just project bookkeeping.";
   const body = [
-    "I have been using Job Search OS as a practical testbed for a bigger product question: what happens when agents do not just generate output, but document the workflow they are part of?",
+    `Today's content brief: ${direction.prompt}`,
+    "",
+    `${formatLabel(direction.format)}: ${direction.selectedAngle}`,
+    "",
+    planLine,
     "",
     funnelLine,
     latest?.drops.length ? `The more interesting signal was the drop-off pattern: ${latest.drops.slice(0, 4).map((item) => `${item.label.toLowerCase()} ${item.value}`).join(", ")}.` : "The useful part is not just the count; it is whether the system can explain what changed and why.",
     "",
-    "That is where I think creator tooling is going. A content system should remember work, decisions, analytics, drafts, edits, screenshots, and review gates. Then agents can turn that memory into material a human can inspect instead of starting from a blank page every time.",
+    "The post-worthy part is not the automation by itself. It is the documentarian loop: plans, agent runs, analytics, screenshots, review gates, and edits all becoming usable context for the next public note.",
     "",
-    "The boundary matters: aggregate numbers are fair game, private operational details are not. The goal is leverage without pretending the agents own the judgment.",
+    "That makes the content less repetitive because the agents are not choosing from a static category. They are reading the work, picking a fresh angle, and showing the artifact that best explains it while the final judgment stays human.",
   ].join("\n");
   return {
-    title: "Turning app memory into public product notes",
-    hook: "The next content system should remember the work before it writes about it.",
+    title: direction.selectedAngle.slice(0, 110),
+    hook: hookForFormat(direction.format),
     body,
     hashtags: defaultHashtags,
     contentPillar: input.pillar,
@@ -225,8 +289,8 @@ export function reviewLinkedInPostPrivacy(input: {
   };
 }
 
-export async function createSafeLinkedInScreenshotAssets(memoryPack: LinkedInContentMemoryPack): Promise<LinkedInScreenshotAsset[]> {
-  const recommendations = memoryPack.screenshotRecommendations.filter((item) => allowedScreenshotRoutes.has(item.route)).slice(0, 2);
+export async function createSafeLinkedInScreenshotAssets(memoryPack: LinkedInContentMemoryPack, direction?: LinkedInContentDirection): Promise<LinkedInScreenshotAsset[]> {
+  const recommendations = recommendScreenshotRoutes(memoryPack, direction).slice(0, 3);
   const output: LinkedInScreenshotAsset[] = [];
   for (const recommendation of recommendations) {
     const captured = await captureRouteScreenshot(recommendation.route, recommendation.reason);
@@ -235,16 +299,149 @@ export async function createSafeLinkedInScreenshotAssets(memoryPack: LinkedInCon
   return output;
 }
 
-function buildAgentReviews(memoryPack: LinkedInContentMemoryPack, generated: Pick<LinkedInContentOutput, "title" | "body">): LinkedInAgentReview[] {
+function buildAgentReviews(memoryPack: LinkedInContentMemoryPack, generated: Pick<LinkedInContentOutput, "title" | "body">, direction: LinkedInContentDirection, selectedScreenshots: LinkedInScreenshotAsset[]): LinkedInAgentReview[] {
   const latest = memoryPack.analytics.latestSearchRun;
   return [
-    { agent: "Documentarian", summary: memoryPack.recentDecisions.slice(0, 2).join(" "), recommendation: "Anchor the post in recent system decisions rather than generic AI commentary." },
+    { agent: "Narrative Strategist", summary: `Prompt: ${direction.prompt}`, recommendation: `Selected angle: ${direction.selectedAngle}. Rejected: ${direction.rejectedAngles.join(" | ") || "none"}.` },
+    { agent: "Documentarian", summary: memoryPack.recentDecisions.slice(0, 2).join(" "), recommendation: `Use plan memory and build evidence, including ${memoryPack.planSources.slice(0, 2).map((plan) => plan.title).join(", ") || "recent app work"}.` },
+    { agent: "Editorial Challenger", summary: `Avoid recent phrases: ${memoryPack.noveltySignals.avoidPhrases.join(", ")}.`, recommendation: "Do not reuse the same future-CMS/operating-system framing unless the prompt explicitly asks for it." },
     { agent: "Analytics Narrator", summary: latest ? `Latest funnel has ${latest.funnel.length} stages and ${latest.drops.length} visible drop-off reasons.` : "No latest search analytics are available.", recommendation: "Use aggregate funnel numbers only." },
     { agent: "Product Strategist", summary: memoryPack.storyAngles[0] ?? "The product angle is creator workflow memory.", recommendation: "Frame this as a content operating system learning from its own work." },
     { agent: "Editor", summary: `Draft title: ${generated.title}.`, recommendation: "Keep the post concrete, non-hype, and readable without internal app knowledge." },
-    { agent: "Visual Producer", summary: memoryPack.screenshotRecommendations.map((item) => item.route).join(", "), recommendation: "Attach one redacted app screenshot only when privacy review passes." },
+    { agent: "Visual Producer", summary: selectedScreenshots.map((item) => `${item.route}: ${item.description}`).join(" | ") || "No passing screenshot selected.", recommendation: `Visual rationale: ${direction.visualDirection || "choose the app area that best explains the selected angle"}.` },
     { agent: "Privacy Reviewer", summary: memoryPack.publicPolicy, recommendation: "Block named entities, private outcomes, external URLs, and unsupported claims before publishing." },
   ];
+}
+
+function buildContentDirection(input: LinkedInContentInput, memoryPack: LinkedInContentMemoryPack): LinkedInContentDirection {
+  const prompt = cleanLine(input.prompt || defaultPromptForPillar(input.contentPillar));
+  const tone = input.tone ?? "bold_grounded";
+  const format = input.format ?? inferFormat(prompt);
+  const legacyPillar = input.contentPillar ?? "app_progress";
+  const visualDirection = cleanLine(input.visualDirection || "");
+  const candidates = [
+    ...promptAngles(prompt, format),
+    ...memoryPack.planSources.slice(0, 4).map((plan) => `${plan.title}: ${plan.summary}`),
+    ...memoryPack.storyAngles,
+  ].filter(Boolean);
+  const scored = candidates
+    .map((angle) => ({ angle: cleanLine(angle).slice(0, 180), score: noveltyScore(angle, memoryPack) }))
+    .sort((left, right) => right.score - left.score);
+  return {
+    prompt,
+    tone,
+    format,
+    legacyPillar,
+    visualDirection,
+    selectedAngle: scored[0]?.angle || "A field note from the Job Search OS build log.",
+    rejectedAngles: scored.slice(1, 4).map((item) => item.angle),
+  };
+}
+
+function promptAngles(prompt: string, format: LinkedInContentFormat) {
+  return [
+    `${formatLabel(format)} about ${prompt}`,
+    `What changed in the build after ${prompt}`,
+    `The documentarian note hidden inside ${prompt}`,
+  ];
+}
+
+function noveltyScore(angle: string, memoryPack: LinkedInContentMemoryPack) {
+  const normalized = angle.toLowerCase();
+  let score = Math.min(80, angle.length);
+  for (const phrase of memoryPack.noveltySignals.avoidPhrases) {
+    if (normalized.includes(phrase.toLowerCase())) score -= 20;
+  }
+  for (const hook of memoryPack.noveltySignals.recentHooks) {
+    if (sharedWords(normalized, hook.toLowerCase()) >= 4) score -= 12;
+  }
+  for (const title of memoryPack.noveltySignals.recentTitles) {
+    if (sharedWords(normalized, title.toLowerCase()) >= 3) score -= 8;
+  }
+  if (/\b(plan|decision|field note|walkthrough|teardown|before)\b/i.test(angle)) score += 15;
+  return score;
+}
+
+function sharedWords(left: string, right: string) {
+  const leftWords = new Set(left.split(/[^a-z0-9]+/).filter((word) => word.length > 4));
+  return right.split(/[^a-z0-9]+/).filter((word) => leftWords.has(word)).length;
+}
+
+function recommendScreenshotRoutes(memoryPack: LinkedInContentMemoryPack, direction?: LinkedInContentDirection) {
+  const prompt = [direction?.prompt, direction?.visualDirection, direction?.selectedAngle].join(" ").toLowerCase();
+  const scored = memoryPack.screenshotRecommendations
+    .filter((item) => allowedScreenshotRoutes.has(item.route))
+    .map((item) => {
+      const text = `${item.route} ${item.reason}`.toLowerCase();
+      let score = 0;
+      for (const word of prompt.split(/[^a-z0-9]+/).filter((part) => part.length > 3)) {
+        if (text.includes(word)) score += 3;
+      }
+      if (memoryPack.noveltySignals.recentScreenshotRoutes.includes(item.route)) score -= 8;
+      if (item.route.includes("email-ops") && /\b(email|inbox|calendar|jolene)\b/.test(prompt)) score += 12;
+      if (item.route.includes("market") && /\bmarket|research|signal\b/.test(prompt)) score += 12;
+      if (item.route.includes("social") && /\blinkedin|content|analytics|post\b/.test(prompt)) score += 12;
+      if (item.route.includes("runs") && /\bagent|run|document|build\b/.test(prompt)) score += 8;
+      return { ...item, score };
+    })
+    .sort((left, right) => right.score - left.score);
+  return scored.length ? scored : memoryPack.screenshotRecommendations.filter((item) => allowedScreenshotRoutes.has(item.route));
+}
+
+function selectBestScreenshots(assets: LinkedInScreenshotAsset[], direction: LinkedInContentDirection) {
+  const prompt = `${direction.prompt} ${direction.visualDirection} ${direction.selectedAngle}`.toLowerCase();
+  return assets
+    .filter((asset) => asset.privacyStatus === "PASS" && asset.path)
+    .map((asset) => {
+      const text = `${asset.route} ${asset.description}`.toLowerCase();
+      const score = prompt.split(/[^a-z0-9]+/).filter((word) => word.length > 3 && text.includes(word)).length;
+      return { asset, score };
+    })
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 1)
+    .map((item) => item.asset);
+}
+
+function defaultPromptForPillar(pillar: LinkedInContentPillar = "app_progress") {
+  const labels: Record<LinkedInContentPillar, string> = {
+    app_progress: "Document the most interesting recent Job Search OS build progress.",
+    search_learning: "Explain what the search workflow learned from recent funnel and source signals.",
+    architecture: "Document a recent architecture decision and why it matters.",
+    workflow_design: "Show how agentic workflow design is changing the way the app gets built.",
+  };
+  return labels[pillar];
+}
+
+function inferFormat(prompt: string): LinkedInContentFormat {
+  const normalized = prompt.toLowerCase();
+  if (/\b(before|after)\b/.test(normalized)) return "before_after";
+  if (/\b(architecture|decision|decided)\b/.test(normalized)) return "decision_diary";
+  if (/\b(contrarian|hot take|wrong)\b/.test(normalized)) return "contrarian_take";
+  if (/\b(walkthrough|screen|screenshot|visual)\b/.test(normalized)) return "visual_walkthrough";
+  if (/\b(teardown|breakdown)\b/.test(normalized)) return "teardown";
+  if (/\b(lesson|learned)\b/.test(normalized)) return "lesson";
+  if (/\b(thesis|future|strategy)\b/.test(normalized)) return "product_thesis";
+  if (/\b(shipped|built|build)\b/.test(normalized)) return "build_log";
+  return "field_note";
+}
+
+function formatLabel(format: LinkedInContentFormat) {
+  return format.replace(/_/g, " ");
+}
+
+function hookForFormat(format: LinkedInContentFormat) {
+  const hooks: Record<LinkedInContentFormat, string> = {
+    build_log: "A build log is more useful when it can argue for what changed.",
+    lesson: "The useful lesson was not obvious until the agents had to document it.",
+    decision_diary: "One product decision changed how the system explains itself.",
+    teardown: "Here is the part of the workflow I would rebuild first.",
+    before_after: "The before-and-after is not cosmetic; it is operational.",
+    contrarian_take: "The next AI feature I want is less magic and more memory.",
+    field_note: "A field note from building an agentic job-search operating system.",
+    visual_walkthrough: "The screenshot matters because it shows the workflow, not the pitch.",
+    product_thesis: "My current product thesis: the best agents will be documentarians first.",
+  };
+  return hooks[format];
 }
 
 function buildClaims(generated: Pick<LinkedInContentOutput, "body" | "sourceFacts">, memoryPack: LinkedInContentMemoryPack) {
