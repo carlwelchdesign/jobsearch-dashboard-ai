@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { buildArchitectureDiagramSpecs, buildLinkedInContentFallback, planLinkedInPromptIntent, reviewDiagramSpecQuality, reviewLinkedInPostPrivacy, reviewPromptSatisfaction, type LinkedInContentDirection } from "@/lib/agents/linkedin-content";
+import { buildArchitectureDiagramSpecs, buildArchitectureTopologySpec, buildLinkedInContentFallback, planLinkedInPromptIntent, reviewDiagramSpecQuality, reviewLinkedInPostPrivacy, reviewPromptSatisfaction, reviewTopologySpecQuality, type ArchitectureTopologySpec, type LinkedInContentDirection } from "@/lib/agents/linkedin-content";
 import { describe, expect, it } from "vitest";
 
 describe("LinkedIn content agent helpers", () => {
@@ -184,6 +184,32 @@ describe("LinkedIn content agent helpers", () => {
     expect(specs[0].provenance.length).toBeGreaterThan(0);
   });
 
+  it("creates topology specs for system architecture prompts", () => {
+    const spec = buildArchitectureTopologySpec(architectureDirection());
+    expect(spec.id).toBe("job-search-os-topology");
+    expect(spec.diagramKind).toBe("system_architecture");
+    expect(spec.groups.map((group) => group.id)).toEqual(expect.arrayContaining(["experience", "control", "agents", "memory", "external"]));
+    expect(spec.nodes.map((node) => node.id)).toEqual(expect.arrayContaining(["dashboard", "api-routes", "jolene-loop", "content-team", "postgres", "linkedin-publish"]));
+    expect(spec.edges.length).toBeGreaterThan(6);
+    expect(spec.legend.length).toBeGreaterThan(4);
+    expect(spec.provenance.length).toBeGreaterThan(0);
+  });
+
+  it("reviews topology node, legend, density, overflow, and provenance quality", () => {
+    const good = reviewTopologySpecQuality(buildArchitectureTopologySpec(architectureDirection()));
+    expect(good.status).toBe("PASS");
+    expect(good.checks.topology).toBe("PASS");
+    expect(good.checks.legend).toBe("PASS");
+    expect(good.checks.provenance).toBe("PASS");
+
+    const bad = reviewTopologySpecQuality(badTopologySpec(), ["Legend card overflow: Too much."]);
+    expect(bad.status).toBe("NEEDS_REVIEW");
+    expect(bad.checks.topology).toBe("NEEDS_REVIEW");
+    expect(bad.checks.legend).toBe("NEEDS_REVIEW");
+    expect(bad.checks.provenance).toBe("NEEDS_REVIEW");
+    expect(bad.warnings.join(" ")).toContain("overflow");
+  });
+
   it("reviews staff-engineer diagram typography, spacing, overflow, and provenance", () => {
     const good = reviewDiagramSpecQuality(buildArchitectureDiagramSpecs(architectureDirection())[0]);
     expect(good.status).toBe("PASS");
@@ -221,9 +247,30 @@ describe("LinkedIn content agent helpers", () => {
     expect(source).toContain("LINKEDIN_ENABLE_AI_VISUAL_POLISH");
     expect(source).toContain("Treat AI polish as optional social texture");
     expect(source).toContain("passingDiagrams");
+    expect(source).toContain("architecture-topology-v1");
+    expect(source).toContain("topology_legend");
     expect(source).toContain("staff-engineer-html-v1");
   });
 });
+
+function badTopologySpec(): ArchitectureTopologySpec {
+  const base = buildArchitectureTopologySpec(architectureDirection());
+  return {
+    ...base,
+    groups: [],
+    nodes: [
+      ...base.nodes,
+      { id: "bad", label: "This node label is too long for topology readability", icon: "BAD", x: 1200, y: 900 },
+      { id: "bad2", label: "Another long topology node label", icon: "BAD", x: 1210, y: 910 },
+      { id: "bad3", label: "Another long topology node label", icon: "BAD", x: 1220, y: 920 },
+      { id: "bad4", label: "Another long topology node label", icon: "BAD", x: 1230, y: 930 },
+      { id: "bad5", label: "Another long topology node label", icon: "BAD", x: 1240, y: 940 },
+    ],
+    edges: [...base.edges, { from: "missing", to: "bad", label: "this connector label is intentionally too long", style: "solid" }],
+    legend: [{ number: 1, title: "This legend card title is far too long for the side rail", color: "#fff", bullets: ["This legend bullet is intentionally far too long for a compact LinkedIn topology diagram side rail and should be flagged by QA.", "Two", "Three"] }],
+    provenance: [],
+  };
+}
 
 function architectureDirection(): LinkedInContentDirection {
   return {

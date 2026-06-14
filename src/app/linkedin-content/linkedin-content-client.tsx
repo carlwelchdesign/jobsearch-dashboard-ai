@@ -57,7 +57,8 @@ type LinkedInVisualAssetView = {
   assetType?: string;
   diagramKind?: string;
   renderEngine?: string;
-  qualityReview?: { status?: string; score?: number; warnings?: string[] };
+  layoutKind?: string;
+  qualityReview?: { status?: string; score?: number; warnings?: string[]; topology?: string; legend?: string };
   imageModel?: string;
   provenance?: string[];
   rationale?: string;
@@ -516,6 +517,8 @@ function VisualAssetGroup({ title, assets }: { title: string; assets: LinkedInDr
                 {asset.qualityReview?.score != null ? ` - quality ${asset.qualityReview.score}/100` : ""}
               </Typography>
               {asset.renderEngine ? <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>Renderer: {asset.renderEngine}</Typography> : null}
+              {asset.layoutKind ? <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>Layout: {asset.layoutKind.replace(/_/g, " ")}</Typography> : null}
+              {asset.qualityReview?.topology ? <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>Topology QA: {asset.qualityReview.topology} - Legend QA: {asset.qualityReview.legend ?? "PASS"}</Typography> : null}
               {asset.imageModel ? <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>Image model: {asset.imageModel}</Typography> : null}
               {asset.provenance?.length ? <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>Provenance: {asset.provenance.slice(0, 2).join(", ")}</Typography> : null}
               {asset.rationale ? <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>{asset.rationale}</Typography> : null}
@@ -585,6 +588,7 @@ function screenshotAssets(value: unknown): LinkedInDraftView["screenshotAssets"]
           assetType: typeof record.assetType === "string" ? record.assetType : undefined,
           diagramKind: typeof record.diagramKind === "string" ? record.diagramKind : undefined,
           renderEngine: typeof record.renderEngine === "string" ? record.renderEngine : undefined,
+          layoutKind: typeof record.layoutKind === "string" ? record.layoutKind : undefined,
           qualityReview: qualityReview(record.qualityReview),
           imageModel: typeof record.imageModel === "string" ? record.imageModel : undefined,
           provenance: stringArray(record.provenance),
@@ -603,7 +607,13 @@ function qualityReview(value: unknown): LinkedInVisualAssetView["qualityReview"]
     status: typeof record.status === "string" ? record.status : undefined,
     score: typeof record.score === "number" ? record.score : undefined,
     warnings: stringArray(record.warnings),
+    topology: isRecord(record.checks) && typeof record.checks.topology === "string" ? record.checks.topology : undefined,
+    legend: isRecord(record.checks) && typeof record.checks.legend === "string" ? record.checks.legend : undefined,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function privacyReview(value: unknown): LinkedInDraftView["privacyReview"] {

@@ -23,6 +23,9 @@ describe("LinkedInContentClient UI contract", () => {
     expect(source).toContain("App screenshots");
     expect(source).toContain("qualityReview");
     expect(source).toContain("Renderer:");
+    expect(source).toContain("Layout:");
+    expect(source).toContain("Topology QA:");
+    expect(source).toContain("Legend QA:");
     expect(source).toContain("Provenance:");
     expect(source).toContain("assetType");
     expect(source).toContain("Approval publishes to LinkedIn immediately");
