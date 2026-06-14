@@ -1,5 +1,4 @@
-import { simpleParser, type ParsedMail } from "mailparser";
-import { ImapFlow } from "imapflow";
+import type { ParsedMail } from "mailparser";
 import { ingestJobEmail, type EmailMessageIngestInput } from "@/lib/email-response-agent";
 import { prisma } from "@/lib/prisma";
 
@@ -21,7 +20,9 @@ export type ImapSyncResult = {
   mailbox: string;
   scanned: number;
   ingested: number;
+  suppressed: number;
   skipped: number;
+  suppressionReasons: Array<{ providerMessageId: string; subject: string; classification: string; reason: string }>;
   messages: Array<{
     providerMessageId: string;
     subject: string;
@@ -55,6 +56,10 @@ export function imapConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ImapEma
 export async function syncImapEmail(config = imapConfigFromEnv()): Promise<ImapSyncResult> {
   const user = await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });
   if (!user) throw new Error("No user exists. Run seed first.");
+  const [{ ImapFlow }, { simpleParser }] = await Promise.all([
+    import("imapflow"),
+    import("mailparser"),
+  ]);
 
   const client = new ImapFlow({
     host: config.host,
@@ -68,8 +73,10 @@ export async function syncImapEmail(config = imapConfigFromEnv()): Promise<ImapS
   });
   const since = new Date(Date.now() - config.sinceDays * 24 * 60 * 60 * 1000);
   const messages: ImapSyncResult["messages"] = [];
+  const suppressionReasons: ImapSyncResult["suppressionReasons"] = [];
   let scanned = 0;
   let skipped = 0;
+  let suppressed = 0;
 
   await client.connect();
   try {
@@ -94,6 +101,15 @@ export async function syncImapEmail(config = imapConfigFromEnv()): Promise<ImapS
           envelopeMessageId: message.envelope?.messageId,
         });
         const result = await ingestJobEmail(input);
+        if (result.classification.classification === "UNRELATED" || result.classification.classification === "NO_ACTION") {
+          suppressed += 1;
+          suppressionReasons.push({
+            providerMessageId: input.providerMessageId,
+            subject: input.subject,
+            classification: result.classification.classification,
+            reason: result.classification.rationale,
+          });
+        }
         messages.push({
           providerMessageId: input.providerMessageId,
           subject: input.subject,
@@ -115,7 +131,9 @@ export async function syncImapEmail(config = imapConfigFromEnv()): Promise<ImapS
     mailbox: config.mailbox,
     scanned,
     ingested: messages.length,
+    suppressed,
     skipped,
+    suppressionReasons,
     messages,
   };
 }

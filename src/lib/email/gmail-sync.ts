@@ -24,8 +24,10 @@ export type GmailSyncResult = {
   provider: "gmail";
   scanned: number;
   ingested: number;
+  suppressed: number;
   skipped: number;
   queries: string[];
+  suppressionReasons: Array<{ providerMessageId: string; subject: string; classification: string; reason: string }>;
   messages: Array<{
     providerMessageId: string;
     subject: string;
@@ -58,7 +60,9 @@ export async function syncGmailEmail(input: {
 
   const refs = Array.from(refsById.values()).slice(0, limit);
   const messages: GmailSyncResult["messages"] = [];
+  const suppressionReasons: GmailSyncResult["suppressionReasons"] = [];
   let skipped = 0;
+  let suppressed = 0;
 
   for (const ref of refs) {
     const detailUrl = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(ref.id)}`);
@@ -72,6 +76,15 @@ export async function syncGmailEmail(input: {
     }
 
     const result = await ingestJobEmail(ingestInput);
+    if (result.classification.classification === "UNRELATED" || result.classification.classification === "NO_ACTION") {
+      suppressed += 1;
+      suppressionReasons.push({
+        providerMessageId: ingestInput.providerMessageId,
+        subject: ingestInput.subject,
+        classification: result.classification.classification,
+        reason: result.classification.rationale,
+      });
+    }
     messages.push({
       providerMessageId: ingestInput.providerMessageId,
       subject: ingestInput.subject,
@@ -91,8 +104,10 @@ export async function syncGmailEmail(input: {
     provider: "gmail",
     scanned: refs.length,
     ingested: messages.length,
+    suppressed,
     skipped,
     queries,
+    suppressionReasons,
     messages,
   };
 }
