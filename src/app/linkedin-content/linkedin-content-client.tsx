@@ -22,6 +22,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusChip } from "@/components/ui/status-chip";
+import { copyTextToClipboard } from "@/lib/browser/clipboard";
 
 export type LinkedInDraftView = {
   id: string;
@@ -170,8 +171,15 @@ export function LinkedInContentClient({ initialDrafts, shareConnection }: { init
 
   async function copyDraft(draft: LinkedInDraftView) {
     const text = [draft.hook, "", draft.body, "", draft.disclosureText, "", draft.hashtags.join(" ")].join("\n");
-    await navigator.clipboard.writeText(text);
-    setState((previous) => ({ ...previous, notice: "Draft copied to clipboard." }));
+    try {
+      await copyTextToClipboard(text);
+      setState((previous) => ({ ...previous, notice: "Draft copied to clipboard.", error: "" }));
+    } catch (caught) {
+      setState((previous) => ({
+        ...previous,
+        error: caught instanceof Error ? caught.message : "Unable to copy draft.",
+      }));
+    }
   }
 
   return (

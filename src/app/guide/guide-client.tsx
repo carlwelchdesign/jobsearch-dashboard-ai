@@ -35,6 +35,7 @@ import CelebrationIcon from '@mui/icons-material/Celebration';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { PageHeader } from '@/components/ui/page-header';
+import { copyTextToClipboard } from '@/lib/browser/clipboard';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -533,11 +534,11 @@ function ClickToCopyCode({ text, children }: { text: string; children: React.Rea
   const [state, setState] = useState<'idle' | 'copied' | 'fading'>('idle');
 
   function handleClick() {
-    navigator.clipboard.writeText(text).then(() => {
+    copyTextToClipboard(text).then(() => {
       setState('copied');
       setTimeout(() => setState('fading'), 1200);
       setTimeout(() => setState('idle'), 1800);
-    });
+    }).catch(() => undefined);
   }
 
   const tooltipTitle =
@@ -601,10 +602,10 @@ function CopyButton({ text }: { text: string }) {
     <Box
       component="button"
       onClick={() => {
-        navigator.clipboard.writeText(text).then(() => {
+        copyTextToClipboard(text).then(() => {
           setCopied(true);
           setTimeout(() => setCopied(false), 2000);
-        });
+        }).catch(() => undefined);
       }}
       title={copied ? 'Copied!' : 'Copy'}
       sx={{

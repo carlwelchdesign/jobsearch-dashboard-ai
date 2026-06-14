@@ -13,6 +13,7 @@ import TextField from "@mui/material/TextField";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { thankYouStages, thankYouStageLabel, type ThankYouStage } from "@/lib/applications/thank-you-draft-constants";
+import { copyTextToClipboard } from "@/lib/browser/clipboard";
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -140,10 +141,17 @@ export function ThankYouDraftForm({ applicationId }: { applicationId: string }) 
 
 export function CopyDraftButton({ text, label }: { text: string; label: string }) {
   const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
 
   async function copyText() {
-    await navigator.clipboard.writeText(text);
-    setNotice(`${label} copied.`);
+    try {
+      await copyTextToClipboard(text);
+      setError("");
+      setNotice(`${label} copied.`);
+    } catch (caught) {
+      setNotice("");
+      setError(caught instanceof Error ? caught.message : `Unable to copy ${label}.`);
+    }
   }
 
   return (
@@ -154,6 +162,11 @@ export function CopyDraftButton({ text, label }: { text: string; label: string }
       <Snackbar open={Boolean(notice)} autoHideDuration={2500} onClose={() => setNotice("")}>
         <Alert severity="success" variant="filled" onClose={() => setNotice("")}>
           {notice}
+        </Alert>
+      </Snackbar>
+      <Snackbar open={Boolean(error)} autoHideDuration={3500} onClose={() => setError("")}>
+        <Alert severity="error" variant="filled" onClose={() => setError("")}>
+          {error}
         </Alert>
       </Snackbar>
     </>
