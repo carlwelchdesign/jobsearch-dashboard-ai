@@ -316,6 +316,8 @@ export async function DashboardEmailOpsPage() {
   const pendingFindings = findings.filter((finding) => finding.status === "NEEDS_APPROVAL");
   const autoAppliedFindings = findings.filter((finding) => finding.status === "AUTO_APPLIED");
   const calendarDrafts = emailOps?.pendingCalendarProposals ?? [];
+  const providerHealth = emailOps?.providerHealth ?? [];
+  const providerBlockers = providerHealth.filter((provider) => !provider.ok);
 
   return (
     <DashboardShell group="email">
@@ -331,13 +333,54 @@ export async function DashboardEmailOpsPage() {
                 Last run: {emailOps?.latestRun ? emailOps.latestRun.createdAt.toLocaleString() : "No Email Ops run yet"}
               </Typography>
             </Box>
-            <ActionButton postTo="/api/jolene/email-ops/run" variant="contained" loadingLabel="Scanning...">Run Email Ops</ActionButton>
+            <ActionButton postTo="/api/jolene/email-ops/run" body={{ includeBackfill: true, lookbackDays: 90 }} variant="contained" loadingLabel="Scanning...">Run Email Ops</ActionButton>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card sx={{ borderColor: providerBlockers.length ? "warning.main" : "success.main" }}>
+        <CardContent>
+          <Stack spacing={1.5}>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
+              <Box>
+                <Typography variant="h3">Provider health</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Email Ops reports broken inbox state as a blocker before claiming there are no job updates.
+                </Typography>
+              </Box>
+              <Chip size="small" color={providerBlockers.length ? "warning" : "success"} label={providerBlockers.length ? `${providerBlockers.length} blocker${providerBlockers.length === 1 ? "" : "s"}` : "Ready"} />
+            </Stack>
+            {providerHealth.length ? (
+              <Stack spacing={1}>
+                {providerHealth.map((provider) => (
+                  <Box key={provider.provider} sx={{ borderTop: 1, borderColor: "divider", pt: 1 }}>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
+                      <Box>
+                        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.5 }}>
+                          <Chip size="small" color={provider.ok ? "success" : "warning"} label={provider.status.replace(/_/g, " ")} />
+                          <Chip size="small" variant="outlined" label={provider.provider} />
+                        </Stack>
+                        <Typography variant="body2" sx={{ fontWeight: 800 }}>{provider.detail}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Last successful sync: {provider.lastSyncAt ? new Date(provider.lastSyncAt).toLocaleString() : "Never"}
+                        </Typography>
+                        {provider.lastError ? <Typography variant="caption" color="warning.main" sx={{ display: "block" }}>Last error: {provider.lastError}</Typography> : null}
+                      </Box>
+                      {provider.actionRequired ? <Typography variant="body2" color="warning.main" sx={{ fontWeight: 800 }}>{provider.actionRequired}</Typography> : null}
+                    </Stack>
+                  </Box>
+                ))}
+              </Stack>
+            ) : (
+              <EmptyState title="No provider state found" body="Connect Gmail, Outlook, or IMAP before live inbox scans can run. Backfill can still review already-ingested mail." />
+            )}
           </Stack>
         </CardContent>
       </Card>
 
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
         <Metric label="Messages scanned" value={(summary?.scanned ?? 0).toString()} helper="Latest Email Ops run" />
+        <Metric label="Backfilled" value={(summary?.backfill?.processed ?? 0).toString()} helper={`${summary?.backfill?.lookbackDays ?? 90}-day stored mail review`} />
         <Metric label="Findings" value={(summary?.findingsCreated ?? findings.length).toString()} helper="Durable inbox intelligence" />
         <Metric label="Auto-applied" value={(summary?.autoApplied ?? autoAppliedFindings.length).toString()} helper="High-confidence internal updates" />
         <Metric label="Needs approval" value={(summary?.needsApproval ?? pendingFindings.length).toString()} helper="Jolene will not guess" />

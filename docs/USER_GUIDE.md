@@ -1526,6 +1526,12 @@ Once connected, email scanning runs automatically every hour and can also be tri
 6. Auto-apply only high-confidence internal updates such as clear rejections and application confirmations.
 7. Create Jolene approval items for offers, ambiguous matches, recruiter replies, interview/scheduling changes, response drafts, employer contact, and anything below the confidence threshold.
 
+Email Ops also reviews already-ingested mail from the last 90 days by default. That backfill catches existing stored rejections, confirmations, interview invites, scheduling requests, assessments, offers, and review-needed messages even if the live inbox provider needs attention. It is idempotent, so running Email Ops repeatedly should not duplicate findings, outcomes, approval requests, or calendar drafts.
+
+Provider health appears at the top of **Command Center** → **Email Ops**. If Gmail, Outlook, or IMAP is disconnected, expired, `NEEDS_REAUTH`, or returning an API error, Jolene shows it as a blocker with the last successful sync, last error, and required fix. A broken inbox connection is not treated as "no updates." For Gmail OAuth, click **Settings** → **Connect Gmail** again when the status says `NEEDS_REAUTH`.
+
+Application security-code or verification messages are treated as application-blocked next steps. Jolene creates a review item instead of burying those emails as generic noise.
+
 The specialist team is:
 
 - **Email Inbox Scout**: scans Gmail/IMAP/Outlook-capable inbox sources.

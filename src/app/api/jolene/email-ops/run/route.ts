@@ -10,6 +10,9 @@ export const runtime = "nodejs";
 const runSchema = z.object({
   limit: z.number().int().min(1).max(100).optional(),
   sinceDays: z.number().int().min(1).max(120).optional(),
+  lookbackDays: z.number().int().min(1).max(365).optional(),
+  includeBackfill: z.boolean().optional(),
+  providerMode: z.enum(["all", "connected_only", "backfill_only"]).optional(),
   parentRunId: z.string().min(1).nullable().optional(),
 }).default({});
 
@@ -24,6 +27,9 @@ export async function POST(request: Request) {
       source: "dashboard",
       limit: body.limit,
       sinceDays: body.sinceDays,
+      lookbackDays: body.lookbackDays,
+      includeBackfill: body.includeBackfill,
+      providerMode: body.providerMode,
       parentRunId: body.parentRunId,
     });
 

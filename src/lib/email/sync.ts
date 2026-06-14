@@ -50,9 +50,11 @@ export async function syncJobResponseEmail(input: { limit?: number; sinceDays?: 
 
     if (user && gmailConnection?.status === "CONNECTED") {
       try {
-        const broadRecentQuery = `newer_than:${input.sinceDays ?? Number(process.env.JOB_EMAIL_GMAIL_SINCE_DAYS ?? process.env.JOB_EMAIL_SYNC_SINCE_DAYS ?? 14)}d`;
+        const sinceDays = input.sinceDays ?? Number(process.env.JOB_EMAIL_GMAIL_SINCE_DAYS ?? process.env.JOB_EMAIL_SYNC_SINCE_DAYS ?? 14);
+        const broadRecentQuery = `newer_than:${sinceDays}d`;
         const queries = uniqueQueries([
           broadRecentQuery,
+          ...broadJobResponseTerms.map((term) => `${term} newer_than:${sinceDays}d`),
           ...watchlist.flatMap((item) => item.gmailQueries),
         ]);
         providers.push(await syncGmailEmail({
@@ -65,8 +67,10 @@ export async function syncJobResponseEmail(input: { limit?: number; sinceDays?: 
       } catch (error) {
         providers.push({ ok: false, provider: "gmail", skipped: true, reason: error instanceof Error ? error.message : "Gmail sync failed." });
       }
+    } else if (gmailConnection) {
+      providers.push({ ok: false, provider: "gmail", skipped: true, reason: `Gmail connection is ${gmailConnection.status}. Reconnect Gmail in Settings.` });
     } else {
-      providers.push({ ok: false, provider: "gmail", skipped: true, reason: "No connected Gmail account." });
+      providers.push({ ok: false, provider: "gmail", skipped: true, reason: "No connected Gmail account. Connect Gmail in Settings." });
     }
   }
 
@@ -84,6 +88,22 @@ export async function syncJobResponseEmail(input: { limit?: number; sinceDays?: 
     receivedConfirmations,
   };
 }
+
+const broadJobResponseTerms = [
+  "interview",
+  "availability",
+  "schedule",
+  "recruiter",
+  "assessment",
+  "\"take home\"",
+  "offer",
+  "unfortunately",
+  "\"not selected\"",
+  "\"next steps\"",
+  "\"thank you for applying\"",
+  "\"security code\"",
+  "\"verification code\"",
+];
 
 function uniqueQueries(queries: string[]) {
   return Array.from(new Set(queries.map((query) => query.trim()).filter(Boolean)));

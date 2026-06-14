@@ -80,6 +80,54 @@ describe("buildJoleneChiefBrief", () => {
           needsApproval: 2,
           calendarDrafts: 1,
           providerStatuses: [],
+          backfill: { enabled: true, lookbackDays: 90, processed: 12 },
+          specialistRuns: [],
+          approvals: [],
+          risks: [],
+          evidence: [],
+        },
+        providerBlockers: [],
+      },
+      careerStandup: null,
+    } satisfies ChiefContext);
+
+    expect(brief.priorities[0]).toMatchObject({ id: "review-email-ops", category: "email" });
+    expect(brief.blockers).toContain("2 Email Ops finding(s) and 1 calendar draft(s) need review.");
+    expect(brief.evidence).toEqual(expect.arrayContaining(["Email Ops: 3 finding(s), 2 pending approval(s), 1 calendar draft(s)."]));
+  });
+
+  it("surfaces Email Ops provider blockers before optional email work", () => {
+    const now = new Date("2026-06-13T18:00:00.000Z");
+    const brief = buildJoleneChiefBrief({
+      now,
+      source: "manual",
+      openRequests: [],
+      recentRuns: [],
+      latestSearchRun: { id: "search_1", status: "completed", startedAt: now, jobsFetched: 20, jobsSaved: 2, errors: [] },
+      applicationCounts: {},
+      needsReviewCount: 0,
+      readyApplicationCount: 0,
+      latestMarketRun: { id: "market_1", createdAt: now, outputJson: {} },
+      latestLinkedInDraft: { id: "draft_1", status: "DRAFT", title: "Build note", updatedAt: now },
+      linkedInAnalytics: null,
+      emailOps: {
+        runId: "email_ops_1",
+        createdAt: now,
+        pendingFindings: 0,
+        calendarDrafts: 0,
+        providerBlockers: [{ provider: "gmail", status: "NEEDS_REAUTH", detail: "Gmail connection is NEEDS_REAUTH.", actionRequired: "Reconnect Gmail in Settings." }],
+        summary: {
+          generatedAt: now.toISOString(),
+          title: "Jolene Email Operations",
+          summary: "Email Ops needs attention.",
+          scanned: 0,
+          ingested: 0,
+          findingsCreated: 0,
+          autoApplied: 0,
+          needsApproval: 0,
+          calendarDrafts: 0,
+          providerStatuses: [],
+          backfill: { enabled: true, lookbackDays: 90, processed: 0 },
           specialistRuns: [],
           approvals: [],
           risks: [],
@@ -89,8 +137,8 @@ describe("buildJoleneChiefBrief", () => {
       careerStandup: null,
     } satisfies ChiefContext);
 
-    expect(brief.priorities[0]).toMatchObject({ id: "review-email-ops", category: "email" });
-    expect(brief.blockers).toContain("2 Email Ops finding(s) and 1 calendar draft(s) need review.");
-    expect(brief.evidence).toEqual(expect.arrayContaining(["Email Ops: 3 finding(s), 2 pending approval(s), 1 calendar draft(s)."]));
+    expect(brief.priorities[0]).toMatchObject({ id: "fix-email-ops-provider", category: "email" });
+    expect(brief.blockers).toContain("1 Email Ops provider connection(s) require attention.");
+    expect(brief.evidence).toEqual(expect.arrayContaining(["Email Ops provider blockers: gmail NEEDS_REAUTH."]));
   });
 });

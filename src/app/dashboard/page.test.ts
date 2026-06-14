@@ -53,6 +53,9 @@ describe("Command Center subnav routes", () => {
 
     expect(contentSource).toContain("DashboardEmailOpsPage");
     expect(contentSource).toContain("/api/jolene/email-ops/run");
+    expect(contentSource).toContain("Provider health");
+    expect(contentSource).toContain("includeBackfill");
+    expect(contentSource).toContain("Backfilled");
     expect(contentSource).toContain("/api/jolene/email-ops/findings/");
     expect(contentSource).toContain("Calendar Drafts");
     expect(contentSource).toContain("Safety Policy");

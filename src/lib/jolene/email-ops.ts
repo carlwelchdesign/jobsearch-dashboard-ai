@@ -11,6 +11,9 @@ export type JoleneEmailOpsInput = {
   source?: "manual" | "scheduled" | "dashboard" | "chat" | "jolene";
   limit?: number;
   sinceDays?: number;
+  lookbackDays?: number;
+  includeBackfill?: boolean;
+  providerMode?: "all" | "connected_only" | "backfill_only";
 };
 
 export type JoleneEmailOpsSummary = {
@@ -23,11 +26,22 @@ export type JoleneEmailOpsSummary = {
   autoApplied: number;
   needsApproval: number;
   calendarDrafts: number;
-  providerStatuses: Array<{ provider: string; ok: boolean; detail: string }>;
+  providerStatuses: EmailOpsProviderHealth[];
+  backfill: { enabled: boolean; lookbackDays: number; processed: number };
   specialistRuns: Array<{ agentType: AgentType; runId: string; status: string }>;
   approvals: Array<{ findingId: string; label: string; reason: string; href: string }>;
   risks: string[];
   evidence: string[];
+};
+
+export type EmailOpsProviderHealth = {
+  provider: string;
+  ok: boolean;
+  status: "CONNECTED" | "NEEDS_REAUTH" | "DISABLED" | "MISSING" | "ERROR";
+  detail: string;
+  lastSyncAt: string | null;
+  lastError?: string;
+  actionRequired?: string;
 };
 
 type SyncedEmailRecord = {
@@ -61,17 +75,24 @@ export async function runJoleneEmailOperationsAgent(input: JoleneEmailOpsInput =
     input: { ...input, source: input.source ?? "manual" },
     execute: async (run) => {
       const specialistRuns: JoleneEmailOpsSummary["specialistRuns"] = [];
+      const lookbackDays = clampInteger(Number(input.lookbackDays ?? 90), 1, 365);
+      const includeBackfill = input.includeBackfill !== false;
       const scout = await runSpecialist("EMAIL_INBOX_SCOUT", run.id, user.id, {
         source: input.source ?? "manual",
         limit: input.limit,
         sinceDays: input.sinceDays,
-      }, async () => syncJobResponseEmail({
-        limit: input.limit,
-        sinceDays: input.sinceDays,
-      }));
+        lookbackDays,
+        includeBackfill,
+        providerMode: input.providerMode ?? "all",
+      }, async () => input.providerMode === "backfill_only"
+        ? emptySyncResult()
+        : syncJobResponseEmail({
+            limit: input.limit,
+            sinceDays: input.sinceDays,
+          }));
       specialistRuns.push(runRef(scout.run.agentType, scout.run.id, scout.run.status));
 
-      const emails = await collectRecentSyncedEmails(user.id, run.createdAt, scout.output);
+      const emails = await collectEmailOpsCandidateEmails(user.id, run.createdAt, scout.output, { includeBackfill, lookbackDays });
       const matcher = await runSpecialist("EMAIL_APPLICATION_MATCHER", run.id, user.id, { emailCount: emails.length }, async () => ({
         matched: emails.filter((email) => email.matchedApplicationId || email.matchedJobPostingId).length,
         unmatched: emails.filter((email) => !email.matchedApplicationId && !email.matchedJobPostingId).length,
@@ -96,6 +117,8 @@ export async function runJoleneEmailOperationsAgent(input: JoleneEmailOpsInput =
         proposals: scheduler.output.proposals,
         specialistRuns,
         risks: reviewer.output.risks,
+        providerHealth: await buildProviderHealth(user.id, scout.output),
+        backfill: { enabled: includeBackfill, lookbackDays, processed: emails.length },
       });
 
       const reporter = await runSpecialist("EMAIL_OPS_REPORTER", run.id, user.id, output, async () => ({
@@ -150,12 +173,14 @@ export async function getLatestEmailOpsSummary(userId?: string | null) {
     orderBy: { createdAt: "desc" },
     take: 25,
   });
+  const providerHealth = userId ? await buildProviderHealth(userId) : [];
 
   return {
     latestRun,
     summary: parseEmailOpsOutput(latestRun?.outputJson),
     findings,
     pendingCalendarProposals,
+    providerHealth,
   };
 }
 
@@ -227,7 +252,7 @@ async function runSpecialist<TInput, TOutput>(
   });
 }
 
-async function collectRecentSyncedEmails(userId: string, runStartedAt: Date, sync: EmailSyncResult): Promise<SyncedEmailRecord[]> {
+async function collectEmailOpsCandidateEmails(userId: string, runStartedAt: Date, sync: EmailSyncResult, options: { includeBackfill: boolean; lookbackDays: number }): Promise<SyncedEmailRecord[]> {
   const ids = new Set<string>();
   for (const provider of sync.providers) {
     if (!("messages" in provider)) continue;
@@ -235,6 +260,12 @@ async function collectRecentSyncedEmails(userId: string, runStartedAt: Date, syn
   }
   const filters: Prisma.EmailMessageRecordWhereInput[] = [{ createdAt: { gte: new Date(runStartedAt.getTime() - 60_000) } }];
   if (ids.size) filters.unshift({ providerMessageId: { in: Array.from(ids) } });
+  if (options.includeBackfill) {
+    filters.push({
+      receivedAt: { gte: new Date(Date.now() - options.lookbackDays * 86_400_000) },
+      classification: { notIn: ["UNRELATED", "NO_ACTION"] },
+    });
+  }
 
   return prisma.emailMessageRecord.findMany({
     where: {
@@ -254,6 +285,7 @@ async function createFindingsForEmails(userId: string, agentRunId: string, email
   const findings: EmailOpsFinding[] = [];
   for (const email of emails) {
     if (email.classification === "UNRELATED" || email.classification === "NO_ACTION") continue;
+    if (isIgnorableJobAlert(email)) continue;
     const existing = await prisma.emailOpsFinding.findFirst({
       where: { userId, emailMessageRecordId: email.id, classification: email.classification },
     });
@@ -263,6 +295,7 @@ async function createFindingsForEmails(userId: string, agentRunId: string, email
     }
 
     const policy = policyForEmail(email);
+    const extracted = extractedDetails(email);
     const finding = await prisma.emailOpsFinding.create({
       data: {
         userId,
@@ -278,7 +311,7 @@ async function createFindingsForEmails(userId: string, agentRunId: string, email
         recommendedAction: policy.recommendedAction,
         reviewReason: policy.reviewReason,
         evidenceJson: evidenceForEmail(email) as Prisma.InputJsonValue,
-        extractedJson: extractedDetails(email) as Prisma.InputJsonValue,
+        extractedJson: extracted as Prisma.InputJsonValue,
         suggestedMutationJson: policy.suggestedMutation as Prisma.InputJsonValue,
         provenanceJson: provenanceForEmail(email) as Prisma.InputJsonValue,
         appliedAt: policy.status === "AUTO_APPLIED" ? new Date() : null,
@@ -286,13 +319,22 @@ async function createFindingsForEmails(userId: string, agentRunId: string, email
     });
     findings.push(finding);
 
+    if (policy.status === "AUTO_APPLIED" && policy.suggestedMutation.outcome && email.matchedApplicationId) {
+      await recordOutcomeIfMissing({
+        applicationId: email.matchedApplicationId,
+        outcome: policy.suggestedMutation.outcome as ApplicationOutcomeType,
+        notes: `Auto-applied Email Ops finding: ${finding.summary}`,
+        occurredAt: email.receivedAt,
+      });
+    }
+
     if (policy.status === "NEEDS_APPROVAL") {
       await createAgentUserRequest({
         userId,
         agentRunId,
         applicationId: email.matchedApplicationId,
         jobPostingId: email.matchedJobPostingId,
-        type: email.classification === "NEEDS_REVIEW" ? "EMAIL_REVIEW" : "APPROVAL_NEEDED",
+        type: extracted.nextStepType === "application_verification" ? "APPLICATION_BLOCKED" : email.classification === "NEEDS_REVIEW" ? "EMAIL_REVIEW" : "APPROVAL_NEEDED",
         question: `${finding.title}: ${policy.reviewReason ?? "Review before Email Ops updates the system."}`,
         contextJson: {
           source: "jolene_email_ops",
@@ -375,10 +417,15 @@ function buildEmailOpsSummary(input: {
   proposals: CalendarEventProposal[];
   specialistRuns: JoleneEmailOpsSummary["specialistRuns"];
   risks: string[];
+  providerHealth: EmailOpsProviderHealth[];
+  backfill: JoleneEmailOpsSummary["backfill"];
 }): JoleneEmailOpsSummary {
   const autoApplied = input.findings.filter((finding) => finding.status === "AUTO_APPLIED").length;
   const needsApproval = input.findings.filter((finding) => finding.status === "NEEDS_APPROVAL").length;
-  const summary = input.findings.length
+  const providerBlockers = input.providerHealth.filter((provider) => !provider.ok);
+  const summary = providerBlockers.length
+    ? `Email Ops needs attention: ${providerBlockers.map((provider) => `${provider.provider} ${provider.status.toLowerCase()}`).join(", ")}. Backfill still reviewed ${input.backfill.processed} stored message(s).`
+    : input.findings.length
     ? `Email Ops reviewed ${input.sync.scanned} message(s), created ${input.findings.length} finding(s), and drafted ${input.proposals.length} calendar item(s).`
     : `Email Ops reviewed ${input.sync.scanned} message(s) and found no new job-response updates.`;
 
@@ -392,11 +439,8 @@ function buildEmailOpsSummary(input: {
     autoApplied,
     needsApproval,
     calendarDrafts: input.proposals.length,
-    providerStatuses: input.sync.providers.map((provider) => ({
-      provider: provider.provider,
-      ok: "ok" in provider ? Boolean(provider.ok) : false,
-      detail: "reason" in provider ? provider.reason : `${provider.ingested}/${provider.scanned} ingested`,
-    })),
+    providerStatuses: input.providerHealth,
+    backfill: input.backfill,
     specialistRuns: input.specialistRuns,
     approvals: input.findings
       .filter((finding) => finding.status === "NEEDS_APPROVAL")
@@ -407,9 +451,13 @@ function buildEmailOpsSummary(input: {
         reason: finding.reviewReason ?? "Approval required before mutation.",
         href: "/dashboard/email-ops",
       })),
-    risks: input.risks,
+    risks: [
+      ...providerBlockers.map((provider) => `${provider.provider} requires attention: ${provider.detail}`),
+      ...input.risks,
+    ],
     evidence: [
       `${input.sync.scanned} email message(s) scanned across configured providers.`,
+      `${input.backfill.processed} stored email message(s) reviewed by backfill.`,
       `${input.findings.length} durable Email Ops finding(s) available for Jolene.`,
       `${autoApplied} high-confidence internal update(s), ${needsApproval} approval-needed item(s).`,
     ],
@@ -424,6 +472,14 @@ function policyForEmail(email: SyncedEmailRecord): {
 } {
   const outcome = outcomeForClassification(email.classification);
   const matched = Boolean(email.matchedApplicationId);
+  if (isApplicationVerificationEmail(email)) {
+    return {
+      status: "NEEDS_APPROVAL",
+      recommendedAction: "Resolve the application verification step before treating this application as complete.",
+      reviewReason: "This looks like an application security-code or verification email.",
+      suggestedMutation: { type: "application_blocked", reason: "application_verification" },
+    };
+  }
   if (lowRiskAutoClassifications.has(email.classification) && email.confidenceScore >= 85 && matched) {
     return {
       status: "AUTO_APPLIED",
@@ -464,6 +520,10 @@ function reviewReasonForClassification(classification: EmailMessageClassificatio
 }
 
 function findingTitle(email: SyncedEmailRecord) {
+  if (isApplicationVerificationEmail(email)) {
+    const role = roleLabel(email);
+    return `Application verification needed${role ? `: ${role}` : ""}`;
+  }
   const role = roleLabel(email);
   return `${humanClassification(email.classification)}${role ? `: ${role}` : ""}`;
 }
@@ -497,6 +557,7 @@ function extractedDetails(email: SyncedEmailRecord) {
     timezone: text.match(/\b(PT|PST|PDT|ET|EST|EDT|CT|CST|CDT|MT|MST|MDT)\b/)?.[0] ?? "local",
     attendees: [email.from],
     actionRequired: email.actionRequired,
+    nextStepType: isApplicationVerificationEmail(email) ? "application_verification" : null,
   };
 }
 
@@ -550,3 +611,78 @@ function toJsonInput(value: unknown): Prisma.InputJsonValue {
 
 const lowRiskAutoClassifications = new Set<EmailMessageClassification>(["REJECTION", "AUTOMATED_CONFIRMATION"]);
 const calendarEligibleClassifications = new Set<EmailMessageClassification>(["INTERVIEW_REQUEST", "SCHEDULING_REQUEST", "CODING_ASSESSMENT", "TAKE_HOME"]);
+
+async function buildProviderHealth(userId: string, sync?: EmailSyncResult): Promise<EmailOpsProviderHealth[]> {
+  const connections = await prisma.emailOAuthConnection.findMany({
+    where: { userId },
+    select: { provider: true, status: true, lastSyncAt: true, updatedAt: true },
+  });
+  const byProvider = new Map(connections.map((connection) => [connection.provider, connection]));
+  const syncByProvider = new Map((sync?.providers ?? []).map((provider) => [provider.provider, provider]));
+  const providers = new Set<string>(["gmail", ...connections.map((connection) => connection.provider), ...(sync?.providers ?? []).map((provider) => provider.provider)]);
+
+  return Array.from(providers).sort().map((providerName) => {
+    const connection = byProvider.get(providerName as never);
+    const syncProvider = syncByProvider.get(providerName as never);
+    if (syncProvider && !syncProvider.ok) {
+      const status = connection?.status === "NEEDS_REAUTH" ? "NEEDS_REAUTH" : connection?.status === "DISABLED" ? "DISABLED" : "ERROR";
+      return {
+        provider: providerName,
+        ok: false,
+        status,
+        detail: syncProvider.reason,
+        lastSyncAt: connection?.lastSyncAt?.toISOString() ?? null,
+        lastError: syncProvider.reason,
+        actionRequired: providerName === "gmail" && status === "NEEDS_REAUTH" ? "Reconnect Gmail in Settings." : "Review email provider configuration.",
+      };
+    }
+    if (!connection) {
+      return {
+        provider: providerName,
+        ok: false,
+        status: "MISSING",
+        detail: `No ${providerName} connection is configured.`,
+        lastSyncAt: null,
+        actionRequired: `Connect ${providerName} in Settings.`,
+      };
+    }
+    if (connection.status !== "CONNECTED") {
+      return {
+        provider: providerName,
+        ok: false,
+        status: connection.status,
+        detail: `${providerName} connection is ${connection.status}.`,
+        lastSyncAt: connection.lastSyncAt?.toISOString() ?? null,
+        actionRequired: connection.status === "NEEDS_REAUTH" ? `Reconnect ${providerName} in Settings.` : `Review ${providerName} connection in Settings.`,
+      };
+    }
+    return {
+      provider: providerName,
+      ok: true,
+      status: "CONNECTED",
+      detail: syncProvider && "ingested" in syncProvider ? `${syncProvider.ingested}/${syncProvider.scanned} ingested` : `${providerName} is connected.`,
+      lastSyncAt: connection.lastSyncAt?.toISOString() ?? null,
+      ...(syncProvider && "queryErrors" in syncProvider && syncProvider.queryErrors.length ? { lastError: `${syncProvider.queryErrors.length} Gmail quer${syncProvider.queryErrors.length === 1 ? "y" : "ies"} failed.` } : {}),
+    };
+  });
+}
+
+function emptySyncResult(): EmailSyncResult {
+  return { ok: true, scanned: 0, ingested: 0, skipped: 0, providers: [], watchlist: [], receivedConfirmations: [] };
+}
+
+function isIgnorableJobAlert(email: SyncedEmailRecord) {
+  if (email.matchedApplicationId || email.matchedJobPostingId) return false;
+  const text = `${email.from} ${email.subject} ${email.snippet}`.toLowerCase();
+  return /\b(job alert|job matches|latest remote job|recommended jobs|new jobs for you|remote opportunities)\b/.test(text);
+}
+
+function isApplicationVerificationEmail(email: SyncedEmailRecord) {
+  const text = `${email.subject}\n${email.snippet}\n${email.bodyText ?? ""}`.toLowerCase();
+  return /\b(security code|verification code|copy and paste this code|resubmit your application|verify your application)\b/.test(text);
+}
+
+function clampInteger(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}

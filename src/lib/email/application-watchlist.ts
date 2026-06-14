@@ -41,18 +41,17 @@ export async function buildEmailWatchlistFromApplications(user: Pick<User, "id">
 }
 
 function buildWatch(application: WatchApplication): EmailApplicationWatch {
-  const company = application.jobPosting.company.trim();
+  const company = cleanCompanyName(application.jobPosting.company, application.jobPosting.title);
   const title = application.jobPosting.title.trim();
   const domain = domainFromUrl(application.jobPosting.applicationUrl);
   const titleTokens = meaningfulTokens(title).slice(0, 4).join(" ");
   const companyQuery = quote(company);
-  const responseTerms = "(interview OR recruiter OR availability OR assessment OR unfortunately OR \"next steps\" OR \"moving forward\")";
 
   const gmailQueries = uniqueStrings([
     `${companyQuery} newer_than:${daysSince(application.appliedAt ?? application.updatedAt)}d`,
     titleTokens ? `${companyQuery} ${quote(titleTokens)} newer_than:${daysSince(application.appliedAt ?? application.updatedAt)}d` : "",
     domain ? `from:${domain} newer_than:${daysSince(application.appliedAt ?? application.updatedAt)}d` : "",
-    `${companyQuery} ${responseTerms} newer_than:${daysSince(application.appliedAt ?? application.updatedAt)}d`,
+    ...jobResponseTerms.map((term) => `${companyQuery} ${term} newer_than:${daysSince(application.appliedAt ?? application.updatedAt)}d`),
   ].filter(Boolean));
 
   return {
@@ -64,6 +63,16 @@ function buildWatch(application: WatchApplication): EmailApplicationWatch {
     updatedAt: application.updatedAt,
     gmailQueries,
   };
+}
+
+function cleanCompanyName(company: string, title: string) {
+  const trimmed = company.trim();
+  const atMatch = trimmed.match(/\s@\s(.+)$/);
+  if (atMatch?.[1]) return atMatch[1].trim();
+  if (trimmed.toLowerCase().startsWith(`${title.toLowerCase()} @ `)) {
+    return trimmed.slice(title.length + 3).trim();
+  }
+  return trimmed;
 }
 
 function domainFromUrl(value: string | null) {
@@ -116,3 +125,13 @@ const titleStopWords = new Set([
   "manager",
   "remote",
 ]);
+
+const jobResponseTerms = [
+  "interview",
+  "recruiter",
+  "availability",
+  "assessment",
+  "unfortunately",
+  "\"next steps\"",
+  "\"moving forward\"",
+];
