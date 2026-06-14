@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { buildArchitectureDiagramSpecs, buildLinkedInContentFallback, planLinkedInPromptIntent, reviewLinkedInPostPrivacy, reviewPromptSatisfaction, type LinkedInContentDirection } from "@/lib/agents/linkedin-content";
+import { buildArchitectureDiagramSpecs, buildLinkedInContentFallback, planLinkedInPromptIntent, reviewDiagramSpecQuality, reviewLinkedInPostPrivacy, reviewPromptSatisfaction, type LinkedInContentDirection } from "@/lib/agents/linkedin-content";
 import { describe, expect, it } from "vitest";
 
 describe("LinkedIn content agent helpers", () => {
@@ -178,6 +178,50 @@ describe("LinkedIn content agent helpers", () => {
     const specs = buildArchitectureDiagramSpecs(architectureDirection());
     expect(specs.map((spec) => spec.id)).toEqual(["system-architecture", "agent-content-flow"]);
     expect(specs[0].columns.flatMap((column) => column.items).join(" ")).toContain("Prisma/Postgres");
+    expect(specs[0].diagramKind).toBe("system_architecture");
+    expect(specs[0].relationships.length).toBeGreaterThan(0);
+    expect(specs[0].callouts.join(" ")).toContain("provenance");
+    expect(specs[0].provenance.length).toBeGreaterThan(0);
+  });
+
+  it("reviews staff-engineer diagram typography, spacing, overflow, and provenance", () => {
+    const good = reviewDiagramSpecQuality(buildArchitectureDiagramSpecs(architectureDirection())[0]);
+    expect(good.status).toBe("PASS");
+    expect(good.checks.typography).toBe("PASS");
+    expect(good.checks.provenance).toBe("PASS");
+
+    const bad = reviewDiagramSpecQuality({
+      id: "bad",
+      title: "Bad",
+      subtitle: "Bad",
+      diagramKind: "system_architecture",
+      rationale: "Bad",
+      designIntent: "Bad",
+      columns: [
+        { title: "Too much", items: ["This label is intentionally far too long for a polished technical diagram and should trigger typography review because it will not scan well on LinkedIn", "Two", "Three", "Four", "Five"] },
+        { title: "Another", items: ["Item"] },
+        { title: "Another", items: ["Item"] },
+        { title: "Another", items: ["Item"] },
+        { title: "Another", items: ["Item"] },
+        { title: "Another", items: ["Item"] },
+      ],
+      relationships: [],
+      callouts: [],
+      footer: "Bad",
+      provenance: [],
+    }, ["Diagram card overflow: Too much."]);
+    expect(bad.status).toBe("NEEDS_REVIEW");
+    expect(bad.warnings.join(" ")).toContain("overflow");
+    expect(bad.checks.typography).toBe("NEEDS_REVIEW");
+    expect(bad.checks.provenance).toBe("NEEDS_REVIEW");
+  });
+
+  it("keeps deterministic diagrams authoritative over optional AI polish", () => {
+    expect(source).toContain("assetType?: \"screenshot\" | \"diagram\" | \"ai_polish\"");
+    expect(source).toContain("LINKEDIN_ENABLE_AI_VISUAL_POLISH");
+    expect(source).toContain("Treat AI polish as optional social texture");
+    expect(source).toContain("passingDiagrams");
+    expect(source).toContain("staff-engineer-html-v1");
   });
 });
 

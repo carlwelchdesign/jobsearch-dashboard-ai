@@ -84,12 +84,27 @@ function screenshotAssets(value: unknown): LinkedInDraftView["screenshotAssets"]
           description: typeof record.description === "string" ? record.description : "",
           route: typeof record.route === "string" ? record.route : undefined,
           assetType: typeof record.assetType === "string" ? record.assetType : undefined,
+          diagramKind: typeof record.diagramKind === "string" ? record.diagramKind : undefined,
+          renderEngine: typeof record.renderEngine === "string" ? record.renderEngine : undefined,
+          qualityReview: qualityReview(record.qualityReview),
+          imageModel: typeof record.imageModel === "string" ? record.imageModel : undefined,
+          provenance: stringArray(record.provenance),
           rationale: typeof record.rationale === "string" ? record.rationale : undefined,
           privacyStatus: typeof record.privacyStatus === "string" ? record.privacyStatus : undefined,
           warnings: stringArray(record.warnings),
         }]
       : [];
   });
+}
+
+function qualityReview(value: unknown): LinkedInDraftView["screenshotAssets"][number]["qualityReview"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  return {
+    status: typeof record.status === "string" ? record.status : undefined,
+    score: typeof record.score === "number" ? record.score : undefined,
+    warnings: stringArray(record.warnings),
+  };
 }
 
 function privacyReview(value: unknown): LinkedInDraftView["privacyReview"] {

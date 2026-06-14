@@ -38,8 +38,8 @@ export type LinkedInDraftView = {
   agentReviews: Array<{ agent: string; summary: string; recommendation: string; metadata?: Record<string, unknown> }>;
   claims: Array<{ text: string; provenance: string; status: string }>;
   risks: string[];
-  screenshotAssets: Array<{ path: string; label: string; description: string; route?: string; assetType?: string; rationale?: string; privacyStatus?: string; warnings?: string[] }>;
-  selectedScreenshots: Array<{ path: string; label: string; description: string; route?: string; assetType?: string; rationale?: string; privacyStatus?: string; warnings?: string[] }>;
+  screenshotAssets: LinkedInVisualAssetView[];
+  selectedScreenshots: LinkedInVisualAssetView[];
   privacyReview: { status: "PASS" | "NEEDS_REVIEW"; warnings: string[] };
   status: string;
   publishError: string | null;
@@ -47,6 +47,22 @@ export type LinkedInDraftView = {
   createdAt: string;
   approvedAt: string | null;
   publishedAt: string | null;
+};
+
+type LinkedInVisualAssetView = {
+  path: string;
+  label: string;
+  description: string;
+  route?: string;
+  assetType?: string;
+  diagramKind?: string;
+  renderEngine?: string;
+  qualityReview?: { status?: string; score?: number; warnings?: string[] };
+  imageModel?: string;
+  provenance?: string[];
+  rationale?: string;
+  privacyStatus?: string;
+  warnings?: string[];
 };
 
 export type LinkedInShareConnectionView = {
@@ -472,19 +488,38 @@ function planSourceLabels(sources: LinkedInDraftView["memorySources"]) {
 function ScreenshotSection({ assets }: { assets: LinkedInDraftView["screenshotAssets"] }) {
   if (!assets.length) return null;
   const diagrams = renderableScreenshotAssets(assets).filter((asset) => asset.assetType === "diagram");
-  const screenshots = renderableScreenshotAssets(assets).filter((asset) => asset.assetType !== "diagram");
-  const renderAssets = [...diagrams, ...screenshots];
+  const aiPolish = renderableScreenshotAssets(assets).filter((asset) => asset.assetType === "ai_polish");
+  const screenshots = renderableScreenshotAssets(assets).filter((asset) => asset.assetType !== "diagram" && asset.assetType !== "ai_polish");
   return (
-    <Stack spacing={1}>
+    <Stack spacing={1.5}>
       <Typography sx={{ fontWeight: 850 }}>Visuals</Typography>
+      <VisualAssetGroup title="Technical diagrams" assets={diagrams} />
+      <VisualAssetGroup title="AI polish variants" assets={aiPolish} />
+      <VisualAssetGroup title="App screenshots" assets={screenshots} />
+    </Stack>
+  );
+}
+
+function VisualAssetGroup({ title, assets }: { title: string; assets: LinkedInDraftView["screenshotAssets"] }) {
+  if (!assets.length) return null;
+  return (
+    <Stack spacing={0.75}>
+      <Typography variant="body2" sx={{ fontWeight: 800 }}>{title}</Typography>
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
-        {renderAssets.map((asset) => (
-          <Box key={asset.path} sx={{ width: { xs: "100%", sm: 260 }, border: 1, borderColor: "divider", borderRadius: 1, overflow: "hidden", bgcolor: "background.default" }}>
+        {assets.map((asset) => (
+          <Box key={asset.path} sx={{ width: { xs: "100%", sm: 300 }, border: 1, borderColor: "divider", borderRadius: 1, overflow: "hidden", bgcolor: "background.default" }}>
             <Box component="img" src={asset.path} alt={asset.label} sx={{ display: "block", width: "100%", aspectRatio: "16 / 9", objectFit: "cover" }} />
             <Box sx={{ p: 1 }}>
-              <Typography variant="body2" sx={{ fontWeight: 800 }}>{asset.label}</Typography>
-              <Typography variant="caption" color="text.secondary">{asset.assetType ?? "screenshot"} - {asset.privacyStatus ?? "NEEDS_REVIEW"}</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 800, overflowWrap: "anywhere" }}>{asset.label}</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                {asset.assetType ?? "screenshot"} - {asset.privacyStatus ?? "NEEDS_REVIEW"}
+                {asset.qualityReview?.score != null ? ` - quality ${asset.qualityReview.score}/100` : ""}
+              </Typography>
+              {asset.renderEngine ? <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>Renderer: {asset.renderEngine}</Typography> : null}
+              {asset.imageModel ? <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>Image model: {asset.imageModel}</Typography> : null}
+              {asset.provenance?.length ? <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>Provenance: {asset.provenance.slice(0, 2).join(", ")}</Typography> : null}
               {asset.rationale ? <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>{asset.rationale}</Typography> : null}
+              {asset.warnings?.length ? <Typography variant="caption" color="warning.main" sx={{ display: "block", overflowWrap: "anywhere" }}>{asset.warnings.join(" ")}</Typography> : null}
             </Box>
           </Box>
         ))}
@@ -548,12 +583,27 @@ function screenshotAssets(value: unknown): LinkedInDraftView["screenshotAssets"]
           description: typeof record.description === "string" ? record.description : "",
           route: typeof record.route === "string" ? record.route : undefined,
           assetType: typeof record.assetType === "string" ? record.assetType : undefined,
+          diagramKind: typeof record.diagramKind === "string" ? record.diagramKind : undefined,
+          renderEngine: typeof record.renderEngine === "string" ? record.renderEngine : undefined,
+          qualityReview: qualityReview(record.qualityReview),
+          imageModel: typeof record.imageModel === "string" ? record.imageModel : undefined,
+          provenance: stringArray(record.provenance),
           rationale: typeof record.rationale === "string" ? record.rationale : undefined,
           privacyStatus: typeof record.privacyStatus === "string" ? record.privacyStatus : undefined,
           warnings: stringArray(record.warnings),
         }]
       : [];
   });
+}
+
+function qualityReview(value: unknown): LinkedInVisualAssetView["qualityReview"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  return {
+    status: typeof record.status === "string" ? record.status : undefined,
+    score: typeof record.score === "number" ? record.score : undefined,
+    warnings: stringArray(record.warnings),
+  };
 }
 
 function privacyReview(value: unknown): LinkedInDraftView["privacyReview"] {

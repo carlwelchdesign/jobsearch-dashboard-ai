@@ -25,7 +25,7 @@ import { getOutcomeCalibration, getOutcomeCalibrationTrends, getOutcomeRegressio
 import { getLearningRollbackAudit } from "@/lib/observability/rollback-audit";
 import { normalizeLinkedInScopes } from "@/lib/linkedin/share";
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_LINKEDIN_CONTENT_MODEL } from "@/lib/settings/ai-settings";
+import { DEFAULT_LINKEDIN_CONTENT_MODEL, DEFAULT_LINKEDIN_DIAGRAM_IMAGE_MODEL } from "@/lib/settings/ai-settings";
 import { SettingsClient } from "./settings-client";
 import type { ServiceHealthSettings, ServiceStatus } from "./service-health-panel";
 
@@ -1004,6 +1004,7 @@ export async function SettingsRouteContent({
             configured: Boolean(process.env.OPENAI_API_KEY),
             model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
             linkedinContentModel: user?.aiSettings?.linkedinContentModel ?? DEFAULT_LINKEDIN_CONTENT_MODEL,
+            linkedinDiagramImageModel: user?.aiSettings?.linkedinDiagramImageModel ?? DEFAULT_LINKEDIN_DIAGRAM_IMAGE_MODEL,
           }}
           langSmithSettings={{
             configured: process.env.LANGSMITH_TRACING === "true" && Boolean(process.env.LANGSMITH_API_KEY),

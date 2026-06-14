@@ -8,11 +8,15 @@ describe("Settings client source contract", () => {
 
   it("shows and saves a dedicated LinkedIn content model setting", () => {
     expect(contentSource).toContain("DEFAULT_LINKEDIN_CONTENT_MODEL");
+    expect(contentSource).toContain("DEFAULT_LINKEDIN_DIAGRAM_IMAGE_MODEL");
     expect(contentSource).toContain("aiSettings: true");
     expect(source).toContain("LinkedIn content model");
+    expect(source).toContain("LinkedIn diagram image model");
     expect(source).toContain("/api/settings/ai");
     expect(source).toContain("linkedinContentModel");
+    expect(source).toContain("linkedinDiagramImageModel");
     expect(source).toContain("Used only for public LinkedIn draft generation");
+    expect(source).toContain("exact technical diagram text is rendered deterministically");
   });
 
   it("keeps the app-wide model read-only", () => {

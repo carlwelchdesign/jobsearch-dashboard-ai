@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 const aiSettingsSchema = z.object({
   linkedinContentModel: z.string().trim().min(1).max(100),
+  linkedinDiagramImageModel: z.string().trim().min(1).max(100),
 });
 
 export async function GET() {
@@ -27,6 +28,7 @@ export async function PATCH(request: Request) {
     const settings = await updateAiSettings({
       userId: user.id,
       linkedinContentModel: body.linkedinContentModel,
+      linkedinDiagramImageModel: body.linkedinDiagramImageModel,
     });
 
     return NextResponse.json({

@@ -15,4 +15,13 @@ describe("OpenAI helper source contract", () => {
     expect(source).toContain("export async function createTextResponse");
     expect(source).toContain("const model = process.env.OPENAI_MODEL ?? DEFAULT_MODEL");
   });
+
+  it("supports optional image generation with explicit model and metadata", () => {
+    expect(source).toContain("export async function createImageGeneration");
+    expect(source).toContain("images.generate");
+    expect(source).toContain("output_format: \"png\"");
+    expect(source).toContain("model: resolvedModel");
+    expect(source).toContain("quality");
+    expect(source).toContain("size");
+  });
 });
