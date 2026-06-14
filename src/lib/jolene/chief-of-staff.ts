@@ -76,7 +76,7 @@ type JoleneChiefContext = {
   latestMarketRun: { id: string; createdAt: Date; outputJson: Prisma.JsonValue | null } | null;
   latestLinkedInDraft: { id: string; status: string; title: string | null; updatedAt: Date } | null;
   linkedInAnalytics: { posts: number; impressions: number; engagementRate: number | null } | null;
-  emailOps: { runId: string | null; createdAt: Date | null; summary: JoleneEmailOpsSummary | null; pendingFindings: number; calendarDrafts: number } | null;
+  emailOps: { runId: string | null; createdAt: Date | null; summary: JoleneEmailOpsSummary | null; pendingFindings: number; calendarDrafts: number; providerBlockers: Array<{ provider: string; status: string; detail: string; actionRequired?: string }> } | null;
   careerStandup: CareerStandup | null;
 };
 
@@ -257,6 +257,14 @@ export async function buildJoleneChiefContext(userId: string, source: NonNullabl
           summary: emailOps.summary,
           pendingFindings: emailOps.findings.filter((finding) => finding.status === "NEEDS_APPROVAL").length,
           calendarDrafts: emailOps.pendingCalendarProposals.length,
+          providerBlockers: emailOps.providerHealth
+            .filter((provider) => !provider.ok)
+            .map((provider) => ({
+              provider: provider.provider,
+              status: provider.status,
+              detail: provider.detail,
+              actionRequired: provider.actionRequired,
+            })),
         }
       : null,
     careerStandup,
@@ -280,6 +288,7 @@ export function buildJoleneChiefBrief(context: JoleneChiefContext): JoleneChiefO
   evidence.push(`${context.recentRuns.length} recent agent run(s) reviewed.`);
   if (context.linkedInAnalytics) evidence.push(`${context.linkedInAnalytics.posts} LinkedIn post analytics snapshot(s), ${context.linkedInAnalytics.impressions} impression(s).`);
   if (context.emailOps?.summary) evidence.push(`Email Ops: ${context.emailOps.summary.findingsCreated} finding(s), ${context.emailOps.pendingFindings} pending approval(s), ${context.emailOps.calendarDrafts} calendar draft(s).`);
+  if (context.emailOps?.providerBlockers.length) evidence.push(`Email Ops provider blockers: ${context.emailOps.providerBlockers.map((provider) => `${provider.provider} ${provider.status}`).join(", ")}.`);
   if (context.careerStandup) evidence.push(`Sprint score ${context.careerStandup.sprintScore}/100, attention debt ${context.careerStandup.attentionDebt}.`);
 
   if (context.openRequests.length) {
@@ -307,6 +316,20 @@ export function buildJoleneChiefBrief(context: JoleneChiefContext): JoleneChiefO
       category: "agent_health",
       rationale: "Jolene should not compound hidden workflow failures.",
       evidence: [...failedRuns, ...staleRunningRuns].slice(0, 4).map((run) => `${run.agentType} ${run.status.toLowerCase()} ${run.error ? `- ${run.error}` : ""}`),
+    }));
+  }
+
+  if (context.emailOps?.providerBlockers.length) {
+    blockers.push(`${context.emailOps.providerBlockers.length} Email Ops provider connection(s) require attention.`);
+    priorities.push(priority({
+      id: "fix-email-ops-provider",
+      priority: 1,
+      title: "Fix Email Ops provider connection",
+      detail: "Jolene cannot trust live inbox scans until the broken provider connection is repaired.",
+      href: "/dashboard/email-ops",
+      category: "email",
+      rationale: "A disconnected or expired mailbox must be surfaced as a blocker, not hidden as a clean scan.",
+      evidence: context.emailOps.providerBlockers.slice(0, 3).map((provider) => `${provider.provider}: ${provider.detail}${provider.actionRequired ? ` ${provider.actionRequired}` : ""}`),
     }));
   }
 

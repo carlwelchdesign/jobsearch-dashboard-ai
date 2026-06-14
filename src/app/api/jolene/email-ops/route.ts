@@ -13,6 +13,8 @@ export async function GET() {
     return NextResponse.json({
       run: result.latestRun ? serializeRun(result.latestRun) : null,
       summary: result.summary,
+      providerHealth: result.providerHealth,
+      backfill: result.summary?.backfill ?? null,
       findings: result.findings,
       pendingCalendarProposals: result.pendingCalendarProposals,
     });

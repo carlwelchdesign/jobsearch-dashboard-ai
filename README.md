@@ -161,11 +161,17 @@ curl -X POST http://localhost:3000/api/email/imap-sync \
 
 Email Ops scans both broad recent job-response mail and application-specific watchlist queries. It stores durable `EmailOpsFinding` rows with classification, confidence, match, evidence, suggested mutation, and provenance. Clear high-confidence rejections and application confirmations can auto-apply internal application outcomes. Ambiguous matches, offers, recruiter replies, interview/scheduling updates, reply drafts, employer contact, and calendar writes create approval-needed Jolene items instead of guessing.
 
+Provider health is now a first-class gate. If Gmail, Outlook, or IMAP is missing, disconnected, expired, `NEEDS_REAUTH`, or returning API errors, `/dashboard/email-ops` and Jolene Chief of Staff show that as a blocker with the last successful sync, last provider error, and required fix. A broken provider is never summarized as "no updates." Gmail watchlist searches are batched into bounded valid queries so one bad company-specific query does not fail the whole scan.
+
+Every Email Ops run also backfills already-ingested `EmailMessageRecord` rows from the last 90 days by default. This lets Jolene create missing findings from stored rejections, confirmations, interview invites, scheduling requests, assessments, offers, and review-needed messages even when live Gmail scanning is blocked by reauth. Security-code and application-verification emails are treated as application-blocked next steps rather than generic review noise. Repeated scans are idempotent and do not duplicate findings, application outcomes, requests, or calendar drafts.
+
 Scheduling-related findings create `CalendarEventProposal` rows as in-app drafts. Drafts can include title, source email, extracted meeting link, attendees, timezone, and confidence, but v1 does not write to Google or Outlook Calendar. Use `/dashboard/email-ops` to run Email Ops, review findings, approve or dismiss blocked updates, and inspect calendar drafts. APIs:
 
 ```bash
 curl http://localhost:3000/api/jolene/email-ops
-curl -X POST http://localhost:3000/api/jolene/email-ops/run
+curl -X POST http://localhost:3000/api/jolene/email-ops/run \
+  -H "content-type: application/json" \
+  -d '{"includeBackfill":true,"lookbackDays":90}'
 curl -X POST http://localhost:3000/api/jolene/email-ops/findings/FINDING_ID/approve
 curl -X POST http://localhost:3000/api/jolene/email-ops/findings/FINDING_ID/dismiss
 ```

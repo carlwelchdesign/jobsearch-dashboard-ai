@@ -29,5 +29,22 @@ describe("Jolene Email Operations source contract", () => {
     expect(source).toContain('const lowRiskAutoClassifications = new Set<EmailMessageClassification>(["REJECTION", "AUTOMATED_CONFIRMATION"])');
     expect(source).toContain('status: "AUTO_APPLIED"');
     expect(source).toContain("email.confidenceScore >= 85");
+    expect(source).toContain("recordOutcomeIfMissing");
+  });
+
+  it("backfills stored mail and reports provider blockers instead of false clean scans", () => {
+    expect(source).toContain("collectEmailOpsCandidateEmails");
+    expect(source).toContain("includeBackfill");
+    expect(source).toContain("lookbackDays");
+    expect(source).toContain("buildProviderHealth");
+    expect(source).toContain("Email Ops needs attention");
+    expect(source).toContain("NEEDS_REAUTH");
+  });
+
+  it("treats application verification mail as a blocked next step", () => {
+    expect(source).toContain("isApplicationVerificationEmail");
+    expect(source).toContain('"APPLICATION_BLOCKED"');
+    expect(source).toContain("application_verification");
+    expect(source).toContain("Application verification needed");
   });
 });

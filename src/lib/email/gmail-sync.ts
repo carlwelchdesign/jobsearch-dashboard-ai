@@ -26,6 +26,7 @@ export type GmailSyncResult = {
   ingested: number;
   skipped: number;
   queries: string[];
+  queryErrors: Array<{ query: string; reason: string }>;
   messages: Array<{
     providerMessageId: string;
     subject: string;
@@ -47,13 +48,22 @@ export async function syncGmailEmail(input: {
   const accessToken = await validAccessToken(input.connection);
   const queries = input.queries?.length ? input.queries : [`newer_than:${sinceDays}d`];
   const refsById = new Map<string, { id: string; threadId?: string }>();
+  const queryErrors: GmailSyncResult["queryErrors"] = [];
 
-  for (const query of queries) {
+  for (const query of queries.slice(0, 75)) {
     const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
     listUrl.searchParams.set("maxResults", String(limit));
     listUrl.searchParams.set("q", query);
-    const listResponse = await gmailFetch<GmailListResponse>(listUrl.toString(), accessToken);
-    for (const ref of listResponse.messages ?? []) refsById.set(ref.id, ref);
+    try {
+      const listResponse = await gmailFetch<GmailListResponse>(listUrl.toString(), accessToken);
+      for (const ref of listResponse.messages ?? []) refsById.set(ref.id, ref);
+    } catch (error) {
+      queryErrors.push({ query, reason: error instanceof Error ? error.message : "Gmail query failed." });
+    }
+  }
+
+  if (queryErrors.length === queries.slice(0, 75).length && queryErrors.length > 0) {
+    throw new Error(`All Gmail search queries failed. First error: ${queryErrors[0]?.reason ?? "unknown"}`);
   }
 
   const refs = Array.from(refsById.values()).slice(0, limit);
@@ -93,6 +103,7 @@ export async function syncGmailEmail(input: {
     ingested: messages.length,
     skipped,
     queries,
+    queryErrors,
     messages,
   };
 }
