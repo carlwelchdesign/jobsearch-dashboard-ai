@@ -2,9 +2,9 @@ import type { AgentRun, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { runAgent } from "@/lib/agents/run-agent";
 import { buildLinkedInContentMemoryPack, jsonValue, type LinkedInContentMemoryPack } from "@/lib/agents/linkedin-content-memory";
-import { parseStructuredOutput } from "@/lib/ai/openai";
+import { createImageGeneration, parseStructuredOutput } from "@/lib/ai/openai";
 import { prisma } from "@/lib/prisma";
-import { getLinkedInContentModel } from "@/lib/settings/ai-settings";
+import { getLinkedInContentModel, getLinkedInDiagramImageModel } from "@/lib/settings/ai-settings";
 
 export type LinkedInContentInput = {
   userId?: string;
@@ -15,6 +15,7 @@ export type LinkedInContentInput = {
   visualDirection?: string;
   parentRunId?: string;
   generationModel?: string;
+  diagramImageModel?: string;
 };
 
 export type LinkedInContentPillar = "app_progress" | "search_learning" | "architecture" | "workflow_design";
@@ -26,14 +27,34 @@ export type LinkedInScreenshotAsset = {
   mimeType: "image/png";
   description: string;
   route: string;
-  assetType?: "screenshot" | "diagram";
+  assetType?: "screenshot" | "diagram" | "ai_polish";
+  diagramKind?: string;
+  renderEngine?: string;
+  qualityReview?: DiagramQualityReview;
+  imageModel?: string;
+  sourceSpec?: unknown;
+  provenance?: string[];
   rationale?: string;
   privacyStatus: "PASS" | "NEEDS_REVIEW";
   warnings: string[];
 };
 
 export type LinkedInAgentReview = {
-  agent: "Narrative Strategist" | "Documentarian" | "Editorial Challenger" | "Prompt Fidelity Reviewer" | "Analytics Narrator" | "Product Strategist" | "Editor" | "Visual Producer" | "Privacy Reviewer";
+  agent:
+    | "Narrative Strategist"
+    | "Documentarian"
+    | "Editorial Challenger"
+    | "Prompt Fidelity Reviewer"
+    | "Analytics Narrator"
+    | "Product Strategist"
+    | "Editor"
+    | "Visual Producer"
+    | "Technical Documentation Architect"
+    | "Diagram Systems Designer"
+    | "Visual Design Reviewer"
+    | "Diagram QA Reviewer"
+    | "AI Visual Polish Producer"
+    | "Privacy Reviewer";
   summary: string;
   recommendation: string;
   metadata?: Record<string, unknown>;
@@ -108,6 +129,39 @@ export type PromptSatisfactionReview = {
   reviewedAt: string;
 };
 
+export type DiagramColumn = {
+  title: string;
+  items: string[];
+};
+
+export type StaffEngineerDiagramSpec = {
+  id: string;
+  title: string;
+  subtitle: string;
+  diagramKind: "system_architecture" | "agent_workflow" | "data_flow" | "approval_gates";
+  rationale: string;
+  designIntent: string;
+  columns: DiagramColumn[];
+  relationships: Array<{ from: string; to: string; label: string }>;
+  callouts: string[];
+  footer: string;
+  provenance: string[];
+};
+
+export type DiagramQualityReview = {
+  status: "PASS" | "NEEDS_REVIEW";
+  score: number;
+  checks: {
+    typography: "PASS" | "NEEDS_REVIEW";
+    spacing: "PASS" | "NEEDS_REVIEW";
+    overflow: "PASS" | "NEEDS_REVIEW";
+    contrast: "PASS" | "NEEDS_REVIEW";
+    provenance: "PASS" | "NEEDS_REVIEW";
+  };
+  warnings: string[];
+  reviewedAt: string;
+};
+
 const generatedLinkedInPostSchema = z.object({
   title: z.string().min(1).max(120),
   hook: z.string().min(1).max(220),
@@ -149,15 +203,16 @@ export async function runLinkedInContentAgent(input: LinkedInContentInput = {}) 
   const pillar = input.contentPillar ?? "app_progress";
   const direction = buildContentDirection(input, memoryPack);
   const generationModel = await getLinkedInContentModel(user.id);
+  const diagramImageModel = await getLinkedInDiagramImageModel(user.id);
   return runAgent<LinkedInContentInput, LinkedInContentOutput>({
     agentType: "LINKEDIN_CONTENT",
-    input: { ...input, contentPillar: pillar, prompt: direction.prompt, tone: direction.tone, format: direction.format, visualDirection: direction.visualDirection, generationModel },
+    input: { ...input, contentPillar: pillar, prompt: direction.prompt, tone: direction.tone, format: direction.format, visualDirection: direction.visualDirection, generationModel, diagramImageModel },
     userId: user.id,
     parentRunId: input.parentRunId,
     execute: async (run) => {
       const generated = await generateLinkedInContent({ pillar, memoryPack, direction, model: generationModel });
       const screenshotAssets = await createSafeLinkedInScreenshotAssets(memoryPack, direction);
-      const diagramAssets = await createPromptDiagramAssets(direction);
+      const diagramAssets = await createPromptDiagramAssets(direction, diagramImageModel);
       const visualAssets = [...diagramAssets, ...screenshotAssets];
       const selectedScreenshots = selectBestScreenshots(visualAssets, direction);
       const promptReview = reviewPromptSatisfaction({
@@ -165,7 +220,7 @@ export async function runLinkedInContentAgent(input: LinkedInContentInput = {}) 
         direction,
         visualAssets,
       });
-      const agentReviews = buildAgentReviews(memoryPack, generated, direction, selectedScreenshots, promptReview);
+      const agentReviews = buildAgentReviews(memoryPack, generated, direction, selectedScreenshots, promptReview, visualAssets);
       const claims = buildClaims(generated, memoryPack);
       const privacyReview = reviewLinkedInPostPrivacy({
         body: generated.body,
@@ -435,48 +490,95 @@ export function reviewPromptSatisfaction(input: {
   };
 }
 
-async function createPromptDiagramAssets(direction: LinkedInContentDirection): Promise<LinkedInScreenshotAsset[]> {
+async function createPromptDiagramAssets(direction: LinkedInContentDirection, imageModel: string): Promise<LinkedInScreenshotAsset[]> {
   if (!direction.obligations.requiredVisuals.includes("architecture_diagram")) return [];
   const specs = buildArchitectureDiagramSpecs(direction);
   const assets: LinkedInScreenshotAsset[] = [];
   for (const spec of specs) assets.push(await captureDiagramAsset(spec));
+  const polishAsset = await createAiVisualPolishAsset(specs[0], direction, imageModel);
+  if (polishAsset) assets.push(polishAsset);
   return assets;
 }
 
-export function buildArchitectureDiagramSpecs(direction: LinkedInContentDirection) {
+export function buildArchitectureDiagramSpecs(direction: LinkedInContentDirection): StaffEngineerDiagramSpec[] {
   return [
     {
       id: "system-architecture",
       title: "System Architecture",
       subtitle: "Human intent, app routes, agent services, durable memory, and external gates",
+      diagramKind: "system_architecture",
       rationale: "Shows the repo-level architecture requested by the prompt.",
+      designIntent: "Technical editorial architecture diagram with restrained color, clear grouping, and documentation-quality hierarchy.",
       columns: [
-        { title: "Experience", items: ["Next.js App Router UI", "/linkedin-content", "/dashboard", "Review and approval actions"] },
-        { title: "API Control", items: ["Route handlers", "Draft APIs", "Jolene APIs", "Cron and sync endpoints"] },
-        { title: "Agent Services", items: ["Jolene Chief of Staff", "Email Ops team", "LinkedIn content team", "Market/search agents"] },
-        { title: "Memory", items: ["Prisma/Postgres", "AgentRun + AgentRunEvent", "/plans context", "Drafts and analytics"] },
-        { title: "External Gates", items: ["OpenAI optional", "Playwright screenshots", "LinkedIn publish approval"] },
+        { title: "Experience", items: ["Next.js App Router UI", "Dashboard command center", "LinkedIn content studio", "Human review actions"] },
+        { title: "API Control", items: ["Draft generation routes", "Jolene and Email Ops routes", "Analytics and sync routes", "Approval endpoints"] },
+        { title: "Agent Services", items: ["Jolene Chief of Staff", "Email Operations team", "LinkedIn content team", "Market and search agents"] },
+        { title: "Durable Memory", items: ["Prisma/Postgres", "AgentRun event history", "Plan files as build log", "Draft and analytics records"] },
+        { title: "External Gates", items: ["OpenAI generation", "Playwright capture", "LinkedIn publish approval", "Privacy review"] },
       ],
+      relationships: [
+        { from: "Experience", to: "API Control", label: "intent and approval" },
+        { from: "API Control", to: "Agent Services", label: "delegated work" },
+        { from: "Agent Services", to: "Durable Memory", label: "evidence and state" },
+        { from: "Durable Memory", to: "External Gates", label: "publishable artifacts" },
+      ],
+      callouts: ["Every public claim needs provenance.", "External writes stay approval-gated."],
       footer: `Prompt: ${direction.prompt}`,
+      provenance: ["LinkedIn content prompt", "Repository architecture context", "AgentRun and LinkedInPostDraft data model", "/plans build log"],
     },
     {
       id: "agent-content-flow",
       title: "Agent Content Flow",
       subtitle: "How a prompt becomes a reviewable LinkedIn draft",
+      diagramKind: "agent_workflow",
       rationale: "Shows why content generation should follow the prompt instead of defaulting to funnel analytics.",
+      designIntent: "Workflow diagram with strong left-to-right scanning, compact labels, and explicit review gates.",
       columns: [
         { title: "Brief", items: ["User prompt", "Detected intent", "Prompt obligations"] },
-        { title: "Memory Pack", items: ["/plans files", "Agent runs", "Analytics", "Prior drafts"] },
-        { title: "Creation", items: ["Narrative strategy", "Documentarian pass", "Visual producer", "Editor"] },
-        { title: "Gates", items: ["Prompt fidelity review", "Privacy review", "Grounded claims"] },
+        { title: "Memory Pack", items: ["Plan files", "Agent runs", "Aggregate analytics", "Prior drafts"] },
+        { title: "Creation", items: ["Narrative strategy", "Technical documentation", "Diagram system design", "Editor pass"] },
+        { title: "Gates", items: ["Prompt fidelity review", "Diagram QA review", "Privacy review", "Grounded claims"] },
         { title: "Publish", items: ["Editable draft", "User approval", "LinkedIn Share API"] },
       ],
+      relationships: [
+        { from: "Brief", to: "Memory Pack", label: "context" },
+        { from: "Memory Pack", to: "Creation", label: "source material" },
+        { from: "Creation", to: "Gates", label: "review" },
+        { from: "Gates", to: "Publish", label: "approval" },
+      ],
+      callouts: ["The deterministic diagram is the source of truth.", "AI polish is optional and non-authoritative."],
       footer: `Intent: ${direction.intent}`,
+      provenance: ["Prompt obligations", "LinkedIn content memory pack", "Content-team review model", "LinkedIn publishing gates"],
     },
   ];
 }
 
-async function captureDiagramAsset(spec: ReturnType<typeof buildArchitectureDiagramSpecs>[number]): Promise<LinkedInScreenshotAsset> {
+export function reviewDiagramSpecQuality(spec: StaffEngineerDiagramSpec, layoutWarnings: string[] = []): DiagramQualityReview {
+  const warnings: string[] = [];
+  const allLabels = [spec.title, spec.subtitle, ...spec.columns.flatMap((column) => [column.title, ...column.items]), ...spec.callouts];
+  if (!spec.provenance.length) warnings.push("Diagram is missing source provenance.");
+  if (spec.columns.length > 5) warnings.push("Diagram has too many columns for a readable LinkedIn visual.");
+  if (spec.columns.some((column) => column.items.length > 4)) warnings.push("At least one diagram column is too dense.");
+  if (allLabels.some((label) => label.length > 88)) warnings.push("At least one label is too long for staff-engineer diagram typography.");
+  warnings.push(...layoutWarnings);
+  const checks = {
+    typography: allLabels.some((label) => label.length > 88) ? "NEEDS_REVIEW" as const : "PASS" as const,
+    spacing: spec.columns.length > 5 || spec.columns.some((column) => column.items.length > 4) ? "NEEDS_REVIEW" as const : "PASS" as const,
+    overflow: layoutWarnings.length ? "NEEDS_REVIEW" as const : "PASS" as const,
+    contrast: "PASS" as const,
+    provenance: spec.provenance.length ? "PASS" as const : "NEEDS_REVIEW" as const,
+  };
+  const score = Math.max(0, 100 - warnings.length * 12);
+  return {
+    status: warnings.length ? "NEEDS_REVIEW" : "PASS",
+    score,
+    checks,
+    warnings,
+    reviewedAt: new Date().toISOString(),
+  };
+}
+
+async function captureDiagramAsset(spec: StaffEngineerDiagramSpec): Promise<LinkedInScreenshotAsset> {
   try {
     const fs = await import("fs/promises");
     const path = await import("path");
@@ -486,8 +588,23 @@ async function captureDiagramAsset(spec: ReturnType<typeof buildArchitectureDiag
     const filename = `${Date.now()}-${spec.id}.png`;
     const filePath = path.join(dir, filename);
     const browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage({ viewport: { width: 1400, height: 900 }, colorScheme: "light" });
+    const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, colorScheme: "light" });
     await page.setContent(diagramHtml(spec), { waitUntil: "load" });
+    const layoutWarnings = await page.evaluate(() => {
+      const warnings: string[] = [];
+      document.querySelectorAll<HTMLElement>("[data-diagram-card]").forEach((element) => {
+        if (element.scrollHeight > element.clientHeight + 2 || element.scrollWidth > element.clientWidth + 2) {
+          warnings.push(`Diagram card overflow: ${element.dataset.diagramCard || "unknown"}.`);
+        }
+      });
+      document.querySelectorAll<HTMLElement>("[data-qa-text]").forEach((element) => {
+        if (element.scrollWidth > element.clientWidth + 2) {
+          warnings.push(`Text overflow: ${element.textContent?.trim() || "unknown"}.`);
+        }
+      });
+      return warnings;
+    });
+    const qualityReview = reviewDiagramSpecQuality(spec, layoutWarnings);
     await page.screenshot({ path: filePath, fullPage: true });
     await browser.close();
     return {
@@ -496,24 +613,97 @@ async function captureDiagramAsset(spec: ReturnType<typeof buildArchitectureDiag
       mimeType: "image/png",
       route: `diagram:${spec.id}`,
       assetType: "diagram",
+      diagramKind: spec.diagramKind,
+      renderEngine: "staff-engineer-html-v1",
       description: spec.subtitle,
       rationale: spec.rationale,
-      privacyStatus: "PASS",
-      warnings: [],
+      qualityReview,
+      sourceSpec: spec,
+      provenance: spec.provenance,
+      privacyStatus: qualityReview.status,
+      warnings: qualityReview.warnings,
     };
   } catch (error) {
+    const qualityReview = reviewDiagramSpecQuality(spec, [error instanceof Error ? error.message : "Diagram generation failed."]);
     return {
       label: `Diagram unavailable: ${spec.title}`,
       path: "",
       mimeType: "image/png",
       route: `diagram:${spec.id}`,
       assetType: "diagram",
+      diagramKind: spec.diagramKind,
+      renderEngine: "staff-engineer-html-v1",
       description: spec.subtitle,
       rationale: spec.rationale,
+      qualityReview,
+      sourceSpec: spec,
+      provenance: spec.provenance,
       privacyStatus: "NEEDS_REVIEW",
       warnings: [error instanceof Error ? error.message : "Diagram generation failed."],
     };
   }
+}
+
+async function createAiVisualPolishAsset(spec: StaffEngineerDiagramSpec, direction: LinkedInContentDirection, imageModel: string): Promise<LinkedInScreenshotAsset | null> {
+  if (process.env.LINKEDIN_ENABLE_AI_VISUAL_POLISH !== "true") return null;
+  const fs = await import("fs/promises");
+  const path = await import("path");
+  const dir = path.join(process.cwd(), "public", "generated", "linkedin-content");
+  await fs.mkdir(dir, { recursive: true });
+  const filename = `${Date.now()}-${spec.id}-ai-polish.png`;
+  const filePath = path.join(dir, filename);
+  const prompt = [
+    "Create a polished editorial cover image for a technical LinkedIn post.",
+    "No readable text, no labels, no UI screenshots, no logos, no people.",
+    "Use abstract system architecture cues: layered blocks, evidence trails, approval gates, agent workflow, and durable memory.",
+    "Style: staff engineer documentation, quiet high-contrast palette, premium technical publication, not cartoonish.",
+    `Topic: ${direction.prompt}`,
+    `Diagram brief: ${spec.title} - ${spec.subtitle}`,
+  ].join("\n");
+  try {
+    const generated = await createImageGeneration({ prompt, model: imageModel, size: "1536x864", quality: "medium" });
+    if (!generated) {
+      return aiPolishWarningAsset(spec, imageModel, "OpenAI image generation is not configured or returned no image.");
+    }
+    await fs.writeFile(filePath, generated.buffer);
+    return {
+      label: `AI visual polish: ${spec.title}`,
+      path: `/generated/linkedin-content/${filename}`,
+      mimeType: "image/png",
+      route: `ai-polish:${spec.id}`,
+      assetType: "ai_polish",
+      diagramKind: spec.diagramKind,
+      renderEngine: "openai-image-generation",
+      description: "Optional non-authoritative polish variant. Exact technical text remains in the deterministic diagram.",
+      rationale: "Adds a social cover option without making the image model responsible for architecture labels.",
+      imageModel: generated.model,
+      sourceSpec: { id: spec.id, title: spec.title, prompt },
+      provenance: ["OpenAI image generation", "Deterministic diagram brief"],
+      privacyStatus: "PASS",
+      warnings: ["AI polish variant is non-authoritative and should not replace the deterministic technical diagram for exact architecture text."],
+    };
+  } catch (error) {
+    return aiPolishWarningAsset(spec, imageModel, error instanceof Error ? error.message : "OpenAI image generation failed.");
+  }
+}
+
+function aiPolishWarningAsset(spec: StaffEngineerDiagramSpec, imageModel: string, warning: string): LinkedInScreenshotAsset {
+  return {
+    label: `AI visual polish unavailable: ${spec.title}`,
+    path: "",
+    mimeType: "image/png",
+    route: `ai-polish:${spec.id}`,
+    assetType: "ai_polish",
+    diagramKind: spec.diagramKind,
+    renderEngine: "openai-image-generation",
+    description: "Optional AI polish variant could not be generated; deterministic diagram remains available.",
+    rationale: "Image generation failures are non-blocking because text-heavy technical diagrams are rendered deterministically.",
+    imageModel,
+    sourceSpec: { id: spec.id, title: spec.title },
+    provenance: ["OpenAI image generation attempted"],
+    privacyStatus: "NEEDS_REVIEW",
+    warnings: [warning],
+  };
 }
 
 function buildAgentReviews(
@@ -522,8 +712,14 @@ function buildAgentReviews(
   direction: LinkedInContentDirection,
   selectedScreenshots: LinkedInScreenshotAsset[],
   promptReview: PromptSatisfactionReview,
+  visualAssets: LinkedInScreenshotAsset[],
 ): LinkedInAgentReview[] {
   const latest = memoryPack.analytics.latestSearchRun;
+  const diagramAssets = visualAssets.filter((asset) => asset.assetType === "diagram");
+  const aiPolishAssets = visualAssets.filter((asset) => asset.assetType === "ai_polish");
+  const diagramReviews = diagramAssets.flatMap((asset) => asset.qualityReview ? [asset.qualityReview] : []);
+  const diagramWarnings = diagramReviews.flatMap((review) => review.warnings);
+  const bestDiagramScore = diagramReviews.reduce((score, review) => Math.max(score, review.score), 0);
   return [
     { agent: "Narrative Strategist", summary: `Prompt: ${direction.prompt}`, recommendation: `Intent: ${direction.intent}. Selected angle: ${direction.selectedAngle}. Rejected: ${direction.rejectedAngles.join(" | ") || "none"}.`, metadata: { prompt: direction.prompt, intent: direction.intent, format: direction.format, selectedAngle: direction.selectedAngle, rejectedAngles: direction.rejectedAngles } },
     { agent: "Documentarian", summary: memoryPack.recentDecisions.slice(0, 2).join(" "), recommendation: `Use plan memory and build evidence, including ${memoryPack.planSources.slice(0, 2).map((plan) => plan.title).join(", ") || "recent app work"}.` },
@@ -532,6 +728,11 @@ function buildAgentReviews(
     { agent: "Analytics Narrator", summary: latest ? `Latest funnel has ${latest.funnel.length} stages and ${latest.drops.length} visible drop-off reasons.` : "No latest search analytics are available.", recommendation: "Use aggregate funnel numbers only." },
     { agent: "Product Strategist", summary: memoryPack.storyAngles[0] ?? "The product angle is creator workflow memory.", recommendation: "Frame this as a content operating system learning from its own work." },
     { agent: "Editor", summary: `Draft title: ${generated.title}.`, recommendation: "Keep the post concrete, non-hype, and readable without internal app knowledge." },
+    { agent: "Technical Documentation Architect", summary: direction.intent.includes("architecture") ? `Architecture brief: ${direction.obligations.topic}` : "No technical diagram brief required for this prompt.", recommendation: "Use repo-level systems, memory, approval gates, and provenance as the diagram's source of truth.", metadata: { requiredConcepts: direction.obligations.requiredConcepts, requiredVisuals: direction.obligations.requiredVisuals } },
+    { agent: "Diagram Systems Designer", summary: diagramAssets.length ? `${diagramAssets.length} deterministic technical diagram asset(s) generated.` : "No deterministic technical diagram generated.", recommendation: "Prefer the deterministic technical diagram for exact labels and system documentation.", metadata: { diagramAssets: diagramAssets.map((asset) => ({ label: asset.label, diagramKind: asset.diagramKind, renderEngine: asset.renderEngine, provenance: asset.provenance })) } },
+    { agent: "Visual Design Reviewer", summary: diagramAssets.length ? `Best diagram quality score: ${bestDiagramScore}/100.` : "No diagram typography review available.", recommendation: "Use restrained type, normal-weight body labels, fixed gutters, and high contrast for LinkedIn readability.", metadata: { qualityReviews: diagramReviews } },
+    { agent: "Diagram QA Reviewer", summary: diagramWarnings.length ? diagramWarnings.join(" ") : "No text overflow, spacing, contrast, or provenance blockers detected.", recommendation: diagramWarnings.length ? "Do not publish media until the deterministic diagram passes QA." : "Deterministic diagram is publishable from a layout QA perspective.", metadata: { warnings: diagramWarnings } },
+    { agent: "AI Visual Polish Producer", summary: aiPolishAssets.length ? aiPolishAssets.map((asset) => `${asset.label}: ${asset.warnings.join(" ") || "generated"}`).join(" | ") : "AI visual polish was not requested for this draft.", recommendation: "Treat AI polish as optional social texture; never rely on it for exact architecture labels.", metadata: { aiPolishAssets: aiPolishAssets.map((asset) => ({ label: asset.label, path: asset.path, imageModel: asset.imageModel, warnings: asset.warnings })) } },
     { agent: "Visual Producer", summary: selectedScreenshots.map((item) => `${item.route}: ${item.description}`).join(" | ") || "No passing visual selected.", recommendation: `Visual rationale: ${direction.visualDirection || "choose the artifact that best explains the selected angle"}.`, metadata: { visualRationale: direction.visualDirection || "choose the artifact that best explains the selected angle", selectedAssets: selectedScreenshots.map((asset) => ({ label: asset.label, path: asset.path, route: asset.route, assetType: asset.assetType ?? "screenshot" })) } },
     { agent: "Privacy Reviewer", summary: memoryPack.publicPolicy, recommendation: "Block named entities, private outcomes, external URLs, and unsupported claims before publishing." },
   ];
@@ -665,50 +866,220 @@ function selectBestScreenshots(assets: LinkedInScreenshotAsset[], direction: Lin
     .map((item) => item.asset);
 }
 
-function diagramHtml(spec: ReturnType<typeof buildArchitectureDiagramSpecs>[number]) {
-  const columns = spec.columns.map((column, index) => {
-    const x = 48 + index * 260;
-    const items = column.items.map((item, itemIndex) => `<text x="${x + 22}" y="${230 + itemIndex * 42}" class="item">${escapeHtml(item)}</text>`).join("");
-    const arrow = index < spec.columns.length - 1 ? `<path d="M ${x + 218} 330 C ${x + 248} 330, ${x + 248} 330, ${x + 268} 330" class="arrow" marker-end="url(#arrow)" />` : "";
-    return `
-      <g>
-        <rect x="${x}" y="165" width="220" height="320" rx="18" class="card" />
-        <text x="${x + 22}" y="205" class="columnTitle">${escapeHtml(column.title)}</text>
-        ${items}
-        ${arrow}
-      </g>
-    `;
-  }).join("");
+function diagramHtml(spec: StaffEngineerDiagramSpec) {
+  const columns = spec.columns.map((column, index) => `
+    <section class="stage" data-diagram-card="${escapeHtml(column.title)}">
+      <div class="stageNumber">${String(index + 1).padStart(2, "0")}</div>
+      <h2 data-qa-text>${escapeHtml(column.title)}</h2>
+      <ul>
+        ${column.items.map((item) => `<li data-qa-text>${escapeHtml(item)}</li>`).join("")}
+      </ul>
+    </section>
+  `).join("");
+  const relationships = spec.relationships.map((relationship) => `
+    <div class="relationship" data-qa-text>
+      <span>${escapeHtml(relationship.from)}</span>
+      <strong>${escapeHtml(relationship.label)}</strong>
+      <span>${escapeHtml(relationship.to)}</span>
+    </div>
+  `).join("");
+  const callouts = spec.callouts.map((callout) => `<div class="callout" data-qa-text>${escapeHtml(callout)}</div>`).join("");
   return `
     <!doctype html>
     <html>
       <head>
         <meta charset="utf-8" />
         <style>
-          body { margin: 0; background: #f8fafc; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-          svg { display: block; width: 1400px; height: 900px; background: #f8fafc; }
-          .title { fill: #0f172a; font-size: 54px; font-weight: 850; letter-spacing: 0; }
-          .subtitle { fill: #475569; font-size: 24px; font-weight: 500; }
-          .card { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; }
-          .columnTitle { fill: #1d4ed8; font-size: 24px; font-weight: 850; }
-          .item { fill: #0f172a; font-size: 20px; font-weight: 650; }
-          .arrow { fill: none; stroke: #2563eb; stroke-width: 4; }
-          .footer { fill: #64748b; font-size: 18px; font-weight: 550; }
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            width: 1600px;
+            height: 900px;
+            overflow: hidden;
+            background: #f7f8fb;
+            color: #141922;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          }
+          .page {
+            width: 1600px;
+            height: 900px;
+            padding: 54px 60px 42px;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            gap: 28px;
+          }
+          header {
+            display: grid;
+            grid-template-columns: 1fr 280px;
+            gap: 28px;
+            align-items: start;
+          }
+          h1 {
+            margin: 0 0 12px;
+            max-width: 980px;
+            font-size: 48px;
+            line-height: 1.05;
+            font-weight: 760;
+            letter-spacing: 0;
+            color: #111827;
+          }
+          .subtitle {
+            margin: 0;
+            max-width: 1100px;
+            color: #4b5563;
+            font-size: 22px;
+            line-height: 1.35;
+            font-weight: 430;
+          }
+          .badge {
+            justify-self: end;
+            padding: 12px 14px;
+            border: 1px solid #cfd8e3;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #334155;
+            font-size: 16px;
+            line-height: 1.25;
+            font-weight: 520;
+          }
+          .grid {
+            display: grid;
+            grid-template-columns: repeat(${spec.columns.length}, minmax(0, 1fr));
+            gap: 18px;
+            min-height: 0;
+          }
+          .stage {
+            position: relative;
+            min-width: 0;
+            height: 454px;
+            padding: 24px 22px 22px;
+            border: 1px solid #d6dee9;
+            border-top: 5px solid #2563eb;
+            border-radius: 8px;
+            background: #ffffff;
+            overflow: hidden;
+            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.07);
+          }
+          .stageNumber {
+            color: #64748b;
+            font-size: 13px;
+            line-height: 1;
+            font-weight: 650;
+            margin-bottom: 16px;
+          }
+          h2 {
+            margin: 0 0 18px;
+            color: #1d4ed8;
+            font-size: 22px;
+            line-height: 1.18;
+            font-weight: 720;
+            letter-spacing: 0;
+            overflow-wrap: anywhere;
+          }
+          ul {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            display: grid;
+            gap: 13px;
+          }
+          li {
+            color: #1f2937;
+            font-size: 17px;
+            line-height: 1.34;
+            font-weight: 430;
+            overflow-wrap: anywhere;
+          }
+          li::before {
+            content: "";
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            margin: 0 10px 2px 0;
+            border-radius: 50%;
+            background: #14b8a6;
+          }
+          .support {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            align-items: stretch;
+          }
+          .panel {
+            min-width: 0;
+            padding: 16px 18px;
+            border: 1px solid #d6dee9;
+            border-radius: 8px;
+            background: #ffffff;
+          }
+          .panelTitle {
+            margin: 0 0 10px;
+            color: #475569;
+            font-size: 13px;
+            line-height: 1;
+            font-weight: 720;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+          }
+          .relationship, .callout {
+            color: #1f2937;
+            font-size: 15px;
+            line-height: 1.28;
+            font-weight: 430;
+            overflow-wrap: anywhere;
+          }
+          .relationship {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 10px;
+            align-items: center;
+            padding: 6px 0;
+          }
+          .relationship strong {
+            color: #0f766e;
+            font-size: 13px;
+            font-weight: 680;
+            white-space: nowrap;
+          }
+          .callout + .callout { margin-top: 8px; }
+          footer {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 24px;
+            color: #64748b;
+            font-size: 14px;
+            line-height: 1.3;
+            font-weight: 430;
+          }
         </style>
       </head>
       <body>
-        <svg viewBox="0 0 1400 900" role="img" aria-label="${escapeHtml(spec.title)}">
-          <defs>
-            <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
-              <path d="M2,2 L10,6 L2,10 Z" fill="#2563eb"></path>
-            </marker>
-          </defs>
-          <text x="48" y="78" class="title">${escapeHtml(spec.title)}</text>
-          <text x="50" y="120" class="subtitle">${escapeHtml(spec.subtitle)}</text>
-          ${columns}
-          <text x="50" y="820" class="footer">${escapeHtml(spec.footer)}</text>
-          <text x="50" y="852" class="footer">Prepared by the Job Search OS agent content team. No private application details included.</text>
-        </svg>
+        <main class="page" role="img" aria-label="${escapeHtml(spec.title)}">
+          <header>
+            <div>
+              <h1 data-qa-text>${escapeHtml(spec.title)}</h1>
+              <p class="subtitle" data-qa-text>${escapeHtml(spec.subtitle)}</p>
+            </div>
+            <div class="badge" data-qa-text>${escapeHtml(spec.designIntent)}</div>
+          </header>
+          <section>
+            <div class="grid">${columns}</div>
+            <div class="support">
+              <div class="panel">
+                <p class="panelTitle">Handoffs</p>
+                ${relationships}
+              </div>
+              <div class="panel">
+                <p class="panelTitle">Operating Principles</p>
+                ${callouts}
+              </div>
+            </div>
+          </section>
+          <footer>
+            <span data-qa-text>${escapeHtml(spec.footer)}</span>
+            <span data-qa-text>Prepared by the Job Search OS agent content team. No private application details included.</span>
+          </footer>
+        </main>
       </body>
     </html>
   `;

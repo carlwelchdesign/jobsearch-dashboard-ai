@@ -41,6 +41,7 @@ type SettingsClientProps = {
     configured: boolean;
     model: string;
     linkedinContentModel: string;
+    linkedinDiagramImageModel: string;
   };
   langSmithSettings: {
     configured: boolean;
@@ -146,6 +147,7 @@ type SettingsClientProps = {
 export function SettingsClient({ group, initialSettings, aiSettings, langSmithSettings, emailSyncSettings, sourceSettings, profileSettings, latestGithubReview, cronSettings, automationSettings, companyAutomationPolicies: initialCompanyAutomationPolicies, serviceHealthSettings }: SettingsClientProps) {
   const [settings, setSettings] = useState(initialSettings);
   const [linkedinContentModelDraft, setLinkedinContentModelDraft] = useState("");
+  const [linkedinDiagramImageModelDraft, setLinkedinDiagramImageModelDraft] = useState("");
   const [profile, setProfile] = useState(profileSettings);
   const [cron, setCron] = useState(cronSettings);
   const [automation, setAutomation] = useState(automationSettings);
@@ -196,7 +198,7 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
       fetch("/api/settings/ai", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ linkedinContentModel: linkedinContentModel }),
+        body: JSON.stringify({ linkedinContentModel: linkedinContentModel, linkedinDiagramImageModel: linkedinDiagramImageModel }),
       }),
       );
     }
@@ -251,6 +253,9 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
       const aiBody = bodies.find((body) => body?.settings?.linkedinContentModel);
       if (aiBody?.settings?.linkedinContentModel) {
         setLinkedinContentModelDraft(aiBody.settings.linkedinContentModel);
+      }
+      if (aiBody?.settings?.linkedinDiagramImageModel) {
+        setLinkedinDiagramImageModelDraft(aiBody.settings.linkedinDiagramImageModel);
       }
     }
     if (showApplication) {
@@ -423,6 +428,7 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
   const showApplication = group === "application";
   const showAdmin = group === "admin";
   const linkedinContentModel = linkedinContentModelDraft || aiSettings.linkedinContentModel;
+  const linkedinDiagramImageModel = linkedinDiagramImageModelDraft || aiSettings.linkedinDiagramImageModel;
 
   return (
     <Stack spacing={2}>
@@ -441,7 +447,7 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
             </Stack>
             <Alert severity={aiSettings.configured ? "success" : "warning"}>
               {aiSettings.configured
-                ? `OpenAI is configured. General app generation uses ${aiSettings.model}. LinkedIn content drafts use ${linkedinContentModel}.`
+                ? `OpenAI is configured. General app generation uses ${aiSettings.model}. LinkedIn content drafts use ${linkedinContentModel}. LinkedIn diagram polish uses ${linkedinDiagramImageModel}.`
                 : "OpenAI is not configured yet. Add OPENAI_API_KEY to .env, keep OPENAI_MODEL set, then restart the dev server."}
             </Alert>
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)" }, gap: 2 }}>
@@ -453,6 +459,13 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
                 value={linkedinContentModel}
                 onChange={(event) => setLinkedinContentModelDraft(event.target.value)}
                 helperText="Used only for public LinkedIn draft generation, where higher-quality writing is worth the extra cost."
+              />
+              <TextField
+                fullWidth
+                label="LinkedIn diagram image model"
+                value={linkedinDiagramImageModel}
+                onChange={(event) => setLinkedinDiagramImageModelDraft(event.target.value)}
+                helperText="Used only for optional non-authoritative visual polish; exact technical diagram text is rendered deterministically."
               />
             </Box>
             <Alert severity={langSmithSettings.configured ? "success" : "info"}>

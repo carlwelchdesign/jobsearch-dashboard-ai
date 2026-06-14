@@ -114,6 +114,54 @@ export async function createTextResponse({
   return response.output_text?.trim() || null;
 }
 
+export async function createImageGeneration({
+  prompt,
+  model = "gpt-image-2",
+  size = "1536x864",
+  quality = "medium",
+}: {
+  prompt: string;
+  model?: string;
+  size?: string;
+  quality?: "low" | "medium" | "high" | "auto";
+}) {
+  if (!isOpenAiConfigured()) return null;
+
+  client ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  const resolvedModel = model.trim() || "gpt-image-2";
+  const response = await withTimeout(traceAgentOperation(
+    "openai.image_generation",
+    {
+      provider: "openai",
+      operation: "images.generate",
+      model: resolvedModel,
+      size,
+      quality,
+      promptLength: prompt.length,
+    },
+    () => client!.images.generate({
+      model: resolvedModel,
+      prompt,
+      size,
+      quality,
+      output_format: "png",
+      background: "opaque",
+      moderation: "auto",
+    }),
+  ), Math.max(openAiTimeoutMs(), 120_000), "OpenAI image generation");
+
+  const base64 = response.data?.[0]?.b64_json;
+  if (!base64) return null;
+  return {
+    model: resolvedModel,
+    size,
+    quality,
+    mimeType: "image/png" as const,
+    buffer: Buffer.from(base64, "base64"),
+  };
+}
+
 function openAiTimeoutMs() {
   const value = Number(process.env.OPENAI_TIMEOUT_MS);
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_OPENAI_TIMEOUT_MS;
