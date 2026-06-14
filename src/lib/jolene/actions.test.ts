@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runDailyCommandCenterAgent } from "@/lib/agents/daily-command-center";
-import { syncJobResponseEmail } from "@/lib/email/sync";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
 import { executeJoleneAction } from "@/lib/jolene/actions";
+import { runJoleneEmailOperationsAgent } from "@/lib/jolene/email-ops";
 
 vi.mock("@/lib/agents/daily-command-center", () => ({
   runDailyCommandCenterAgent: vi.fn(),
@@ -12,8 +12,9 @@ vi.mock("@/lib/agents/market-intelligence", () => ({
   runMarketIntelligenceAgent: vi.fn(),
 }));
 
-vi.mock("@/lib/email/sync", () => ({
-  syncJobResponseEmail: vi.fn(),
+vi.mock("@/lib/jolene/email-ops", () => ({
+  runJoleneEmailOperationsAgent: vi.fn(),
+  getLatestEmailOpsSummary: vi.fn(() => Promise.resolve(null)),
 }));
 
 vi.mock("@/lib/job-search/start-run", () => ({
@@ -51,7 +52,7 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-const syncJobResponseEmailMock = vi.mocked(syncJobResponseEmail);
+const runEmailOpsMock = vi.mocked(runJoleneEmailOperationsAgent);
 const startJobSearchRunMock = vi.mocked(startJobSearchRun);
 const runDailyCommandCenterAgentMock = vi.mocked(runDailyCommandCenterAgent);
 
@@ -150,51 +151,16 @@ describe("executeJoleneAction", () => {
   });
 
   it("checks email when the user asks Jolene to check Gmail", async () => {
-    syncJobResponseEmailMock.mockResolvedValue({
-      ok: true,
-      scanned: 3,
-      ingested: 2,
-      skipped: 1,
-      receivedConfirmations: [
-        {
-          applicationId: "app_1",
-          company: "Acme",
-          title: "Frontend Engineer",
-          subject: "Thanks for applying",
-          from: "talent@acme.example",
-          receivedAt: new Date("2026-05-15T12:30:00.000Z"),
-        },
-      ],
-      watchlist: [{
-        applicationId: "app_1",
-        company: "Acme",
-        title: "Frontend Engineer",
-        applicationUrl: null,
-        appliedAt: new Date("2026-05-15T12:00:00.000Z"),
-        updatedAt: new Date("2026-05-15T12:00:00.000Z"),
-        gmailQueries: ["\"Acme\" newer_than:7d"],
-      }],
-      providers: [
-        {
-          ok: true,
-          provider: "gmail",
-          scanned: 3,
-          ingested: 2,
-          skipped: 1,
-          queries: ["\"Acme\" newer_than:7d"],
-          messages: [],
-        },
-      ],
-    });
+    runEmailOpsMock.mockResolvedValue(emailOpsResult());
 
     const result = await executeJoleneAction("check my gmail for responses");
 
-    expect(syncJobResponseEmailMock).toHaveBeenCalled();
+    expect(runEmailOpsMock).toHaveBeenCalled();
     expect(result.handled).toBe(true);
-    expect(result.reply).toContain("job-response email");
+    expect(result.reply).toContain("Email Ops");
     expect(result.actionJson).toMatchObject({ action: "jolene_adk_operator" });
     expect(result.executedActions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "sync_email" })]));
-    expect(result.clientAction).toEqual({ type: "navigate", href: "/applications", refresh: true });
+    expect(result.clientAction).toEqual({ type: "navigate", href: "/dashboard/email-ops", refresh: true });
   });
 
   it("pulls a saved application answer before broad coaching", async () => {
@@ -345,7 +311,7 @@ describe("executeJoleneAction", () => {
       How have you observed this applies to me?
     `, { userId: "user_1" });
 
-    expect(syncJobResponseEmailMock).not.toHaveBeenCalled();
+    expect(runEmailOpsMock).not.toHaveBeenCalled();
     expect(result.handled).toBe(true);
     expect(result.actionJson).toMatchObject({ action: "interview_coaching" });
     expect(result.reply).toContain("Socure");
@@ -686,4 +652,43 @@ async function mockCareerContext() {
       jobPosting: { company: "Socure", title: "Senior Software Engineer" },
     },
   ] as never);
+}
+
+function emailOpsResult() {
+  const now = new Date("2026-06-14T10:00:00.000Z");
+  return {
+    run: {
+      id: "email_ops_run_1",
+      agentType: "JOLENE_EMAIL_OPERATIONS",
+      userId: "user_1",
+      inputJson: {},
+      outputJson: {},
+      observabilityJson: {},
+      graphThreadId: null,
+      currentNode: null,
+      workflowStateJson: {},
+      workflowVersion: null,
+      parentRunId: null,
+      status: "COMPLETED",
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+    output: {
+      generatedAt: now.toISOString(),
+      title: "Jolene Email Operations",
+      summary: "Email Ops reviewed 3 messages.",
+      scanned: 3,
+      ingested: 2,
+      findingsCreated: 1,
+      autoApplied: 1,
+      needsApproval: 0,
+      calendarDrafts: 0,
+      providerStatuses: [{ provider: "gmail", ok: true, detail: "2/3 ingested" }],
+      specialistRuns: [],
+      approvals: [],
+      risks: [],
+      evidence: [],
+    },
+  } as Awaited<ReturnType<typeof runJoleneEmailOperationsAgent>>;
 }

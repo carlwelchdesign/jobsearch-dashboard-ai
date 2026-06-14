@@ -105,11 +105,11 @@ Application detail pages also support draft-only interview thank-you messages. U
 
 Apply Sprint includes an Agency command center designed around this agency-first flow. The primary panel runs the recruiting agency and shows live graph activity, while the operations panel keeps packet preparation, packet sync, sprint-console access, and launch-next-ready actions in a consistent control grid.
 
-Jolene is the persistent in-app operating assistant and now serves as **Jolene, Chief of Staff**. In addition to route context, Jolene has deterministic local retrieval tools for app data, so requests like "where is the cover letter for Linear" search generated cover letters, application packets, applications, and jobs before falling back to chat. Matching answers include direct links to generated material exports, application records, job records, and the generated materials page without dumping full cover-letter bodies unless explicitly requested. Jolene also has a career-aware interview coaching path: pasted recruiter success-profile prompts and questions such as "how does this apply to me?" load compact profile, evidence, project, application outcome, and app-building context, then produce grounded interview talking points instead of accidentally running side-effect actions such as email sync. Jolene now has a proactive Chief of Staff brief on `/dashboard`: she reviews recent `AgentRun` and `AgentRunEvent` history, open blockers, pipeline state, market signals, LinkedIn content/analytics, and the career standup, then shows quiet priority cards with rationale, evidence, open links, ask-Jolene actions, and approval-gated delegated work.
+Jolene is the persistent in-app operating assistant and now serves as **Jolene, Chief of Staff**. In addition to route context, Jolene has deterministic local retrieval tools for app data, so requests like "where is the cover letter for Linear" search generated cover letters, application packets, applications, and jobs before falling back to chat. Matching answers include direct links to generated material exports, application records, job records, and the generated materials page without dumping full cover-letter bodies unless explicitly requested. Jolene also has a career-aware interview coaching path: pasted recruiter success-profile prompts and questions such as "how does this apply to me?" load compact profile, evidence, project, application outcome, and app-building context, then produce grounded interview talking points instead of accidentally running side-effect actions. Jolene now has a proactive Chief of Staff brief on `/dashboard`: she reviews recent `AgentRun` and `AgentRunEvent` history, open blockers, pipeline state, Email Operations, market signals, LinkedIn content/analytics, and the career standup, then shows quiet priority cards with rationale, evidence, open links, ask-Jolene actions, and approval-gated delegated work.
 
-Jolene Chief of Staff uses the normal agent observability model. A `JOLENE_CHIEF_OF_STAFF` run stores the executive brief in `AgentRun.outputJson`; child agents launched after approval store `parentRunId` back to the Jolene run; and delegated decisions are logged as `AgentRunEvent` rows. `GET /api/jolene/chief-of-staff` returns the latest brief, `POST /api/jolene/chief-of-staff/run` creates a new brief, and `POST /api/jolene/chief-of-staff/approve` executes selected internal delegated proposals. Current delegated work can refresh search, Daily Command Center, Market Intelligence, duplicate/stale detection, LinkedIn content drafts, or job-response email sync. Jolene proposes this work by default and asks approval before launching it.
+Jolene Chief of Staff uses the normal agent observability model. A `JOLENE_CHIEF_OF_STAFF` run stores the executive brief in `AgentRun.outputJson`; child agents launched after approval store `parentRunId` back to the Jolene run; and delegated decisions are logged as `AgentRunEvent` rows. `GET /api/jolene/chief-of-staff` returns the latest brief, `POST /api/jolene/chief-of-staff/run` creates a new brief, and `POST /api/jolene/chief-of-staff/approve` executes selected internal delegated proposals. Current delegated work can refresh search, Daily Command Center, Market Intelligence, duplicate/stale detection, LinkedIn content drafts, or Jolene Email Operations. Jolene proposes this work by default and asks approval before launching it.
 
-Jolene confirmation cards execute only app-local internal repairs after explicit user confirmation. The current allowlist includes application integrity repair, duplicate/stale detection, job-response email sync, Daily Command Center refresh, Market Intelligence refresh, and graph-backed agent run repair/retry/cancel when a run id is present. Confirmed actions post to `POST /api/jolene/confirm`, update the source Jolene message, append an execution result message, and may navigate/refresh the related app surface. Jolene does not execute external application submission, email/outreach sending, employer-system interactions, or broad approve/reject/archive mutations; those remain manual or page-routed.
+Jolene confirmation cards execute only app-local internal repairs after explicit user confirmation. The current allowlist includes application integrity repair, duplicate/stale detection, Jolene Email Operations, Daily Command Center refresh, Market Intelligence refresh, and graph-backed agent run repair/retry/cancel when a run id is present. Confirmed actions post to `POST /api/jolene/confirm`, update the source Jolene message, append an execution result message, and may navigate/refresh the related app surface. Jolene does not execute external application submission, email/outreach sending, employer-system interactions, external calendar writes, or broad approve/reject/archive mutations; those remain manual or page-routed.
 
 Jolene's earlier Career CEO mode is folded into the Chief of Staff role. The persistent `CareerMission` still stores the 30-day high-income sprint mandate, compensation floor and ideal target, role tracks, dealbreakers, fallback paths, capacity notes, and tone preferences. Ask Jolene for a career brief, money moves, or standup and she now creates a Chief of Staff run first, then folds the income sprint, sprint score, income momentum, attention debt, and money-move signals into the same operating brief. The default policy remains aggressive but truthful: widen toward credible high-income opportunities, preserve evidence grounding, and keep external actions manual or explicitly confirmed.
 
@@ -137,9 +137,11 @@ The app also keeps a local LangSmith-style quality loop. Assistant failures, bro
 
 Set your GitHub profile URL in `/settings` and click `Sync GitHub context` to pull public repository context into the candidate profile. Public repos are used as project context in tailored resumes and cover letters when relevant. Add `GITHUB_TOKEN` only if you need higher GitHub API rate limits.
 
-## Job Response Email Sync
+## Jolene Email Operations
 
-Inbound job-response email can be synced from a local IMAP mailbox:
+Inbound job-response email can be synced from Gmail OAuth, Outlook OAuth, or a local IMAP mailbox. The raw sync still ingests messages, but the primary workflow is now Jolene Email Operations: a parent `JOLENE_EMAIL_OPERATIONS` run coordinates specialist child agents for inbox scouting, application matching, outcome classification, scheduling extraction, action drafting, privacy review, and reporting back to Jolene Chief of Staff.
+
+For IMAP, configure:
 
 ```bash
 JOB_EMAIL_IMAP_HOST=imap.example.com
@@ -157,7 +159,16 @@ curl -X POST http://localhost:3000/api/email/imap-sync \
   -d '{"limit":25,"sinceDays":14}'
 ```
 
-Synced messages are classified as rejection, interview request, assessment, offer, confirmation, or needs review. Matched messages update application outcomes, reconcile duplicate application trackers, create blocker items when action is required, and trigger interview prep for interview/assessment messages.
+Email Ops scans both broad recent job-response mail and application-specific watchlist queries. It stores durable `EmailOpsFinding` rows with classification, confidence, match, evidence, suggested mutation, and provenance. Clear high-confidence rejections and application confirmations can auto-apply internal application outcomes. Ambiguous matches, offers, recruiter replies, interview/scheduling updates, reply drafts, employer contact, and calendar writes create approval-needed Jolene items instead of guessing.
+
+Scheduling-related findings create `CalendarEventProposal` rows as in-app drafts. Drafts can include title, source email, extracted meeting link, attendees, timezone, and confidence, but v1 does not write to Google or Outlook Calendar. Use `/dashboard/email-ops` to run Email Ops, review findings, approve or dismiss blocked updates, and inspect calendar drafts. APIs:
+
+```bash
+curl http://localhost:3000/api/jolene/email-ops
+curl -X POST http://localhost:3000/api/jolene/email-ops/run
+curl -X POST http://localhost:3000/api/jolene/email-ops/findings/FINDING_ID/approve
+curl -X POST http://localhost:3000/api/jolene/email-ops/findings/FINDING_ID/dismiss
+```
 
 Application state integrity endpoints:
 

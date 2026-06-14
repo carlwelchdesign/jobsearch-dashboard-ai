@@ -69,6 +69,16 @@ export function classifyJobEmail(input: Pick<EmailMessageIngestInput, "subject" 
       rationale: "Detected interview or scheduling language.",
     };
   }
+  if (/\b(recruiter|talent acquisition|hiring team|next steps?|follow up|following up|touch base)\b/.test(text)) {
+    return {
+      classification: "RECRUITER_RESPONSE",
+      confidenceScore: 72,
+      actionRequired: true,
+      recommendedOutcome: "RECRUITER_SCREEN",
+      userQuestion: "This looks like a recruiter follow-up. Review the next step before the app updates stage or drafts a response.",
+      rationale: "Detected recruiter follow-up language.",
+    };
+  }
   if (isApplicationConfirmationEmail(text)) {
     return {
       classification: "AUTOMATED_CONFIRMATION",
@@ -191,7 +201,7 @@ export async function ingestJobEmail(input: EmailMessageIngestInput) {
     });
   }
 
-  if (match.applicationId && classification.recommendedOutcome) {
+  if (match.applicationId && shouldAutoRecordOutcomeFromEmail(classification.classification) && classification.recommendedOutcome) {
     await recordOutcomeFromEmail({
       applicationId: match.applicationId,
       outcome: classification.recommendedOutcome,
@@ -231,6 +241,10 @@ export async function ingestJobEmail(input: EmailMessageIngestInput) {
     match,
     interviewPrepRun,
   };
+}
+
+function shouldAutoRecordOutcomeFromEmail(classification: EmailMessageClassification) {
+  return classification === "REJECTION" || classification === "AUTOMATED_CONFIRMATION";
 }
 
 export function buildEmailApplicationEventPayload(input: {

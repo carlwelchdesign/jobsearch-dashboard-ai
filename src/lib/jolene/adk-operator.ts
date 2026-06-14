@@ -2,9 +2,9 @@ import { runDailyCommandCenterAgent } from "@/lib/agents/daily-command-center";
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
 import { getAdkJoleneOperatorRegistration, isAdkEnabled } from "@/lib/adk/registry";
-import { syncJobResponseEmail } from "@/lib/email/sync";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
 import { createJoleneConfirmationPlan, type JoleneConfirmableAction, type JoleneExecutionBoundary } from "@/lib/jolene/confirmation";
+import { runJoleneEmailOperationsAgent } from "@/lib/jolene/email-ops";
 import { prisma } from "@/lib/prisma";
 
 export type JoleneOperatorAction = {
@@ -98,10 +98,10 @@ export async function executeJoleneAdkOperator(message: string, options: { userI
       replyParts.push(`I checked duplicates: ${result.output.duplicateGroups.length} duplicate group(s), ${result.output.updatedJobs} updated record(s).`);
       clientAction ??= { type: "navigate", href: "/jobs", refresh: true };
     } else if (action.id === "sync_email") {
-      const result = await syncJobResponseEmail();
-      executed.push({ ...action, status: "executed", detail: `Scanned ${result.scanned}, ingested ${result.ingested}, skipped ${result.skipped}.`, href: "/applications" });
-      replyParts.push(`I synced job-response email: ${result.ingested}/${result.scanned} message(s) ingested.`);
-      clientAction ??= { type: "navigate", href: "/applications", refresh: true };
+      const result = await runJoleneEmailOperationsAgent({ userId: options.userId ?? undefined, source: "chat" });
+      executed.push({ ...action, status: "executed", detail: `Email Ops scanned ${result.output.scanned}, created ${result.output.findingsCreated} finding(s), and drafted ${result.output.calendarDrafts} calendar item(s).`, href: "/dashboard/email-ops" });
+      replyParts.push(`I ran Email Ops: ${result.output.findingsCreated} finding(s), ${result.output.autoApplied} auto-applied update(s), ${result.output.needsApproval} approval-needed item(s).`);
+      clientAction ??= { type: "navigate", href: "/dashboard/email-ops", refresh: true };
     } else if (action.id === "run_daily_command_center") {
       const result = await runDailyCommandCenterAgent({ userId: options.userId ?? undefined });
       executed.push({ ...action, status: "executed", detail: `Created ${result.output.actions.length} prioritized action(s).`, href: "/dashboard" });
@@ -136,7 +136,7 @@ function safeWorkflowPlan(normalized: string): JoleneOperatorAction[] {
     actions.push(safeAction("check_duplicates", "Check duplicates", "Run the duplicate/stale job detector."));
   }
   if (/\b(check|scan|sync|fetch|poll)\b/.test(normalized) && /\b(email|emails|gmail|inbox|mail|messages|responses|replies)\b/.test(normalized)) {
-    actions.push(safeAction("sync_email", "Sync job-response email", "Sync job-response email and reconcile detected confirmations."));
+    actions.push(safeAction("sync_email", "Run Email Operations", "Scan recent job-response email with Jolene's specialist email team."));
   }
   if (/\b(run|refresh|generate|update)\b/.test(normalized) && /\b(daily command|command center|daily plan|today s plan|todays plan)\b/.test(normalized)) {
     actions.push(safeAction("run_daily_command_center", "Refresh Daily Command Center", "Generate the current prioritized app operating plan."));

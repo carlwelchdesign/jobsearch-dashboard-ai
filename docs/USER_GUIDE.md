@@ -1445,7 +1445,7 @@ To fix inconsistencies:
 
 ## Part 15 — Email and Outcomes
 
-**What this does:** Reads your job-related emails and automatically updates your application tracker with rejections, interview invitations, offers, and other outcomes.
+**What this does:** Jolene's Email Operations team reads recent job-related emails, updates clear internal outcomes, drafts calendar actions, and reports anything uncertain back to Jolene, Chief of Staff.
 
 ### How to connect your email
 
@@ -1503,13 +1503,14 @@ Choose the method that works for your provider. All three options are configured
 3. Restart the app (local) or redeploy (production).
 4. Click **Settings** in the left sidebar → scroll to the **Inbound email sync** card → click **Connect Outlook**.
 
-### How email sync works
+### How Jolene Email Operations works
 
-Once connected, email sync runs automatically every hour. It will:
+Once connected, email scanning runs automatically every hour and can also be triggered from **Command Center** → **Email Ops** (`/dashboard/email-ops`). It will:
 
-1. Fetch new messages from your configured mailbox
-2. Check which messages are from companies you have applications with
-3. Classify each relevant message:
+1. Fetch recent messages from your configured mailbox.
+2. Search broadly for job-response mail and also use application-specific watchlist queries.
+3. Match messages to applications/jobs using threads, sender domains, company names, role titles, ATS context, and prior email history.
+4. Have specialist agents classify and review each relevant message:
 
 | Classification | What triggers it |
 |---|---|
@@ -1521,15 +1522,36 @@ Once connected, email sync runs automatically every hour. It will:
 | **Automated Confirmation** | "Thank you for applying" auto-reply |
 | **Needs Review** | The system was not sure — creates a Needs Me item |
 
-4. Update the corresponding application's outcome record
-5. Create interview prep tasks when an interview is detected
+5. Store a durable Email Ops finding with the source email, confidence, evidence, recommended action, and provenance.
+6. Auto-apply only high-confidence internal updates such as clear rejections and application confirmations.
+7. Create Jolene approval items for offers, ambiguous matches, recruiter replies, interview/scheduling changes, response drafts, employer contact, and anything below the confidence threshold.
 
-### Manual email sync
+The specialist team is:
 
-You can also trigger a sync manually:
+- **Email Inbox Scout**: scans Gmail/IMAP/Outlook-capable inbox sources.
+- **Application Matcher**: links messages to applications and jobs.
+- **Outcome Classifier**: detects rejections, confirmations, interviews, assessments, offers, follow-ups, and ambiguous messages.
+- **Scheduling Coordinator**: extracts scheduling links, proposed times, deadlines, and prep needs.
+- **Action Drafter**: prepares reply/availability draft intent, but never sends.
+- **Privacy Reviewer**: blocks unsafe or unsupported updates.
+- **Email Ops Reporter**: reports the summary back to Jolene.
 
-1. Click **Settings** in the left sidebar → scroll to the **Inbound email sync** card.
-2. Click **Sync Now**.
+### Calendar drafts
+
+When Email Ops finds an interview invite, assessment deadline, or scheduling request, it creates an in-app calendar draft. Drafts can include the role, company, source email, meeting link, timezone, attendees, and confidence score.
+
+V1 does **not** write directly to Google Calendar or Outlook Calendar. Calendar drafts stay in the app until you approve what should happen next.
+
+### Manual Email Ops run
+
+You can trigger the full Email Ops workflow manually:
+
+1. Click **Command Center** in the left sidebar.
+2. Click the **Email Ops** subnav.
+3. Click **Run Email Ops**.
+4. Review findings, approvals, and calendar drafts.
+
+The older **Sync Now** control in Settings still ingests messages, but Email Ops is the richer workflow that reports back to Jolene.
 
 ### Outcome analytics
 
@@ -1562,7 +1584,7 @@ Click any task to expand it with more detail.
 
 ## Part 16 — Jolene (Your Always-On AI Assistant)
 
-**What this does:** Jolene acts as your Chief of Staff. She reviews agent activity, blockers, pipeline state, market signals, LinkedIn signals, and your career mission, then tells you what deserves attention next.
+**What this does:** Jolene acts as your Chief of Staff. She reviews agent activity, blockers, pipeline state, Email Operations, market signals, LinkedIn signals, and your career mission, then tells you what deserves attention next.
 
 **Where to see Jolene first:** Open **Command Center** (`/dashboard`). The **Jolene, Chief of Staff** card shows her latest operating brief with priorities, rationale, evidence, links, approval buttons, and ask-Jolene actions.
 
@@ -1572,12 +1594,13 @@ Click any task to expand it with more detail.
 
 Jolene is aware of where you are in the app and what data is relevant. She can:
 
-- Produce a Chief of Staff brief from recent agent runs, blockers, pipeline state, market signals, LinkedIn content/analytics, and your career mission
+- Produce a Chief of Staff brief from recent agent runs, blockers, pipeline state, Email Operations, market signals, LinkedIn content/analytics, and your career mission
 - Show proactive priority cards on the Command Center with rationale, evidence, and links to the relevant page
 - Propose delegated work for other agents, then wait for your approval before launching it
 - Explain why a specific job scored the way it did
 - Show you the cover letter or packet for any application
 - Find an application by company name
+- Run Email Operations and summarize what changed in your inbox
 - Answer interview and positioning questions using your actual career evidence
 - Suggest what to do next on the current page
 - Explain what a setting or feature does
@@ -1612,7 +1635,7 @@ Jolene can propose and execute certain safe actions inside the app. In chat, tho
 **Actions she can run after confirmation:**
 - Application integrity repair
 - Duplicate/stale job detection
-- Job-response email sync
+- Jolene Email Operations
 - Daily Command Center refresh
 - Market Intelligence refresh
 - LinkedIn content draft generation
@@ -1622,6 +1645,7 @@ Jolene can propose and execute certain safe actions inside the app. In chat, tho
 **Actions that always remain manual (Jolene explains but does not execute):**
 - Submitting applications
 - Sending email or outreach messages
+- Writing directly to external calendars
 - Approving or rejecting jobs or applications in bulk
 - Changing profile settings
 

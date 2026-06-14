@@ -1,12 +1,12 @@
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { findReusableAnswerMemories, markAnswerMemoryUsed } from "@/lib/application-answer-memory";
-import { syncJobResponseEmail } from "@/lib/email/sync";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
 import { executeJoleneAdkOperator, type JoleneOperatorAction } from "@/lib/jolene/adk-operator";
 import { executeJoleneCareerCoaching, isLikelyPastedInterviewPrompt } from "@/lib/jolene/career-coach";
 import { buildCareerCeoBrief, formatCareerCeoBrief } from "@/lib/jolene/career-ceo";
 import { buildCareerStandup, formatCareerStandup } from "@/lib/jolene/career-standup";
 import { runJoleneChiefOfStaffAgent } from "@/lib/jolene/chief-of-staff";
+import { runJoleneEmailOperationsAgent } from "@/lib/jolene/email-ops";
 import {
   buildJoleneGlobalContext,
   retrieveJoleneKnowledge,
@@ -188,40 +188,24 @@ export async function executeJoleneAction(message: string, options: { userId?: s
   }
 
   if (intent === "check_email") {
-    const result = await syncJobResponseEmail();
-    const providerSummary = result.providers
-      .map((provider) => {
-        if (provider.ok) return `${provider.provider}: ${provider.ingested}/${provider.scanned} ingested`;
-        return `${provider.provider}: skipped (${provider.reason})`;
-      })
-      .join("; ");
-    const receivedCompanies = result.receivedConfirmations.map((confirmation) => confirmation.company);
-    const receivedSummary = receivedCompanies.length
-      ? `Application receipts recorded for: ${receivedCompanies.join(", ")}.`
-      : "No application receipt confirmations are currently recorded for the active watchlist.";
+    const result = await runJoleneEmailOperationsAgent({ userId: options.userId ?? undefined, source: "chat" });
+    const providerSummary = result.output.providerStatuses.map((provider) => `${provider.provider}: ${provider.detail}`).join("; ");
 
     return {
       handled: true,
-      reply: `I checked your job-response email against ${result.watchlist.length} active application(s). I scanned ${result.scanned} message(s), ingested ${result.ingested}, and skipped ${result.skipped}. ${receivedSummary} ${providerSummary ? `Provider status: ${providerSummary}.` : ""}`,
+      reply: `I ran Jolene Email Operations. It scanned ${result.output.scanned} message(s), ingested ${result.output.ingested}, created ${result.output.findingsCreated} finding(s), auto-applied ${result.output.autoApplied}, and found ${result.output.needsApproval} approval-needed item(s). ${providerSummary ? `Provider status: ${providerSummary}.` : ""}`,
       actionJson: {
         action: "check_email",
-        scanned: result.scanned,
-        ingested: result.ingested,
-        skipped: result.skipped,
-        watchedApplications: result.watchlist.length,
-        receivedConfirmations: result.receivedConfirmations.map((confirmation) => ({
-          applicationId: confirmation.applicationId,
-          company: confirmation.company,
-          title: confirmation.title,
-          subject: confirmation.subject,
-          from: confirmation.from,
-          receivedAt: confirmation.receivedAt.toISOString(),
-        })),
-        providers: result.providers.map((provider) => provider.ok
-          ? { provider: provider.provider, scanned: provider.scanned, ingested: provider.ingested, skipped: provider.skipped }
-          : { provider: provider.provider, skipped: true, reason: provider.reason }),
+        runId: result.run.id,
+        scanned: result.output.scanned,
+        ingested: result.output.ingested,
+        findingsCreated: result.output.findingsCreated,
+        autoApplied: result.output.autoApplied,
+        needsApproval: result.output.needsApproval,
+        calendarDrafts: result.output.calendarDrafts,
+        providers: result.output.providerStatuses,
       },
-      clientAction: { type: "navigate", href: "/applications", refresh: true },
+      clientAction: { type: "navigate", href: "/dashboard/email-ops", refresh: true },
     };
   }
 

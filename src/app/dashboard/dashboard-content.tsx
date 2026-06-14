@@ -33,13 +33,14 @@ import { jsonArray } from "@/lib/json";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { getLinkedInAnalyticsSummary } from "@/lib/linkedin/analytics";
 import { getLatestJoleneChiefBrief, type JoleneChiefOutput } from "@/lib/jolene/chief-of-staff";
+import { getLatestEmailOpsSummary } from "@/lib/jolene/email-ops";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 import { getServiceFallbacks } from "@/lib/service-fallbacks";
 
 export const dynamic = "force-dynamic";
 
-export type DashboardRouteGroup = "overview" | "search" | "social" | "market" | "pipeline";
+export type DashboardRouteGroup = "overview" | "search" | "email" | "social" | "market" | "pipeline";
 
 type DailyPlanOutput = {
   generatedAt?: string;
@@ -50,6 +51,7 @@ type DailyPlanOutput = {
 const DASHBOARD_ROUTES: Array<{ href: string; label: string; group: DashboardRouteGroup }> = [
   { href: "/dashboard", label: "Overview", group: "overview" },
   { href: "/dashboard/search", label: "Search Ops", group: "search" },
+  { href: "/dashboard/email-ops", label: "Email Ops", group: "email" },
   { href: "/dashboard/social", label: "Social", group: "social" },
   { href: "/dashboard/market", label: "Market", group: "market" },
   { href: "/dashboard/pipeline", label: "Pipeline", group: "pipeline" },
@@ -63,6 +65,10 @@ const HEADER_COPY: Record<DashboardRouteGroup, { title: string; description: str
   search: {
     title: "Search Operations",
     description: "Run search, review live run analytics, trigger agency prep, and handle search exceptions.",
+  },
+  email: {
+    title: "Email Operations",
+    description: "Let Jolene's specialist inbox agents find job updates, draft calendar actions, and escalate only what needs review.",
   },
   social: {
     title: "Social Performance",
@@ -156,6 +162,7 @@ export async function DashboardOverviewPage() {
 function JoleneChiefOfStaffCard({ runId, brief }: { runId: string | null; brief: JoleneChiefOutput | null }) {
   const topPriorities = brief?.priorities.slice(0, 3) ?? [];
   const proposalsByAction = new Map((brief?.delegatedWork ?? []).map((work) => [work.actionId, work]));
+  const emailEvidence = brief?.evidence.find((item) => item.startsWith("Email Ops:"));
 
   return (
     <Card sx={{ borderColor: "primary.main", bgcolor: "rgba(37, 99, 235, 0.06)" }}>
@@ -169,7 +176,7 @@ function JoleneChiefOfStaffCard({ runId, brief }: { runId: string | null; brief:
               </Stack>
               <Typography variant="h3">{brief ? brief.summary : "Jolene is ready to brief the operating system."}</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                Jolene reviews agent runs, blockers, pipeline state, market signals, LinkedIn signals, and the career standup before proposing delegated work.
+                Jolene reviews agent runs, blockers, pipeline state, Email Operations, market signals, LinkedIn signals, and the career standup before proposing delegated work.
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", justifyContent: { md: "flex-end" } }}>
@@ -181,6 +188,18 @@ function JoleneChiefOfStaffCard({ runId, brief }: { runId: string | null; brief:
               </ActionButton>
             </Stack>
           </Stack>
+
+          {emailEvidence ? (
+            <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, bgcolor: "background.paper", p: 1.5 }}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 850 }}>Email Operations</Typography>
+                  <Typography variant="caption" color="text.secondary">{emailEvidence}</Typography>
+                </Box>
+                <ActionButton href="/dashboard/email-ops" size="small" variant="outlined">Open Email Ops</ActionButton>
+              </Stack>
+            </Box>
+          ) : null}
 
           {topPriorities.length ? (
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(3, 1fr)" }, gap: 1.5 }}>
@@ -285,6 +304,125 @@ export async function DashboardSocialPage() {
         </CardContent>
       </Card>
       <LinkedInAnalyticsCard initialSummary={linkedInAnalyticsSummary} />
+    </DashboardShell>
+  );
+}
+
+export async function DashboardEmailOpsPage() {
+  const user = await prisma.user.findFirst({ select: { id: true }, orderBy: { createdAt: "asc" } });
+  const emailOps = user ? await getLatestEmailOpsSummary(user.id) : null;
+  const summary = emailOps?.summary ?? null;
+  const findings = emailOps?.findings ?? [];
+  const pendingFindings = findings.filter((finding) => finding.status === "NEEDS_APPROVAL");
+  const autoAppliedFindings = findings.filter((finding) => finding.status === "AUTO_APPLIED");
+  const calendarDrafts = emailOps?.pendingCalendarProposals ?? [];
+
+  return (
+    <DashboardShell group="email">
+      <Card>
+        <CardContent>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+            <Box>
+              <Typography variant="h3">Jolene Email Operations</Typography>
+              <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+                Inbox specialists scan recent job mail, update high-confidence internal outcomes, and draft calendar work for approval.
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Last run: {emailOps?.latestRun ? emailOps.latestRun.createdAt.toLocaleString() : "No Email Ops run yet"}
+              </Typography>
+            </Box>
+            <ActionButton postTo="/api/jolene/email-ops/run" variant="contained" loadingLabel="Scanning...">Run Email Ops</ActionButton>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
+        <Metric label="Messages scanned" value={(summary?.scanned ?? 0).toString()} helper="Latest Email Ops run" />
+        <Metric label="Findings" value={(summary?.findingsCreated ?? findings.length).toString()} helper="Durable inbox intelligence" />
+        <Metric label="Auto-applied" value={(summary?.autoApplied ?? autoAppliedFindings.length).toString()} helper="High-confidence internal updates" />
+        <Metric label="Needs approval" value={(summary?.needsApproval ?? pendingFindings.length).toString()} helper="Jolene will not guess" />
+      </Box>
+
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1.15fr) minmax(0, 0.85fr)" }, gap: 2, alignItems: "start" }}>
+        <Card>
+          <CardContent>
+            <Stack spacing={2}>
+              <SectionTitle title="Recent Findings" />
+              {findings.length ? (
+                <Stack spacing={1.5}>
+                  {findings.slice(0, 12).map((finding) => {
+                    const evidence = jsonStringArray(finding.evidenceJson).slice(0, 2);
+                    const role = finding.matchedApplication?.jobPosting ?? finding.matchedJobPosting;
+                    return (
+                      <Box key={finding.id} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5 }}>
+                        <Stack spacing={1}>
+                          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+                            <Chip size="small" label={finding.status.replace(/_/g, " ")} color={finding.status === "NEEDS_APPROVAL" ? "warning" : finding.status === "AUTO_APPLIED" ? "success" : "default"} />
+                            <Chip size="small" variant="outlined" label={finding.classification.replace(/_/g, " ")} />
+                            <Chip size="small" variant="outlined" label={`${finding.confidenceScore}%`} />
+                          </Stack>
+                          <Box>
+                            <Typography variant="body2" sx={{ fontWeight: 850 }}>{finding.title}</Typography>
+                            <Typography variant="caption" color="text.secondary">{role ? `${role.company} - ${role.title}` : "No safe application match yet"}</Typography>
+                          </Box>
+                          <Typography variant="body2" color="text.secondary">{finding.summary}</Typography>
+                          {finding.reviewReason ? <Typography variant="caption" color="warning.main">Review: {finding.reviewReason}</Typography> : null}
+                          {evidence.map((item) => (
+                            <Typography key={item} variant="caption" color="text.secondary">Evidence: {item}</Typography>
+                          ))}
+                          {finding.status === "NEEDS_APPROVAL" ? (
+                            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                              <ActionButton postTo={`/api/jolene/email-ops/findings/${finding.id}/approve`} size="small" variant="contained" loadingLabel="Approving...">Approve</ActionButton>
+                              <ActionButton postTo={`/api/jolene/email-ops/findings/${finding.id}/dismiss`} size="small" variant="outlined" loadingLabel="Dismissing...">Dismiss</ActionButton>
+                            </Stack>
+                          ) : null}
+                        </Stack>
+                      </Box>
+                    );
+                  })}
+                </Stack>
+              ) : (
+                <EmptyState title="No Email Ops findings yet" body="Run Email Ops to scan recent job-response email and report findings back to Jolene." />
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+
+        <Stack spacing={2}>
+          <Card>
+            <CardContent>
+              <Stack spacing={2}>
+                <SectionTitle title="Calendar Drafts" />
+                {calendarDrafts.length ? (
+                  <Stack spacing={1}>
+                    {calendarDrafts.slice(0, 8).map((proposal) => (
+                      <Box key={proposal.id} sx={{ borderTop: 1, borderColor: "divider", pt: 1 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 850 }}>{proposal.title}</Typography>
+                        <Typography variant="caption" color="text.secondary">{proposal.sourceSummary}</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                          {proposal.meetingUrl ? `Meeting link found: ${proposal.meetingUrl}` : "No meeting link extracted yet"}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                ) : (
+                  <EmptyState title="No calendar drafts" body="Interview invites, assessments, and scheduling requests create in-app drafts before any external calendar write." />
+                )}
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent>
+              <Stack spacing={1}>
+                <SectionTitle title="Safety Policy" />
+                <Typography variant="body2" color="text.secondary">Auto-applies only high-confidence internal updates such as clear rejections and application confirmations.</Typography>
+                <Typography variant="body2" color="text.secondary">Replies, offers, ambiguous matches, employer contact, and external calendar writes stay approval-gated.</Typography>
+              </Stack>
+            </CardContent>
+          </Card>
+        </Stack>
+      </Box>
     </DashboardShell>
   );
 }
@@ -626,6 +764,10 @@ function joleneChiefOutput(value: unknown): JoleneChiefOutput | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function jsonStringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function buildMarketTrendSeries(values: unknown[]): MarketTrendPoint[] {

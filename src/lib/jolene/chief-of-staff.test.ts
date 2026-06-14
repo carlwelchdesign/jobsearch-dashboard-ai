@@ -21,6 +21,7 @@ describe("buildJoleneChiefBrief", () => {
       latestMarketRun: null,
       latestLinkedInDraft: null,
       linkedInAnalytics: { posts: 1, impressions: 300, engagementRate: 0.08 },
+      emailOps: null,
       careerStandup: {
         generatedAt: now.toISOString(),
         sprintScore: 71,
@@ -47,5 +48,49 @@ describe("buildJoleneChiefBrief", () => {
       "1 open agent blocker(s).",
       "2 ready application(s), 4 job(s) need review.",
     ]));
+  });
+
+  it("surfaces stale and pending Email Ops work for Jolene", () => {
+    const now = new Date("2026-06-13T18:00:00.000Z");
+    const brief = buildJoleneChiefBrief({
+      now,
+      source: "manual",
+      openRequests: [],
+      recentRuns: [],
+      latestSearchRun: { id: "search_1", status: "completed", startedAt: new Date("2026-06-13T15:00:00.000Z"), jobsFetched: 20, jobsSaved: 2, errors: [] },
+      applicationCounts: {},
+      needsReviewCount: 0,
+      readyApplicationCount: 0,
+      latestMarketRun: { id: "market_1", createdAt: now, outputJson: {} },
+      latestLinkedInDraft: { id: "draft_1", status: "DRAFT", title: "Build note", updatedAt: now },
+      linkedInAnalytics: null,
+      emailOps: {
+        runId: "email_ops_1",
+        createdAt: now,
+        pendingFindings: 2,
+        calendarDrafts: 1,
+        summary: {
+          generatedAt: now.toISOString(),
+          title: "Jolene Email Operations",
+          summary: "Email Ops found inbox updates.",
+          scanned: 12,
+          ingested: 3,
+          findingsCreated: 3,
+          autoApplied: 1,
+          needsApproval: 2,
+          calendarDrafts: 1,
+          providerStatuses: [],
+          specialistRuns: [],
+          approvals: [],
+          risks: [],
+          evidence: [],
+        },
+      },
+      careerStandup: null,
+    } satisfies ChiefContext);
+
+    expect(brief.priorities[0]).toMatchObject({ id: "review-email-ops", category: "email" });
+    expect(brief.blockers).toContain("2 Email Ops finding(s) and 1 calendar draft(s) need review.");
+    expect(brief.evidence).toEqual(expect.arrayContaining(["Email Ops: 3 finding(s), 2 pending approval(s), 1 calendar draft(s)."]));
   });
 });

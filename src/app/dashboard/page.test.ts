@@ -7,6 +7,7 @@ describe("Command Center subnav routes", () => {
     const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
     const overviewSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/page.tsx"), "utf8");
     const searchSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/search/page.tsx"), "utf8");
+    const emailOpsSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/email-ops/page.tsx"), "utf8");
     const socialSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/social/page.tsx"), "utf8");
     const marketSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/market/page.tsx"), "utf8");
     const pipelineSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/pipeline/page.tsx"), "utf8");
@@ -14,11 +15,13 @@ describe("Command Center subnav routes", () => {
     expect(contentSource).toContain("Command Center:");
     expect(contentSource).toContain("Overview");
     expect(contentSource).toContain("Search Ops");
+    expect(contentSource).toContain("Email Ops");
     expect(contentSource).toContain("Social");
     expect(contentSource).toContain("Market");
     expect(contentSource).toContain("Pipeline");
     expect(overviewSource).toContain("DashboardOverviewPage");
     expect(searchSource).toContain("DashboardSearchPage");
+    expect(emailOpsSource).toContain("DashboardEmailOpsPage");
     expect(socialSource).toContain("DashboardSocialPage");
     expect(marketSource).toContain("DashboardMarketPage");
     expect(pipelineSource).toContain("DashboardPipelinePage");
@@ -41,6 +44,18 @@ describe("Command Center subnav routes", () => {
     expect(contentSource).toContain("/api/jolene/chief-of-staff/approve");
     expect(contentSource).toContain("Ask Jolene");
     expect(contentSource).toContain("priority.evidence");
+    expect(contentSource).toContain("Email Operations");
+    expect(contentSource).toContain('href="/dashboard/email-ops"');
+  });
+
+  it("shows Email Ops workflow controls and safety copy in its dashboard route", () => {
+    const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
+
+    expect(contentSource).toContain("DashboardEmailOpsPage");
+    expect(contentSource).toContain("/api/jolene/email-ops/run");
+    expect(contentSource).toContain("/api/jolene/email-ops/findings/");
+    expect(contentSource).toContain("Calendar Drafts");
+    expect(contentSource).toContain("Safety Policy");
   });
 
   it("keeps market analysis centralized on the market dashboard route", () => {

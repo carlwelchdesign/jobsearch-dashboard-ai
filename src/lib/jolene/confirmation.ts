@@ -4,7 +4,7 @@ import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-
 import { controlGraphAgentRun, type GraphRunControlAction } from "@/lib/agents/graph-run-controls";
 import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
 import { repairApplicationIntegrity } from "@/lib/applications/integrity";
-import { syncJobResponseEmail } from "@/lib/email/sync";
+import { runJoleneEmailOperationsAgent } from "@/lib/jolene/email-ops";
 import { prisma } from "@/lib/prisma";
 
 export type JoleneExecutionBoundary = "internal_repairs_only";
@@ -201,11 +201,11 @@ async function executeInternalAction(action: JoleneConfirmableAction, userId: st
   }
 
   if (action.id === "sync_email") {
-    const result = await syncJobResponseEmail();
+    const result = await runJoleneEmailOperationsAgent({ source: "chat" });
     return {
-      detail: `Synced job-response email: ${result.ingested}/${result.scanned} message(s) ingested, ${result.skipped} skipped.`,
-      href: "/applications",
-      clientAction: { type: "navigate" as const, href: "/applications", refresh: true },
+      detail: `Email Ops scanned ${result.output.scanned} message(s), created ${result.output.findingsCreated} finding(s), and drafted ${result.output.calendarDrafts} calendar item(s).`,
+      href: "/dashboard/email-ops",
+      clientAction: { type: "navigate" as const, href: "/dashboard/email-ops", refresh: true },
     };
   }
 
