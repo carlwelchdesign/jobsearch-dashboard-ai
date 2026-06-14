@@ -29,10 +29,9 @@ describe("LinkedIn content agent helpers", () => {
     });
 
     expect(output.mode).toBe("deterministic");
-    expect(output.body).toContain("Today's content brief");
     expect(output.body).toContain("Jolene Email Operations");
     expect(output.body).not.toContain("fetched 1000");
-    expect(output.body).toContain("below threshold 800");
+    expect(output.body).not.toContain("below threshold 800");
     expect(output.body).not.toMatch(/\bposted\b/i);
     expect(output.body).not.toMatch(/—/);
   });
@@ -73,7 +72,7 @@ describe("LinkedIn content agent helpers", () => {
     });
 
     expect(output.hook).toContain("product decision");
-    expect(output.body).toContain("Write a decision diary");
+    expect(output.body).not.toContain("Write a decision diary");
     expect(output.body).toContain("documentarians before automation");
   });
 
@@ -128,6 +127,10 @@ describe("LinkedIn content agent helpers", () => {
     expect(output.body).toContain("Prisma/Postgres");
     expect(output.body).toContain("AgentRun");
     expect(output.body).toContain("diagrams");
+    expect(output.body).not.toContain("Today's content brief");
+    expect(output.body).not.toContain("I would document");
+    expect(output.body).not.toContain("The clearest source is");
+    expect(output.body).not.toContain("Latest search funnel");
     expect(output.body).not.toContain("practical testbed");
     expect(output.body).not.toContain("latest run moved through");
     expect(output.body).not.toContain("blank page");
@@ -180,7 +183,7 @@ function architectureDirection(): LinkedInContentDirection {
       topic: "system architecture with architectural diagrams",
       requiredConcepts: ["architecture", "Next.js", "API routes", "agent services", "Prisma/Postgres", "AgentRun", "memory", "approval gates", "LinkedIn publish", "diagram"],
       requiredVisuals: ["architecture_diagram"],
-      forbiddenPhrases: ["practical testbed", "blank page", "boundary matters", "latest run moved through", "drop-off pattern"],
+      forbiddenPhrases: ["practical testbed", "blank page", "boundary matters", "today's content brief", "i would document", "clearest source", "latest run moved through", "drop-off pattern"],
       allowSearchFunnelAnalytics: false,
     },
   };

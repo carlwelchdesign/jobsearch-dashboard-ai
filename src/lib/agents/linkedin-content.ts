@@ -209,6 +209,7 @@ export async function generateLinkedInContent(input: {
         "Use the user's daily brief as the primary assignment. Act as documentarians: observe what was built, what decisions were made, and why it matters. " +
         "Use a candid senior builder voice, disclose that agents prepared the update, and ground every public claim in the provided memory pack. " +
         "Be more creative than a status update: choose a sharp narrative shape, specific lesson, or field note. Avoid repeating recent hooks, titles, structures, screenshots, or phrases. " +
+        "Do not echo the user's brief, do not write 'Today's content brief', do not say what you would document, and do not include internal planning instructions in the post. " +
         "Use aggregate analytics only. Do not mention company names, recruiters, salaries, emails, job URLs, private application outcomes, or unsupported traction. " +
         "Avoid hype, cliches, emojis, em dashes, and unverifiable claims.",
       input: {
@@ -232,7 +233,7 @@ export async function generateLinkedInContent(input: {
         requiredOutput: {
           title: "Short internal title for the draft.",
           hook: "Strong first line.",
-          body: "LinkedIn post body, 180-450 words, grounded only in memoryPack facts and satisfying every prompt obligation.",
+          body: "LinkedIn post body, 180-450 words, grounded only in memoryPack facts and satisfying every prompt obligation. Do not quote the prompt or narrate the assignment.",
           hashtags: "3-6 relevant hashtags.",
         },
       },
@@ -272,6 +273,9 @@ export function buildLinkedInContentFallback(input: {
     return buildArchitectureFallback(input.pillar, input.memoryPack, direction);
   }
   const latest = input.memoryPack.analytics.latestSearchRun;
+  const dropLine = direction.obligations.allowSearchFunnelAnalytics && latest?.drops.length
+    ? `The more interesting signal was the drop-off pattern: ${latest.drops.slice(0, 4).map((item) => `${item.label.toLowerCase()} ${item.value}`).join(", ")}.`
+    : "The useful part is not just the count; it is whether the system can explain what changed and why.";
   const funnelLine = direction.obligations.allowSearchFunnelAnalytics && latest
     ? `The latest run moved through ${latest.funnel.map((item) => `${item.label.toLowerCase()} ${item.value}`).join(", ")}.`
     : "The current work is focused on documenting the relevant system behavior instead of forcing every post through search funnel numbers.";
@@ -279,14 +283,12 @@ export function buildLinkedInContentFallback(input: {
     ? `One plan in the build log keeps pulling me back: ${input.memoryPack.planSources[0].title}. ${input.memoryPack.planSources[0].summary}`
     : "The build log is becoming useful source material, not just project bookkeeping.";
   const body = [
-    `Today's content brief: ${direction.prompt}`,
-    "",
     `${formatLabel(direction.format)}: ${direction.selectedAngle}`,
     "",
     planLine,
     "",
     funnelLine,
-    latest?.drops.length ? `The more interesting signal was the drop-off pattern: ${latest.drops.slice(0, 4).map((item) => `${item.label.toLowerCase()} ${item.value}`).join(", ")}.` : "The useful part is not just the count; it is whether the system can explain what changed and why.",
+    dropLine,
     "",
     "The post-worthy part is not the automation by itself. It is the documentarian loop: plans, agent runs, analytics, screenshots, review gates, and edits all becoming usable context for the next public note.",
     "",
@@ -308,32 +310,33 @@ function buildArchitectureFallback(
   memoryPack: Pick<LinkedInContentMemoryPack, "aggregateFacts" | "analytics" | "storyAngles" | "planSources" | "noveltySignals">,
   direction: LinkedInContentDirection,
 ): Omit<LinkedInContentOutput, "screenshotAssets" | "selectedScreenshots" | "privacyReview" | "draftId" | "disclosureText" | "memorySources" | "analyticsSources" | "agentReviews" | "claims" | "risks"> {
-  const planLine = memoryPack.planSources?.[0]
-    ? `The clearest source is ${memoryPack.planSources[0].title}: ${memoryPack.planSources[0].summary}`
+  const relevantPlan = selectArchitecturePlanReference(memoryPack.planSources ?? []);
+  const planLine = relevantPlan
+    ? `The build-log evidence behind this architecture comes from ${relevantPlan.title}, which describes ${relevantPlan.summary.toLowerCase()}`
     : "The architecture can be read from the build itself: routes, API handlers, agent services, Prisma models, and review gates.";
   const body = [
-    `Today's content brief: ${direction.prompt}`,
+    "The architecture diagram for Job Search OS has two views: the product system and the agent content pipeline.",
     "",
-    "Here is the architecture story I would document, with diagrams as the primary artifact.",
+    "The product system starts in the Next.js App Router. Dashboard and workflow screens capture human intent, review decisions, and approvals. Route handlers turn those actions into internal work: draft generation, Jolene briefs, Email Ops scans, search runs, analytics imports, screenshot capture, and LinkedIn publishing attempts.",
     "",
-    "Job Search OS is a Next.js App Router application with server routes acting as the control surface. The UI routes collect human intent and review decisions; API routes hand work to agent services; Prisma/Postgres stores durable state such as applications, AgentRun records, AgentRunEvent logs, LinkedIn drafts, Email Ops findings, and calendar proposals.",
+    "The durable layer is Prisma/Postgres. It stores the operational memory: applications, AgentRun and AgentRunEvent observability, LinkedIn drafts, analytics snapshots, Email Ops findings, calendar proposals, and `/plans` context. That matters because the agents are not asked to invent a story from scratch. They are asked to explain work that is already recorded.",
     "",
-    "The agent layer is the important part. Jolene Chief of Staff sits above specialist agents and asks for evidence before recommending work. Email Ops, market intelligence, search, Apply Sprint, and LinkedIn content generation all report through the same run/event model, so the system can explain what happened instead of just producing output.",
+    "The agent layer sits between those routes and that memory. Jolene acts as Chief of Staff, while specialist teams handle Email Ops, market intelligence, search, Apply Sprint, and content generation. They report through the same run/event model, which gives the system a way to show evidence, blockers, delegated work, and approval-needed actions.",
     "",
-    "The content pipeline is a smaller version of the whole architecture: prompt -> memory pack -> /plans context -> analytics -> content agents -> prompt fidelity review -> privacy review -> editable draft -> explicit approval -> LinkedIn publish. The diagrams should show those two flows side by side: system architecture and agent content flow.",
+    "The LinkedIn content pipeline is a smaller version of the same architecture: prompt, memory pack, `/plans` context, analytics, visual selection, prompt-fidelity review, privacy review, editable draft, explicit approval, and then LinkedIn Share API publishing. The diagrams are not decoration. They are the audit trail for how a public post moved from idea to artifact.",
     "",
     planLine,
     "",
-    "The design principle I would call out publicly: agentic software gets more credible when its memory, decisions, diagrams, and approval gates are visible. The architecture is not trying to hide the human. It is making the handoff between human judgment and agent work inspectable.",
+    "The design principle is simple: agentic software gets more credible when its memory, decisions, diagrams, and approval gates are visible. The architecture should make the handoff between human judgment and agent work inspectable.",
   ].join("\n");
   return {
-    title: "Job Search OS system architecture, documented by the agents",
-    hook: "The architecture only gets interesting when the agents can diagram what they are doing.",
+    title: "Job Search OS system architecture with agent audit trails",
+    hook: "The most important layer in an agentic system is the audit trail.",
     body,
     hashtags: ["#AgenticAI", "#SystemArchitecture", "#ProductEngineering", "#BuildInPublic"],
     contentPillar: pillar,
     sourceFacts: [
-      ...memoryPack.aggregateFacts.filter((fact) => !/Latest search funnel|drop-off/i.test(fact)).slice(0, 4),
+      ...(relevantPlan ? [`Architecture plan context: ${relevantPlan.title} covers ${relevantPlan.summary}`] : []),
       "Architecture context: Next.js App Router, API routes, agent services, Prisma/Postgres, AgentRun observability, privacy review, and LinkedIn approval gates.",
     ],
     mode: "deterministic",
@@ -540,7 +543,7 @@ export function planLinkedInPromptIntent(prompt: string, legacyPillar: LinkedInC
 
 function promptObligationsFor(intent: LinkedInPromptIntent, prompt: string): PromptObligations {
   const architectureConcepts = ["architecture", "Next.js", "API routes", "agent services", "Prisma/Postgres", "AgentRun", "memory", "approval gates", "LinkedIn publish", "diagram"];
-  const baseForbidden = ["practical testbed", "blank page", "boundary matters"];
+  const baseForbidden = ["practical testbed", "blank page", "boundary matters", "today's content brief", "i would document", "clearest source"];
   if (intent === "architecture_diagram" || intent === "architecture_explainer") {
     return {
       topic: prompt,
@@ -760,7 +763,14 @@ function buildClaims(generated: Pick<LinkedInContentOutput, "body" | "sourceFact
 }
 
 function architectureFact(value: string) {
-  return /^Architecture context:/i.test(value);
+  return /^(Architecture context|Architecture plan context):/i.test(value);
+}
+
+function selectArchitecturePlanReference(plans: Array<{ title: string; summary: string; themes?: string[] }>) {
+  return plans.find((plan) => {
+    const text = `${plan.title} ${plan.summary} ${(plan.themes ?? []).join(" ")}`.toLowerCase();
+    return /\b(architecture|diagram|system design|agent|jolene|linkedin content|email ops|workflow)\b/.test(text);
+  });
 }
 
 async function captureRouteScreenshot(route: string, reason: string): Promise<LinkedInScreenshotAsset | null> {
