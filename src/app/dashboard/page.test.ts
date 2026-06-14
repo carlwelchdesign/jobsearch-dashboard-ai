@@ -40,6 +40,11 @@ describe("Command Center subnav routes", () => {
     const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
 
     expect(contentSource).toContain("Jolene, Chief of Staff");
+    expect(contentSource).toContain("Operating Loop");
+    expect(contentSource).toContain("/api/jolene/operating-loop");
+    expect(contentSource).toContain("/api/jolene/operating-loop/approve");
+    expect(contentSource).toContain("Run Operating Loop");
+    expect(contentSource).toContain("propose first");
     expect(contentSource).toContain("/api/jolene/chief-of-staff/run");
     expect(contentSource).toContain("/api/jolene/chief-of-staff/approve");
     expect(contentSource).toContain("Ask Jolene");
