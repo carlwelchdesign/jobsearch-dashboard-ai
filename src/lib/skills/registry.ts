@@ -238,6 +238,10 @@ export const skillRegistry = {
     inputSchema: z.object({
       userId: z.string().optional(),
       contentPillar: z.enum(["app_progress", "search_learning", "architecture", "workflow_design"]).optional(),
+      prompt: z.string().optional(),
+      tone: z.enum(["bold_grounded", "practical", "experimental"]).optional(),
+      format: z.enum(["build_log", "lesson", "decision_diary", "teardown", "before_after", "contrarian_take", "field_note", "visual_walkthrough", "product_thesis"]).optional(),
+      visualDirection: z.string().optional(),
     }),
     outputSchema: anyOutput,
     defaultPolicy: { ...lowRiskPolicy, externalAction: "draft_only" as const },

@@ -12,8 +12,17 @@ describe("LinkedInContentClient UI contract", () => {
     expect(source).toContain("Archive");
     expect(source).toContain("Agent reviews");
     expect(source).toContain("Aggregate analytics used");
+    expect(source).toContain("Plan sources");
     expect(source).toContain("Memory sources");
     expect(source).toContain("Real app screenshots");
     expect(source).toContain("Approval publishes to LinkedIn immediately");
+  });
+
+  it("uses a prompt-first composer instead of a content focus dropdown", () => {
+    expect(source).toContain("What should we post about today?");
+    expect(source).toContain("promptChips");
+    expect(source).toContain("Visual direction");
+    expect(source).not.toContain('label="Content focus"');
+    expect(source).not.toContain("MenuItem");
   });
 });

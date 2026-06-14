@@ -50,16 +50,34 @@ describe("/api/linkedin-content/drafts", () => {
   it("generates a draft through the LinkedIn content agent", async () => {
     const response = await POST(new Request("http://localhost/api/linkedin-content/drafts", {
       method: "POST",
-      body: JSON.stringify({ contentPillar: "architecture" }),
+      body: JSON.stringify({
+        prompt: "Document the Email Ops agent team as a field note.",
+        format: "field_note",
+        visualDirection: "show Email Ops evidence",
+      }),
     }));
 
     expect(response.status).toBe(201);
-    expect(runLinkedInContentAgentMock).toHaveBeenCalledWith({ contentPillar: "architecture" });
+    expect(runLinkedInContentAgentMock).toHaveBeenCalledWith({
+      prompt: "Document the Email Ops agent team as a field note.",
+      format: "field_note",
+      visualDirection: "show Email Ops evidence",
+    });
     await expect(response.json()).resolves.toMatchObject({
       draftId: "draft_1",
       agentRunId: "agent_run_1",
       message: "LinkedIn draft created for manual review.",
     });
+  });
+
+  it("keeps legacy content pillar generation compatible", async () => {
+    const response = await POST(new Request("http://localhost/api/linkedin-content/drafts", {
+      method: "POST",
+      body: JSON.stringify({ contentPillar: "architecture" }),
+    }));
+
+    expect(response.status).toBe(201);
+    expect(runLinkedInContentAgentMock).toHaveBeenCalledWith({ contentPillar: "architecture" });
   });
 
   it("lists active drafts for the first local user", async () => {

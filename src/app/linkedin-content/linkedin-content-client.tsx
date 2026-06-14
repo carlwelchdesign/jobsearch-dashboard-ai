@@ -15,7 +15,6 @@ import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
-import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -57,17 +56,33 @@ export type LinkedInShareConnectionView = {
   lastPublishedAt: string | null;
 };
 
-const pillarOptions = [
-  { value: "app_progress", label: "App progress" },
-  { value: "search_learning", label: "Search learning" },
-  { value: "architecture", label: "Architecture" },
-  { value: "workflow_design", label: "Workflow design" },
+const promptChips = [
+  "Build log: what changed in the app this week?",
+  "Product lesson from the latest agent workflow",
+  "Workflow story about Jolene as Chief of Staff",
+  "Architecture note from the plans folder",
+  "Agent decision diary with evidence",
+  "Market or LinkedIn analytics insight",
+];
+
+const formatChips = [
+  { value: "field_note", label: "Field note" },
+  { value: "build_log", label: "Build log" },
+  { value: "lesson", label: "Lesson" },
+  { value: "decision_diary", label: "Decision diary" },
+  { value: "teardown", label: "Teardown" },
+  { value: "before_after", label: "Before/after" },
+  { value: "contrarian_take", label: "Contrarian" },
+  { value: "visual_walkthrough", label: "Visual walkthrough" },
+  { value: "product_thesis", label: "Product thesis" },
 ];
 
 export function LinkedInContentClient({ initialDrafts, shareConnection }: { initialDrafts: LinkedInDraftView[]; shareConnection: LinkedInShareConnectionView }) {
   const [state, setState] = useState(() => ({
     drafts: initialDrafts,
-    contentPillar: "app_progress",
+    prompt: "",
+    format: "field_note",
+    visualDirection: "",
     generating: false,
     busyDraftId: "",
     notice: "",
@@ -80,7 +95,12 @@ export function LinkedInContentClient({ initialDrafts, shareConnection }: { init
       const response = await fetch("/api/linkedin-content/drafts", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ contentPillar: state.contentPillar }),
+        body: JSON.stringify({
+          prompt: state.prompt,
+          tone: "bold_grounded",
+          format: state.format,
+          visualDirection: state.visualDirection,
+        }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Unable to generate LinkedIn draft.");
@@ -162,17 +182,53 @@ export function LinkedInContentClient({ initialDrafts, shareConnection }: { init
       <Card>
         <CardContent>
           <Stack spacing={2}>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: { md: "center" }, justifyContent: "space-between" }}>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: { md: "flex-start" }, justifyContent: "space-between" }}>
               <Box>
                 <Typography variant="h3">Agent content team</Typography>
                 <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                  Generate memory-aware LinkedIn posts from recent app work, aggregate analytics, agent reviews, and approved screenshots.
+                  Brief the documentarian agents on what you want to publish today. They use plans, agent runs, analytics, prior drafts, and safe app screenshots as context.
                 </Typography>
               </Box>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ minWidth: { md: 460 } }}>
-                <TextField select label="Content focus" value={state.contentPillar} onChange={(event) => setState((previous) => ({ ...previous, contentPillar: event.target.value }))} size="small" fullWidth>
-                  {pillarOptions.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
-                </TextField>
+              <Stack spacing={1} sx={{ minWidth: { md: 520 }, width: { xs: "100%", md: 560 } }}>
+                <TextField
+                  label="What should we post about today?"
+                  value={state.prompt}
+                  onChange={(event) => setState((previous) => ({ ...previous, prompt: event.target.value }))}
+                  placeholder="Example: Document the Jolene Email Ops upgrade as a field note about agents becoming useful only when they report back with evidence."
+                  multiline
+                  minRows={3}
+                  fullWidth
+                />
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                  {promptChips.map((chip) => (
+                    <Button key={chip} size="small" variant="outlined" onClick={() => setState((previous) => ({ ...previous, prompt: chip }))}>
+                      {chip.split(":")[0]}
+                    </Button>
+                  ))}
+                </Stack>
+                <Stack spacing={1}>
+                  <Typography variant="caption" color="text.secondary">Post format</Typography>
+                  <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                    {formatChips.map((chip) => (
+                      <Button
+                        key={chip.value}
+                        size="small"
+                        variant={state.format === chip.value ? "contained" : "outlined"}
+                        onClick={() => setState((previous) => ({ ...previous, format: chip.value }))}
+                      >
+                        {chip.label}
+                      </Button>
+                    ))}
+                  </Stack>
+                  <TextField
+                    label="Visual direction"
+                    value={state.visualDirection}
+                    onChange={(event) => setState((previous) => ({ ...previous, visualDirection: event.target.value }))}
+                    placeholder="Example: show Email Ops or agent run evidence"
+                    size="small"
+                    fullWidth
+                  />
+                </Stack>
                 <Button variant="contained" startIcon={<AutoAwesomeOutlinedIcon />} disabled={state.generating} onClick={generateDraft}>
                   {state.generating ? "Generating..." : "Generate"}
                 </Button>
@@ -325,6 +381,7 @@ function DraftCard({ draft, busy, canPublish, onCopy, onSave, onArchive, onAppro
           <Divider />
           <InfoSection title="Agent reviews" items={draft.agentReviews.map((review) => `${review.agent}: ${review.recommendation}`)} />
           <InfoSection title="Aggregate analytics used" items={draft.analyticsSources.map((source) => source.label)} />
+          <InfoSection title="Plan sources" items={planSourceLabels(draft.memorySources)} />
           <InfoSection title="Memory sources" items={draft.memorySources.map((source) => `${source.type}: ${source.label}`)} />
           <InfoSection title="Grounded claims" items={draft.claims.map((claim) => `${claim.status}: ${claim.text}`)} />
           <ScreenshotSection assets={draft.selectedScreenshots.length ? draft.selectedScreenshots : draft.screenshotAssets} />
@@ -344,6 +401,14 @@ function InfoSection({ title, items }: { title: string; items: string[] }) {
       </Stack>
     </Stack>
   );
+}
+
+function planSourceLabels(sources: LinkedInDraftView["memorySources"]) {
+  const labels: string[] = [];
+  for (const source of sources) {
+    if (source.type === "plan") labels.push(source.label);
+  }
+  return labels;
 }
 
 function ScreenshotSection({ assets }: { assets: LinkedInDraftView["screenshotAssets"] }) {
