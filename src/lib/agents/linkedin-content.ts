@@ -2025,9 +2025,11 @@ async function captureRouteScreenshot(route: string, reason: string): Promise<Li
     const filename = `${Date.now()}-${route.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}.png`;
     const filePath = path.join(dir, filename);
     const browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage({ viewport: { width: 1440, height: 860 }, colorScheme: "light" });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1120 }, deviceScaleFactor: 1, colorScheme: "light" });
     await page.goto(`${baseUrl}${route}`, { waitUntil: "networkidle", timeout: 15_000 });
     await page.addStyleTag({ content: privacyScreenshotCss });
+    await page.locator("svg").first().waitFor({ state: "visible", timeout: 5_000 }).catch(() => undefined);
+    await page.waitForTimeout(500);
     const pageText = await page.locator("body").innerText({ timeout: 5_000 }).catch(() => "");
     const warnings = privacyWarnings(pageText);
     await page.screenshot({ path: filePath });

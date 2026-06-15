@@ -634,6 +634,12 @@ describe("LinkedIn content agent helpers", () => {
     expect(source).toContain("topology_legend");
     expect(source).toContain("staff-engineer-html-v1");
   });
+
+  it("captures app screenshots with enough viewport and chart paint time for rendered charts", () => {
+    expect(source).toContain("viewport: { width: 1440, height: 1120 }");
+    expect(source).toContain('locator("svg").first().waitFor');
+    expect(source).toContain("waitForTimeout(500)");
+  });
 });
 
 function safeScreenshot(): LinkedInScreenshotAsset {

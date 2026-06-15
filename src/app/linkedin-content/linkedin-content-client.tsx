@@ -468,7 +468,18 @@ function VisualAssetGroup({ title, assets }: { title: string; assets: LinkedInDr
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
         {assets.map((asset) => (
           <Box key={asset.path} sx={{ width: { xs: "100%", sm: 300 }, border: 1, borderColor: "divider", borderRadius: 1, overflow: "hidden", bgcolor: "background.default" }}>
-            <Box component="img" src={asset.path} alt={asset.label} sx={{ display: "block", width: "100%", aspectRatio: "16 / 9", objectFit: "cover" }} />
+            <Box
+              component="img"
+              src={asset.path}
+              alt={asset.label}
+              sx={{
+                display: "block",
+                width: "100%",
+                aspectRatio: "16 / 9",
+                objectFit: "contain",
+                bgcolor: "background.paper",
+              }}
+            />
             <Box sx={{ p: 1 }}>
               <Typography variant="body2" sx={{ fontWeight: 800, overflowWrap: "anywhere" }}>{asset.label}</Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
