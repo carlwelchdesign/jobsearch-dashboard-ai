@@ -74,27 +74,6 @@ export type LinkedInShareConnectionView = {
   lastPublishedAt: string | null;
 };
 
-const promptChips = [
-  "Build log: what changed in the app this week?",
-  "Product lesson from the latest agent workflow",
-  "Workflow story about Jolene as Chief of Staff",
-  "Architecture note from the plans folder",
-  "Agent decision diary with evidence",
-  "Market or LinkedIn analytics insight",
-];
-
-const formatChips = [
-  { value: "field_note", label: "Field note" },
-  { value: "build_log", label: "Build log" },
-  { value: "lesson", label: "Lesson" },
-  { value: "decision_diary", label: "Decision diary" },
-  { value: "teardown", label: "Teardown" },
-  { value: "before_after", label: "Before/after" },
-  { value: "contrarian_take", label: "Contrarian" },
-  { value: "visual_walkthrough", label: "Visual walkthrough" },
-  { value: "product_thesis", label: "Product thesis" },
-];
-
 export function LinkedInContentClient({ initialDrafts, shareConnection }: { initialDrafts: LinkedInDraftView[]; shareConnection: LinkedInShareConnectionView }) {
   const [state, setState] = useState(() => ({
     drafts: initialDrafts,
@@ -224,27 +203,7 @@ export function LinkedInContentClient({ initialDrafts, shareConnection }: { init
                   minRows={3}
                   fullWidth
                 />
-                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
-                  {promptChips.map((chip) => (
-                    <Button key={chip} size="small" variant="outlined" onClick={() => setState((previous) => ({ ...previous, prompt: chip }))}>
-                      {chip.split(":")[0]}
-                    </Button>
-                  ))}
-                </Stack>
                 <Stack spacing={1}>
-                  <Typography variant="caption" color="text.secondary">Post format</Typography>
-                  <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
-                    {formatChips.map((chip) => (
-                      <Button
-                        key={chip.value}
-                        size="small"
-                        variant={state.format === chip.value ? "contained" : "outlined"}
-                        onClick={() => setState((previous) => ({ ...previous, format: chip.value }))}
-                      >
-                        {chip.label}
-                      </Button>
-                    ))}
-                  </Stack>
                   <TextField
                     label="Visual direction"
                     value={state.visualDirection}
