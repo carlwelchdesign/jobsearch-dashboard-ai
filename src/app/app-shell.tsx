@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
 import AssignmentTurnedInOutlinedIcon from "@mui/icons-material/AssignmentTurnedInOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import BoltOutlinedIcon from "@mui/icons-material/BoltOutlined";
@@ -30,6 +31,7 @@ const navItems = [
   { href: "/dashboard", label: "Command Center", eyebrow: "Home", icon: DashboardOutlinedIcon },
   { href: "/applications/assistant", label: "Apply Sprint", eyebrow: "Run agent", icon: BoltOutlinedIcon },
   { href: "/applications", label: "Applications", eyebrow: "Track outcomes", icon: AssignmentTurnedInOutlinedIcon },
+  { href: "/architecture", label: "Architecture", eyebrow: "System map", icon: AccountTreeOutlinedIcon },
   { href: "/settings", label: "Settings", eyebrow: "Configure", icon: SettingsOutlinedIcon },
   { href: "/guide", label: "User Guide", eyebrow: "How to use this", icon: MenuBookOutlinedIcon },
 ];
