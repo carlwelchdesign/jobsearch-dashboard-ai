@@ -1,6 +1,7 @@
 # Agentic Job Search Assistant
 
 Personal Agentic AI-powered job search dashboard for reviewing jobs, maintaining search profiles, parsing resumes, and generating truthful ATS-friendly application materials.
+
 <img width="1407" height="1278" alt="image" src="https://github.com/user-attachments/assets/8f9f935a-3409-4e11-b75d-eb292ef999ea" />
 
 ## Local Setup
