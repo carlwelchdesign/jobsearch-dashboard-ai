@@ -3,6 +3,7 @@ import { z } from "zod";
 import { runAgent } from "@/lib/agents/run-agent";
 import { buildLinkedInContentMemoryPack, jsonValue, type LinkedInContentMemoryPack } from "@/lib/agents/linkedin-content-memory";
 import { createImageGeneration, parseStructuredOutput } from "@/lib/ai/openai";
+import type { SearchRunAnalytics } from "@/lib/job-search/run-analytics";
 import { prisma } from "@/lib/prisma";
 import { getLinkedInContentModel, getLinkedInDiagramImageModel } from "@/lib/settings/ai-settings";
 
@@ -43,6 +44,11 @@ export type LinkedInScreenshotAsset = {
 
 export type LinkedInAgentReview = {
   agent:
+    | "Assignment Editor"
+    | "Evidence Reporter"
+    | "Documentary Producer"
+    | "Narrative Editor"
+    | "Authenticity Reviewer"
     | "Narrative Strategist"
     | "Documentarian"
     | "Editorial Challenger"
@@ -100,6 +106,23 @@ export type LinkedInContentDirection = {
   rejectedAngles: string[];
   intent: LinkedInPromptIntent;
   obligations: PromptObligations;
+  promptRelevanceScore: number;
+  evidenceAnchors: ContentEvidenceAnchor[];
+  rejectedEvidence: ContentEvidenceAnchor[];
+};
+
+export type ContentEvidenceAnchor = {
+  sourceType: "analytics" | "plan" | "aggregate_fact" | "source_coverage";
+  label: string;
+  text: string;
+  relevance: number;
+  sourceRef?: string;
+  sourceTitle?: string;
+  sourcePath?: string;
+};
+
+type LinkedInGeneratedContent = Omit<LinkedInContentOutput, "screenshotAssets" | "selectedScreenshots" | "privacyReview" | "draftId" | "disclosureText" | "memorySources" | "analyticsSources" | "agentReviews" | "claims" | "risks"> & {
+  repairAttempt?: "not_needed" | "evidence_anchor_added";
 };
 
 export type LinkedInPromptIntent =
@@ -262,18 +285,20 @@ export async function runLinkedInContentAgent(input: LinkedInContentInput = {}) 
     userId: user.id,
     parentRunId: input.parentRunId,
     execute: async (run) => {
-      const generated = await generateLinkedInContent({ pillar, memoryPack, direction, model: generationModel });
+      let generated = await generateLinkedInContent({ pillar, memoryPack, direction, model: generationModel });
       const screenshotAssets = await createSafeLinkedInScreenshotAssets(memoryPack, direction);
       const diagramAssets = await createPromptDiagramAssets(direction, diagramImageModel);
       const visualAssets = [...diagramAssets, ...screenshotAssets];
       const selectedScreenshots = selectBestScreenshots(visualAssets, direction);
+      generated = repairDraftWithEvidence({ generated, direction });
+      generated = withEvidenceSourceFacts(generated, direction);
       const promptReview = reviewPromptSatisfaction({
         generated,
         direction,
         visualAssets,
       });
       const agentReviews = buildAgentReviews(memoryPack, generated, direction, selectedScreenshots, promptReview, visualAssets);
-      const claims = buildClaims(generated, memoryPack);
+      const claims = buildClaims(generated, memoryPack, direction);
       const privacyReview = reviewLinkedInPostPrivacy({
         body: generated.body,
         hook: generated.hook,
@@ -311,7 +336,7 @@ export async function generateLinkedInContent(input: {
   memoryPack: LinkedInContentMemoryPack;
   direction: LinkedInContentDirection;
   model: string;
-}): Promise<Omit<LinkedInContentOutput, "screenshotAssets" | "selectedScreenshots" | "privacyReview" | "draftId" | "disclosureText" | "memorySources" | "analyticsSources" | "agentReviews" | "claims" | "risks">> {
+}): Promise<LinkedInGeneratedContent> {
   const fallback = buildLinkedInContentFallback(input);
   try {
     const generated = await parseStructuredOutput({
@@ -373,7 +398,7 @@ export function buildLinkedInContentFallback(input: {
   direction?: LinkedInContentDirection;
   model?: string;
   memoryPack: Pick<LinkedInContentMemoryPack, "aggregateFacts" | "analytics" | "storyAngles" | "planSources" | "noveltySignals">;
-}): Omit<LinkedInContentOutput, "screenshotAssets" | "selectedScreenshots" | "privacyReview" | "draftId" | "disclosureText" | "memorySources" | "analyticsSources" | "agentReviews" | "claims" | "risks"> {
+}): LinkedInGeneratedContent {
   const direction = input.direction ?? {
     prompt: "Document recent Job Search OS progress.",
     tone: "bold_grounded" as const,
@@ -384,32 +409,23 @@ export function buildLinkedInContentFallback(input: {
     rejectedAngles: [],
     intent: "build_log" as const,
     obligations: promptObligationsFor("build_log", "Document recent Job Search OS progress."),
+    promptRelevanceScore: 100,
+    evidenceAnchors: [],
+    rejectedEvidence: [],
   };
   if (direction.intent === "architecture_diagram" || direction.intent === "architecture_explainer") {
     return buildArchitectureFallback(input.pillar, input.memoryPack, direction);
   }
   const latest = input.memoryPack.analytics.latestSearchRun;
-  const dropLine = direction.obligations.allowSearchFunnelAnalytics && latest?.drops.length
-    ? `The more interesting signal was the drop-off pattern: ${latest.drops.slice(0, 4).map((item) => `${item.label.toLowerCase()} ${item.value}`).join(", ")}.`
-    : "The useful part is not just the count; it is whether the system can explain what changed and why.";
-  const funnelLine = direction.obligations.allowSearchFunnelAnalytics && latest
-    ? `The latest run moved through ${latest.funnel.map((item) => `${item.label.toLowerCase()} ${item.value}`).join(", ")}.`
-    : "The current work is focused on documenting the relevant system behavior instead of forcing every post through search funnel numbers.";
-  const planLine = input.memoryPack.planSources?.[0]
-    ? `One plan in the build log keeps pulling me back: ${input.memoryPack.planSources[0].title}. ${input.memoryPack.planSources[0].summary}`
-    : "The build log is becoming useful source material, not just project bookkeeping.";
-  const body = [
-    `${formatLabel(direction.format)}: ${direction.selectedAngle}`,
-    "",
-    planLine,
-    "",
-    funnelLine,
-    dropLine,
-    "",
-    "The post-worthy part is not the automation by itself. It is the documentarian loop: plans, agent runs, analytics, screenshots, review gates, and edits all becoming usable context for the next public note.",
-    "",
-    "That makes the content less repetitive because the agents are not choosing from a static category. They are reading the work, picking a fresh angle, and showing the artifact that best explains it while the final judgment stays human.",
-  ].join("\n");
+  const evidence = direction.evidenceAnchors[0] ?? fallbackEvidenceAnchor(input.memoryPack, direction);
+  const body = documentaryBodyForFormat({
+    format: direction.format,
+    prompt: direction.prompt,
+    angle: direction.selectedAngle,
+    evidence,
+    latest,
+    includeAnalytics: direction.obligations.allowSearchFunnelAnalytics,
+  });
   return {
     title: direction.selectedAngle.slice(0, 110),
     hook: hookForFormat(direction.format),
@@ -419,6 +435,7 @@ export function buildLinkedInContentFallback(input: {
     sourceFacts: input.memoryPack.aggregateFacts,
     mode: "deterministic",
     generationModel: input.model ?? "",
+    repairAttempt: bodyIncludesEvidence(body, direction) ? "not_needed" : "evidence_anchor_added",
   };
 }
 
@@ -426,7 +443,7 @@ function buildArchitectureFallback(
   pillar: LinkedInContentPillar,
   memoryPack: Pick<LinkedInContentMemoryPack, "aggregateFacts" | "analytics" | "storyAngles" | "planSources" | "noveltySignals">,
   direction: LinkedInContentDirection,
-): Omit<LinkedInContentOutput, "screenshotAssets" | "selectedScreenshots" | "privacyReview" | "draftId" | "disclosureText" | "memorySources" | "analyticsSources" | "agentReviews" | "claims" | "risks"> {
+): LinkedInGeneratedContent {
   const relevantPlan = selectArchitecturePlanReference(memoryPack.planSources ?? []);
   const planLine = relevantPlan
     ? `The build-log evidence behind this architecture comes from ${relevantPlan.title}, which describes ${relevantPlan.summary.toLowerCase()}`
@@ -458,6 +475,7 @@ function buildArchitectureFallback(
     ],
     mode: "deterministic",
     generationModel: "",
+    repairAttempt: "not_needed",
   };
 }
 
@@ -516,18 +534,21 @@ export function reviewPromptSatisfaction(input: {
   visualAssets: LinkedInScreenshotAsset[];
 }): PromptSatisfactionReview {
   const haystack = `${input.generated.title}\n${input.generated.hook}\n${input.generated.body}`.toLowerCase();
-  const matchedConcepts = input.direction.obligations.requiredConcepts.filter((concept) => haystack.includes(concept.toLowerCase()));
+  const matchedConcepts = input.direction.obligations.requiredConcepts.filter((concept) => conceptMatchesDraft(concept, haystack, input.direction));
   const missingConcepts = input.direction.obligations.requiredConcepts.filter((concept) => !matchedConcepts.includes(concept));
   const forbiddenMatches = input.direction.obligations.forbiddenPhrases.filter((phrase) => haystack.includes(phrase.toLowerCase()));
   const hasRequiredDiagram = !input.direction.obligations.requiredVisuals.includes("architecture_diagram")
     || input.visualAssets.some((asset) => asset.assetType === "diagram" && asset.privacyStatus === "PASS" && asset.path);
+  const hasRequiredScreenshot = !input.direction.obligations.requiredVisuals.includes("app_screenshot")
+    || input.visualAssets.some((asset) => isPassingAppScreenshot(asset));
   const warnings = [
-    ...missingConcepts.slice(0, 4).map((concept) => `Prompt obligation missing: ${concept}.`),
+    ...missingConcepts.map((concept) => `Prompt obligation missing: ${concept}.`),
     ...forbiddenMatches.map((phrase) => `Generic fallback phrase still present: ${phrase}.`),
     ...(hasRequiredDiagram ? [] : ["Architecture prompt requires at least one generated diagram asset."]),
+    ...(hasRequiredScreenshot ? [] : ["Prompt requires at least one passing app screenshot asset."]),
   ];
   const conceptScore = Math.round((matchedConcepts.length / Math.max(input.direction.obligations.requiredConcepts.length, 1)) * 80);
-  const visualScore = hasRequiredDiagram ? 20 : 0;
+  const visualScore = hasRequiredDiagram && hasRequiredScreenshot ? 20 : 0;
   const penalty = forbiddenMatches.length * 15;
   const score = Math.max(0, Math.min(100, conceptScore + visualScore - penalty));
   return {
@@ -540,6 +561,15 @@ export function reviewPromptSatisfaction(input: {
     warnings,
     reviewedAt: new Date().toISOString(),
   };
+}
+
+function isPassingAppScreenshot(asset: LinkedInScreenshotAsset) {
+  const route = asset.route.toLowerCase();
+  return (asset.assetType === undefined || asset.assetType === "screenshot")
+    && asset.privacyStatus === "PASS"
+    && Boolean(asset.path)
+    && !route.startsWith("diagram:")
+    && !route.startsWith("ai-polish:");
 }
 
 async function createPromptDiagramAssets(direction: LinkedInContentDirection, imageModel: string): Promise<LinkedInScreenshotAsset[]> {
@@ -947,7 +977,7 @@ function aiPolishWarningAsset(spec: StaffEngineerDiagramSpec, imageModel: string
 
 function buildAgentReviews(
   memoryPack: LinkedInContentMemoryPack,
-  generated: Pick<LinkedInContentOutput, "title" | "body" | "mode">,
+  generated: Pick<LinkedInGeneratedContent, "title" | "body" | "mode" | "repairAttempt">,
   direction: LinkedInContentDirection,
   selectedScreenshots: LinkedInScreenshotAsset[],
   promptReview: PromptSatisfactionReview,
@@ -959,7 +989,13 @@ function buildAgentReviews(
   const diagramReviews = diagramAssets.flatMap((asset) => asset.qualityReview ? [asset.qualityReview] : []);
   const diagramWarnings = diagramReviews.flatMap((review) => review.warnings);
   const bestDiagramScore = diagramReviews.reduce((score, review) => Math.max(score, review.score), 0);
+  const selectedEvidence = direction.evidenceAnchors[0];
   return [
+    { agent: "Assignment Editor", summary: `Prompt: ${direction.prompt}`, recommendation: `Primary assignment score ${direction.promptRelevanceScore}/100. Selected angle: ${direction.selectedAngle}.`, metadata: { prompt: direction.prompt, promptRelevanceScore: direction.promptRelevanceScore, selectedAngle: direction.selectedAngle, rejectedAngles: direction.rejectedAngles } },
+    { agent: "Evidence Reporter", summary: selectedEvidence ? `${selectedEvidence.label}: ${selectedEvidence.text}` : "No strong evidence anchor selected.", recommendation: selectedEvidence ? `Use ${selectedEvidence.sourceType} evidence because it is the closest source to the prompt.` : "Do not publish until the draft has a concrete source anchor.", metadata: { selectedEvidence, rejectedEvidence: direction.rejectedEvidence } },
+    { agent: "Documentary Producer", summary: `Format: ${direction.format}.`, recommendation: "Build the post around scene, evidence, decision, consequence, artifact, and takeaway instead of a generic build-log template." },
+    { agent: "Narrative Editor", summary: generated.repairAttempt === "evidence_anchor_added" ? "A deterministic evidence repair was applied." : "No deterministic evidence repair was needed.", recommendation: "Avoid repeated hooks, stale build-log openings, and documentarian-loop filler.", metadata: { repairAttempt: generated.repairAttempt ?? "not_needed" } },
+    { agent: "Authenticity Reviewer", summary: promptReview.warnings.length ? promptReview.warnings.join(" ") : "Draft has prompt evidence and passes public-safety shape checks.", recommendation: "Keep the post candid, concrete, and grounded in the selected artifact." },
     { agent: "Narrative Strategist", summary: `Prompt: ${direction.prompt}`, recommendation: `Intent: ${direction.intent}. Selected angle: ${direction.selectedAngle}. Rejected: ${direction.rejectedAngles.join(" | ") || "none"}.`, metadata: { prompt: direction.prompt, intent: direction.intent, format: direction.format, selectedAngle: direction.selectedAngle, rejectedAngles: direction.rejectedAngles } },
     { agent: "Documentarian", summary: memoryPack.recentDecisions.slice(0, 2).join(" "), recommendation: `Use plan memory and build evidence, including ${memoryPack.planSources.slice(0, 2).map((plan) => plan.title).join(", ") || "recent app work"}.` },
     { agent: "Editorial Challenger", summary: `Avoid recent phrases: ${memoryPack.noveltySignals.avoidPhrases.join(", ")}.`, recommendation: "Do not reuse the same future-CMS/operating-system framing unless the prompt explicitly asks for it." },
@@ -984,7 +1020,7 @@ export function planLinkedInPromptIntent(prompt: string, legacyPillar: LinkedInC
   if (/\b(email|inbox|calendar|interview invite|email ops)\b/.test(normalized)) return "email_ops";
   if (/\b(jolene|chief of staff|standup)\b/.test(normalized)) return "jolene_ops";
   if (/\b(market|research|signals|labor|hiring)\b/.test(normalized)) return "market_intelligence";
-  if (/\b(analytics|metrics|funnel|numbers|performance)\b/.test(normalized)) return "analytics_insight";
+  if (/\b(analytics|metrics|funnel|numbers|performance|chart|charts|graph|graphs|search operations|search ops|digest)\b/.test(normalized)) return "analytics_insight";
   if (/\b(workflow|process|approval|handoff)\b/.test(normalized)) return "workflow_story";
   if (legacyPillar === "architecture") return "architecture_explainer";
   if (legacyPillar === "search_learning") return "analytics_insight";
@@ -994,7 +1030,7 @@ export function planLinkedInPromptIntent(prompt: string, legacyPillar: LinkedInC
 
 function promptObligationsFor(intent: LinkedInPromptIntent, prompt: string): PromptObligations {
   const architectureConcepts = ["architecture", "Next.js", "API routes", "agent services", "Prisma/Postgres", "AgentRun", "memory", "approval gates", "LinkedIn publish", "diagram"];
-  const baseForbidden = ["practical testbed", "blank page", "boundary matters", "today's content brief", "i would document", "clearest source"];
+  const baseForbidden = ["practical testbed", "blank page", "boundary matters", "today's content brief", "i would document", "clearest source", "one plan in the build log keeps pulling me back", "documentarian loop"];
   if (intent === "architecture_diagram" || intent === "architecture_explainer") {
     return {
       topic: prompt,
@@ -1018,32 +1054,52 @@ function buildContentDirection(input: LinkedInContentInput, memoryPack: LinkedIn
   const intent = planLinkedInPromptIntent(prompt, legacyPillar);
   const obligations = promptObligationsFor(intent, prompt);
   const visualDirection = cleanLine(input.visualDirection || "");
+  const evidence = selectContentEvidence(memoryPack, { prompt, intent });
   const candidates = [
     ...promptAngles(prompt, format),
-    ...memoryPack.planSources.slice(0, 4).map((plan) => `${plan.title}: ${plan.summary}`),
+    ...evidence.selected.filter((item) => item.sourceType === "plan").map((item) => `${item.label}: ${item.text}`),
     ...memoryPack.storyAngles,
   ].filter(Boolean);
   const scored = candidates
-    .map((angle) => ({ angle: cleanLine(angle).slice(0, 180), score: noveltyScore(angle, memoryPack) }))
+    .map((angle) => ({ angle: cleanLine(angle).slice(0, 180), score: noveltyScore(angle, memoryPack) + promptRelevanceScore(angle, prompt, intent) * 3 }))
     .sort((left, right) => right.score - left.score);
+  const selectedAngle = scored[0]?.angle || "A field note from the Job Search OS build log.";
   return {
     prompt,
     tone,
     format,
     legacyPillar,
     visualDirection,
-    selectedAngle: scored[0]?.angle || "A field note from the Job Search OS build log.",
+    selectedAngle,
     rejectedAngles: scored.slice(1, 4).map((item) => item.angle),
     intent,
     obligations,
+    promptRelevanceScore: Math.round(promptRelevanceScore(selectedAngle, prompt, intent)),
+    evidenceAnchors: evidence.selected,
+    rejectedEvidence: evidence.rejected,
   };
 }
 
 function promptAngles(prompt: string, format: LinkedInContentFormat) {
+  const topic = cleanPromptTopic(prompt);
+  if (format === "before_after") {
+    return [
+      `Search Operations charts before and after`,
+      `What changed when ${topic} became the artifact`,
+      `Why the chart upgrade is easier to read`,
+    ];
+  }
+  if (format === "visual_walkthrough") {
+    return [
+      `A visual walkthrough of ${topic}`,
+      `What the Search Operations dashboard now makes easier to see`,
+      `The chart upgrade as a product decision`,
+    ];
+  }
   return [
-    `${formatLabel(format)} about ${prompt}`,
-    `What changed in the build after ${prompt}`,
-    `The documentarian note hidden inside ${prompt}`,
+    `${humanFormatLabel(format)} on ${topic}`,
+    `What changed when ${topic}`,
+    `The product note inside ${topic}`,
   ];
 }
 
@@ -1066,6 +1122,82 @@ function noveltyScore(angle: string, memoryPack: LinkedInContentMemoryPack) {
 function sharedWords(left: string, right: string) {
   const leftWords = new Set(left.split(/[^a-z0-9]+/).filter((word) => word.length > 4));
   return right.split(/[^a-z0-9]+/).filter((word) => leftWords.has(word)).length;
+}
+
+function selectContentEvidence(
+  memoryPack: Pick<LinkedInContentMemoryPack, "aggregateFacts" | "analytics" | "planSources">,
+  direction: { prompt: string; intent: LinkedInPromptIntent },
+) {
+  const latest = memoryPack.analytics.latestSearchRun;
+  const candidates: ContentEvidenceAnchor[] = [];
+  if (latest && direction.intent === "analytics_insight") {
+    candidates.push({
+      sourceType: "analytics",
+      label: "Search Operations analytics",
+      text: `Latest Search Operations run: ${latest.funnel.map((item) => `${item.label} ${item.value}`).join(", ")}; top blocker ${latest.topBlocker ? `${latest.topBlocker.label} ${latest.topBlocker.value}` : "none recorded"}.`,
+      relevance: 95,
+      sourceRef: "analytics.latestSearchRun",
+      sourceTitle: "Latest Search Operations run",
+    });
+  }
+  for (const [index, fact] of memoryPack.aggregateFacts.slice(0, 8).entries()) {
+    candidates.push({
+      sourceType: "aggregate_fact",
+      label: factLabel(fact),
+      text: fact,
+      relevance: promptRelevanceScore(fact, direction.prompt, direction.intent),
+      sourceRef: `memoryPack.aggregateFacts[${index}]`,
+      sourceTitle: factLabel(fact),
+    });
+  }
+  for (const plan of memoryPack.planSources.slice(0, 10)) {
+    const text = `${plan.title}: ${plan.summary}`;
+    candidates.push({
+      sourceType: "plan",
+      label: plan.title,
+      text: plan.summary,
+      relevance: promptRelevanceScore(text, direction.prompt, direction.intent),
+      sourceRef: `plan:${plan.filename}`,
+      sourceTitle: plan.title,
+      sourcePath: `plans/${plan.filename}`,
+    });
+  }
+  const sorted = candidates
+    .filter((item) => item.text.trim())
+    .sort((left, right) => right.relevance - left.relevance);
+  return {
+    selected: sorted.filter((item) => item.relevance >= 20).slice(0, 3),
+    rejected: sorted.filter((item) => item.relevance < 20).slice(0, 4),
+  };
+}
+
+function promptRelevanceScore(text: string, prompt: string, intent: LinkedInPromptIntent) {
+  const normalized = text.toLowerCase();
+  const promptWords = keywordSet(prompt);
+  let score = 0;
+  for (const word of promptWords) {
+    if (normalized.includes(word)) score += 8;
+  }
+  if (intent === "analytics_insight" && /\b(search|operations|ops|chart|charts|graph|graphs|analytics|funnel|qualified|saved|run|runs|blocker)\b/.test(normalized)) score += 35;
+  if (intent === "email_ops" && /\b(email|gmail|inbox|calendar|interview|scheduling)\b/.test(normalized)) score += 35;
+  if (intent === "jolene_ops" && /\b(jolene|chief of staff|standup|delegated)\b/.test(normalized)) score += 35;
+  if (intent === "market_intelligence" && /\b(market|research|signal|labor|hiring)\b/.test(normalized)) score += 35;
+  if (intent === "workflow_story" && /\b(workflow|approval|handoff|review|gate)\b/.test(normalized)) score += 30;
+  if (intent.startsWith("architecture") && /\b(architecture|diagram|system|agent|prisma|api|router)\b/.test(normalized)) score += 35;
+  if (intent === "analytics_insight" && /\b(email ops|gmail|calendar|source management|company-source)\b/.test(normalized)) score -= 35;
+  return clampNumber(Math.round(score), 0, 100);
+}
+
+function keywordSet(value: string) {
+  return new Set(value.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 4 && !["about", "would", "could", "there", "their", "because"].includes(word)));
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function factLabel(fact: string) {
+  return fact.split(":")[0].replace(/\.$/, "").slice(0, 80) || "Aggregate fact";
 }
 
 function recommendScreenshotRoutes(memoryPack: LinkedInContentMemoryPack, direction?: LinkedInContentDirection) {
@@ -1596,28 +1728,279 @@ function formatLabel(format: LinkedInContentFormat) {
   return format.replace(/_/g, " ");
 }
 
+function humanFormatLabel(format: LinkedInContentFormat) {
+  return format.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function hookForFormat(format: LinkedInContentFormat) {
   const hooks: Record<LinkedInContentFormat, string> = {
-    build_log: "A build log is more useful when it can argue for what changed.",
-    lesson: "The useful lesson was not obvious until the agents had to document it.",
-    decision_diary: "One product decision changed how the system explains itself.",
-    teardown: "Here is the part of the workflow I would rebuild first.",
-    before_after: "The before-and-after is not cosmetic; it is operational.",
-    contrarian_take: "The next AI feature I want is less magic and more memory.",
-    field_note: "A field note from building an agentic job-search operating system.",
-    visual_walkthrough: "The screenshot matters because it shows the workflow, not the pitch.",
-    product_thesis: "My current product thesis: the best agents will be documentarians first.",
+    build_log: "A build log only works when it shows the artifact.",
+    lesson: "The useful lesson came from the evidence, not the slogan.",
+    decision_diary: "One product decision changed what the system had to prove.",
+    teardown: "The part worth tearing down was the part that hid the signal.",
+    before_after: "The before-and-after is operational, not cosmetic.",
+    contrarian_take: "The next AI feature I want is less magic and more receipts.",
+    field_note: "Field note: the post got better when the agent had to show its source.",
+    visual_walkthrough: "The screenshot matters when it changes the explanation.",
+    product_thesis: "My current product thesis: agents need evidence before voice.",
   };
   return hooks[format];
 }
 
-function buildClaims(generated: Pick<LinkedInContentOutput, "body" | "sourceFacts">, memoryPack: LinkedInContentMemoryPack) {
+function documentaryBodyForFormat(input: {
+  format: LinkedInContentFormat;
+  prompt: string;
+  angle: string;
+  evidence: ContentEvidenceAnchor;
+  latest: SearchRunAnalytics | null;
+  includeAnalytics: boolean;
+}) {
+  const scene = sceneForPrompt(input.prompt);
+  const angle = angleLine(input.angle);
+  const evidence = evidenceLine(input.evidence);
+  const artifact = artifactLine(input);
+  const decision = decisionLine(input.format);
+  const consequence = consequenceLine(input.format);
+  const takeaway = takeawayLine(input.format);
+  const analyticsLine = input.includeAnalytics && input.latest?.drops.length
+    ? `The useful signal is the blocker view: ${input.latest.drops.slice(0, 3).map((item) => `${item.label.toLowerCase()} ${item.value}`).join(", ")}. That is the difference between a chart that looks busy and a chart that tells you what to fix next.`
+    : "";
+  const structures: Record<LinkedInContentFormat, string[]> = {
+    build_log: [scene, angle, evidence, decision, artifact, consequence, takeaway],
+    lesson: [scene, angle, evidence, takeaway, artifact, consequence],
+    decision_diary: [scene, angle, decision, evidence, consequence, artifact, takeaway],
+    teardown: [scene, angle, "The weak version flattened the work into generic narration.", evidence, decision, artifact, consequence],
+    before_after: [scene, angle, "Before, the chart story was basically a conversion line: a lot came in, a tiny amount survived, and the user had to infer the rest.", "After, the dashboard has to explain where the run went, what blocked value, which source/profile worked, and what the next action should be.", evidence, analyticsLine || artifact, takeaway],
+    contrarian_take: [scene, angle, "Public AI content should start with receipts, not personality.", evidence, decision, consequence, takeaway],
+    field_note: [scene, angle, evidence, artifact, consequence, takeaway],
+    visual_walkthrough: [scene, angle, artifact, evidence, analyticsLine || decision, consequence, takeaway],
+    product_thesis: [scene, angle, "Content agents get useful when they behave like documentary producers.", evidence, decision, consequence, takeaway],
+  };
+  return structures[input.format].filter(Boolean).join("\n\n");
+}
+
+function angleLine(angle: string) {
+  if (/\bsearch operations charts before and after\b/i.test(angle)) {
+    return "The before-and-after is straightforward: the dashboard needs to explain why a run worked, not just how much it shrank.";
+  }
+  return `The useful angle is ${angle.replace(/[.?!]+$/, "")}.`;
+}
+
+function sceneForPrompt(prompt: string) {
+  if (/\b(search operations|graphs|charts|dashboard)\b/i.test(prompt)) {
+    return "The Search Operations page had a real comprehension problem: the old charts showed a run shrinking, but they did not make the next action obvious.";
+  }
+  return `I wanted to explain ${cleanPromptTopic(prompt)} without turning it into a generic progress update.`;
+}
+
+function cleanPromptTopic(prompt: string) {
+  return prompt
+    .replace(/\b(can we discuss|write|create|draft|post|explain|document|show|i would like|please)\b/gi, "")
+    .replace(/\b(a|an|the)\s+(decision diary|field note|lesson|post|draft)\s+(about|on)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s:,-]+|[\s?.!]+$/g, "")
+    || "the selected product work";
+}
+
+function artifactLine(input: { evidence: ContentEvidenceAnchor; latest: SearchRunAnalytics | null; includeAnalytics: boolean }) {
+  if (input.includeAnalytics && input.latest) {
+    return `The Search Operations dashboard now has to make ${input.latest.stats.jobsAfterFilters} qualified jobs, ${input.latest.stats.jobsSaved} saved matches, and ${input.latest.topBlocker?.label.toLowerCase() ?? "the top blocker"} understandable at a glance.`;
+  }
+  if (input.evidence.sourceType === "plan") return `The plan source is ${input.evidence.label}, used as supporting context rather than the whole story.`;
+  return `The selected source is ${input.evidence.label}, which gives the post a concrete source to stand on.`;
+}
+
+function evidenceLine(evidence: ContentEvidenceAnchor) {
+  if (evidence.sourceType === "analytics") return `The run I am using as the receipt: ${evidence.text}`;
+  if (evidence.sourceType === "plan") return `The build-log anchor is ${evidence.label}: ${evidence.text}`;
+  return `The artifact behind this note is ${evidence.text}`;
+}
+
+function decisionLine(format: LinkedInContentFormat) {
+  if (format === "visual_walkthrough") return "The product decision was to make the visual explain the user's next decision instead of decorating the post.";
+  if (format === "teardown") return "The fix was to remove the vague narrative frame and force the draft to name the evidence.";
+  return "The decision was to treat the prompt as the assignment and the build log as source material, not as a random quote generator.";
+}
+
+function consequenceLine(format: LinkedInContentFormat) {
+  if (format === "product_thesis") return "The content system becomes more believable because it can show why this story was selected.";
+  if (format === "before_after") return "That gives the reader a real before-and-after: what changed, why it changed, and which artifact proves it.";
+  return "The draft gets more specific, less repetitive, and easier to review before anything goes public.";
+}
+
+function takeawayLine(format: LinkedInContentFormat) {
+  if (format === "lesson") return "Better agent content is not louder. It is better sourced.";
+  if (format === "contrarian_take") return "If an agent cannot cite the artifact, it should not get a polished voice.";
+  return "The durable pattern is simple: scene first, evidence second, opinion last.";
+}
+
+function fallbackEvidenceAnchor(
+  memoryPack: Pick<LinkedInContentMemoryPack, "aggregateFacts" | "analytics" | "planSources">,
+  direction: LinkedInContentDirection,
+): ContentEvidenceAnchor {
+  return selectContentEvidence(memoryPack, direction).selected[0] ?? {
+    sourceType: "plan",
+    label: memoryPack.planSources[0]?.title ?? "Content memory",
+    text: memoryPack.planSources[0] ? `${memoryPack.planSources[0].title}: ${memoryPack.planSources[0].summary}` : "The memory pack did not expose a strong source match, so this draft should stay review-only until a concrete artifact is selected.",
+    relevance: 0,
+  };
+}
+
+function repairDraftWithEvidence(input: { generated: LinkedInGeneratedContent; direction: LinkedInContentDirection }): LinkedInGeneratedContent {
+  if (bodyIncludesEvidence(input.generated.body, input.direction)) {
+    return { ...input.generated, repairAttempt: input.generated.repairAttempt ?? "not_needed" };
+  }
+  const anchor = input.direction.evidenceAnchors[0];
+  if (!anchor) return input.generated;
+  return {
+    ...input.generated,
+    body: `${input.generated.body}\n\n${evidenceLine(anchor)}`,
+    repairAttempt: "evidence_anchor_added",
+  };
+}
+
+function bodyIncludesEvidence(body: string, direction: LinkedInContentDirection) {
+  const normalized = body.toLowerCase();
+  return direction.evidenceAnchors.some((anchor) => {
+    const anchorText = `${anchor.label} ${anchor.text}`;
+    if (anchor.sourceType === "analytics") return analyticsAnchorMatches(normalized, anchorText);
+    if (anchor.sourceType === "plan") return planAnchorMatches(normalized, anchor);
+    const anchorWords = distinctiveWords(anchorText).slice(0, 8);
+    if (!anchorWords.length) return false;
+    const matches = anchorWords.filter((word) => normalized.includes(word)).length;
+    return matches >= Math.max(3, Math.ceil(anchorWords.length * 0.5));
+  });
+}
+
+function conceptMatchesDraft(concept: string, haystack: string, direction: LinkedInContentDirection) {
+  if (concept.toLowerCase() === "evidence") return bodyIncludesEvidence(haystack, direction);
+  if (concept.toLowerCase() === "analytics") return /\b(analytics|funnel|qualified|saved|run|blocker|metric|chart|graph)\b/.test(haystack);
+  if (concept.toLowerCase() === "funnel") return /\b(funnel|fetched|qualified|saved|agency eligible|new matches|scored|detail candidates)\b/.test(haystack);
+  if (concept.toLowerCase() === "aggregate") return /\b(aggregate|funnel|qualified|saved|run|blocker|metric|chart|graph|fetched|matches)\b/.test(haystack);
+  if (concept.toLowerCase() === "insight") return /\b(insight|signal|means|shows|because|digest|understandable)\b/.test(haystack);
+  return haystack.includes(concept.toLowerCase());
+}
+
+function analyticsAnchorMatches(normalizedBody: string, anchorText: string) {
+  const metrics = anchorText.match(/\b[A-Z][A-Za-z ]+\s+\d[\d,]*/g) ?? [];
+  if (metrics.some((metric) => normalizedBody.includes(metric.toLowerCase()))) return true;
+  const numbers = anchorText.match(/\b\d[\d,]*\b/g) ?? [];
+  const labels = distinctiveWords(anchorText).filter((word) => /fetched|qualified|saved|matches|agency|eligible|blocker|scored|candidates/.test(word));
+  return numbers.some((number) => normalizedBody.includes(number.toLowerCase()))
+    && labels.some((label) => normalizedBody.includes(label));
+}
+
+function planAnchorMatches(normalizedBody: string, anchor: ContentEvidenceAnchor) {
+  if (normalizedBody.includes(anchor.label.toLowerCase())) return true;
+  const words = distinctiveWords(anchor.text).slice(0, 10);
+  if (!words.length) return false;
+  const matches = words.filter((word) => normalizedBody.includes(word)).length;
+  return matches >= Math.max(3, Math.ceil(words.length * 0.45));
+}
+
+function distinctiveWords(value: string) {
+  return [...keywordSet(value)].filter((word) => ![
+    "latest",
+    "source",
+    "evidence",
+    "grounded",
+    "receipt",
+    "draft",
+    "content",
+    "build",
+    "about",
+    "because",
+  ].includes(word));
+}
+
+function withEvidenceSourceFacts(generated: LinkedInGeneratedContent, direction: LinkedInContentDirection): LinkedInGeneratedContent {
+  const sourceFacts = uniqueStrings([
+    ...generated.sourceFacts,
+    ...direction.evidenceAnchors.map((anchor) => evidenceSourceFact(anchor)),
+  ]).slice(0, 12);
+  return { ...generated, sourceFacts };
+}
+
+function evidenceSourceFact(anchor: ContentEvidenceAnchor) {
+  const ref = anchor.sourceRef ? ` (${anchor.sourceRef})` : "";
+  return `${anchor.label}${ref}: ${anchor.text}`;
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+export function buildClaims(generated: Pick<LinkedInContentOutput, "body" | "sourceFacts">, memoryPack: LinkedInContentMemoryPack, direction?: LinkedInContentDirection) {
   const facts = new Set(memoryPack.aggregateFacts);
-  return generated.sourceFacts.slice(0, 6).map((fact) => ({
+  const evidenceFacts = new Map((direction?.evidenceAnchors ?? []).map((anchor) => [evidenceSourceFact(anchor), evidenceProvenance(anchor)]));
+  const sourceClaims = generated.sourceFacts.slice(0, 8).map((fact) => ({
     text: fact,
-    provenance: facts.has(fact) ? "memory_pack.aggregateFacts" : architectureFact(fact) ? "repo_architecture_context" : "missing",
-    status: facts.has(fact) || architectureFact(fact) ? "grounded" as const : "ungrounded" as const,
+    provenance: facts.has(fact)
+      ? "memory_pack.aggregateFacts"
+      : evidenceFacts.get(fact) ?? (architectureFact(fact) ? "repo_architecture_context" : "missing"),
+    status: facts.has(fact) || evidenceFacts.has(fact) || architectureFact(fact) ? "grounded" as const : "ungrounded" as const,
   }));
+  const bodyClaims = bodyClaimCandidates(generated.body).map((claim) => {
+    const provenance = bodyClaimProvenance(claim, generated.sourceFacts, memoryPack, direction);
+    return {
+      text: claim,
+      provenance,
+      status: provenance === "missing" ? "ungrounded" as const : "grounded" as const,
+    };
+  });
+  return uniqueClaims([...sourceClaims, ...bodyClaims]).slice(0, 12);
+}
+
+function evidenceProvenance(anchor: ContentEvidenceAnchor) {
+  if (anchor.sourceRef) return anchor.sourceRef;
+  return anchor.sourceType;
+}
+
+function bodyClaimCandidates(body: string) {
+  return body
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim().replace(/\s+/g, " "))
+    .filter((sentence) => sentence.length >= 20 && isFactualPublicClaim(sentence));
+}
+
+function isFactualPublicClaim(sentence: string) {
+  return /\b\d[\d,]*\b/.test(sentence)
+    || /\b(Next\.js|Prisma|Postgres|AgentRun|AgentRunEvent|LinkedIn|API|route handlers?|dashboard|screenshots?|publishing|approval gates?|drafts?|memory pack|search operations|qualified jobs?|saved matches?)\b/i.test(sentence);
+}
+
+function bodyClaimProvenance(claim: string, sourceFacts: string[], memoryPack: LinkedInContentMemoryPack, direction?: LinkedInContentDirection) {
+  const normalized = claim.toLowerCase();
+  const sources = [
+    ...sourceFacts.map((fact) => ({ text: fact, provenance: memoryPack.aggregateFacts.includes(fact) ? "memory_pack.aggregateFacts" : "sourceFacts" })),
+    ...(direction?.evidenceAnchors ?? []).map((anchor) => ({ text: `${anchor.label} ${anchor.text}`, provenance: evidenceProvenance(anchor) })),
+  ];
+  for (const source of sources) {
+    if (textOverlapScore(normalized, source.text.toLowerCase()) >= 0.35) return source.provenance;
+  }
+  if (architectureFact(claim) || architectureClaimGrounded(claim, sourceFacts)) return "repo_architecture_context";
+  return "missing";
+}
+
+function textOverlapScore(left: string, right: string) {
+  const words = distinctiveWords(left);
+  if (!words.length) return 0;
+  const matches = words.filter((word) => right.includes(word)).length;
+  return matches / words.length;
+}
+
+function architectureClaimGrounded(claim: string, sourceFacts: string[]) {
+  return sourceFacts.some((fact) => architectureFact(fact))
+    && /\b(Next\.js|Prisma|Postgres|AgentRun|AgentRunEvent|LinkedIn|API|route handlers?|approval gates?|memory)\b/i.test(claim);
+}
+
+function uniqueClaims(claims: Array<{ text: string; provenance: string; status: "grounded" | "ungrounded" }>) {
+  const seen = new Set<string>();
+  return claims.filter((claim) => {
+    const key = claim.text.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function architectureFact(value: string) {
@@ -1642,9 +2025,11 @@ async function captureRouteScreenshot(route: string, reason: string): Promise<Li
     const filename = `${Date.now()}-${route.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}.png`;
     const filePath = path.join(dir, filename);
     const browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage({ viewport: { width: 1440, height: 860 }, colorScheme: "light" });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1120 }, deviceScaleFactor: 1, colorScheme: "light" });
     await page.goto(`${baseUrl}${route}`, { waitUntil: "networkidle", timeout: 15_000 });
     await page.addStyleTag({ content: privacyScreenshotCss });
+    await page.locator("svg").first().waitFor({ state: "visible", timeout: 5_000 }).catch(() => undefined);
+    await page.waitForTimeout(500);
     const pageText = await page.locator("body").innerText({ timeout: 5_000 }).catch(() => "");
     const warnings = privacyWarnings(pageText);
     await page.screenshot({ path: filePath });

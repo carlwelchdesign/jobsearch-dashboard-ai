@@ -54,7 +54,7 @@ export function SearchRunAnalyticsCharts({
     <Stack spacing={1.5}>
       <SearchRunInsightBoard analytics={analytics} />
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "1.08fr 0.92fr" }, gap: 1.5 }}>
-        <ChartPanel title="Opportunity Terrain" helper="The latest run broken into actionable territory, friction, and noise">
+        <ChartPanel title="Opportunity Terrain" helper="The latest run broken into actionable territory, friction, and noise" chartHeight={{ xs: 330, md: 320 }}>
           <OpportunityTerrainChart analytics={analytics} />
         </ChartPanel>
         <ChartPanel title="Search Signal Profile" helper="Balanced view of quality, readiness, source mix, and blocker pressure">
@@ -126,7 +126,7 @@ function CompactSearchRunAnalytics({ analytics }: { analytics: SearchRunAnalytic
 
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "minmax(0, 1fr) 232px" }, gap: 0, minHeight: { xs: 620, xl: 430 } }}>
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1fr 1fr" }, gap: 1, p: 1 }}>
-          <MiniChartPanel title="Opportunity Terrain" helper="Weighted so action categories stay visible">
+          <MiniChartPanel title="Opportunity Terrain" helper="Weighted so action categories stay visible" chartHeight={{ xs: 320, sm: 300, lg: 230 }}>
             <OpportunityTerrainChart analytics={analytics} />
           </MiniChartPanel>
           <MiniChartPanel title="Search Signal Profile" helper="Quality balance across the run">
@@ -176,14 +176,14 @@ function CompactKpi({ item, borderLeft }: { item: ReturnType<typeof metric>; bor
   );
 }
 
-function MiniChartPanel({ title, helper, children }: { title: string; helper: string; children: React.ReactNode }) {
+function MiniChartPanel({ title, helper, children, chartHeight = { xs: 210, sm: 230, lg: 190 } }: { title: string; helper: string; children: React.ReactNode; chartHeight?: { xs: number; sm: number; lg: number } }) {
   return (
     <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, minWidth: 0, overflow: "hidden", bgcolor: "background.paper" }}>
       <Box sx={{ px: 1, py: 0.75, borderBottom: 1, borderColor: "divider" }}>
         <Typography variant="caption" sx={{ display: "block", fontWeight: 950, textTransform: "uppercase" }}>{title}</Typography>
         <Typography variant="caption" color="text.secondary">{helper}</Typography>
       </Box>
-      <Box sx={{ height: { xs: 210, sm: 230, lg: 190 } }}>{children}</Box>
+      <Box sx={{ height: chartHeight, minHeight: 0 }}>{children}</Box>
     </Box>
   );
 }
@@ -305,14 +305,14 @@ function SignalReadout({ title, value, helper, tone }: { title: string; value: s
   );
 }
 
-function ChartPanel({ title, helper, children }: { title: string; helper: string; children: React.ReactNode }) {
+function ChartPanel({ title, helper, children, chartHeight = 250 }: { title: string; helper: string; children: React.ReactNode; chartHeight?: number | { xs: number; md: number } }) {
   return (
     <Card variant="outlined" sx={{ boxShadow: "none", minWidth: 0 }}>
       <CardContent>
         <Stack spacing={0.75}>
           <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 900, textTransform: "uppercase" }}>{title}</Typography>
           <Typography variant="caption" color="text.secondary">{helper}</Typography>
-          <Box sx={{ height: 250 }}>{children}</Box>
+          <Box sx={{ height: chartHeight, minHeight: 0 }}>{children}</Box>
         </Stack>
       </CardContent>
     </Card>
@@ -325,33 +325,45 @@ function OpportunityTerrainChart({ analytics }: { analytics: SearchRunAnalytics 
   if (!mounted) return <EmptyChart label="Preparing terrain..." />;
   if (!analytics.opportunityTerrain.length) return <EmptyChart label="No run terrain recorded yet." />;
   return (
-    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) 190px" }, gap: 1, height: "100%" }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Tooltip formatter={(_value, _name, item) => [formatCount(item.payload.count), item.payload.name]} />
-          <Pie
-            data={analytics.opportunityTerrain}
-            dataKey="size"
-            nameKey="name"
-            innerRadius="46%"
-            outerRadius="82%"
-            paddingAngle={2}
-            stroke={theme.palette.background.paper}
-            strokeWidth={3}
-          >
-            {analytics.opportunityTerrain.map((item, index) => (
-              <Cell key={item.name} fill={outcomeColor(item.fillKey, theme, index)} />
-            ))}
-          </Pie>
-        </PieChart>
-      </ResponsiveContainer>
-      <Stack spacing={0.75} sx={{ overflow: "auto", pr: 0.5 }}>
+    <Box
+      sx={{
+        display: "grid",
+        gridTemplateColumns: { xs: "1fr", sm: "minmax(0, 0.95fr) minmax(132px, 0.8fr)", md: "minmax(0, 1fr) 190px" },
+        gridTemplateRows: { xs: "118px minmax(0, 1fr)", sm: "1fr" },
+        gap: { xs: 0.75, sm: 1 },
+        height: "100%",
+        minHeight: 0,
+        overflow: "hidden",
+      }}
+    >
+      <Box sx={{ minHeight: 0, minWidth: 0 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+            <Tooltip formatter={(_value, _name, item) => [formatCount(item.payload.count), item.payload.name]} />
+            <Pie
+              data={analytics.opportunityTerrain}
+              dataKey="size"
+              nameKey="name"
+              innerRadius="45%"
+              outerRadius="78%"
+              paddingAngle={2}
+              stroke={theme.palette.background.paper}
+              strokeWidth={3}
+            >
+              {analytics.opportunityTerrain.map((item, index) => (
+                <Cell key={item.name} fill={outcomeColor(item.fillKey, theme, index)} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+      </Box>
+      <Stack spacing={0.75} sx={{ overflowY: "auto", overflowX: "hidden", pr: 0.5, minHeight: 0 }}>
         {analytics.opportunityTerrain.slice(0, 7).map((item, index) => (
           <Stack key={item.name} direction="row" spacing={0.75} sx={{ alignItems: "center", minWidth: 0 }}>
             <Box sx={{ width: 10, height: 10, borderRadius: 0.5, bgcolor: outcomeColor(item.fillKey, theme, index), flex: "0 0 auto" }} />
             <Box sx={{ minWidth: 0 }}>
-            <Typography variant="caption" sx={{ fontWeight: 850 }}>{item.name}: {formatCount(item.count)}</Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>{item.helper}</Typography>
+              <Typography variant="caption" sx={{ display: "block", fontWeight: 850, lineHeight: 1.2 }}>{item.name}: {formatCount(item.count)}</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.2 }}>{item.helper}</Typography>
             </Box>
           </Stack>
         ))}

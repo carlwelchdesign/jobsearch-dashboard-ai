@@ -43,4 +43,48 @@ describe("publishLinkedInDraft", () => {
       }),
     });
   });
+
+  it("blocks drafts whose privacy review has not passed before connection work", async () => {
+    findUniqueMock.mockResolvedValue({
+      id: "draft_1",
+      userId: "user_1",
+      status: "APPROVED",
+      privacyReview: { status: "NEEDS_REVIEW" },
+      claims: [{ text: "Grounded", provenance: "memory", status: "grounded" }],
+      user: { linkedinShareConnection: null },
+    } as never);
+    draftUpdateMock.mockResolvedValue({ id: "draft_1", status: "FAILED" } as never);
+
+    await expect(publishLinkedInDraft("draft_1")).rejects.toThrow("Draft privacy review must pass before publishing");
+
+    expect(draftUpdateMock).toHaveBeenCalledWith({
+      where: { id: "draft_1" },
+      data: expect.objectContaining({
+        status: "FAILED",
+        publishError: expect.stringContaining("Draft privacy review must pass before publishing"),
+      }),
+    });
+  });
+
+  it("blocks drafts with ungrounded claims before connection work", async () => {
+    findUniqueMock.mockResolvedValue({
+      id: "draft_1",
+      userId: "user_1",
+      status: "APPROVED",
+      privacyReview: { status: "PASS" },
+      claims: [{ text: "Unsupported metric", provenance: "missing", status: "ungrounded" }],
+      user: { linkedinShareConnection: null },
+    } as never);
+    draftUpdateMock.mockResolvedValue({ id: "draft_1", status: "FAILED" } as never);
+
+    await expect(publishLinkedInDraft("draft_1")).rejects.toThrow("Draft contains ungrounded public claims");
+
+    expect(draftUpdateMock).toHaveBeenCalledWith({
+      where: { id: "draft_1" },
+      data: expect.objectContaining({
+        status: "FAILED",
+        publishError: expect.stringContaining("Draft contains ungrounded public claims"),
+      }),
+    });
+  });
 });

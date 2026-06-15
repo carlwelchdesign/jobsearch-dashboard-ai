@@ -15,6 +15,9 @@ describe("SearchRunAnalyticsCharts source contract", () => {
     expect(source).toContain("Search Momentum");
     expect(source).toContain("CompactKpi");
     expect(source).toContain("MiniChartPanel");
+    expect(source).toContain('chartHeight={{ xs: 320, sm: 300, lg: 230 }}');
+    expect(source).toContain('chartHeight={{ xs: 330, md: 320 }}');
+    expect(source).toContain('gridTemplateRows: { xs: "118px minmax(0, 1fr)", sm: "1fr" }');
     expect(source).toContain("Signal rail");
     expect(source).toContain("Opportunity sheet");
     expect(source).not.toContain("OutcomeSegmentBar");

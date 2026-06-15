@@ -125,8 +125,8 @@ export async function publishLinkedInDraft(draftId: string) {
 
   const connection = draft.user.linkedinShareConnection;
   try {
+    assertLinkedInDraftReviewPassed(draft);
     assertShareConnection(connection);
-    assertDraftPublishable(draft);
 
     await prisma.linkedInPostDraft.update({
       where: { id: draft.id },
@@ -219,7 +219,7 @@ function assertShareConnection(connection?: LinkedInShareConnection | null) {
   if (connection.expiresAt && connection.expiresAt.getTime() <= Date.now() + 60_000) throw new Error("LinkedIn publishing token is expired. Reconnect LinkedIn publishing.");
 }
 
-function assertDraftPublishable(draft: Pick<LinkedInPostDraft, "privacyReview" | "claims" | "body" | "hook">) {
+export function assertLinkedInDraftReviewPassed(draft: Pick<LinkedInPostDraft, "privacyReview" | "claims">) {
   const review = objectValue(draft.privacyReview);
   if (review.status !== "PASS") throw new Error("Draft privacy review must pass before publishing.");
   const claims = Array.isArray(draft.claims) ? draft.claims : [];

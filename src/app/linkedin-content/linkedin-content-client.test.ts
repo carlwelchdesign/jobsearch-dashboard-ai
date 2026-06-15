@@ -33,8 +33,11 @@ describe("LinkedInContentClient UI contract", () => {
 
   it("uses a prompt-first composer instead of a content focus dropdown", () => {
     expect(source).toContain("What should we post about today?");
-    expect(source).toContain("promptChips");
     expect(source).toContain("Visual direction");
+    expect(source).toContain('objectFit: "contain"');
+    expect(source).not.toContain("promptChips");
+    expect(source).not.toContain("formatChips");
+    expect(source).not.toContain("Post format");
     expect(source).not.toContain('label="Content focus"');
     expect(source).not.toContain("MenuItem");
   });
