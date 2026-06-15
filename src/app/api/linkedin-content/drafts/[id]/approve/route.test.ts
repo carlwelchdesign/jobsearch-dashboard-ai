@@ -39,7 +39,7 @@ describe("/api/linkedin-content/drafts/[id]/approve", () => {
       where: { id: "draft_1" },
       data: expect.objectContaining({ status: "APPROVED", publishError: null }),
     }));
-    expect(publishMock).toHaveBeenCalledWith("draft_1");
+    expect(publishMock).toHaveBeenCalledWith("draft_1", { overrideReview: undefined });
     expect(response.status).toBe(200);
   });
 
@@ -67,5 +67,24 @@ describe("/api/linkedin-content/drafts/[id]/approve", () => {
     expect(response.status).toBe(400);
     expect(updateMock).not.toHaveBeenCalled();
     expect(publishMock).not.toHaveBeenCalled();
+  });
+
+  it("approves and publishes with explicit review override", async () => {
+    findUniqueMock.mockResolvedValue({
+      privacyReview: { status: "PASS" },
+      claims: [{ text: "Unsupported metric", provenance: "missing", status: "ungrounded" }],
+    } as never);
+
+    const response = await POST(new Request("http://localhost/api/linkedin-content/drafts/draft_1/approve", {
+      method: "POST",
+      body: JSON.stringify({ overrideReview: true }),
+    }), { params: { id: "draft_1" } });
+
+    expect(response.status).toBe(200);
+    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "draft_1" },
+      data: expect.objectContaining({ status: "APPROVED", publishError: null }),
+    }));
+    expect(publishMock).toHaveBeenCalledWith("draft_1", { overrideReview: true });
   });
 });

@@ -22,10 +22,12 @@ export type LinkedInContentInput = {
 export type LinkedInContentPillar = "app_progress" | "search_learning" | "architecture" | "workflow_design";
 export type LinkedInContentFormat = "build_log" | "lesson" | "decision_diary" | "teardown" | "before_after" | "contrarian_take" | "field_note" | "visual_walkthrough" | "product_thesis";
 
+const linkedInContentFormats: LinkedInContentFormat[] = ["build_log", "lesson", "decision_diary", "teardown", "before_after", "contrarian_take", "field_note", "visual_walkthrough", "product_thesis"];
+
 export type LinkedInScreenshotAsset = {
   label: string;
   path: string;
-  mimeType: "image/png";
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
   description: string;
   route: string;
   assetType?: "screenshot" | "diagram" | "ai_polish";
@@ -128,6 +130,7 @@ type LinkedInGeneratedContent = Omit<LinkedInContentOutput, "screenshotAssets" |
 export type LinkedInPromptIntent =
   | "architecture_diagram"
   | "architecture_explainer"
+  | "job_search_os_narrative"
   | "build_log"
   | "workflow_story"
   | "analytics_insight"
@@ -371,18 +374,25 @@ export async function generateLinkedInContent(input: {
         requiredOutput: {
           title: "Short internal title for the draft.",
           hook: "Strong first line.",
-          body: "LinkedIn post body, 180-450 words, grounded only in memoryPack facts and satisfying every prompt obligation. Do not quote the prompt or narrate the assignment.",
+          body: "LinkedIn post body, 180-450 words unless the brief explicitly asks for multiple deliverables. If it asks for sections such as a primary post, shorter alternate, hooks, comment, or screenshot captions, include those labeled sections in the body. Ground only in memoryPack facts and satisfy every prompt obligation. Do not quote the prompt or narrate the assignment.",
           hashtags: "3-6 relevant hashtags.",
         },
       },
       model: input.model,
     });
     if (!generated) return fallback;
-    return {
+    const normalizedGenerated = {
       title: cleanLine(generated.title),
       hook: cleanLine(generated.hook),
       body: stripUnsafeStyle(generated.body),
       hashtags: normalizeHashtags(generated.hashtags),
+    };
+    if (generatedLinkedInContentViolatesBrief(normalizedGenerated, input.direction)) return fallback;
+    return {
+      title: normalizedGenerated.title,
+      hook: normalizedGenerated.hook,
+      body: normalizedGenerated.body,
+      hashtags: normalizedGenerated.hashtags,
       contentPillar: input.pillar,
       sourceFacts: input.memoryPack.aggregateFacts,
       mode: "llm",
@@ -391,6 +401,21 @@ export async function generateLinkedInContent(input: {
   } catch {
     return fallback;
   }
+}
+
+function generatedLinkedInContentViolatesBrief(
+  generated: Pick<LinkedInGeneratedContent, "title" | "hook" | "body" | "hashtags">,
+  direction: LinkedInContentDirection,
+) {
+  const text = `${generated.title}\n${generated.hook}\n${generated.body}\n${generated.hashtags.join(" ")}`.toLowerCase();
+  if (direction.obligations.forbiddenPhrases.some((phrase) => text.includes(phrase.toLowerCase()))) return true;
+  if (direction.intent !== "job_search_os_narrative") return false;
+  const requiredTerms = ["job search", "resume", "agents", "clarity", "feedback"];
+  if (requiredTerms.some((term) => !text.includes(term))) return true;
+  if (promptRequestsMultiDeliverableLinkedInPackage(direction.prompt)) {
+    return ["primary linkedin post", "shorter alternate version", "hook options", "comment", "screenshot caption"].some((term) => !text.includes(term));
+  }
+  return false;
 }
 
 export function buildLinkedInContentFallback(input: {
@@ -415,6 +440,9 @@ export function buildLinkedInContentFallback(input: {
   };
   if (direction.intent === "architecture_diagram" || direction.intent === "architecture_explainer") {
     return buildArchitectureFallback(input.pillar, input.memoryPack, direction);
+  }
+  if (direction.intent === "job_search_os_narrative") {
+    return buildJobSearchOsNarrativeFallback(input.pillar, input.memoryPack, direction, input.model);
   }
   const latest = input.memoryPack.analytics.latestSearchRun;
   const evidence = direction.evidenceAnchors[0] ?? fallbackEvidenceAnchor(input.memoryPack, direction);
@@ -479,6 +507,82 @@ function buildArchitectureFallback(
   };
 }
 
+function buildJobSearchOsNarrativeFallback(
+  pillar: LinkedInContentPillar,
+  memoryPack: Pick<LinkedInContentMemoryPack, "aggregateFacts" | "analytics" | "storyAngles" | "planSources" | "noveltySignals">,
+  direction: LinkedInContentDirection,
+  model?: string,
+): LinkedInGeneratedContent {
+  const evidence = direction.evidenceAnchors[0] ?? fallbackEvidenceAnchor(memoryPack, direction);
+  const sourceLine = evidence.relevance > 0
+    ? `Evidence anchor: ${evidence.label} - ${evidence.text}`
+    : "Evidence anchor: current Job Search OS build memory and saved workflow context.";
+  const wantsSections = promptRequestsMultiDeliverableLinkedInPackage(direction.prompt);
+  const body = wantsSections
+    ? [
+      "Primary LinkedIn post",
+      "",
+      "The more I work on this job search app, the more obvious the problem feels: the hard part is not only generating another resume.",
+      "",
+      "After a layoff, navigating the senior engineering market can turn into a pile of disconnected chores. Rewrite the resume. Adjust the cover letter. Track the role. Decode the company. Decide whether the opportunity is actually worth the energy. Then do it again while trying not to let silence or rejection distort your judgment.",
+      "",
+      "I am building Job Search OS because I want the system to help with the thinking, not just the paperwork.",
+      "",
+      "The direction I am working toward is a set of specialized agents that behave more like a small recruiting support team: profile strategy, role matching, resume and cover letter drafting, company research, application tracking, analytics, feedback, and content documentation. The goal is not to spray applications everywhere. It is to improve clarity, quality, positioning, and consistency.",
+      "",
+      "A good job search tool should help someone understand where they fit, what they have actually done, how to explain it, and which opportunities deserve attention.",
+      "",
+      "The app is not finished. I am still experimenting with the loops, the evidence, and the review gates. But the product thesis is getting clearer: better documents matter, but better judgment around the search matters more.",
+      "",
+      "Shorter alternate version",
+      "",
+      "I am building Job Search OS because job searching has become too fragmented to manage with documents alone. The goal is not more applications. It is clearer positioning, better-fit roles, stronger materials, and a feedback loop that helps the search get smarter over time.",
+      "",
+      "Hook options",
+      "",
+      "1. A resume generator is not enough for the modern job search.",
+      "2. The real job search problem is clarity, not paperwork.",
+      "3. I am building the tool I wanted after a layoff.",
+      "",
+      "Comment",
+      "",
+      "One thing I keep coming back to: the system should make the candidate's judgment stronger. If an agent drafts something, it should also show the evidence, the reasoning, and the tradeoffs behind that draft.",
+      "",
+      "Screenshot caption options",
+      "",
+      "1. Building the job search as an operating system, not a pile of one-off documents.",
+      "2. The useful part is the loop: profile, roles, materials, outcomes, feedback.",
+      "3. Specialized agents are most useful when they help the candidate make better decisions.",
+      "",
+      sourceLine,
+    ].join("\n")
+    : [
+      "The more I work on Job Search OS, the more obvious the product thesis feels: a good job search app should not stop at generating documents.",
+      "",
+      "The real problem is the whole loop. Candidates have to understand their experience, decide where they fit, find better roles, tailor materials, track applications, learn from outcomes, and keep going through long stretches of silence.",
+      "",
+      "I am building toward a system where specialized agents help with that loop: profile strategy, job matching, resume and cover letter drafting, company research, application tracking, analytics, feedback, and public documentation of the work.",
+      "",
+      "The goal is not more applications. It is better judgment: stronger matches, clearer positioning, better materials, and a smarter feedback loop.",
+      "",
+      "That is the part I care about most after navigating the modern senior engineering market myself. Better documents matter. But a calmer, more consistent way to think through the search might matter even more.",
+      "",
+      sourceLine,
+    ].join("\n");
+
+  return {
+    title: "Job Search OS as a clearer job search loop",
+    hook: "A resume generator is not enough for the modern job search.",
+    body,
+    hashtags: ["#BuildInPublic", "#ProductEngineering"],
+    contentPillar: pillar,
+    sourceFacts: [sourceLine],
+    mode: "deterministic",
+    generationModel: model ?? "",
+    repairAttempt: "not_needed",
+  };
+}
+
 export function reviewLinkedInPostPrivacy(input: {
   body: string;
   hook: string;
@@ -526,6 +630,103 @@ export async function createSafeLinkedInScreenshotAssets(memoryPack: LinkedInCon
     if (captured) output.push(captured);
   }
   return output;
+}
+
+export async function regenerateLinkedInDraftVisuals(input: { draftId: string; visualDirection: string }) {
+  const draft = await prisma.linkedInPostDraft.findUnique({ where: { id: input.draftId } });
+  if (!draft) throw new Error("LinkedIn draft not found.");
+
+  const promptContext = linkedInDraftPromptContext(draft.agentReviews);
+  const memoryPack = await buildLinkedInContentMemoryPack(draft.userId);
+  const direction = buildContentDirection({
+    contentPillar: draft.contentPillar as LinkedInContentPillar,
+    prompt: promptContext.prompt,
+    format: promptContext.format,
+    visualDirection: input.visualDirection,
+  }, memoryPack);
+  const diagramImageModel = await getLinkedInDiagramImageModel(draft.userId);
+  const diagramAssets = await createPromptDiagramAssets(direction, diagramImageModel);
+  const screenshotAssets = await createSafeLinkedInScreenshotAssets(memoryPack, direction);
+  const visualAssets = [...diagramAssets, ...screenshotAssets];
+  const selectedScreenshots = selectBestScreenshots(visualAssets, direction);
+  const existingAssets = screenshotAssetsFromJson(draft.screenshotAssets);
+  const agentReviews = updateVisualProducerReview(draft.agentReviews, selectedScreenshots, input.visualDirection);
+
+  return prisma.linkedInPostDraft.update({
+    where: { id: draft.id },
+    data: {
+      screenshotAssets: jsonValue([...existingAssets, ...visualAssets]),
+      selectedScreenshots: jsonValue(selectedScreenshots),
+      agentReviews: jsonValue(agentReviews),
+      publishError: null,
+    },
+  });
+}
+
+function linkedInDraftPromptContext(agentReviews: unknown) {
+  const reviews = Array.isArray(agentReviews) ? agentReviews : [];
+  const narrativeReview = reviews.find((review) => {
+    return Boolean(review) && typeof review === "object" && !Array.isArray(review) && (review as Record<string, unknown>).agent === "Narrative Strategist";
+  }) as Record<string, unknown> | undefined;
+  const metadata = narrativeReview?.metadata && typeof narrativeReview.metadata === "object" && !Array.isArray(narrativeReview.metadata)
+    ? narrativeReview.metadata as Record<string, unknown>
+    : {};
+  const prompt = typeof metadata.prompt === "string" && metadata.prompt.trim()
+    ? metadata.prompt
+    : "Refresh the selected visual for this LinkedIn content draft.";
+  const format = typeof metadata.format === "string" && linkedInContentFormats.includes(metadata.format as LinkedInContentFormat)
+    ? metadata.format as LinkedInContentFormat
+    : undefined;
+  return { prompt, format };
+}
+
+function screenshotAssetsFromJson(value: unknown): LinkedInScreenshotAsset[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    if (typeof record.path !== "string" || typeof record.label !== "string" || typeof record.description !== "string" || typeof record.route !== "string") return [];
+    const mimeType = record.mimeType === "image/jpeg" || record.mimeType === "image/webp" ? record.mimeType : "image/png";
+    return [{
+      label: record.label,
+      path: record.path,
+      mimeType,
+      description: record.description,
+      route: record.route,
+      assetType: record.assetType === "diagram" || record.assetType === "ai_polish" ? record.assetType : "screenshot",
+      diagramKind: typeof record.diagramKind === "string" ? record.diagramKind : undefined,
+      renderEngine: typeof record.renderEngine === "string" ? record.renderEngine : undefined,
+      layoutKind: record.layoutKind === "topology_legend" || record.layoutKind === "workflow_columns" ? record.layoutKind : undefined,
+      imageModel: typeof record.imageModel === "string" ? record.imageModel : undefined,
+      sourceSpec: record.sourceSpec,
+      topologySpec: record.topologySpec,
+      provenance: stringList(record.provenance),
+      rationale: typeof record.rationale === "string" ? record.rationale : undefined,
+      privacyStatus: record.privacyStatus === "PASS" ? "PASS" : "NEEDS_REVIEW",
+      warnings: stringList(record.warnings),
+    }];
+  });
+}
+
+function updateVisualProducerReview(agentReviews: unknown, selectedScreenshots: LinkedInScreenshotAsset[], visualDirection: string): LinkedInAgentReview[] {
+  const reviews = Array.isArray(agentReviews)
+    ? agentReviews.filter((review): review is LinkedInAgentReview => Boolean(review) && typeof review === "object" && !Array.isArray(review) && typeof (review as Record<string, unknown>).agent === "string")
+    : [];
+  const nextReview: LinkedInAgentReview = {
+    agent: "Visual Producer",
+    summary: selectedScreenshots.map((item) => `${item.route}: ${item.description}`).join(" | ") || "No passing replacement visual selected.",
+    recommendation: `Visual rationale: ${visualDirection || "regenerated replacement visuals"}.`,
+    metadata: {
+      visualRationale: visualDirection || "regenerated replacement visuals",
+      selectedAssets: selectedScreenshots.map((asset) => ({ label: asset.label, path: asset.path, route: asset.route, assetType: asset.assetType ?? "screenshot" })),
+    },
+  };
+  const replaced = reviews.map((review) => review.agent === "Visual Producer" ? nextReview : review);
+  return replaced.some((review) => review.agent === "Visual Producer") ? replaced : [...replaced, nextReview];
+}
+
+function stringList(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 export function reviewPromptSatisfaction(input: {
@@ -1017,6 +1218,7 @@ export function planLinkedInPromptIntent(prompt: string, legacyPillar: LinkedInC
   const normalized = prompt.toLowerCase();
   if (/\b(architecture|system design|data flow|diagram|diagrams|layer|layers)\b/.test(normalized) && /\b(diagram|diagrams|architecture)\b/.test(normalized)) return "architecture_diagram";
   if (/\b(architecture|system design|data flow|layer|layers)\b/.test(normalized)) return "architecture_explainer";
+  if (isJobSearchOsNarrativePrompt(normalized)) return "job_search_os_narrative";
   if (/\b(email|inbox|calendar|interview invite|email ops)\b/.test(normalized)) return "email_ops";
   if (/\b(jolene|chief of staff|standup)\b/.test(normalized)) return "jolene_ops";
   if (/\b(market|research|signals|labor|hiring)\b/.test(normalized)) return "market_intelligence";
@@ -1043,7 +1245,26 @@ function promptObligationsFor(intent: LinkedInPromptIntent, prompt: string): Pro
   if (intent === "analytics_insight") {
     return { topic: prompt, requiredConcepts: ["analytics", "funnel", "aggregate", "insight"], requiredVisuals: ["app_screenshot"], forbiddenPhrases: baseForbidden, allowSearchFunnelAnalytics: true };
   }
+  if (intent === "job_search_os_narrative") {
+    return {
+      topic: prompt,
+      requiredConcepts: ["job search", "operating system", "agents", "resume", "cover letter", "job matching", "clarity", "quality", "feedback loop"],
+      requiredVisuals: ["app_screenshot"],
+      forbiddenPhrases: [...baseForbidden, "tighten email ops", "plan angle from", "the useful angle is plan angle"],
+      allowSearchFunnelAnalytics: false,
+    };
+  }
   return { topic: prompt, requiredConcepts: [intent.replace(/_/g, " "), "agents", "evidence"], requiredVisuals: ["app_screenshot"], forbiddenPhrases: baseForbidden, allowSearchFunnelAnalytics: false };
+}
+
+function isJobSearchOsNarrativePrompt(normalizedPrompt: string) {
+  return /\b(job search app|job search operating system|agent-powered job search|resume generator|resume and cover letter|application materials|better-fit roles|spray and pray|senior engineering job market|after a layoff)\b/.test(normalizedPrompt)
+    && /\b(building|build|why|position|communicate|linkedin|post|publish|brief)\b/.test(normalizedPrompt);
+}
+
+function promptRequestsMultiDeliverableLinkedInPackage(prompt: string) {
+  const normalized = prompt.toLowerCase();
+  return /\b(primary linkedin|shorter alternate|hook options|screenshot caption|comment i could leave|output requirements)\b/.test(normalized);
 }
 
 function buildContentDirection(input: LinkedInContentInput, memoryPack: LinkedInContentMemoryPack): LinkedInContentDirection {
@@ -1179,12 +1400,14 @@ function promptRelevanceScore(text: string, prompt: string, intent: LinkedInProm
     if (normalized.includes(word)) score += 8;
   }
   if (intent === "analytics_insight" && /\b(search|operations|ops|chart|charts|graph|graphs|analytics|funnel|qualified|saved|run|runs|blocker)\b/.test(normalized)) score += 35;
+  if (intent === "job_search_os_narrative" && /\b(job search|operating system|resume|cover letter|profile|application|candidate|matching|materials|feedback|outcomes|clarity|positioning)\b/.test(normalized)) score += 45;
   if (intent === "email_ops" && /\b(email|gmail|inbox|calendar|interview|scheduling)\b/.test(normalized)) score += 35;
   if (intent === "jolene_ops" && /\b(jolene|chief of staff|standup|delegated)\b/.test(normalized)) score += 35;
   if (intent === "market_intelligence" && /\b(market|research|signal|labor|hiring)\b/.test(normalized)) score += 35;
   if (intent === "workflow_story" && /\b(workflow|approval|handoff|review|gate)\b/.test(normalized)) score += 30;
   if (intent.startsWith("architecture") && /\b(architecture|diagram|system|agent|prisma|api|router)\b/.test(normalized)) score += 35;
   if (intent === "analytics_insight" && /\b(email ops|gmail|calendar|source management|company-source)\b/.test(normalized)) score -= 35;
+  if (intent === "job_search_os_narrative" && /\b(email ops|gmail|calendar|source management|company-source|deduplication|suppression)\b/.test(normalized)) score -= 40;
   return clampNumber(Math.round(score), 0, 100);
 }
 

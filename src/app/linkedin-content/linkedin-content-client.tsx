@@ -1,6 +1,7 @@
 "use client";
 
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
+import AddPhotoAlternateOutlinedIcon from "@mui/icons-material/AddPhotoAlternateOutlined";
 import CheckCircleOutlineOutlinedIcon from "@mui/icons-material/CheckCircleOutlineOutlined";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined";
@@ -13,8 +14,10 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
+import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -23,6 +26,9 @@ import { useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusChip } from "@/components/ui/status-chip";
 import { copyTextToClipboard } from "@/lib/browser/clipboard";
+
+const LINKEDIN_CONTENT_PROMPT_LIMIT = 12000;
+const LINKEDIN_CONTENT_VISUAL_DIRECTION_LIMIT = 2000;
 
 export type LinkedInDraftView = {
   id: string;
@@ -64,6 +70,7 @@ type LinkedInVisualAssetView = {
   rationale?: string;
   privacyStatus?: string;
   warnings?: string[];
+  mimeType?: string;
 };
 
 export type LinkedInShareConnectionView = {
@@ -133,10 +140,14 @@ export function LinkedInContentClient({ initialDrafts, shareConnection }: { init
     }
   }
 
-  async function approveDraft(id: string) {
+  async function approveDraft(id: string, overrideReview = false) {
     setState((previous) => ({ ...previous, busyDraftId: id, error: "", notice: "" }));
     try {
-      const response = await fetch(`/api/linkedin-content/drafts/${id}/approve`, { method: "POST" });
+      const response = await fetch(`/api/linkedin-content/drafts/${id}/approve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ overrideReview }),
+      });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error ?? "Unable to publish LinkedIn draft.");
       await refreshDrafts();
@@ -160,6 +171,47 @@ export function LinkedInContentClient({ initialDrafts, shareConnection }: { init
     } catch (caught) {
       await refreshDrafts().catch(() => undefined);
       setState((previous) => ({ ...previous, error: caught instanceof Error ? caught.message : "Unable to retry LinkedIn publish." }));
+    } finally {
+      setState((previous) => ({ ...previous, busyDraftId: "" }));
+    }
+  }
+
+  async function replaceDraftVisual(id: string, file: File) {
+    setState((previous) => ({ ...previous, busyDraftId: id, error: "", notice: "" }));
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("label", file.name || "Uploaded LinkedIn screenshot");
+      formData.set("description", "User uploaded replacement screenshot for this LinkedIn draft.");
+      const response = await fetch(`/api/linkedin-content/drafts/${id}/visuals/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Unable to replace draft visual.");
+      await refreshDrafts();
+      setState((previous) => ({ ...previous, notice: "Selected LinkedIn visual replaced with uploaded screenshot." }));
+    } catch (caught) {
+      setState((previous) => ({ ...previous, error: caught instanceof Error ? caught.message : "Unable to replace draft visual." }));
+    } finally {
+      setState((previous) => ({ ...previous, busyDraftId: "" }));
+    }
+  }
+
+  async function regenerateDraftVisuals(id: string, visualDirection: string) {
+    setState((previous) => ({ ...previous, busyDraftId: id, error: "", notice: "" }));
+    try {
+      const response = await fetch(`/api/linkedin-content/drafts/${id}/visuals/regenerate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ visualDirection }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Unable to regenerate draft visuals.");
+      await refreshDrafts();
+      setState((previous) => ({ ...previous, notice: "Replacement visuals regenerated." }));
+    } catch (caught) {
+      setState((previous) => ({ ...previous, error: caught instanceof Error ? caught.message : "Unable to regenerate draft visuals." }));
     } finally {
       setState((previous) => ({ ...previous, busyDraftId: "" }));
     }
@@ -202,6 +254,8 @@ export function LinkedInContentClient({ initialDrafts, shareConnection }: { init
                   multiline
                   minRows={3}
                   fullWidth
+                  helperText={`${state.prompt.length.toLocaleString()} / ${LINKEDIN_CONTENT_PROMPT_LIMIT.toLocaleString()} characters`}
+                  slotProps={{ htmlInput: { maxLength: LINKEDIN_CONTENT_PROMPT_LIMIT } }}
                 />
                 <Stack spacing={1}>
                   <TextField
@@ -211,6 +265,8 @@ export function LinkedInContentClient({ initialDrafts, shareConnection }: { init
                     placeholder="Example: show Email Ops or agent run evidence"
                     size="small"
                     fullWidth
+                    helperText={`${state.visualDirection.length.toLocaleString()} / ${LINKEDIN_CONTENT_VISUAL_DIRECTION_LIMIT.toLocaleString()} characters`}
+                    slotProps={{ htmlInput: { maxLength: LINKEDIN_CONTENT_VISUAL_DIRECTION_LIMIT } }}
                   />
                 </Stack>
                 <Button variant="contained" startIcon={<AutoAwesomeOutlinedIcon />} disabled={state.generating} onClick={generateDraft}>
@@ -241,12 +297,14 @@ export function LinkedInContentClient({ initialDrafts, shareConnection }: { init
               key={draft.id}
               draft={draft}
               busy={state.busyDraftId === draft.id}
-              canPublish={shareConnection.connected && draft.privacyReview.status === "PASS"}
+              canPublish={shareConnection.connected}
               onCopy={() => copyDraft(draft)}
               onSave={(patch) => updateDraft(draft.id, patch)}
               onArchive={() => updateDraft(draft.id, { status: "ARCHIVED" })}
-              onApprove={() => approveDraft(draft.id)}
+              onApprove={(overrideReview) => approveDraft(draft.id, overrideReview)}
               onRetry={() => retryPublish(draft.id)}
+              onReplaceVisual={(file) => replaceDraftVisual(draft.id, file)}
+              onRegenerateVisuals={(visualDirection) => regenerateDraftVisuals(draft.id, visualDirection)}
             />
           ))}
         </Stack>
@@ -255,15 +313,17 @@ export function LinkedInContentClient({ initialDrafts, shareConnection }: { init
   );
 }
 
-function DraftCard({ draft, busy, canPublish, onCopy, onSave, onArchive, onApprove, onRetry }: {
+function DraftCard({ draft, busy, canPublish, onCopy, onSave, onArchive, onApprove, onRetry, onReplaceVisual, onRegenerateVisuals }: {
   draft: LinkedInDraftView;
   busy: boolean;
   canPublish: boolean;
   onCopy: () => void;
   onSave: (patch: Partial<Pick<LinkedInDraftView, "title" | "hook" | "body" | "hashtags" | "disclosureText" | "status">>) => void;
   onArchive: () => void;
-  onApprove: () => void;
+  onApprove: (overrideReview: boolean) => void;
   onRetry: () => void;
+  onReplaceVisual: (file: File) => void;
+  onRegenerateVisuals: (visualDirection: string) => void;
 }) {
   const [editState, setEditState] = useState<null | {
     title: string;
@@ -272,10 +332,17 @@ function DraftCard({ draft, busy, canPublish, onCopy, onSave, onArchive, onAppro
     hashtags: string;
     disclosureText: string;
   }>(null);
+  const [replacementDirection, setReplacementDirection] = useState("");
+  const [reviewOverride, setReviewOverride] = useState(false);
   const approvedOrPublished = ["APPROVED", "PUBLISHING", "PUBLISHED"].includes(draft.status);
+  const visualLocked = ["APPROVED", "PUBLISHING", "PUBLISHED"].includes(draft.status);
   const promptContext = promptContextFromReviews(draft.agentReviews);
   const promptQuality = promptQualityFromReviews(draft.agentReviews);
   const visualContext = visualContextFromReviews(draft.agentReviews);
+  const selectedVisual = renderableScreenshotAssets(draft.selectedScreenshots)[0] ?? renderableScreenshotAssets(draft.screenshotAssets)[0];
+  const claimSummary = summarizeClaims(draft.claims);
+  const publishNeedsOverride = draft.privacyReview.status !== "PASS" || claimSummary.needsReview > 0;
+  const publishDisabled = busy || !canPublish || approvedOrPublished || (publishNeedsOverride && !reviewOverride);
 
   return (
     <Card>
@@ -348,21 +415,32 @@ function DraftCard({ draft, busy, canPublish, onCopy, onSave, onArchive, onAppro
               Prompt match: {promptQuality.score}/100 for {promptQuality.intent}. {promptQuality.warningText || "Draft satisfies the prompt obligations."}
             </Alert>
           ) : null}
-          {draft.privacyReview.status === "PASS" ? (
+          {!canPublish ? (
+            <Alert severity="warning">Connect LinkedIn publishing before approval can publish.</Alert>
+          ) : draft.privacyReview.status === "PASS" && claimSummary.needsReview === 0 ? (
             <Alert severity="success">Privacy and provenance checks passed. Approval publishes to LinkedIn immediately.</Alert>
           ) : (
-            <Alert severity="warning">Publishing is blocked. {draft.privacyReview.warnings.join(" ")}</Alert>
+            <Alert severity="warning">Review warnings are suggestions unless you confirm final approval. {[
+              ...draft.privacyReview.warnings,
+              ...(claimSummary.needsReview ? [`${claimSummary.needsReview} claim${claimSummary.needsReview === 1 ? "" : "s"} need provenance review.`] : []),
+            ].join(" ")}</Alert>
           )}
 
           <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+            {publishNeedsOverride && canPublish && !approvedOrPublished ? (
+              <FormControlLabel
+                control={<Checkbox checked={reviewOverride} onChange={(event) => setReviewOverride(event.target.checked)} />}
+                label="I reviewed these warnings and approve publishing anyway"
+              />
+            ) : null}
             <Button
               variant="contained"
               color="success"
               startIcon={<CheckCircleOutlineOutlinedIcon />}
-              disabled={busy || !canPublish || approvedOrPublished}
-              onClick={onApprove}
+              disabled={publishDisabled}
+              onClick={() => onApprove(publishNeedsOverride)}
             >
-              Approve and publish
+              {publishNeedsOverride ? "Approve anyway and publish" : "Approve and publish"}
             </Button>
             <Button variant="outlined" startIcon={<RefreshOutlinedIcon />} disabled={busy || draft.status !== "FAILED"} onClick={onRetry}>
               Retry publish
@@ -371,21 +449,16 @@ function DraftCard({ draft, busy, canPublish, onCopy, onSave, onArchive, onAppro
           </Stack>
 
           <Divider />
-          {promptContext ? (
-            <InfoSection title="Generated from prompt" items={[
-              `Prompt: ${promptContext.prompt}`,
-              `Intent: ${promptContext.intent}`,
-              `Format: ${promptContext.format}`,
-              `Selected angle: ${promptContext.selectedAngle}`,
-              ...(promptQuality ? [`Generation mode: ${promptQuality.generationMode}`] : []),
-            ]} />
-          ) : null}
-          <InfoSection title="Agent reviews" items={draft.agentReviews.map((review) => `${review.agent}: ${review.recommendation}`)} />
-          <InfoSection title="Aggregate analytics used" items={draft.analyticsSources.map((source) => source.label)} />
-          <InfoSection title="Plan sources" items={planSourceLabels(draft.memorySources)} />
-          <InfoSection title="Memory sources" items={draft.memorySources.map((source) => `${source.type}: ${source.label}`)} />
-          <InfoSection title="Grounded claims" items={draft.claims.map((claim) => `${claim.status}: ${claim.text}`)} />
-          {visualContext ? <InfoSection title="Visual rationale" items={[visualContext.visualRationale]} /> : null}
+          <GenerationSummary draft={draft} promptContext={promptContext} promptQuality={promptQuality} visualContext={visualContext} />
+          <VisualReplacementPanel
+            busy={busy}
+            locked={visualLocked}
+            selectedVisual={selectedVisual}
+            visualDirection={replacementDirection}
+            onVisualDirectionChange={setReplacementDirection}
+            onReplaceVisual={onReplaceVisual}
+            onRegenerate={() => onRegenerateVisuals(replacementDirection)}
+          />
           <ScreenshotSection assets={draft.selectedScreenshots.length ? draft.selectedScreenshots : draft.screenshotAssets} />
         </Stack>
       </CardContent>
@@ -393,14 +466,139 @@ function DraftCard({ draft, busy, canPublish, onCopy, onSave, onArchive, onAppro
   );
 }
 
-function InfoSection({ title, items }: { title: string; items: string[] }) {
+function VisualReplacementPanel({ busy, locked, selectedVisual, visualDirection, onVisualDirectionChange, onReplaceVisual, onRegenerate }: {
+  busy: boolean;
+  locked: boolean;
+  selectedVisual?: LinkedInVisualAssetView;
+  visualDirection: string;
+  onVisualDirectionChange: (value: string) => void;
+  onReplaceVisual: (file: File) => void;
+  onRegenerate: () => void;
+}) {
+  const inputId = `visual-upload-${selectedVisual?.path.replace(/[^a-z0-9]+/gi, "-") || "draft"}`;
+  return (
+    <Stack spacing={1.25}>
+      <Typography sx={{ fontWeight: 850 }}>Selected publish visual</Typography>
+      {selectedVisual ? (
+        <Stack spacing={0.25}>
+          <Typography variant="body2" sx={{ fontWeight: 800 }}>{selectedVisual.label}</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
+            {selectedVisual.assetType ?? "screenshot"} - {selectedVisual.privacyStatus ?? "NEEDS_REVIEW"} - {selectedVisual.path}
+          </Typography>
+        </Stack>
+      ) : (
+        <Alert severity="warning">No selected visual is available for publishing.</Alert>
+      )}
+      <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ alignItems: { md: "flex-start" } }}>
+        <Button
+          component="label"
+          variant="outlined"
+          startIcon={<AddPhotoAlternateOutlinedIcon />}
+          disabled={busy || locked}
+        >
+          Replace with screenshot
+          <input
+            id={inputId}
+            hidden
+            type="file"
+            aria-label="Replace selected LinkedIn visual with screenshot"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) onReplaceVisual(file);
+            }}
+          />
+        </Button>
+        <TextField
+          label="Replacement visual direction"
+          value={visualDirection}
+          onChange={(event) => onVisualDirectionChange(event.target.value)}
+          placeholder="Example: show the dashboard pipeline, not an abstract diagram"
+          size="small"
+          fullWidth
+          disabled={busy || locked}
+        />
+        <Button
+          variant="outlined"
+          startIcon={<RefreshOutlinedIcon />}
+          disabled={busy || locked || !visualDirection.trim()}
+          onClick={onRegenerate}
+          sx={{ whiteSpace: "nowrap" }}
+        >
+          Regenerate visuals
+        </Button>
+      </Stack>
+    </Stack>
+  );
+}
+
+function GenerationSummary({ draft, promptContext, promptQuality, visualContext }: {
+  draft: LinkedInDraftView;
+  promptContext: ReturnType<typeof promptContextFromReviews>;
+  promptQuality: ReturnType<typeof promptQualityFromReviews>;
+  visualContext: ReturnType<typeof visualContextFromReviews>;
+}) {
+  const selectedEvidence = selectedEvidenceFromReviews(draft.agentReviews);
+  const claimSummary = summarizeClaims(draft.claims);
+  const planSources = planSourceLabels(draft.memorySources);
+  const reviewBlockers = [
+    ...(promptQuality?.warningText ? [promptQuality.warningText] : []),
+    ...(draft.privacyReview.status === "PASS" ? [] : draft.privacyReview.warnings),
+    ...(claimSummary.needsReview ? [`${claimSummary.needsReview} claim${claimSummary.needsReview === 1 ? "" : "s"} need review.`] : []),
+  ];
+
+  return (
+    <Stack spacing={1.25}>
+      <Typography sx={{ fontWeight: 850 }}>Generation summary</Typography>
+      <Stack spacing={0.75}>
+        <SummaryLine label="Assignment" value={truncateText(promptContext?.prompt || "No prompt metadata captured.", 260)} />
+        <SummaryLine label="Intent" value={[
+          promptContext?.intent || "unknown",
+          promptContext?.format ? `format ${promptContext.format}` : "",
+          promptQuality?.generationMode ? `mode ${promptQuality.generationMode}` : "",
+          promptQuality ? `prompt match ${promptQuality.score}/100` : "",
+        ].filter(Boolean).join(" - ")} />
+        <SummaryLine label="Selected evidence" value={selectedEvidence ? `${selectedEvidence.label}: ${truncateText(selectedEvidence.text, 180)}` : "No selected evidence recorded."} />
+        <SummaryLine label="Sources" value={`${planSources.length} plan source${planSources.length === 1 ? "" : "s"}, ${draft.analyticsSources.length} analytics source${draft.analyticsSources.length === 1 ? "" : "s"}, ${draft.memorySources.length} memory source${draft.memorySources.length === 1 ? "" : "s"}.`} />
+        <SummaryLine label="Claims" value={`${claimSummary.grounded} grounded, ${claimSummary.needsReview} need review.`} tone={claimSummary.needsReview ? "warning" : "default"} />
+        {visualContext ? <SummaryLine label="Visual" value={truncateText(visualContext.visualRationale, 180)} /> : null}
+        <SummaryLine label="Review" value={reviewBlockers.length ? truncateText(reviewBlockers.join(" "), 240) : "Prompt, privacy, and provenance checks are clear."} tone={reviewBlockers.length ? "warning" : "default"} />
+      </Stack>
+      <Box component="details" sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1, bgcolor: "background.default" }}>
+        <Box component="summary" sx={{ cursor: "pointer", fontWeight: 800 }}>Source details</Box>
+        <Stack spacing={1} sx={{ mt: 1 }}>
+          <CompactList title="Agent notes" items={draft.agentReviews.map((review) => `${review.agent}: ${review.recommendation}`)} />
+          <CompactList title="Plan sources" items={planSources} />
+          <CompactList title="Analytics" items={draft.analyticsSources.map((source) => source.label)} />
+          <CompactList title="Memory" items={draft.memorySources.map((source) => `${source.type}: ${source.label}`)} />
+          <CompactList title="Claims" items={draft.claims.map((claim) => `${claim.status}: ${claim.text}`)} />
+        </Stack>
+      </Box>
+    </Stack>
+  );
+}
+
+function SummaryLine({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warning" }) {
+  return (
+    <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "baseline" } }}>
+      <Typography variant="body2" sx={{ width: { sm: 140 }, flexShrink: 0, fontWeight: 800 }}>{label}</Typography>
+      <Typography variant="body2" color={tone === "warning" ? "warning.main" : "text.secondary"} sx={{ overflowWrap: "anywhere" }}>{value}</Typography>
+    </Stack>
+  );
+}
+
+function CompactList({ title, items }: { title: string; items: string[] }) {
   if (!items.length) return null;
   return (
-    <Stack spacing={1}>
-      <Typography sx={{ fontWeight: 850 }}>{title}</Typography>
-      <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
-        {items.slice(0, 8).map((item) => <Chip key={`${title}-${item}`} size="small" variant="outlined" label={item} />)}
-      </Stack>
+    <Stack spacing={0.5}>
+      <Typography variant="body2" sx={{ fontWeight: 800 }}>{title}</Typography>
+      {items.slice(0, 6).map((item) => (
+        <Typography key={`${title}-${item}`} variant="caption" color="text.secondary" sx={{ display: "block", overflowWrap: "anywhere" }}>
+          {truncateText(item, 220)}
+        </Typography>
+      ))}
+      {items.length > 6 ? <Typography variant="caption" color="text.secondary">+ {items.length - 6} more</Typography> : null}
     </Stack>
   );
 }
@@ -437,12 +635,38 @@ function visualContextFromReviews(reviews: LinkedInDraftView["agentReviews"]) {
   };
 }
 
+function selectedEvidenceFromReviews(reviews: LinkedInDraftView["agentReviews"]) {
+  const metadata = reviews.find((review) => review.agent === "Evidence Reporter")?.metadata;
+  const evidence = metadata && typeof metadata === "object" ? metadata.selectedEvidence : null;
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) return null;
+  const record = evidence as Record<string, unknown>;
+  return {
+    label: typeof record.label === "string" ? record.label : "Selected evidence",
+    text: typeof record.text === "string" ? record.text : "",
+  };
+}
+
+function summarizeClaims(claims: LinkedInDraftView["claims"]) {
+  let grounded = 0;
+  let needsReview = 0;
+  for (const claim of claims) {
+    if (claim.status === "grounded") grounded += 1;
+    else needsReview += 1;
+  }
+  return { grounded, needsReview };
+}
+
 function planSourceLabels(sources: LinkedInDraftView["memorySources"]) {
   const labels: string[] = [];
   for (const source of sources) {
     if (source.type === "plan") labels.push(source.label);
   }
   return labels;
+}
+
+function truncateText(value: string, maxLength: number) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1).trimEnd()}...` : normalized;
 }
 
 function ScreenshotSection({ assets }: { assets: LinkedInDraftView["screenshotAssets"] }) {
@@ -565,6 +789,7 @@ function screenshotAssets(value: unknown): LinkedInDraftView["screenshotAssets"]
           rationale: typeof record.rationale === "string" ? record.rationale : undefined,
           privacyStatus: typeof record.privacyStatus === "string" ? record.privacyStatus : undefined,
           warnings: stringArray(record.warnings),
+          mimeType: typeof record.mimeType === "string" ? record.mimeType : undefined,
         }]
       : [];
   });

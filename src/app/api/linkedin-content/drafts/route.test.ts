@@ -81,6 +81,24 @@ describe("/api/linkedin-content/drafts", () => {
     expect(runLinkedInContentAgentMock).toHaveBeenCalledWith({ contentPillar: "architecture" });
   });
 
+  it("accepts detailed content briefs over the old 2000 character prompt limit", async () => {
+    const detailedPrompt = [
+      "Document the LinkedIn content workflow as a decision diary.",
+      "Cover how the draft stays review-only, how privacy checks work, how visuals are selected, and how the prompt fidelity reviewer decides whether the result matches the request.",
+      "Explain the system architecture, agent handoffs, evidence sources, draft editing loop, and why a detailed human brief should remain intact instead of being collapsed into a generic topic.",
+    ].join(" ").repeat(12);
+
+    expect(detailedPrompt.length).toBeGreaterThan(2000);
+
+    const response = await POST(new Request("http://localhost/api/linkedin-content/drafts", {
+      method: "POST",
+      body: JSON.stringify({ prompt: detailedPrompt }),
+    }));
+
+    expect(response.status).toBe(201);
+    expect(runLinkedInContentAgentMock).toHaveBeenCalledWith({ prompt: detailedPrompt.trim() });
+  });
+
   it("lists active drafts for the first local user", async () => {
     const response = await GET();
 

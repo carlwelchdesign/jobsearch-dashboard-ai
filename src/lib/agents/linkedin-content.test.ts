@@ -86,6 +86,70 @@ describe("LinkedIn content agent helpers", () => {
     expect(output.body).not.toMatch(/^(Scene|Evidence|Artifact|Decision|Consequence|Lesson|Teardown):/m);
   });
 
+  it("honors detailed Job Search OS narrative briefs instead of falling back to stale plan angles", () => {
+    const prompt = [
+      "Brief for the documentarian agents: Today I want to publish a LinkedIn that shows the real progress behind my job search app and explains why I am building it.",
+      "The post should position the app as more than a resume generator. It is becoming an agent-powered job search operating system that helps candidates understand their experience, find better-fit roles, generate stronger application materials, and continuously improve based on outcomes.",
+      "The goal is not to spray and pray applications. The goal is higher-quality matches, better positioning, stronger materials, and a smarter feedback loop.",
+      "Generate: 1. Primary LinkedIn post 150-250 words 2. Shorter alternate version under 100 words 3. Three hook options 4. One comment I could leave under the post 5. Screenshot caption options.",
+      "Mention that I am building this from my own experience navigating the modern senior engineering job market after a layoff, but do not make the post a sob story.",
+    ].join(" ");
+    const output = buildLinkedInContentFallback({
+      pillar: "app_progress",
+      direction: {
+        prompt,
+        tone: "bold_grounded",
+        format: "field_note",
+        legacyPillar: "app_progress",
+        visualDirection: "show safe app screenshots",
+        selectedAngle: "Product narrative on Job Search OS clarity",
+        rejectedAngles: ["Plan angle from Tighten Email Ops Signal Quality"],
+        intent: planLinkedInPromptIntent(prompt),
+        obligations: {
+          topic: prompt,
+          requiredConcepts: ["job search", "operating system", "agents", "resume", "cover letter", "job matching", "clarity", "quality", "feedback loop"],
+          requiredVisuals: ["app_screenshot"],
+          forbiddenPhrases: ["plan angle from", "tighten email ops", "the useful angle is"],
+          allowSearchFunnelAnalytics: false,
+        },
+        promptRelevanceScore: 98,
+        evidenceAnchors: [{
+          sourceType: "aggregate_fact",
+          label: "Job Search OS product context",
+          text: "Job Search OS includes profile strategy, resume and cover letter generation, job matching, application tracking, analytics, and review-only LinkedIn drafts.",
+          relevance: 98,
+        }],
+        rejectedEvidence: [{ sourceType: "plan", label: "Tighten Email Ops Signal Quality", text: "Make Email Ops strict by default.", relevance: 0 }],
+      },
+      memoryPack: {
+        aggregateFacts: ["Job Search OS includes profile strategy, resume and cover letter generation, job matching, application tracking, analytics, and review-only LinkedIn drafts."],
+        storyAngles: ["Plan angle from Tighten Email Ops Signal Quality"],
+        planSources: [{ filename: "EMAIL.md", title: "Tighten Email Ops Signal Quality", summary: "Make Email Ops strict by default.", themes: ["Email Ops"] }],
+        noveltySignals: { recentHooks: [], recentTitles: [], recentPillars: [], recentScreenshotRoutes: [], avoidPhrases: ["Plan angle from Tighten Email Ops Signal Quality"] },
+        analytics: {
+          latestSearchRun: null,
+          applicationStatusCounts: {},
+          outcomeCounts: {},
+          agentRunCounts: {},
+          sourceCoverage: { activeSources: 0, querySources: 0, manualSources: 0, priorityOneSources: 0 },
+        },
+      },
+    });
+
+    expect(planLinkedInPromptIntent(prompt)).toBe("job_search_os_narrative");
+    expect(output.body).toContain("Primary LinkedIn post");
+    expect(output.body).toContain("Shorter alternate version");
+    expect(output.body).toContain("Hook options");
+    expect(output.body).toContain("Comment");
+    expect(output.body).toContain("Screenshot caption options");
+    expect(output.body).toContain("senior engineering market");
+    expect(output.body).toContain("not finished");
+    expect(output.body).not.toContain("Plan angle from Tighten Email Ops");
+    expect(output.body).not.toContain("The useful angle is");
+    expect(output.body).not.toContain("The artifact behind this note");
+    expect(output.hashtags).not.toContain("#AgenticAI");
+  });
+
   it("selects Search Operations evidence for chart prompts instead of stale plan angles", () => {
     const output = buildLinkedInContentFallback({
       pillar: "search_learning",

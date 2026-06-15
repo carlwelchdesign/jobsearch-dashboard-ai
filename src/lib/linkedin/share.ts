@@ -115,7 +115,7 @@ export async function saveLinkedInShareConnection(input: {
   });
 }
 
-export async function publishLinkedInDraft(draftId: string) {
+export async function publishLinkedInDraft(draftId: string, options: { overrideReview?: boolean } = {}) {
   const draft = await prisma.linkedInPostDraft.findUnique({
     where: { id: draftId },
     include: { user: { include: { linkedinShareConnection: true } } },
@@ -125,7 +125,7 @@ export async function publishLinkedInDraft(draftId: string) {
 
   const connection = draft.user.linkedinShareConnection;
   try {
-    assertLinkedInDraftReviewPassed(draft);
+    if (!options.overrideReview) assertLinkedInDraftReviewPassed(draft);
     assertShareConnection(connection);
 
     await prisma.linkedInPostDraft.update({
