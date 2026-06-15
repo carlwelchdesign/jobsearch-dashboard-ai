@@ -20,6 +20,11 @@ describe("search run analytics", () => {
     expect(analytics.drops).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: "Below threshold", value: 88 }),
     ]));
+    expect(analytics.outcomeMix).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Saved", value: 5 }),
+      expect.objectContaining({ label: "Below threshold", value: 88 }),
+    ]));
+    expect(analytics.topBlocker).toMatchObject({ label: "Below threshold", value: 88 });
   });
 
   it("builds chart-ready funnel, drop, profile, source, and score datasets from progress diagnostics", () => {
@@ -73,6 +78,20 @@ describe("search run analytics", () => {
     ]));
     expect(analytics.byProfile[0]).toMatchObject({ label: "Broad LinkedIn Parity", qualified: 25, saved: 10, capped: 2 });
     expect(analytics.bySource[0]).toMatchObject({ label: "Search Query Backlog", qualified: 28, saved: 12 });
+    expect(analytics.outcomeMix).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Saved", value: 12 }),
+      expect.objectContaining({ label: "Review-only", value: 5 }),
+      expect.objectContaining({ label: "Suppressed/listing", value: 40 }),
+    ]));
+    expect(analytics.sourceYield[0]).toMatchObject({ label: "Search Query Backlog", fetched: 150, qualified: 28, saved: 12, qualifiedRate: 18.7, saveRate: 8 });
+    expect(analytics.profileYield[0]).toMatchObject({ label: "Broad LinkedIn Parity", qualified: 25, saved: 10, capped: 2, yieldRate: 40 });
+    expect(analytics.qualityBands).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Near miss", value: 40, helper: "Reviewable but not ready" }),
+      expect.objectContaining({ label: "High confidence", value: 10 }),
+    ]));
+    expect(analytics.topBlocker).toMatchObject({ label: "Below threshold", value: 120 });
+    expect(analytics.bestSource).toMatchObject({ label: "Search Query Backlog", value: 12 });
+    expect(analytics.bestProfile).toMatchObject({ label: "Broad LinkedIn Parity", value: 10 });
     expect(analytics.explanations.join(" ")).toContain("held for manual review");
   });
 

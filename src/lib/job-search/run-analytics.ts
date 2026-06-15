@@ -64,6 +64,13 @@ export type SearchRunAnalytics = {
   scoreDistribution: Array<{ label: string; value: number }>;
   byProfile: Array<{ label: string; fetched: number; scored: number; qualified: number; saved: number; capped: number }>;
   bySource: Array<{ label: string; fetched: number; scored: number; qualified: number; saved: number }>;
+  outcomeMix: Array<{ label: string; value: number; helper: string }>;
+  sourceYield: Array<{ label: string; fetched: number; qualified: number; saved: number; qualifiedRate: number; saveRate: number }>;
+  profileYield: Array<{ label: string; qualified: number; saved: number; capped: number; yieldRate: number }>;
+  qualityBands: Array<{ label: string; value: number; helper: string }>;
+  topBlocker: { label: string; value: number; helper: string } | null;
+  bestSource: { label: string; value: number; helper: string } | null;
+  bestProfile: { label: string; value: number; helper: string } | null;
   explanations: string[];
 };
 
@@ -124,6 +131,40 @@ export function buildSearchRunAnalytics(run: SearchRunAnalyticsInput | null | un
     qualified: row.qualified,
     saved: row.saved,
   }));
+  const outcomeMix = buildOutcomeMix({ stats, scored, agencyEligible });
+  const sourceYield = bySource.map((row) => ({
+    ...row,
+    qualifiedRate: percent(row.qualified, row.fetched),
+    saveRate: percent(row.saved, row.fetched),
+  }));
+  const profileYield = byProfile.map((row) => ({
+    label: row.label,
+    qualified: row.qualified,
+    saved: row.saved,
+    capped: row.capped,
+    yieldRate: percent(row.saved, row.qualified),
+  }));
+  const qualityBands = [
+    { label: "Below", value: buckets.below ?? 0, helper: "Below threshold" },
+    { label: "Near miss", value: buckets.nearMiss ?? 0, helper: "Reviewable but not ready" },
+    { label: "Qualified", value: buckets.qualified ?? 0, helper: "Met profile threshold" },
+    { label: "High confidence", value: buckets.highConfidence ?? 0, helper: "Strong application candidates" },
+  ].filter((item) => item.value > 0);
+  const topBlocker = drops[0] ? {
+    label: drops[0].label,
+    value: drops[0].value,
+    helper: blockerHelper(drops[0].label),
+  } : null;
+  const bestSource = sourceYield[0] ? {
+    label: sourceYield[0].label,
+    value: sourceYield[0].saved || sourceYield[0].qualified,
+    helper: `${sourceYield[0].saved} saved · ${sourceYield[0].qualifiedRate}% qualified`,
+  } : null;
+  const bestProfile = profileYield[0] ? {
+    label: profileYield[0].label,
+    value: profileYield[0].saved || profileYield[0].qualified,
+    helper: `${profileYield[0].saved} saved · ${profileYield[0].yieldRate}% yield`,
+  } : null;
 
   return {
     stats,
@@ -132,6 +173,13 @@ export function buildSearchRunAnalytics(run: SearchRunAnalyticsInput | null | un
     scoreDistribution,
     byProfile,
     bySource,
+    outcomeMix,
+    sourceYield,
+    profileYield,
+    qualityBands,
+    topBlocker,
+    bestSource,
+    bestProfile,
     explanations: explanationsFor({ stats, scored, detailCandidates, agencyEligible }),
   };
 }
@@ -242,6 +290,44 @@ function dimensionRows(value: Record<string, SearchRunDimensionStats> | undefine
     .slice(0, 8);
 }
 
+function buildOutcomeMix(input: { stats: SearchRunStatsSnapshot; scored: number; agencyEligible: number }) {
+  const { stats, scored, agencyEligible } = input;
+  const belowThreshold = Math.max(0, stats.jobsBelowThreshold ?? scored - stats.jobsAfterFilters);
+  const listingSuppressed = stats.listingPagesSuppressed ?? 0;
+  const suppressed = stats.jobsSuppressed ?? 0;
+  const existingMatch = stats.existingProfileMatches ?? 0;
+  const missingUrl = stats.jobsMissingApplicationUrl ?? 0;
+  const reviewOnly = stats.reviewOnlyMatches ?? 0;
+  const saved = Math.max(0, stats.jobsSaved);
+  return [
+    { label: "Saved", value: saved, helper: "New matches created" },
+    { label: "Agency eligible", value: agencyEligible, helper: "Ready for Apply Sprint" },
+    { label: "Review-only", value: reviewOnly, helper: "Held for manual review" },
+    { label: "Missing URL", value: missingUrl, helper: "Needs an application link" },
+    { label: "Existing match", value: existingMatch, helper: "Already known for a profile" },
+    { label: "Below threshold", value: belowThreshold, helper: "Scored below active profiles" },
+    { label: "Suppressed/listing", value: suppressed + listingSuppressed, helper: "Noise removed before scoring" },
+  ].filter((item) => item.value > 0);
+}
+
+function percent(value: number, total: number) {
+  if (total <= 0) return 0;
+  return Math.round((value / total) * 1000) / 10;
+}
+
+function blockerHelper(label: string) {
+  if (label === "Below threshold") return "Profile scoring filtered most of this run.";
+  if (label === "Existing job duplicate") return "The search rediscovered jobs already in the system.";
+  if (label === "Existing profile match") return "The profile already had these matches.";
+  if (label === "Suppressed") return "Search noise was removed before handoff.";
+  if (label === "Listing page suppressed") return "Listing and search pages were blocked before scoring.";
+  if (label === "Missing apply URL") return "Saved matches need usable application links.";
+  if (label === "Profile cap") return "At least one profile hit its run cap.";
+  if (label === "Review-only broad matches") return "Broad matches are waiting for manual review.";
+  if (label === "Provider warnings") return "A provider configuration limited discovery.";
+  return "This was the largest blocker in the run.";
+}
+
 function explanationsFor(input: { stats: SearchRunStatsSnapshot; scored: number; detailCandidates: number; agencyEligible: number }) {
   const explanations: string[] = [];
   const { stats, scored } = input;
@@ -251,7 +337,7 @@ function explanationsFor(input: { stats: SearchRunStatsSnapshot; scored: number;
   if ((stats.profileMaxResultsCapped ?? 0) > 0) explanations.push("At least one profile hit maxResultsPerRun, so additional qualified jobs were intentionally left out of this run.");
   if ((stats.reviewOnlyMatches ?? 0) > 0) explanations.push(`${stats.reviewOnlyMatches} broad-search match${stats.reviewOnlyMatches === 1 ? " is" : "es are"} held for manual review instead of auto-prep.`);
   if ((stats.jobsMissingApplicationUrl ?? 0) > 0) explanations.push(`${stats.jobsMissingApplicationUrl} saved match${stats.jobsMissingApplicationUrl === 1 ? " lacks" : "es lack"} an application URL, so Apply Sprint cannot prepare them yet.`);
-  if (!explanations.length && stats.jobsFetched > 0) explanations.push("No dominant blocker was detected; review the profile and source charts for smaller drop-offs.");
+  if (!explanations.length && stats.jobsFetched > 0) explanations.push("No dominant blocker was detected; review the profile and source charts for smaller yield patterns.");
   return explanations.slice(0, 4);
 }
 
