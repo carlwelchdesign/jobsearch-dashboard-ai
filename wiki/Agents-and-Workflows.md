@@ -10,6 +10,8 @@ ADK is available as an opt-in TypeScript control plane for selected agents. It i
 
 Jolene's ADK operator can now render inline confirmation cards for app-local repair plans. Confirmed execution is bounded to internal maintenance actions such as application integrity repair, duplicate/stale detection, email sync, Daily Command Center refresh, Market Intelligence refresh, and graph-run repair/retry/cancel. External submissions, email/outreach sending, employer-system interaction, and broad approve/reject/archive mutations remain outside Jolene's executable boundary.
 
+The System Architecture agent is a read-only architecture confidence layer. A `SYSTEM_ARCHITECTURE` run scans App Router pages, API routes, Prisma schema models/enums, agent services, the code-first skill registry, ADK/LangGraph boundaries, docs, and `/plans`, then writes a connected map, workflow lanes, ranked architecture risks, documentation evidence, and recommended decisions to `AgentRun.outputJson`. `/architecture` renders the latest report and `POST /api/architecture` refreshes it. The agent does not execute repairs; it identifies weak connections such as missing skill coverage, undocumented high-impact API routes, unclear workflow ownership, and stale architecture docs.
+
 Career CEO mode adds a persistent hiring mandate for Jolene. `CareerMission` stores the 30-day high-income sprint target, compensation floor, ideal target, role tracks, dealbreakers, fallback paths, daily capacity, and tone preferences. Jolene's Career CEO brief ranks the current pipeline by income relevance using interviews, ready applications, high-score jobs, follow-ups, blockers, enabled profiles, salary gaps, and mission targets.
 
 Career CEO standups add the closed-loop layer. `CareerSprintSnapshot` persists daily sprint score, income momentum, attention debt, money-move statuses, completed move keys, mission JSON, and the brief JSON. Jolene can generate a new standup on demand, compare against the latest snapshot, identify stale money moves, and explain what needs immediate attention without taking external action.
@@ -83,6 +85,7 @@ Evaluation runs score examples and cluster repeated failure categories into prop
 - Networking Strategy
 - Search Expansion
 - LinkedIn Content Team
+- System Architecture
 
 ## LinkedIn Content Team Workflow
 

@@ -206,6 +206,33 @@ export const skillRegistry = {
     defaultPolicy: { ...lowRiskPolicy, externalAction: "none" as const },
     execute: async (input: any) => (await (await import("@/lib/jolene/chief-of-staff")).runJoleneChiefOfStaffAgent(input)).output,
   },
+  jolene_operating_loop: {
+    id: "jolene_operating_loop",
+    label: "Jolene Operating Loop",
+    agentType: "JOLENE_OPERATING_LOOP",
+    riskLevel: "LOW",
+    inputSchema: z.object({ userId: z.string().optional(), source: z.enum(["manual", "scheduled", "dashboard", "chat"]).optional() }),
+    outputSchema: anyOutput,
+    defaultPolicy: lowRiskPolicy,
+    execute: async (input: any) => (await (await import("@/lib/jolene/operating-loop")).runJoleneOperatingLoopAgent(input)).output,
+  },
+  jolene_email_operations: {
+    id: "jolene_email_operations",
+    label: "Jolene Email Operations",
+    agentType: "JOLENE_EMAIL_OPERATIONS",
+    riskLevel: "LOW",
+    inputSchema: z.object({ userId: z.string().optional(), source: z.enum(["manual", "scheduled", "dashboard", "chat", "jolene"]).optional(), limit: z.number().int().min(1).max(100).optional() }),
+    outputSchema: anyOutput,
+    defaultPolicy: lowRiskPolicy,
+    execute: async (input: any) => (await (await import("@/lib/jolene/email-ops")).runJoleneEmailOperationsAgent(input)).output,
+  },
+  email_inbox_scout: specialistSkill("email_inbox_scout", "Email Inbox Scout", "EMAIL_INBOX_SCOUT"),
+  email_application_matcher: specialistSkill("email_application_matcher", "Email Application Matcher", "EMAIL_APPLICATION_MATCHER"),
+  email_outcome_classifier: specialistSkill("email_outcome_classifier", "Email Outcome Classifier", "EMAIL_OUTCOME_CLASSIFIER"),
+  email_scheduling_coordinator: specialistSkill("email_scheduling_coordinator", "Email Scheduling Coordinator", "EMAIL_SCHEDULING_COORDINATOR"),
+  email_action_drafter: specialistSkill("email_action_drafter", "Email Action Drafter", "EMAIL_ACTION_DRAFTER"),
+  email_privacy_reviewer: specialistSkill("email_privacy_reviewer", "Email Privacy Reviewer", "EMAIL_PRIVACY_REVIEWER"),
+  email_ops_reporter: specialistSkill("email_ops_reporter", "Email Ops Reporter", "EMAIL_OPS_REPORTER"),
   recruiting_agency: {
     id: "recruiting_agency",
     label: "Recruiting Agency",
@@ -247,6 +274,16 @@ export const skillRegistry = {
     defaultPolicy: { ...lowRiskPolicy, externalAction: "draft_only" as const },
     execute: async (input: any) => (await (await import("@/lib/agents/linkedin-content")).runLinkedInContentAgent(input)).output,
   },
+  system_architecture: {
+    id: "system_architecture",
+    label: "System Architecture",
+    agentType: "SYSTEM_ARCHITECTURE",
+    riskLevel: "LOW",
+    inputSchema: z.object({ userId: z.string().optional(), source: z.enum(["manual", "dashboard", "jolene", "test"]).optional() }),
+    outputSchema: anyOutput,
+    defaultPolicy: lowRiskPolicy,
+    execute: async (input: any) => (await (await import("@/lib/agents/system-architecture")).runSystemArchitectureAgent(input)).output,
+  },
   prepare_application_packet: {
     id: "prepare_application_packet",
     label: "Prepare Application Packet",
@@ -273,6 +310,23 @@ export const skillRegistry = {
 
 const registryCoverage: Record<SkillId, unknown> = skillRegistry;
 void registryCoverage;
+
+function specialistSkill(id: SkillId, label: string, agentType: NonNullable<SkillDefinition["agentType"]>): SkillDefinition<Record<string, unknown>, unknown> {
+  return {
+    id,
+    label,
+    agentType,
+    riskLevel: "LOW",
+    inputSchema: z.record(z.unknown()),
+    outputSchema: anyOutput,
+    defaultPolicy: lowRiskPolicy,
+    execute: async (input) => ({
+      status: "delegated_specialist",
+      detail: `${label} runs as part of a parent orchestrator and is not launched directly from the skill registry.`,
+      input,
+    }),
+  };
+}
 
 function skillForApplication(
   id: SkillId,

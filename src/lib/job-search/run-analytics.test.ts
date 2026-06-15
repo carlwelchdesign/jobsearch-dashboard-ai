@@ -25,6 +25,12 @@ describe("search run analytics", () => {
       expect.objectContaining({ label: "Below threshold", value: 88 }),
     ]));
     expect(analytics.topBlocker).toMatchObject({ label: "Below threshold", value: 88 });
+    expect(analytics.runQuality).toEqual(expect.objectContaining({ score: expect.any(Number), label: expect.any(String) }));
+    expect(analytics.signalProfile.map((item) => item.axis)).toEqual(["Qualified", "Saved", "Agency ready", "Source mix", "Blocker load"]);
+    expect(analytics.opportunityTerrain).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "Saved", count: 5, fillKey: "Saved" }),
+    ]));
+    expect(analytics.nextAction).toEqual(expect.objectContaining({ label: "Tune profile thresholds", tone: "warning" }));
   });
 
   it("builds chart-ready funnel, drop, profile, source, and score datasets from progress diagnostics", () => {
@@ -92,6 +98,17 @@ describe("search run analytics", () => {
     expect(analytics.topBlocker).toMatchObject({ label: "Below threshold", value: 120 });
     expect(analytics.bestSource).toMatchObject({ label: "Search Query Backlog", value: 12 });
     expect(analytics.bestProfile).toMatchObject({ label: "Broad LinkedIn Parity", value: 10 });
+    expect(analytics.runQuality.score).toBeGreaterThanOrEqual(0);
+    expect(analytics.runQuality.score).toBeLessThanOrEqual(100);
+    expect(analytics.signalProfile).toEqual(expect.arrayContaining([
+      expect.objectContaining({ axis: "Agency ready", value: 25 }),
+      expect.objectContaining({ axis: "Blocker load" }),
+    ]));
+    expect(analytics.opportunityTerrain).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "Suppressed/listing", count: 40 }),
+      expect.objectContaining({ name: "Review-only", count: 5 }),
+    ]));
+    expect(analytics.nextAction).toMatchObject({ label: "Move agency-ready matches", tone: "success" });
     expect(analytics.explanations.join(" ")).toContain("held for manual review");
   });
 
