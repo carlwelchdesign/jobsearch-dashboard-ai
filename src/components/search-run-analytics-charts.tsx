@@ -371,7 +371,7 @@ function SignalRadar({ data }: { data: SearchRunAnalytics["signalProfile"] }) {
         <PolarGrid />
         <PolarAngleAxis dataKey="axis" tick={{ fontSize: 11 }} />
         <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} axisLine={false} />
-        <Tooltip formatter={(value, _name, item) => [`${Math.round(Number(value))}/100`, item.payload.helper]} />
+        <Tooltip formatter={(value, _name, item) => [`${Math.round(Number(value))}/100 signal`, item.payload.helper]} />
         <Radar name="Signal" dataKey="value" stroke={theme.palette.success.main} fill={theme.palette.success.main} fillOpacity={0.28} strokeWidth={2} />
       </RadarChart>
     </ResponsiveContainer>

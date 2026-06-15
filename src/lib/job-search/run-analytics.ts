@@ -151,7 +151,7 @@ export function buildSearchRunAnalytics(run: SearchRunAnalyticsInput | null | un
   const qualityBands = [
     { label: "Below", value: buckets.below ?? 0, helper: "Below threshold" },
     { label: "Near miss", value: buckets.nearMiss ?? 0, helper: "Reviewable but not ready" },
-    { label: "Qualified", value: buckets.qualified ?? 0, helper: "Met profile threshold" },
+    { label: "Qualified", value: buckets.qualified ?? 0, helper: "Score bucket, before final filters" },
     { label: "High confidence", value: buckets.highConfidence ?? 0, helper: "Strong application candidates" },
   ].filter((item) => item.value > 0);
   const topBlocker = drops[0] ? {
@@ -360,8 +360,13 @@ function buildSignalProfile(input: {
   const { stats, sourceYield, agencyEligible, drops } = input;
   const topSourceFetched = sourceYield[0]?.fetched ?? 0;
   const topDrop = drops[0]?.value ?? 0;
+  const scoredOrDetailed = stats.jobsScored ?? stats.detailCandidates ?? stats.jobsFetched;
+  const qualifiedYield = percent(stats.jobsAfterFilters, scoredOrDetailed);
+  const qualifiedSignal = stats.jobsAfterFilters > 0
+    ? clamp(Math.max(18, Math.round(qualifiedYield * 6)), 0, 100)
+    : 0;
   return [
-    { axis: "Qualified", value: clamp(percent(stats.jobsAfterFilters, stats.jobsFetched) * 4, 0, 100), helper: "Raw results that became qualified jobs" },
+    { axis: "Qualified", value: qualifiedSignal, helper: `${formatAnalyticsCount(stats.jobsAfterFilters)} qualified from ${formatAnalyticsCount(stats.jobsFetched)} fetched (${qualifiedYield}% of scored)` },
     { axis: "Saved", value: clamp(percent(stats.jobsSaved, stats.jobsFetched) * 8, 0, 100), helper: "Raw results that became saved matches" },
     { axis: "Agency ready", value: clamp(percent(agencyEligible, Math.max(1, stats.jobsSaved)), 0, 100), helper: "Saved matches ready for Apply Sprint" },
     { axis: "Source mix", value: clamp(100 - percent(topSourceFetched, Math.max(1, stats.jobsFetched)), 10, 100), helper: "Less dependence on one source" },
@@ -395,6 +400,13 @@ function buildNextAction(input: {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function formatAnalyticsCount(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 10_000) return `${Math.round(value / 1_000)}k`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return value.toString();
 }
 
 function blockerHelper(label: string) {

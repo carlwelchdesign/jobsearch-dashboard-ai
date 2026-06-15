@@ -1,5 +1,3 @@
-import type { ReactDoctorConfig } from "react-doctor/api";
-
 export default {
   ignore: {
     rules: [
@@ -29,4 +27,4 @@ export default {
       }
     ]
   }
-} satisfies ReactDoctorConfig;
+};

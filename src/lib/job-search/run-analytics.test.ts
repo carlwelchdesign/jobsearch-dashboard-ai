@@ -93,6 +93,7 @@ describe("search run analytics", () => {
     expect(analytics.profileYield[0]).toMatchObject({ label: "Broad LinkedIn Parity", qualified: 25, saved: 10, capped: 2, yieldRate: 40 });
     expect(analytics.qualityBands).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: "Near miss", value: 40, helper: "Reviewable but not ready" }),
+      expect.objectContaining({ label: "Qualified", value: 20, helper: "Score bucket, before final filters" }),
       expect.objectContaining({ label: "High confidence", value: 10 }),
     ]));
     expect(analytics.topBlocker).toMatchObject({ label: "Below threshold", value: 120 });
@@ -110,6 +111,72 @@ describe("search run analytics", () => {
     ]));
     expect(analytics.nextAction).toMatchObject({ label: "Move agency-ready matches", tone: "success" });
     expect(analytics.explanations.join(" ")).toContain("held for manual review");
+  });
+
+  it("keeps non-zero qualified radar signal visible without inflating counts", () => {
+    const analytics = buildSearchRunAnalytics({
+      jobsFetched: 19134,
+      jobsAfterDedupe: 22,
+      jobsAfterFilters: 39,
+      jobsSaved: 21,
+      progress: [
+        {
+          at: "2026-06-15T16:23:40.832Z",
+          message: "done",
+          stats: {
+            jobsFetched: 19134,
+            detailCandidates: 19104,
+            jobsScored: 19104,
+            jobsAfterDedupe: 22,
+            jobsAfterFilters: 39,
+            jobsSaved: 21,
+            scoreBuckets: { below: 14897, nearMiss: 635, qualified: 676, highConfidence: 435 },
+          },
+        },
+      ],
+    });
+    const qualifiedSignal = analytics.signalProfile.find((item) => item.axis === "Qualified");
+
+    expect(analytics.stats.jobsAfterFilters).toBe(39);
+    expect(qualifiedSignal).toMatchObject({
+      axis: "Qualified",
+      value: 18,
+      helper: "39 qualified from 19k fetched (0.2% of scored)",
+    });
+    expect(analytics.qualityBands).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Qualified", value: 676, helper: "Score bucket, before final filters" }),
+    ]));
+  });
+
+  it("keeps the qualified radar signal at zero when no jobs qualify", () => {
+    const analytics = buildSearchRunAnalytics({
+      jobsFetched: 500,
+      jobsAfterDedupe: 0,
+      jobsAfterFilters: 0,
+      jobsSaved: 0,
+      progress: [
+        {
+          at: "2026-06-15T16:23:40.832Z",
+          message: "done",
+          stats: {
+            jobsFetched: 500,
+            detailCandidates: 450,
+            jobsScored: 450,
+            jobsAfterDedupe: 0,
+            jobsAfterFilters: 0,
+            jobsSaved: 0,
+            scoreBuckets: { below: 450 },
+          },
+        },
+      ],
+    });
+    const qualifiedSignal = analytics.signalProfile.find((item) => item.axis === "Qualified");
+
+    expect(qualifiedSignal).toMatchObject({
+      axis: "Qualified",
+      value: 0,
+      helper: "0 qualified from 500 fetched (0% of scored)",
+    });
   });
 
   it("builds chronological trend points", () => {
