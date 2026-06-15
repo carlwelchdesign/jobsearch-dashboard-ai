@@ -17,16 +17,25 @@ const updateSchema = z.object({
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
     const body = updateSchema.parse(await request.json());
+    const contentEdited = ["title", "hook", "body", "hashtags", "disclosureText"].some((field) => Object.prototype.hasOwnProperty.call(body, field));
+    const reviewInvalidated = contentEdited && body.status !== "ARCHIVED";
+    const invalidatedReview = {
+      status: "NEEDS_REVIEW",
+      warnings: ["Draft was edited after review and must be re-reviewed before publishing."],
+      blockedTerms: [],
+      reviewedAt: new Date().toISOString(),
+    };
     const draft = await prisma.linkedInPostDraft.update({
       where: { id: params.id },
       data: {
         ...(body.status ? { status: body.status } : {}),
+        ...(reviewInvalidated ? { status: "NEEDS_REVIEW", privacyReview: invalidatedReview, approvedAt: null } : {}),
         ...(body.title ? { title: body.title } : {}),
         ...(body.hook ? { hook: body.hook } : {}),
         ...(body.body ? { body: body.body } : {}),
         ...(body.hashtags ? { hashtags: body.hashtags } : {}),
         ...(typeof body.disclosureText === "string" ? { disclosureText: body.disclosureText } : {}),
-        ...(body.status ? { publishError: null } : {}),
+        ...(body.status || reviewInvalidated ? { publishError: null } : {}),
       },
     });
     return NextResponse.json({ draft });

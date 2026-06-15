@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { buildArchitectureDiagramSpecs, buildArchitectureTopologySpec, buildLinkedInContentFallback, planLinkedInPromptIntent, reviewDiagramSpecQuality, reviewLinkedInPostPrivacy, reviewPromptSatisfaction, reviewTopologySpecQuality, type ArchitectureTopologySpec, type LinkedInContentDirection } from "@/lib/agents/linkedin-content";
+import { buildArchitectureDiagramSpecs, buildArchitectureTopologySpec, buildClaims, buildLinkedInContentFallback, planLinkedInPromptIntent, reviewDiagramSpecQuality, reviewLinkedInPostPrivacy, reviewPromptSatisfaction, reviewTopologySpecQuality, type ArchitectureTopologySpec, type LinkedInContentDirection, type LinkedInScreenshotAsset } from "@/lib/agents/linkedin-content";
 import { buildSearchRunAnalytics } from "@/lib/job-search/run-analytics";
 import { describe, expect, it } from "vitest";
 
@@ -82,7 +82,7 @@ describe("LinkedIn content agent helpers", () => {
     expect(output.hook).toContain("product decision");
     expect(output.body).not.toContain("Write a decision diary");
     expect(output.body).toContain("documentarians before automation");
-    expect(output.body).toContain("The source I am grounding this in: Agent runs record workflow evidence and review gates.");
+    expect(output.body).toContain("The artifact behind this note is Agent runs record workflow evidence and review gates.");
     expect(output.body).not.toMatch(/^(Scene|Evidence|Artifact|Decision|Consequence|Lesson|Teardown):/m);
   });
 
@@ -225,7 +225,7 @@ describe("LinkedIn content agent helpers", () => {
         rejectedEvidence: [],
       },
       generated: output,
-      visualAssets: [],
+      visualAssets: [safeScreenshot()],
     });
 
     expect(output.title).toBe("Search Operations charts before and after");
@@ -307,7 +307,7 @@ describe("LinkedIn content agent helpers", () => {
         hook: "The latest run moved through a lot of jobs.",
         body: "The latest run moved through fetched 1000 and the boundary matters.",
       },
-      visualAssets: [],
+      visualAssets: [safeScreenshot()],
     });
     expect(bad.status).toBe("NEEDS_REVIEW");
     expect(bad.warnings.join(" ")).toContain("Architecture prompt requires");
@@ -353,7 +353,7 @@ describe("LinkedIn content agent helpers", () => {
         hook: "The analytics dashboard changed how the run is explained.",
         body: "The funnel is now easier to digest because the insight starts from blocker and saved-match evidence. Evidence: Latest Search Operations run: Fetched 19134, Qualified 39, New matches 21.",
       },
-      visualAssets: [],
+      visualAssets: [safeScreenshot()],
     });
     expect(good.status).toBe("PASS");
 
@@ -364,10 +364,149 @@ describe("LinkedIn content agent helpers", () => {
         hook: "The build is improving.",
         body: "The content system is becoming a useful operating system.",
       },
-      visualAssets: [],
+      visualAssets: [safeScreenshot()],
     });
     expect(bad.status).toBe("NEEDS_REVIEW");
     expect(bad.warnings.join(" ")).toContain("evidence");
+  });
+
+  it("requires concrete body evidence and a passing app screenshot for visual prompts", () => {
+    const direction: LinkedInContentDirection = {
+      prompt: "Explain Search Operations chart upgrades",
+      tone: "bold_grounded",
+      format: "visual_walkthrough",
+      legacyPillar: "search_learning",
+      visualDirection: "show charts",
+      selectedAngle: "Search Operations chart upgrades",
+      rejectedAngles: [],
+      intent: "analytics_insight",
+      obligations: {
+        topic: "Search Operations charts",
+        requiredConcepts: ["analytics", "funnel", "aggregate", "insight", "evidence"],
+        requiredVisuals: ["app_screenshot"],
+        forbiddenPhrases: ["One plan in the build log keeps pulling me back"],
+        allowSearchFunnelAnalytics: true,
+      },
+      promptRelevanceScore: 95,
+      evidenceAnchors: [{ sourceType: "analytics", label: "Search Operations analytics", text: "Latest Search Operations run: Fetched 19134, Qualified 39, New matches 21.", relevance: 95 }],
+      rejectedEvidence: [],
+    };
+
+    const genericEvidence = reviewPromptSatisfaction({
+      direction,
+      generated: {
+        title: "Search Operations chart upgrades",
+        hook: "The analytics dashboard changed how the run is explained.",
+        body: "The funnel has aggregate insight. Evidence: pending.",
+      },
+      visualAssets: [safeScreenshot()],
+    });
+    expect(genericEvidence.status).toBe("NEEDS_REVIEW");
+    expect(genericEvidence.warnings.join(" ")).toContain("evidence");
+
+    const missingScreenshot = reviewPromptSatisfaction({
+      direction,
+      generated: {
+        title: "Search Operations chart upgrades",
+        hook: "The analytics dashboard changed how the run is explained.",
+        body: "The funnel has aggregate insight. Evidence: Latest Search Operations run: Fetched 19134, Qualified 39, New matches 21.",
+      },
+      visualAssets: [],
+    });
+    expect(missingScreenshot.status).toBe("NEEDS_REVIEW");
+    expect(missingScreenshot.warnings.join(" ")).toContain("app screenshot");
+
+    const diagramOnly = reviewPromptSatisfaction({
+      direction,
+      generated: {
+        title: "Search Operations chart upgrades",
+        hook: "The analytics dashboard changed how the run is explained.",
+        body: "The funnel has aggregate insight. Evidence: Latest Search Operations run: Fetched 19134, Qualified 39, New matches 21.",
+      },
+      visualAssets: [{ label: "Diagram", path: "/generated/diagram.png", mimeType: "image/png", description: "Diagram", route: "diagram:test", assetType: "diagram", privacyStatus: "PASS", warnings: [] }],
+    });
+    expect(diagramOnly.status).toBe("NEEDS_REVIEW");
+  });
+
+  it("grounds concrete body claims against source facts and selected evidence anchors", () => {
+    const memoryPack = minimalMemoryPack(["Latest search funnel: Fetched 19134, Qualified 39, New matches 21."]);
+    const direction: LinkedInContentDirection = {
+      prompt: "Explain Search Operations chart upgrades",
+      tone: "bold_grounded",
+      format: "visual_walkthrough",
+      legacyPillar: "search_learning",
+      visualDirection: "show charts",
+      selectedAngle: "Search Operations chart upgrades",
+      rejectedAngles: [],
+      intent: "analytics_insight",
+      obligations: {
+        topic: "Search Operations charts",
+        requiredConcepts: ["analytics", "funnel", "aggregate", "insight", "evidence"],
+        requiredVisuals: ["app_screenshot"],
+        forbiddenPhrases: [],
+        allowSearchFunnelAnalytics: true,
+      },
+      promptRelevanceScore: 95,
+      evidenceAnchors: [{
+        sourceType: "analytics",
+        label: "Search Operations analytics",
+        text: "Latest Search Operations run: Fetched 19134, Qualified 39, New matches 21.",
+        relevance: 95,
+        sourceRef: "analytics.latestSearchRun",
+      }],
+      rejectedEvidence: [],
+    };
+
+    const grounded = buildClaims({
+      body: "The Search Operations run had Fetched 19134, Qualified 39, and New matches 21.",
+      sourceFacts: ["Latest search funnel: Fetched 19134, Qualified 39, New matches 21."],
+    }, memoryPack, direction);
+    expect(grounded.some((claim) => claim.status === "ungrounded")).toBe(false);
+
+    const ungrounded = buildClaims({
+      body: "The dashboard now has 250 paying teams and 91 percent automated publishing.",
+      sourceFacts: [],
+    }, memoryPack, direction);
+    expect(ungrounded).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: "ungrounded" }),
+    ]));
+  });
+
+  it("blocks the pasted bad-output family even when it contains analytics-shaped words", () => {
+    const direction: LinkedInContentDirection = {
+      prompt: "Can we discuss the upgrades to the graphs and charts on the Search Operations page and why those enhancements might be better for the user to digest?",
+      tone: "bold_grounded",
+      format: "before_after",
+      legacyPillar: "search_learning",
+      visualDirection: "show charts",
+      selectedAngle: "Search Operations charts before and after",
+      rejectedAngles: [],
+      intent: "analytics_insight",
+      obligations: {
+        topic: "Search Operations charts",
+        requiredConcepts: ["analytics", "funnel", "aggregate", "insight", "evidence"],
+        requiredVisuals: ["app_screenshot"],
+        forbiddenPhrases: ["One plan in the build log keeps pulling me back", "documentarian loop", "clearest source"],
+        allowSearchFunnelAnalytics: true,
+      },
+      promptRelevanceScore: 95,
+      evidenceAnchors: [{ sourceType: "analytics", label: "Search Operations analytics", text: "Latest Search Operations run: Fetched 19134, Qualified 39, New matches 21.", relevance: 95 }],
+      rejectedEvidence: [],
+    };
+    const review = reviewPromptSatisfaction({
+      direction,
+      generated: {
+        title: "before after about Can we discuss the upgrades to the graphs and charts",
+        hook: "One plan in the build log keeps pulling me back.",
+        body: "The clearest source is a funnel analytics insight. Evidence: pending. The documentarian loop says this dashboard should feel more real.",
+      },
+      visualAssets: [safeScreenshot()],
+    });
+
+    expect(review.status).toBe("NEEDS_REVIEW");
+    expect(review.warnings.join(" ")).toContain("One plan in the build log keeps pulling me back");
+    expect(review.warnings.join(" ")).toContain("clearest source");
+    expect(review.warnings.join(" ")).toContain("evidence");
   });
 
   it("keeps documentary fallback formats distinct and gates funnel analytics by intent", () => {
@@ -411,7 +550,7 @@ describe("LinkedIn content agent helpers", () => {
 
     expect(new Set(bodies).size).toBe(formats.length);
     for (const body of bodies) {
-      expect(body).toContain("The source I am grounding this in: Content reviews now require prompt evidence and source rationale.");
+      expect(body).toContain("The artifact behind this note is Content reviews now require prompt evidence and source rationale.");
       expect(body).not.toContain("fetched 1000");
       expect(body).not.toContain("Latest search funnel");
       expect(body).not.toMatch(/^(Scene|Evidence|Artifact|Decision|Consequence|Lesson|Teardown|Thesis):/m);
@@ -496,6 +635,43 @@ describe("LinkedIn content agent helpers", () => {
     expect(source).toContain("staff-engineer-html-v1");
   });
 });
+
+function safeScreenshot(): LinkedInScreenshotAsset {
+  return {
+    label: "Search Operations screenshot",
+    path: "/generated/linkedin-content/search-operations.png",
+    mimeType: "image/png",
+    description: "Safe aggregate Search Operations dashboard screenshot.",
+    route: "/dashboard/search",
+    assetType: "screenshot",
+    privacyStatus: "PASS",
+    warnings: [],
+  };
+}
+
+function minimalMemoryPack(aggregateFacts: string[]) {
+  return {
+    generatedAt: "2026-06-15T12:00:00.000Z",
+    publicPolicy: "Aggregate only.",
+    aggregateFacts,
+    recentDecisions: [],
+    lessonsLearned: [],
+    storyAngles: [],
+    doNotClaim: [],
+    screenshotRecommendations: [],
+    planSources: [],
+    noveltySignals: { recentHooks: [], recentTitles: [], recentPillars: [], recentScreenshotRoutes: [], avoidPhrases: [] },
+    analytics: {
+      latestSearchRun: null,
+      applicationStatusCounts: {},
+      outcomeCounts: {},
+      agentRunCounts: {},
+      sourceCoverage: { activeSources: 0, querySources: 0, manualSources: 0, priorityOneSources: 0 },
+    },
+    memorySources: [],
+    analyticsSources: [],
+  };
+}
 
 function badTopologySpec(): ArchitectureTopologySpec {
   const base = buildArchitectureTopologySpec(architectureDirection());

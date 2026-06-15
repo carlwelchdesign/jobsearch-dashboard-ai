@@ -39,11 +39,18 @@ describe("/api/linkedin-content/drafts/[id]", () => {
     expect(draftUpdateMock).toHaveBeenCalledWith({
       where: { id: "draft_1" },
       data: expect.objectContaining({
+        status: "NEEDS_REVIEW",
         title: "Updated",
         hook: "Hook",
         body: "Body",
         hashtags: ["#AI"],
         disclosureText: "Prepared by agents.",
+        approvedAt: null,
+        publishError: null,
+        privacyReview: expect.objectContaining({
+          status: "NEEDS_REVIEW",
+          warnings: expect.arrayContaining(["Draft was edited after review and must be re-reviewed before publishing."]),
+        }),
       }),
     });
   });

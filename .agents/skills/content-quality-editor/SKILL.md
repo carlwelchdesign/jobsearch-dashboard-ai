@@ -15,6 +15,7 @@ Use this skill to reject weak public content before it reaches the user or publi
 4. Check specificity. The draft must name the artifact, decision, workflow, chart, or screen being discussed.
 5. Check public safety. Block private job-search details, company names, job URLs, recruiters, emails, salaries, private application outcomes, unsupported adoption, or live-user claims.
 6. Check usefulness. The reader should leave knowing what changed, why it mattered, and what evidence supports it.
+7. Check publish readiness. Edited drafts, unsupported factual body claims, missing body evidence, and missing required screenshots must stay review-only.
 
 ## Pass Criteria
 
@@ -28,7 +29,10 @@ Use this skill to reject weak public content before it reaches the user or publi
 
 - Main angle is unrelated to the prompt.
 - Draft says "evidence" exists but never shows it.
+- Draft only puts evidence in metadata, agent reviews, or source facts while the public body lacks the anchor.
 - Draft repeats "One plan in the build log keeps pulling me back."
+- Draft repeats pasted-output scaffolding such as "clearest source", "documentarian loop", or `before after about ...`.
 - Draft uses search funnel numbers when the prompt is not about analytics.
 - Draft relies on "agent content team" or "documentarian loop" as a substitute for a concrete story.
 - Draft blocks itself for missing evidence even though grounded claims are available and could be repaired deterministically.
+- Draft contains factual body claims that do not trace to aggregate facts, selected evidence anchors, or documented architecture context.
