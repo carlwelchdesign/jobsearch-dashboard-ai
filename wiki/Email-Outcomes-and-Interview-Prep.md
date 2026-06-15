@@ -84,7 +84,9 @@ Synced messages can be classified as:
 - unrelated
 - needs review
 
-Matched messages update application outcomes or create blocker items when the agent cannot safely decide.
+Email Ops is strict by default. Gmail sync searches Primary and Updates for job-response language plus targeted active-application queries; it does not review every recent mailbox item. Generic job alerts, newsletters, promotions, verification codes, consumer offers, and unmatched ambiguous messages are suppressed as `NO_ACTION` or `UNRELATED` instead of becoming review work.
+
+Matched messages update application outcomes or create blocker items only when the message is an actionable job-response signal. Calendar drafts are created only for matched, high-confidence interview, scheduling, assessment, or take-home messages.
 
 ## Outcomes
 

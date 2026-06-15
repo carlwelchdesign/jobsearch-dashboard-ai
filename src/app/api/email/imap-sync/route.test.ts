@@ -32,7 +32,9 @@ describe("/api/email/imap-sync", () => {
       mailbox: "INBOX",
       scanned: 1,
       ingested: 1,
+      suppressed: 0,
       skipped: 0,
+      suppressionReasons: [],
       messages: [],
     });
 

@@ -2,6 +2,7 @@ import type { AgentType, ApplicationOutcomeType, CalendarEventProposal, EmailMes
 import { createAgentUserRequest } from "@/lib/agent-user-requests";
 import { recordApplicationOutcome } from "@/lib/applications/outcomes";
 import { runAgent } from "@/lib/agents/run-agent";
+import { classifyJobEmail } from "@/lib/email-response-agent";
 import { syncJobResponseEmail, type EmailSyncResult } from "@/lib/email/sync";
 import { prisma } from "@/lib/prisma";
 
@@ -19,6 +20,8 @@ export type JoleneEmailOpsSummary = {
   summary: string;
   scanned: number;
   ingested: number;
+  suppressed: number;
+  dismissedNoise: number;
   findingsCreated: number;
   autoApplied: number;
   needsApproval: number;
@@ -71,6 +74,7 @@ export async function runJoleneEmailOperationsAgent(input: JoleneEmailOpsInput =
       }));
       specialistRuns.push(runRef(scout.run.agentType, scout.run.id, scout.run.status));
 
+      const cleanup = await cleanupNoisyRecentEmailOps(user.id);
       const emails = await collectRecentSyncedEmails(user.id, run.createdAt, scout.output);
       const matcher = await runSpecialist("EMAIL_APPLICATION_MATCHER", run.id, user.id, { emailCount: emails.length }, async () => ({
         matched: emails.filter((email) => email.matchedApplicationId || email.matchedJobPostingId).length,
@@ -92,6 +96,7 @@ export async function runJoleneEmailOperationsAgent(input: JoleneEmailOpsInput =
 
       const output = buildEmailOpsSummary({
         sync: scout.output,
+        cleanup,
         findings: classifier.output.findings,
         proposals: scheduler.output.proposals,
         specialistRuns,
@@ -253,7 +258,7 @@ async function collectRecentSyncedEmails(userId: string, runStartedAt: Date, syn
 async function createFindingsForEmails(userId: string, agentRunId: string, emails: SyncedEmailRecord[]) {
   const findings: EmailOpsFinding[] = [];
   for (const email of emails) {
-    if (email.classification === "UNRELATED" || email.classification === "NO_ACTION") continue;
+    if (shouldSuppressFinding(email)) continue;
     const existing = await prisma.emailOpsFinding.findFirst({
       where: { userId, emailMessageRecordId: email.id, classification: email.classification },
     });
@@ -312,6 +317,7 @@ async function createCalendarProposals(userId: string, findings: EmailOpsFinding
   const proposals: CalendarEventProposal[] = [];
   for (const finding of findings) {
     if (!calendarEligibleClassifications.has(finding.classification)) continue;
+    if (!finding.matchedApplicationId || finding.confidenceScore < 80) continue;
     const existing = await prisma.calendarEventProposal.findFirst({ where: { findingId: finding.id } });
     if (existing) {
       proposals.push(existing);
@@ -371,6 +377,7 @@ async function reviewFindings(findings: EmailOpsFinding[], proposals: CalendarEv
 
 function buildEmailOpsSummary(input: {
   sync: EmailSyncResult;
+  cleanup: { reclassified: number; dismissedFindings: number; dismissedCalendarDrafts: number };
   findings: EmailOpsFinding[];
   proposals: CalendarEventProposal[];
   specialistRuns: JoleneEmailOpsSummary["specialistRuns"];
@@ -388,6 +395,8 @@ function buildEmailOpsSummary(input: {
     summary,
     scanned: input.sync.scanned,
     ingested: input.sync.ingested,
+    suppressed: input.sync.suppressed,
+    dismissedNoise: input.cleanup.dismissedFindings + input.cleanup.dismissedCalendarDrafts,
     findingsCreated: input.findings.length,
     autoApplied,
     needsApproval,
@@ -395,7 +404,7 @@ function buildEmailOpsSummary(input: {
     providerStatuses: input.sync.providers.map((provider) => ({
       provider: provider.provider,
       ok: "ok" in provider ? Boolean(provider.ok) : false,
-      detail: "reason" in provider ? provider.reason : `${provider.ingested}/${provider.scanned} ingested`,
+      detail: "reason" in provider ? provider.reason : `${provider.ingested}/${provider.scanned} ingested, ${provider.suppressed ?? 0} suppressed`,
     })),
     specialistRuns: input.specialistRuns,
     approvals: input.findings
@@ -410,10 +419,93 @@ function buildEmailOpsSummary(input: {
     risks: input.risks,
     evidence: [
       `${input.sync.scanned} email message(s) scanned across configured providers.`,
+      `${input.sync.suppressed} non-actionable email message(s) suppressed before review.`,
+      `${input.cleanup.dismissedFindings + input.cleanup.dismissedCalendarDrafts} stale noisy finding or calendar draft item(s) dismissed.`,
       `${input.findings.length} durable Email Ops finding(s) available for Jolene.`,
       `${autoApplied} high-confidence internal update(s), ${needsApproval} approval-needed item(s).`,
     ],
   };
+}
+
+async function cleanupNoisyRecentEmailOps(userId: string) {
+  const since = new Date(Date.now() - 30 * 86_400_000);
+  const rows = await prisma.emailMessageRecord.findMany({
+    where: { userId, receivedAt: { gte: since } },
+    select: {
+      id: true,
+      from: true,
+      subject: true,
+      snippet: true,
+      bodyText: true,
+      classification: true,
+      confidenceScore: true,
+      matchedApplicationId: true,
+      matchedJobPostingId: true,
+    },
+    take: 250,
+    orderBy: { receivedAt: "desc" },
+  });
+
+  let reclassified = 0;
+  const noisyEmailIds = new Set<string>();
+  for (const row of rows) {
+    const next = classifyJobEmail({
+      from: row.from,
+      subject: row.subject,
+      snippet: row.snippet,
+      bodyText: row.bodyText,
+    });
+    const noisy = next.classification === "UNRELATED" || next.classification === "NO_ACTION" || (
+      next.classification === "NEEDS_REVIEW" &&
+      next.confidenceScore < 70 &&
+      !row.matchedApplicationId &&
+      !row.matchedJobPostingId
+    );
+    if (noisy) noisyEmailIds.add(row.id);
+    if (next.classification !== row.classification || next.confidenceScore !== row.confidenceScore) {
+      await prisma.emailMessageRecord.update({
+        where: { id: row.id },
+        data: {
+          classification: next.classification,
+          confidenceScore: next.confidenceScore,
+          actionRequired: next.actionRequired,
+        },
+      });
+      reclassified += 1;
+    }
+  }
+
+  if (!noisyEmailIds.size) {
+    return { reclassified, dismissedFindings: 0, dismissedCalendarDrafts: 0 };
+  }
+
+  const noisyIds = Array.from(noisyEmailIds);
+  const [findings, calendarDrafts] = await prisma.$transaction([
+    prisma.emailOpsFinding.updateMany({
+      where: {
+        userId,
+        emailMessageRecordId: { in: noisyIds },
+        status: { in: ["NEEDS_APPROVAL", "BLOCKED"] },
+      },
+      data: { status: "DISMISSED", dismissedAt: new Date() },
+    }),
+    prisma.calendarEventProposal.updateMany({
+      where: {
+        userId,
+        emailMessageRecordId: { in: noisyIds },
+        status: "DRAFT",
+      },
+      data: { status: "DISMISSED", dismissedAt: new Date() },
+    }),
+  ]);
+
+  return { reclassified, dismissedFindings: findings.count, dismissedCalendarDrafts: calendarDrafts.count };
+}
+
+function shouldSuppressFinding(email: SyncedEmailRecord) {
+  if (email.classification === "UNRELATED" || email.classification === "NO_ACTION") return true;
+  if (email.classification === "NEEDS_REVIEW" && email.confidenceScore < 70 && !email.matchedApplicationId && !email.matchedJobPostingId) return true;
+  return false;
 }
 
 function policyForEmail(email: SyncedEmailRecord): {

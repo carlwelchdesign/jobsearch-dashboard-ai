@@ -37,6 +37,7 @@ describe("buildEmailWatchlistFromApplications", () => {
     expect(watchlist[0]?.gmailQueries).toEqual(expect.arrayContaining([
       expect.stringContaining("\"Acme AI\""),
       expect.stringContaining("from:boards.greenhouse.io"),
+      expect.stringContaining("-(\"job alert\" OR newsletter OR promotion OR sale OR discount OR \"jobs for you\" OR \"apply now\")"),
     ]));
   });
 });

@@ -75,6 +75,8 @@ describe("buildJoleneChiefBrief", () => {
           summary: "Email Ops found inbox updates.",
           scanned: 12,
           ingested: 3,
+          suppressed: 4,
+          dismissedNoise: 0,
           findingsCreated: 3,
           autoApplied: 1,
           needsApproval: 2,

@@ -680,6 +680,8 @@ function emailOpsResult() {
       summary: "Email Ops reviewed 3 messages.",
       scanned: 3,
       ingested: 2,
+      suppressed: 1,
+      dismissedNoise: 0,
       findingsCreated: 1,
       autoApplied: 1,
       needsApproval: 0,

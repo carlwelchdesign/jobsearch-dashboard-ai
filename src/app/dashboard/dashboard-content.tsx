@@ -388,7 +388,7 @@ export async function DashboardEmailOpsPage() {
             <Box>
               <Typography variant="h3">Jolene Email Operations</Typography>
               <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-                Inbox specialists scan recent job mail, update high-confidence internal outcomes, and draft calendar work for approval.
+                Inbox specialists scan job-response mail, suppress alerts and junk, update high-confidence internal outcomes, and draft calendar work for approval.
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 Last run: {emailOps?.latestRun ? emailOps.latestRun.createdAt.toLocaleString() : "No Email Ops run yet"}
@@ -399,11 +399,12 @@ export async function DashboardEmailOpsPage() {
         </CardContent>
       </Card>
 
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(5, 1fr)" }, gap: 2 }}>
         <Metric label="Messages scanned" value={(summary?.scanned ?? 0).toString()} helper="Latest Email Ops run" />
         <Metric label="Findings" value={(summary?.findingsCreated ?? findings.length).toString()} helper="Durable inbox intelligence" />
+        <Metric label="Suppressed" value={(summary?.suppressed ?? 0).toString()} helper="Junk, alerts, and no-action mail" />
         <Metric label="Auto-applied" value={(summary?.autoApplied ?? autoAppliedFindings.length).toString()} helper="High-confidence internal updates" />
-        <Metric label="Needs approval" value={(summary?.needsApproval ?? pendingFindings.length).toString()} helper="Jolene will not guess" />
+        <Metric label="Needs approval" value={(summary?.needsApproval ?? pendingFindings.length).toString()} helper="Actionable job-response items" />
       </Box>
 
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1.15fr) minmax(0, 0.85fr)" }, gap: 2, alignItems: "start" }}>
@@ -445,7 +446,7 @@ export async function DashboardEmailOpsPage() {
                   })}
                 </Stack>
               ) : (
-                <EmptyState title="No Email Ops findings yet" body="Run Email Ops to scan recent job-response email and report findings back to Jolene." />
+                <EmptyState title="No actionable Email Ops findings" body="Run Email Ops to scan Primary and Updates job-response mail while suppressing alerts, newsletters, and promotions." />
               )}
             </Stack>
           </CardContent>

@@ -47,12 +47,13 @@ function buildWatch(application: WatchApplication): EmailApplicationWatch {
   const titleTokens = meaningfulTokens(title).slice(0, 4).join(" ");
   const companyQuery = quote(company);
   const responseTerms = "(interview OR recruiter OR availability OR assessment OR unfortunately OR \"next steps\" OR \"moving forward\")";
+  const exclusions = "-(\"job alert\" OR newsletter OR promotion OR sale OR discount OR \"jobs for you\" OR \"apply now\")";
 
   const gmailQueries = uniqueStrings([
-    `${companyQuery} newer_than:${daysSince(application.appliedAt ?? application.updatedAt)}d`,
-    titleTokens ? `${companyQuery} ${quote(titleTokens)} newer_than:${daysSince(application.appliedAt ?? application.updatedAt)}d` : "",
-    domain ? `from:${domain} newer_than:${daysSince(application.appliedAt ?? application.updatedAt)}d` : "",
-    `${companyQuery} ${responseTerms} newer_than:${daysSince(application.appliedAt ?? application.updatedAt)}d`,
+    `${companyQuery} newer_than:${daysSince(application.appliedAt ?? application.updatedAt)}d ${exclusions}`,
+    titleTokens ? `${companyQuery} ${quote(titleTokens)} newer_than:${daysSince(application.appliedAt ?? application.updatedAt)}d ${exclusions}` : "",
+    domain ? `from:${domain} newer_than:${daysSince(application.appliedAt ?? application.updatedAt)}d ${exclusions}` : "",
+    `${companyQuery} ${responseTerms} newer_than:${daysSince(application.appliedAt ?? application.updatedAt)}d ${exclusions}`,
   ].filter(Boolean));
 
   return {

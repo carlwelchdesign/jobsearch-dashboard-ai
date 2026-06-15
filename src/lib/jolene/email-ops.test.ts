@@ -30,4 +30,16 @@ describe("Jolene Email Operations source contract", () => {
     expect(source).toContain('status: "AUTO_APPLIED"');
     expect(source).toContain("email.confidenceScore >= 85");
   });
+
+  it("suppresses no-action mail and cleans up stale noisy findings", () => {
+    expect(source).toContain("cleanupNoisyRecentEmailOps");
+    expect(source).toContain('email.classification === "UNRELATED" || email.classification === "NO_ACTION"');
+    expect(source).toContain("input.sync.suppressed");
+    expect(source).toContain("stale noisy finding or calendar draft");
+  });
+
+  it("creates calendar drafts only for matched high-confidence next steps", () => {
+    expect(source).toContain("!finding.matchedApplicationId || finding.confidenceScore < 80");
+    expect(source).toContain('const calendarEligibleClassifications = new Set<EmailMessageClassification>(["INTERVIEW_REQUEST", "SCHEDULING_REQUEST", "CODING_ASSESSMENT", "TAKE_HOME"])');
+  });
 });

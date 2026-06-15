@@ -7,6 +7,7 @@ export type EmailSyncResult = {
   ok: true;
   scanned: number;
   ingested: number;
+  suppressed: number;
   skipped: number;
   providers: Array<ImapSyncResult | GmailSyncResult | { ok: false; provider: "imap" | "gmail" | "outlook"; skipped: true; reason: string }>;
   watchlist: EmailApplicationWatch[];
@@ -50,9 +51,9 @@ export async function syncJobResponseEmail(input: { limit?: number; sinceDays?: 
 
     if (user && gmailConnection?.status === "CONNECTED") {
       try {
-        const broadRecentQuery = `newer_than:${input.sinceDays ?? Number(process.env.JOB_EMAIL_GMAIL_SINCE_DAYS ?? process.env.JOB_EMAIL_SYNC_SINCE_DAYS ?? 14)}d`;
+        const sinceDays = input.sinceDays ?? Number(process.env.JOB_EMAIL_GMAIL_SINCE_DAYS ?? process.env.JOB_EMAIL_SYNC_SINCE_DAYS ?? 14);
         const queries = uniqueQueries([
-          broadRecentQuery,
+          ...gmailCategoryJobResponseQueries(sinceDays),
           ...watchlist.flatMap((item) => item.gmailQueries),
         ]);
         providers.push(await syncGmailEmail({
@@ -78,6 +79,7 @@ export async function syncJobResponseEmail(input: { limit?: number; sinceDays?: 
     ok: true,
     scanned: providers.reduce((total, provider) => total + ("scanned" in provider ? provider.scanned : 0), 0),
     ingested: providers.reduce((total, provider) => total + ("ingested" in provider ? provider.ingested : 0), 0),
+    suppressed: providers.reduce((total, provider) => total + ("suppressed" in provider && typeof provider.suppressed === "number" ? provider.suppressed : 0), 0),
     skipped: providers.reduce((total, provider) => total + ("skipped" in provider && typeof provider.skipped === "number" ? provider.skipped : provider.skipped ? 1 : 0), 0),
     providers,
     watchlist,
@@ -87,6 +89,27 @@ export async function syncJobResponseEmail(input: { limit?: number; sinceDays?: 
 
 function uniqueQueries(queries: string[]) {
   return Array.from(new Set(queries.map((query) => query.trim()).filter(Boolean)));
+}
+
+function gmailCategoryJobResponseQueries(sinceDays: number) {
+  const days = Math.min(120, Math.max(1, Math.round(Number.isFinite(sinceDays) ? sinceDays : 14)));
+  const responseTerms = [
+    '"thank you for applying"',
+    '"received your application"',
+    '"application submitted"',
+    '"not moving forward"',
+    '"next steps"',
+    "unfortunately",
+    "interview",
+    "recruiter",
+    "assessment",
+    "calendly",
+    "availability",
+  ].join(" OR ");
+  return [
+    `category:primary newer_than:${days}d (${responseTerms})`,
+    `category:updates newer_than:${days}d (${responseTerms})`,
+  ];
 }
 
 function imapEnvConfigured() {

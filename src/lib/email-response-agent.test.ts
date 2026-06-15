@@ -101,6 +101,108 @@ describe("email response agent", () => {
     expect(score).toBeLessThan(2);
   });
 
+  it("classifies consumer promos, newsletters, product updates, and verification codes as unrelated", () => {
+    const examples = [
+      {
+        from: "Ventura Toyota <venturatoyota@send.dsplustoyotadealer.com>",
+        subject: "Hybrid, electric, plug-in - take your pick.",
+      },
+      {
+        from: "STEWMAC <news@stewmac.com>",
+        subject: "Shop Favorites, Ready When You Are",
+      },
+      {
+        from: "\"Penn McCormack @ Habitat Santa Barbara\" <penn@sbhabitat.org>",
+        subject: "ReStore Volunteer Opportunities! Week of June 15th",
+      },
+      {
+        from: "Earnest <hello@hello.earnest.com>",
+        subject: "Carl, this personal loan offer is exclusively yours",
+      },
+      {
+        from: "Vans <reply@e.vans.com>",
+        subject: "15% off is waving goodbye 👋",
+      },
+      {
+        from: "\"WSJ What's News\" <access@interactive.wsj.com>",
+        subject: "SpaceX's Stratospheric IPO",
+      },
+      {
+        from: "\"Telegraph | From the Editor\" <editor@emails.telegraph.co.uk>",
+        subject: "Rupert Lowe: I won’t have woke creeps calling us racist",
+      },
+      {
+        from: "Ring Team <no-reply@mail.ring.com>",
+        subject: "Don’t Lose Intelligent Notifications",
+      },
+      {
+        from: "Fender <email@e.fender.com>",
+        subject: "Vintage Inspiration & Modern Innovation",
+      },
+      {
+        from: "ASAP Tickets <newsletter@my.asaptickets.com>",
+        subject: "Explore International Destinations with Star Alliance Member Airlines for Less",
+      },
+      {
+        from: "Starlink <no-reply@starlink.com>",
+        subject: "Your Starlink verification code",
+      },
+      {
+        from: "Emily at Clerk <emily@clerk.com>",
+        subject: "What’s new at Clerk: Billing updates, org insights, and recent events",
+      },
+    ];
+
+    for (const example of examples) {
+      expect(classifyJobEmail({ ...example, snippet: "", bodyText: null })).toMatchObject({
+        classification: "UNRELATED",
+        actionRequired: false,
+      });
+    }
+  });
+
+  it("classifies generic LinkedIn and Glassdoor job alerts as no-action instead of review work", () => {
+    const examples = [
+      {
+        from: "LinkedIn Job Alerts <jobalerts-noreply@linkedin.com>",
+        subject: "Senior Full Stack Engineer - EMEA at Deel",
+      },
+      {
+        from: "Glassdoor Jobs <noreply@glassdoor.com>",
+        subject: "Lead Java M/F at CONSORT Group and 3 more jobs in Grand Duchy of Luxembourg for you. Apply Now.",
+      },
+      {
+        from: "Glassdoor Jobs <noreply@glassdoor.com>",
+        subject: "Senior DevOps Engineer at Showman Sphere and 6 more jobs in Ojai, CA for you. Apply Now.",
+      },
+    ];
+
+    for (const example of examples) {
+      expect(classifyJobEmail({ ...example, snippet: "", bodyText: null })).toMatchObject({
+        classification: "NO_ACTION",
+        actionRequired: false,
+      });
+    }
+  });
+
+  it("does not match generic job-alert role titles to active applications", () => {
+    const score = scoreEmailApplicationMatch(
+      {
+        company: "Cursor",
+        title: "Design Engineer",
+        applicationUrl: "https://jobs.ashbyhq.com/cursor/example",
+      },
+      {
+        from: "LinkedIn Job Alerts <jobalerts-noreply@linkedin.com>",
+        subject: "Senior Full Stack Engineer - EMEA at Deel",
+        snippet: "More jobs for you. Apply now.",
+        bodyText: null,
+      },
+    );
+
+    expect(score).toBe(0);
+  });
+
   it("matches a real ATS application response by subject and sender context", () => {
     const score = scoreEmailApplicationMatch(
       {
@@ -116,7 +218,7 @@ describe("email response agent", () => {
       },
     );
 
-    expect(score).toBeGreaterThanOrEqual(2);
+    expect(score).toBeGreaterThanOrEqual(4);
   });
 
   it("classifies scheduling emails as actionable interview prep", () => {

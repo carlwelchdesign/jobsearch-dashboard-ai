@@ -27,8 +27,11 @@ export type EmailClassificationResult = {
   rationale: string;
 };
 
-export function classifyJobEmail(input: Pick<EmailMessageIngestInput, "subject" | "snippet" | "bodyText">): EmailClassificationResult {
+export function classifyJobEmail(input: Pick<EmailMessageIngestInput, "subject" | "snippet" | "bodyText"> & { from?: string | null }): EmailClassificationResult {
   const text = [input.subject, input.snippet, input.bodyText].filter(Boolean).join("\n").toLowerCase();
+  const sender = (input.from ?? "").toLowerCase();
+  const gate = classifyNonJobEmail({ text, sender });
+  if (gate) return gate;
 
   if (isRejectionEmail(text)) {
     return {
@@ -90,12 +93,71 @@ export function classifyJobEmail(input: Pick<EmailMessageIngestInput, "subject" 
   }
 
   return {
-    classification: "NEEDS_REVIEW",
-    confidenceScore: 45,
-    actionRequired: true,
-    userQuestion: "This job-related email could not be classified confidently. Review it before the app updates records.",
-    rationale: "No high-confidence response pattern matched.",
+    classification: "NO_ACTION",
+    confidenceScore: 62,
+    actionRequired: false,
+    rationale: "Message passed basic job-mail sender checks but no actionable response pattern matched.",
   };
+}
+
+function classifyNonJobEmail(input: { text: string; sender: string }): EmailClassificationResult | null {
+  if (isVerificationOrSecurityEmail(input.text)) {
+    return unrelated("Detected account verification or security-code language.");
+  }
+  if (isGenericJobAlertEmail(input.text, input.sender)) {
+    return {
+      classification: "NO_ACTION",
+      confidenceScore: 90,
+      actionRequired: false,
+      rationale: "Detected a generic job-alert or listing digest, not a response to an application.",
+    };
+  }
+  if (isConsumerMarketingEmail(input.text, input.sender)) {
+    return unrelated("Detected consumer, newsletter, promotional, political, or volunteer-list language.");
+  }
+  if (!hasActionableJobSignal(input.text, input.sender)) {
+    return unrelated("No actionable job-response sender or content signal was detected.");
+  }
+  return null;
+}
+
+function unrelated(rationale: string): EmailClassificationResult {
+  return {
+    classification: "UNRELATED",
+    confidenceScore: 92,
+    actionRequired: false,
+    rationale,
+  };
+}
+
+function isVerificationOrSecurityEmail(text: string) {
+  return /\b(verification code|security code|one[- ]time code|2fa|two[- ]factor|sign[- ]in code|login code|password reset)\b/.test(text);
+}
+
+function isGenericJobAlertEmail(text: string, sender: string) {
+  const jobAlertSender = /\b(jobalerts?|job alerts?|glassdoor jobs|linkedin job alerts|indeed|ziprecruiter|builtin|built in|dice|monster)\b/.test(sender);
+  const alertLanguage = /\b(job alert|jobs? for you|recommended jobs?|new jobs?|apply now|and \d+ more jobs?|similar jobs?|hiring now)\b/.test(text);
+  const responseLanguage = /\b(received your application|thank you for applying|application submitted|unfortunately|not moving forward|interview invitation|schedule a call|availability|coding assessment|technical assessment)\b/.test(text);
+  return (jobAlertSender || alertLanguage) && !responseLanguage;
+}
+
+function isConsumerMarketingEmail(text: string, sender: string) {
+  const marketingSender = /\b(newsletter|marketing|news@|reply@|offers?|promo|travel|toyota|vans|stewmac|fender|aaa travel|earnest|star alliance|asap tickets|telegraph|wsj|wall street journal|ring team|starlink|habitat|restore|clerk)\b/.test(sender);
+  const marketingLanguage = /\b(shop favorites|off is waving goodbye|personal loan offer|travel experiences|volunteer opportunities|what'?s new|billing updates|intelligent notifications|international destinations|stratospheric ipo|from the editor|vintage inspiration|hybrid, electric|plug-in|newsletter|unsubscribe|sale|discount|exclusive offer)\b/.test(text);
+  const jobResponseLanguage = /\b(received your application|thank you for applying|application submitted|not moving forward|schedule a call|coding assessment|technical assessment|take-home|offer letter|employment offer)\b/.test(text);
+  return (marketingSender || marketingLanguage) && !jobResponseLanguage;
+}
+
+function hasActionableJobSignal(text: string, sender: string) {
+  return (
+    isRejectionEmail(text) ||
+    isOfferEmail(text) ||
+    isApplicationConfirmationEmail(text) ||
+    /\b(coding assessment|technical assessment|hackerrank|codesignal|coderpad|take[- ]?home|assignment)\b/.test(text) ||
+    /\b(interview|speak with|chat with|meet with|schedule a call|calendly|availability|available times)\b/.test(text) ||
+    /\b(recruiter|talent acquisition|hiring team|next steps?|follow up|following up|touch base)\b/.test(text) ||
+    /\b(greenhouse|ashby|lever|workday|icims|smartrecruiters|bamboohr|workable|jobvite|careers@|talent@|recruiting@|no-reply@.*(greenhouse|ashby|lever|workday))\b/.test(sender)
+  );
 }
 
 function isRejectionEmail(text: string) {
@@ -325,7 +387,7 @@ async function matchEmailToApplication(userId: string, input: Pick<EmailMessageI
       application,
       score: scoreEmailApplicationMatch(application.jobPosting, input),
     }))
-    .filter((candidate) => candidate.score >= 2)
+    .filter((candidate) => candidate.score >= 4)
     .sort((left, right) => right.score - left.score)[0]?.application;
 
   return {
@@ -347,15 +409,40 @@ export function scoreEmailApplicationMatch(
   const normalizedHost = normalizeMatchText(applicationHost);
   const titleTerms = meaningfulTitleTerms(jobPosting.title);
   const responseContext = /\b(application|applied|applying|candidate|role|position|job|interview|recruit|talent|hiring)\b/.test(body);
+  const jobAlertContext = /\b(job alert|jobs? for you|recommended jobs?|apply now|and \d+ more jobs?|similar jobs?)\b/.test(subjectSnippet);
+  const atsSender = /\b(greenhouse|ashby|lever|workday|icims|smartrecruiters|bamboohr|workable|jobvite)\b/.test(from);
 
   let score = 0;
-  if (normalizedCompany.length > 3 && normalizeMatchText(from).includes(normalizedCompany)) score += 3;
-  if (normalizedHost.length > 5 && normalizeMatchText(from).includes(normalizedHost)) score += 3;
-  if (normalizedCompany.length > 3 && normalizeMatchText(subjectSnippet).includes(normalizedCompany)) score += 2;
-  if (applicationHost && normalizeMatchText(subjectSnippet).includes(normalizedHost)) score += 2;
-  if (normalizedCompany.length > 3 && normalizeMatchText(body).includes(normalizedCompany) && responseContext) score += 1;
-  if (titleTerms.some((term) => normalizeMatchText(subjectSnippet).includes(term))) score += 1;
-  if (titleTerms.some((term) => normalizeMatchText(body).includes(term)) && responseContext) score += 1;
+  let strongEvidence = 0;
+  const normalizedFrom = normalizeMatchText(from);
+  const normalizedSubjectSnippet = normalizeMatchText(subjectSnippet);
+  const normalizedBody = normalizeMatchText(body);
+
+  if (normalizedCompany.length > 3 && normalizedFrom.includes(normalizedCompany)) {
+    score += 4;
+    strongEvidence += 1;
+  }
+  if (normalizedHost.length > 5 && normalizedFrom.includes(normalizedHost)) {
+    score += 4;
+    strongEvidence += 1;
+  }
+  if (!jobAlertContext && normalizedCompany.length > 3 && normalizedSubjectSnippet.includes(normalizedCompany)) {
+    score += 3;
+    strongEvidence += 1;
+  }
+  if (!jobAlertContext && applicationHost && normalizedSubjectSnippet.includes(normalizedHost)) {
+    score += 3;
+    strongEvidence += 1;
+  }
+  if (normalizedCompany.length > 3 && normalizedBody.includes(normalizedCompany) && responseContext) {
+    score += 2;
+    strongEvidence += 1;
+  }
+  if (titleTerms.some((term) => normalizedSubjectSnippet.includes(term)) && !jobAlertContext) score += atsSender ? 2 : 1;
+  if (titleTerms.some((term) => normalizedBody.includes(term)) && responseContext) score += 1;
+  if (atsSender && strongEvidence > 0 && responseContext) score += 1;
+
+  if (strongEvidence === 0) return 0;
 
   return score;
 }
@@ -412,5 +499,12 @@ const titleStopWords = new Set([
   "frontend",
   "backend",
   "fullstack",
+  "design",
+  "devops",
+  "platform",
+  "technical",
+  "lead",
+  "mobile",
+  "cloud",
   "remote",
 ]);
