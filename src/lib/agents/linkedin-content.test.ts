@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { buildArchitectureDiagramSpecs, buildArchitectureTopologySpec, buildLinkedInContentFallback, planLinkedInPromptIntent, reviewDiagramSpecQuality, reviewLinkedInPostPrivacy, reviewPromptSatisfaction, reviewTopologySpecQuality, type ArchitectureTopologySpec, type LinkedInContentDirection } from "@/lib/agents/linkedin-content";
+import { buildSearchRunAnalytics } from "@/lib/job-search/run-analytics";
 import { describe, expect, it } from "vitest";
 
 describe("LinkedIn content agent helpers", () => {
@@ -22,15 +23,7 @@ describe("LinkedIn content agent helpers", () => {
         planSources: [{ filename: "PLAN.md", title: "Jolene Email Operations", summary: "Agents scan mail, draft calendar actions, and report to Jolene.", themes: ["Jolene", "Email Ops"] }],
         noveltySignals: { recentHooks: ["The next content system should remember the work before it writes."], recentTitles: ["Turning app memory into public product notes"], recentPillars: ["app_progress"], recentScreenshotRoutes: ["/dashboard"], avoidPhrases: ["future CMS", "operating system"] },
         analytics: {
-          latestSearchRun: {
-            funnel: [{ label: "Fetched", value: 1000, helper: "Raw source results" }, { label: "New matches", value: 25, helper: "New profile matches created" }],
-            drops: [{ label: "Below threshold", value: 800 }],
-            stats: { jobsFetched: 1000, jobsAfterDedupe: 500, jobsAfterFilters: 50, jobsSaved: 25 },
-            scoreDistribution: [],
-            byProfile: [],
-            bySource: [],
-            explanations: [],
-          },
+          latestSearchRun: buildSearchRunAnalytics({ jobsFetched: 1000, jobsAfterDedupe: 500, jobsAfterFilters: 50, jobsSaved: 25 }),
           applicationStatusCounts: {},
           outcomeCounts: {},
           agentRunCounts: {},
