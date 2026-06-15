@@ -60,6 +60,9 @@ describe("LinkedIn content agent helpers", () => {
           forbiddenPhrases: ["future CMS"],
           allowSearchFunnelAnalytics: false,
         },
+        promptRelevanceScore: 92,
+        evidenceAnchors: [{ sourceType: "aggregate_fact", label: "Agent run evidence", text: "Agent runs record workflow evidence and review gates.", relevance: 92 }],
+        rejectedEvidence: [],
       },
       memoryPack: {
         aggregateFacts: [],
@@ -79,6 +82,160 @@ describe("LinkedIn content agent helpers", () => {
     expect(output.hook).toContain("product decision");
     expect(output.body).not.toContain("Write a decision diary");
     expect(output.body).toContain("documentarians before automation");
+    expect(output.body).toContain("The source I am grounding this in: Agent runs record workflow evidence and review gates.");
+    expect(output.body).not.toMatch(/^(Scene|Evidence|Artifact|Decision|Consequence|Lesson|Teardown):/m);
+  });
+
+  it("selects Search Operations evidence for chart prompts instead of stale plan angles", () => {
+    const output = buildLinkedInContentFallback({
+      pillar: "search_learning",
+      direction: {
+        prompt: "Can we discuss the upgrades to the graphs and charts on the Search Operations page and why those enhancements might be better for the user to digest?",
+        tone: "bold_grounded",
+        format: "visual_walkthrough",
+        legacyPillar: "search_learning",
+        visualDirection: "show the search analytics dashboard",
+        selectedAngle: "visual walkthrough about Search Operations chart upgrades",
+        rejectedAngles: ["Tighten Email Ops Signal Quality", "Execute Source Management Plan"],
+        intent: "analytics_insight",
+        obligations: {
+          topic: "Search Operations charts",
+          requiredConcepts: ["analytics", "funnel", "aggregate", "insight", "evidence"],
+          requiredVisuals: ["app_screenshot"],
+          forbiddenPhrases: ["One plan in the build log keeps pulling me back", "documentarian loop"],
+          allowSearchFunnelAnalytics: true,
+        },
+        promptRelevanceScore: 96,
+        evidenceAnchors: [{
+          sourceType: "analytics",
+          label: "Search Operations analytics",
+          text: "Latest Search Operations run: Fetched 19134, Qualified 39, New matches 21, Agency eligible 31; top blocker Existing job duplicate 2783.",
+          relevance: 96,
+        }],
+        rejectedEvidence: [
+          { sourceType: "plan", label: "Tighten Email Ops Signal Quality", text: "Make Email Ops strict by default.", relevance: 4 },
+          { sourceType: "plan", label: "Execute Source Management Plan", text: "Add company-source creation and Brave-backed search-query support.", relevance: 6 },
+        ],
+      },
+      memoryPack: {
+        aggregateFacts: ["Latest search funnel: Fetched 19134, Detail candidates 19104, Scored 19104, Qualified 39, New matches 21, Agency eligible 31."],
+        storyAngles: [],
+        planSources: [
+          { filename: "EMAIL.md", title: "Tighten Email Ops Signal Quality", summary: "Make Email Ops strict by default.", themes: ["Email Ops"] },
+          { filename: "SOURCES.md", title: "Execute Source Management Plan", summary: "Add company-source creation and Brave-backed search-query support.", themes: ["Sources"] },
+        ],
+        noveltySignals: { recentHooks: [], recentTitles: [], recentPillars: [], recentScreenshotRoutes: [], avoidPhrases: ["documentarian loop"] },
+        analytics: {
+          latestSearchRun: buildSearchRunAnalytics({
+            jobsFetched: 19134,
+            jobsAfterDedupe: 22,
+            jobsAfterFilters: 39,
+            jobsSaved: 21,
+            progress: [{ stats: { jobsFetched: 19134, detailCandidates: 19104, jobsScored: 19104, jobsAfterFilters: 39, jobsSaved: 21, agencyEligible: 31, existingJobDuplicates: 2783 } }],
+          }),
+          applicationStatusCounts: {},
+          outcomeCounts: {},
+          agentRunCounts: {},
+          sourceCoverage: { activeSources: 49, querySources: 42, manualSources: 14, priorityOneSources: 16 },
+        },
+      },
+    });
+
+    expect(output.body).toContain("Search Operations");
+    expect(output.body).toContain("The run I am using as the receipt: Latest Search Operations run");
+    expect(output.body).toContain("The Search Operations dashboard");
+    expect(output.body).not.toContain("One plan in the build log keeps pulling me back");
+    expect(output.body).not.toContain("Tighten Email Ops Signal Quality");
+    expect(output.body).not.toContain("Execute Source Management Plan");
+    expect(output.body).not.toMatch(/^(Scene|Evidence|Artifact|Decision|Consequence|Signal|Before|After):/m);
+  });
+
+  it("renders before-after chart prompts as public post copy, not documentary scaffolding", () => {
+    const output = buildLinkedInContentFallback({
+      pillar: "search_learning",
+      direction: {
+        prompt: "Can we discuss the upgrades to the graphs and charts on the Search Operations page and why those enhancements might be better for the user to digest?",
+        tone: "bold_grounded",
+        format: "before_after",
+        legacyPillar: "search_learning",
+        visualDirection: "show the search analytics dashboard",
+        selectedAngle: "Search Operations charts before and after",
+        rejectedAngles: [],
+        intent: "analytics_insight",
+        obligations: {
+          topic: "Search Operations charts",
+          requiredConcepts: ["analytics", "funnel", "aggregate", "insight", "evidence"],
+          requiredVisuals: ["app_screenshot"],
+          forbiddenPhrases: ["One plan in the build log keeps pulling me back", "documentarian loop"],
+          allowSearchFunnelAnalytics: true,
+        },
+        promptRelevanceScore: 100,
+        evidenceAnchors: [{
+          sourceType: "analytics",
+          label: "Search Operations analytics",
+          text: "Latest Search Operations run: Fetched 19134, Detail candidates 19104, Scored 19104, Qualified 39, New matches 21, Agency eligible 31; top blocker Below threshold 2766.",
+          relevance: 100,
+        }],
+        rejectedEvidence: [],
+      },
+      memoryPack: {
+        aggregateFacts: ["Latest search funnel: Fetched 19134, Detail candidates 19104, Scored 19104, Qualified 39, New matches 21, Agency eligible 31."],
+        storyAngles: [],
+        planSources: [],
+        noveltySignals: { recentHooks: [], recentTitles: [], recentPillars: [], recentScreenshotRoutes: [], avoidPhrases: ["documentarian loop"] },
+        analytics: {
+          latestSearchRun: buildSearchRunAnalytics({
+            jobsFetched: 19134,
+            jobsAfterDedupe: 22,
+            jobsAfterFilters: 39,
+            jobsSaved: 21,
+            progress: [{ stats: { jobsFetched: 19134, detailCandidates: 19104, jobsScored: 19104, jobsAfterFilters: 39, jobsSaved: 21, agencyEligible: 31, jobsBelowThreshold: 2766 } }],
+          }),
+          applicationStatusCounts: {},
+          outcomeCounts: {},
+          agentRunCounts: {},
+          sourceCoverage: { activeSources: 49, querySources: 42, manualSources: 14, priorityOneSources: 16 },
+        },
+      },
+    });
+    const review = reviewPromptSatisfaction({
+      direction: {
+        prompt: "Can we discuss the upgrades to the graphs and charts on the Search Operations page and why those enhancements might be better for the user to digest?",
+        tone: "bold_grounded",
+        format: "before_after",
+        legacyPillar: "search_learning",
+        visualDirection: "show the search analytics dashboard",
+        selectedAngle: "Search Operations charts before and after",
+        rejectedAngles: [],
+        intent: "analytics_insight",
+        obligations: {
+          topic: "Search Operations charts",
+          requiredConcepts: ["analytics", "funnel", "aggregate", "insight", "evidence"],
+          requiredVisuals: ["app_screenshot"],
+          forbiddenPhrases: ["One plan in the build log keeps pulling me back", "documentarian loop"],
+          allowSearchFunnelAnalytics: true,
+        },
+        promptRelevanceScore: 100,
+        evidenceAnchors: [{
+          sourceType: "analytics",
+          label: "Search Operations analytics",
+          text: "Latest Search Operations run: Fetched 19134, Detail candidates 19104, Scored 19104, Qualified 39, New matches 21, Agency eligible 31; top blocker Below threshold 2766.",
+          relevance: 100,
+        }],
+        rejectedEvidence: [],
+      },
+      generated: output,
+      visualAssets: [],
+    });
+
+    expect(output.title).toBe("Search Operations charts before and after");
+    expect(output.body).toContain("Before, the chart story was basically a conversion line");
+    expect(output.body).toContain("After, the dashboard has to explain");
+    expect(output.body).toContain("The Search Operations page had a real comprehension problem");
+    expect(output.body).toContain("The run I am using as the receipt: Latest Search Operations run");
+    expect(output.body).not.toContain("before after about");
+    expect(output.body).not.toMatch(/^(before after|Scene|Evidence|Artifact|Decision|Consequence|Signal):/im);
+    expect(review.status).toBe("PASS");
   });
 
   it("passes safe aggregate content and rejects private data", () => {
@@ -165,6 +322,100 @@ describe("LinkedIn content agent helpers", () => {
       visualAssets: [{ label: "Architecture diagram", path: "/generated/test.png", mimeType: "image/png", description: "System Architecture", route: "diagram:system-architecture", assetType: "diagram", privacyStatus: "PASS", warnings: [] }],
     });
     expect(good.status).toBe("PASS");
+  });
+
+  it("passes prompt review when evidence is present and blocks when it is absent", () => {
+    const direction: LinkedInContentDirection = {
+      prompt: "Explain Search Operations chart upgrades",
+      tone: "bold_grounded",
+      format: "visual_walkthrough",
+      legacyPillar: "search_learning",
+      visualDirection: "show charts",
+      selectedAngle: "Search Operations chart upgrades",
+      rejectedAngles: [],
+      intent: "analytics_insight",
+      obligations: {
+        topic: "Search Operations charts",
+        requiredConcepts: ["analytics", "funnel", "aggregate", "insight", "evidence"],
+        requiredVisuals: ["app_screenshot"],
+        forbiddenPhrases: ["One plan in the build log keeps pulling me back"],
+        allowSearchFunnelAnalytics: true,
+      },
+      promptRelevanceScore: 95,
+      evidenceAnchors: [{ sourceType: "analytics", label: "Search Operations analytics", text: "Latest Search Operations run: Fetched 19134, Qualified 39, New matches 21.", relevance: 95 }],
+      rejectedEvidence: [],
+    };
+
+    const good = reviewPromptSatisfaction({
+      direction,
+      generated: {
+        title: "Search Operations chart upgrades",
+        hook: "The analytics dashboard changed how the run is explained.",
+        body: "The funnel is now easier to digest because the insight starts from blocker and saved-match evidence. Evidence: Latest Search Operations run: Fetched 19134, Qualified 39, New matches 21.",
+      },
+      visualAssets: [],
+    });
+    expect(good.status).toBe("PASS");
+
+    const bad = reviewPromptSatisfaction({
+      direction,
+      generated: {
+        title: "Generic build log",
+        hook: "The build is improving.",
+        body: "The content system is becoming a useful operating system.",
+      },
+      visualAssets: [],
+    });
+    expect(bad.status).toBe("NEEDS_REVIEW");
+    expect(bad.warnings.join(" ")).toContain("evidence");
+  });
+
+  it("keeps documentary fallback formats distinct and gates funnel analytics by intent", () => {
+    const formats = ["field_note", "lesson", "product_thesis", "teardown", "visual_walkthrough"] as const;
+    const bodies = formats.map((format) => buildLinkedInContentFallback({
+      pillar: "workflow_design",
+      direction: {
+        prompt: "Explain the content review upgrade",
+        tone: "bold_grounded",
+        format,
+        legacyPillar: "workflow_design",
+        visualDirection: "",
+        selectedAngle: `${format} on content review`,
+        rejectedAngles: [],
+        intent: "workflow_story",
+        obligations: {
+          topic: "content review upgrade",
+          requiredConcepts: ["workflow story", "agents", "evidence"],
+          requiredVisuals: ["app_screenshot"],
+          forbiddenPhrases: [],
+          allowSearchFunnelAnalytics: false,
+        },
+        promptRelevanceScore: 90,
+        evidenceAnchors: [{ sourceType: "aggregate_fact", label: "Review evidence", text: "Content reviews now require prompt evidence and source rationale.", relevance: 90 }],
+        rejectedEvidence: [],
+      },
+      memoryPack: {
+        aggregateFacts: ["Latest search funnel: Fetched 1000, New matches 25."],
+        storyAngles: [],
+        planSources: [],
+        noveltySignals: { recentHooks: [], recentTitles: [], recentPillars: [], recentScreenshotRoutes: [], avoidPhrases: [] },
+        analytics: {
+          latestSearchRun: buildSearchRunAnalytics({ jobsFetched: 1000, jobsAfterDedupe: 500, jobsAfterFilters: 50, jobsSaved: 25 }),
+          applicationStatusCounts: {},
+          outcomeCounts: {},
+          agentRunCounts: {},
+          sourceCoverage: { activeSources: 0, querySources: 0, manualSources: 0, priorityOneSources: 0 },
+        },
+      },
+    }).body);
+
+    expect(new Set(bodies).size).toBe(formats.length);
+    for (const body of bodies) {
+      expect(body).toContain("The source I am grounding this in: Content reviews now require prompt evidence and source rationale.");
+      expect(body).not.toContain("fetched 1000");
+      expect(body).not.toContain("Latest search funnel");
+      expect(body).not.toMatch(/^(Scene|Evidence|Artifact|Decision|Consequence|Lesson|Teardown|Thesis):/m);
+    }
   });
 
   it("creates architecture diagram specs for system architecture and content flow", () => {
@@ -282,5 +533,8 @@ function architectureDirection(): LinkedInContentDirection {
       forbiddenPhrases: ["practical testbed", "blank page", "boundary matters", "today's content brief", "i would document", "clearest source", "latest run moved through", "drop-off pattern"],
       allowSearchFunnelAnalytics: false,
     },
+    promptRelevanceScore: 100,
+    evidenceAnchors: [{ sourceType: "plan", label: "Architecture Plan", text: "Document system layers and agent handoffs.", relevance: 100 }],
+    rejectedEvidence: [],
   };
 }
