@@ -8,6 +8,7 @@ import { toExperienceCategory } from "@/lib/resumes/db";
 export const dynamic = "force-dynamic";
 
 const updateBulletSchema = z.object({
+  workExperienceId: z.string().trim().nullable().optional(),
   company: z.string().trim().min(1).optional(),
   role: z.string().trim().min(1).optional(),
   category: z.string().trim().min(1).optional(),
@@ -23,6 +24,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const bullet = await prisma.experienceBullet.update({
       where: { id: params.id },
       data: {
+        ...(body.workExperienceId !== undefined ? { workExperienceId: body.workExperienceId || null } : {}),
         ...(body.company ? { company: body.company } : {}),
         ...(body.role ? { role: body.role } : {}),
         ...(body.category ? { category: toExperienceCategory(body.category) } : {}),

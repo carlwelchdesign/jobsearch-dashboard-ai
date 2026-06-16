@@ -40,6 +40,7 @@ export default async function ResumeProfilePage() {
             }}
             bullets={profile.experienceBullets.map((bullet) => ({
               id: bullet.id,
+              workExperienceId: bullet.workExperienceId,
               company: bullet.company,
               role: bullet.role,
               category: bullet.category,
@@ -47,16 +48,25 @@ export default async function ResumeProfilePage() {
               keywords: Array.isArray(bullet.keywords) ? bullet.keywords.filter((keyword): keyword is string => typeof keyword === "string") : [],
               sourceText: bullet.sourceText,
               truthLevel: bullet.truthLevel,
+              sourceResumeUploadId: bullet.sourceResumeUploadId,
+              createdAt: bullet.createdAt.toISOString(),
+              updatedAt: bullet.updatedAt.toISOString(),
             }))}
             workExperiences={profile.workExperiences.map((work) => ({
               id: work.id,
               company: work.company,
               title: work.title,
+              location: work.location,
               startDate: work.startDate,
               endDate: work.endDate,
               isCurrent: work.isCurrent,
+              summary: work.summary,
               skills: Array.isArray(work.skills) ? work.skills.filter((skill): skill is string => typeof skill === "string") : [],
+              achievements: Array.isArray(work.achievements) ? work.achievements.filter((achievement): achievement is string => typeof achievement === "string") : [],
+              sourceResumeUploadId: work.sourceResumeUploadId,
               resumeContext: parseResumeExperienceContext(work.resumeContext),
+              createdAt: work.createdAt.toISOString(),
+              updatedAt: work.updatedAt.toISOString(),
             }))}
           />
         )}

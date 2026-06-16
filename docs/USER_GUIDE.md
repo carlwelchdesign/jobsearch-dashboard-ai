@@ -2078,7 +2078,7 @@ Here is how a typical day looks once the system is fully set up.
 |---|---|---|
 | **Upload Resume** → Open | `/resumes/upload` | Upload a resume file |
 | **Review Parsed Profile** → Open | `/resumes/review` | Approve parsed resume bullets |
-| **Candidate Profile** → Open | `/resumes/profile` | Skills, work history, verified bullets |
+| **Job Evidence Library** → Open | `/resumes/profile` | Work history, verified bullets, confirmed tech, and duplicate cleanup |
 | **Generated Resumes** → Open | `/resumes/generated` | Review generated materials |
 | **Custom Opportunity** → Open | `/resumes/custom-opportunity` | Recruiter brief → tailored resume |
 | **Resume Variants** → Open | `/resumes/variants` | Manage positioning variants |
