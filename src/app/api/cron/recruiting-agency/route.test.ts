@@ -12,6 +12,10 @@ const runRecruitingAgencyMock = vi.mocked(runRecruitingAgency);
 describe("/api/cron/recruiting-agency", () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
+    vi.stubEnv("CRON_SECRET", "");
+    vi.stubEnv("RECRUITING_AGENCY_SECRET", "");
+    vi.stubEnv("REQUIRE_CRON_SECRETS", "");
+    vi.stubEnv("VERCEL", "");
     runRecruitingAgencyMock.mockReset();
   });
 

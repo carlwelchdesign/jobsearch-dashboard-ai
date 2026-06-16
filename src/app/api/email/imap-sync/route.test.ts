@@ -22,6 +22,7 @@ const syncImapEmailMock = vi.mocked(syncImapEmail);
 describe("/api/email/imap-sync", () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
+    vi.stubEnv("EMAIL_SYNC_SECRET", "");
     syncImapEmailMock.mockReset();
   });
 

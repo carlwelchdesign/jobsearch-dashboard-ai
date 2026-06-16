@@ -12,6 +12,10 @@ const runEmailOpsMock = vi.mocked(runJoleneEmailOperationsAgent);
 describe("/api/cron/email-sync", () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
+    vi.stubEnv("CRON_SECRET", "");
+    vi.stubEnv("EMAIL_SYNC_SECRET", "");
+    vi.stubEnv("REQUIRE_CRON_SECRETS", "");
+    vi.stubEnv("VERCEL", "");
     runEmailOpsMock.mockReset();
   });
 

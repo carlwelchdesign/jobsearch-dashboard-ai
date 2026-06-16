@@ -1,20 +1,16 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
+import { requireSingleUser } from "@/lib/auth/single-user";
 import { syncLinkedInPostAnalytics } from "@/lib/linkedin/analytics";
-import { prisma } from "@/lib/prisma";
+import { requireBearerSecret } from "@/lib/security/cron-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
-    const user = await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });
-    if (!user) return NextResponse.json({ error: "No user exists. Run seed first." }, { status: 400 });
-
-    const authHeader = request.headers.get("authorization") ?? "";
-    const secret = process.env.CRON_SECRET || process.env.LINKEDIN_ANALYTICS_SYNC_SECRET;
-    if (secret && authHeader && authHeader !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "Unauthorized LinkedIn analytics sync." }, { status: 401 });
-    }
+    const authFailure = requireBearerSecret(request, { envNames: ["LINKEDIN_ANALYTICS_SYNC_SECRET", "CRON_SECRET"], label: "LinkedIn analytics sync" });
+    if (authFailure) return authFailure;
+    const user = await requireSingleUser(request);
 
     const result = await syncLinkedInPostAnalytics(user.id);
     return NextResponse.json({ message: "LinkedIn analytics synced.", ...result });

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { requireSingleUser } from "@/lib/auth/single-user";
 import { runLinkedInContentAgent } from "@/lib/agents/linkedin-content";
 import { prisma } from "@/lib/prisma";
 import { GET, POST } from "./route";
@@ -7,21 +8,24 @@ vi.mock("@/lib/agents/linkedin-content", () => ({
   runLinkedInContentAgent: vi.fn(),
 }));
 
+vi.mock("@/lib/auth/single-user", () => ({
+  requireSingleUser: vi.fn(),
+}));
+
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    user: { findFirst: vi.fn() },
     linkedInPostDraft: { findMany: vi.fn() },
   },
 }));
 
 const runLinkedInContentAgentMock = vi.mocked(runLinkedInContentAgent);
-const userFindFirstMock = vi.mocked(prisma.user.findFirst);
+const requireSingleUserMock = vi.mocked(requireSingleUser);
 const draftFindManyMock = vi.mocked(prisma.linkedInPostDraft.findMany);
 
 describe("/api/linkedin-content/drafts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    userFindFirstMock.mockResolvedValue({ id: "user_1" } as never);
+    requireSingleUserMock.mockResolvedValue({ id: "user_1" } as never);
     draftFindManyMock.mockResolvedValue([{ id: "draft_1", title: "Draft" }] as never);
     runLinkedInContentAgentMock.mockResolvedValue({
       run: { id: "agent_run_1" },
@@ -63,6 +67,7 @@ describe("/api/linkedin-content/drafts", () => {
       prompt: "Document our system architecture with architectural diagrams.",
       format: "decision_diary",
       visualDirection: "show architecture diagrams",
+      userId: "user_1",
     });
     await expect(response.json()).resolves.toMatchObject({
       draftId: "draft_1",
@@ -78,11 +83,11 @@ describe("/api/linkedin-content/drafts", () => {
     }));
 
     expect(response.status).toBe(201);
-    expect(runLinkedInContentAgentMock).toHaveBeenCalledWith({ contentPillar: "architecture" });
+    expect(runLinkedInContentAgentMock).toHaveBeenCalledWith({ contentPillar: "architecture", userId: "user_1" });
   });
 
   it("lists active drafts for the first local user", async () => {
-    const response = await GET();
+    const response = await GET(new Request("http://localhost/api/linkedin-content/drafts"));
 
     expect(response.status).toBe(200);
     expect(draftFindManyMock).toHaveBeenCalledWith(expect.objectContaining({

@@ -16,7 +16,7 @@ export type JoleneActionJson = {
     id: string;
     label: string;
     detail: string;
-    risk?: "read_only" | "safe_mutation" | "guarded_mutation" | "external_manual_gate";
+    risk?: "read_only" | "proposal" | "safe_internal" | "guarded_mutation" | "external_blocked";
     status?: "planned" | "executed" | "skipped" | "failed" | "cancelled";
     href?: string;
     executable?: boolean;

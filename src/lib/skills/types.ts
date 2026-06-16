@@ -1,5 +1,6 @@
 import type { AgentType, Prisma, SkillAdjustment } from "@prisma/client";
 import type { z } from "zod";
+import type { ActionApproval, AgentActionPolicyKind } from "@/lib/agents/action-policy";
 
 export type SkillId =
   | "candidate_intelligence"
@@ -43,11 +44,15 @@ export type SkillPolicy = {
   mutatesLocalData: boolean;
   externalAction: "none" | "draft_only" | "manual_submit_required";
   autoApplyLearningKinds: string[];
+  allowedTools?: string[];
+  forbiddenActions?: string[];
+  sideEffects?: string[];
 };
 
 export type SkillExecutionContext = {
   userId?: string | null;
   adjustments: SkillAdjustment[];
+  approval?: ActionApproval | null;
 };
 
 export type SkillDefinition<TInput = unknown, TOutput = unknown> = {
@@ -65,6 +70,11 @@ export type SkillDefinition<TInput = unknown, TOutput = unknown> = {
 export type SkillRunResult<TOutput> = {
   skill: Pick<SkillDefinition, "id" | "label" | "agentType" | "riskLevel">;
   output: TOutput;
+  policy: {
+    kind: AgentActionPolicyKind;
+    requiresApproval: boolean;
+    approvedBy?: string;
+  };
   appliedAdjustments: Array<{
     id: string;
     kind: string;

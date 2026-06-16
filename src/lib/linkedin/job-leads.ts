@@ -52,9 +52,11 @@ export function buildLinkedInOriginalPostingQueries(input: Pick<LinkedInLeadInpu
 export function linkedInLeadMetadata(input: LinkedInLeadInput) {
   const url = linkedInJobUrl(input);
   if (!url) return null;
+  const originalApplicationUrl = originalApplyUrl(input.applicationUrl);
   return {
     leadSource: "linkedin" as const,
     linkedInJobUrl: url,
+    originalApplicationUrl,
     originalPostingQueries: buildLinkedInOriginalPostingQueries(input),
     needsManualText: !linkedInLeadHasEnoughDetail(input),
     captureGuidance: linkedInLeadHasEnoughDetail(input)
@@ -67,6 +69,7 @@ export async function captureLinkedInReviewLead(input: LinkedInLeadInput & { raw
   const leadUrl = linkedInJobUrl(input);
   if (!leadUrl) throw new Error("LinkedIn review lead requires a LinkedIn job URL.");
   const metadata = linkedInLeadMetadata(input);
+  const applicationUrl = originalApplyUrl(input.applicationUrl);
   const source = await prisma.jobSource.upsert({
     where: { type_name: { type: "manual", name: "LinkedIn Lead" } },
     update: { enabled: true },
@@ -83,17 +86,21 @@ export async function captureLinkedInReviewLead(input: LinkedInLeadInput & { raw
       input.pageTitle ? `Captured page title: ${input.pageTitle}` : "",
       leadUrl,
     ].filter(Boolean).join("\n\n"),
-    applicationUrl: leadUrl,
+    applicationUrl,
   };
   const contentHash = createJobContentHash(normalized);
+  const existingConditions: Prisma.JobPostingWhereInput[] = applicationUrl
+    ? [{ applicationUrl }, { contentHash }]
+    : [{ contentHash }];
   const existing = await prisma.jobPosting.findFirst({
-    where: { OR: [{ applicationUrl: leadUrl }, { contentHash }] },
+    where: { OR: existingConditions },
   });
   const rawData = {
     ...(metadata ?? {}),
     ...(input.rawData && typeof input.rawData === "object" && !Array.isArray(input.rawData) ? input.rawData : {}),
     leadSource: "linkedin",
     linkedInJobUrl: leadUrl,
+    originalApplicationUrl: applicationUrl,
     pageUrl: input.pageUrl ?? null,
   };
 
@@ -171,4 +178,15 @@ function inferTitleFromPageTitle(pageTitle?: string | null) {
   if (!pageTitle) return null;
   const [firstPart] = pageTitle.split("|").map((part) => part.trim()).filter(Boolean);
   return firstPart ?? null;
+}
+
+function originalApplyUrl(value?: string | null) {
+  if (!value || isLinkedInJobUrl(value)) return null;
+  try {
+    const url = new URL(value);
+    if (/(^|\.)linkedin\.com$/i.test(url.hostname)) return null;
+    return value;
+  } catch {
+    return null;
+  }
 }

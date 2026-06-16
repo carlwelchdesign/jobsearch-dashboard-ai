@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
+import { requireSingleUser } from "@/lib/auth/single-user";
 import { runLinkedInContentAgent } from "@/lib/agents/linkedin-content";
 import { prisma } from "@/lib/prisma";
 
@@ -14,10 +15,9 @@ const draftRequestSchema = z.object({
   visualDirection: z.string().trim().max(1000).optional(),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const user = await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });
-    if (!user) return NextResponse.json({ error: "No user exists. Run seed first." }, { status: 400 });
+    const user = await requireSingleUser(request);
     const drafts = await prisma.linkedInPostDraft.findMany({
       where: { userId: user.id, status: { not: "ARCHIVED" } },
       orderBy: { createdAt: "desc" },
@@ -31,8 +31,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const user = await requireSingleUser(request);
     const body = draftRequestSchema.parse(await request.json().catch(() => ({})));
-    const result = await runLinkedInContentAgent(body);
+    const result = await runLinkedInContentAgent({ ...body, userId: user.id });
     return NextResponse.json({
       draftId: result.output.draftId,
       output: result.output,

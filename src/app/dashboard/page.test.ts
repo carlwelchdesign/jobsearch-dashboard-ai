@@ -53,6 +53,20 @@ describe("Command Center subnav routes", () => {
     expect(contentSource).toContain('href="/dashboard/email-ops"');
   });
 
+  it("surfaces lifecycle readiness on the Command Center overview", () => {
+    const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
+
+    expect(contentSource).toContain("Lifecycle readiness");
+    expect(contentSource).toContain("Setup");
+    expect(contentSource).toContain("Search");
+    expect(contentSource).toContain("Review");
+    expect(contentSource).toContain("Packet");
+    expect(contentSource).toContain("Apply");
+    expect(contentSource).toContain("Follow-up");
+    expect(contentSource).toContain("Interview");
+    expect(contentSource).toContain("Outcome");
+  });
+
   it("shows Email Ops workflow controls and safety copy in its dashboard route", () => {
     const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
 

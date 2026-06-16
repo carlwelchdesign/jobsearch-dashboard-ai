@@ -2,10 +2,9 @@ import crypto from "crypto";
 import type { NormalizedJobPosting } from "./source-adapter";
 
 type CanonicalJobParts = Pick<NormalizedJobPosting, "company" | "title"> & { location?: string | null; applicationUrl?: string | null };
+type JobContentHashParts = Pick<NormalizedJobPosting, "title" | "company" | "description"> & { applicationUrl?: string | null };
 
-export function createJobContentHash(
-  job: Pick<NormalizedJobPosting, "title" | "company" | "description" | "applicationUrl">,
-) {
+export function createJobContentHash(job: JobContentHashParts) {
   const value = [job.title, job.company, job.description, job.applicationUrl ?? ""]
     .map((part) => part.trim().toLowerCase())
     .join("|");

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
+import { requireSingleUser } from "@/lib/auth/single-user";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { prisma } from "@/lib/prisma";
 
@@ -12,11 +13,13 @@ const prepareCandidatesSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const user = await requireSingleUser(request);
     const { matchIds } = prepareCandidatesSchema.parse(await request.json());
     const matches = await prisma.jobProfileMatch.findMany({
       where: {
         id: { in: matchIds },
         status: "needs_review",
+        jobSearchProfile: { userId: user.id },
         jobPosting: { applicationUrl: { not: null } },
       },
       select: {

@@ -247,6 +247,11 @@ async function processAgencyCandidatesNode(state: RecruitingAgencyWorkflowState)
         skillId: "approve_agency_match",
         input: { userId: state.userId, matchId: candidate.id, minimumScore: state.minimumScore },
         userId: state.userId,
+        approval: {
+          approved: true,
+          source: "recruiting_agency_workflow",
+          reason: "Candidate passed the recruiting agency eligibility gates and remains manual-submit only.",
+        },
       });
       if (approval.appliedAdjustments.length) {
         await createAgencyRunEvent(state.agentRunId, "learning_applied", `Applied ${approval.appliedAdjustments.length} agency learning adjustment${approval.appliedAdjustments.length === 1 ? "" : "s"} while evaluating ${candidate.jobPosting.company}.`, {
@@ -263,6 +268,11 @@ async function processAgencyCandidatesNode(state: RecruitingAgencyWorkflowState)
         skillId: "prepare_application_packet",
         input: { jobPostingId: candidate.jobPostingId, userId: state.userId },
         userId: state.userId,
+        approval: {
+          approved: true,
+          source: "recruiting_agency_workflow",
+          reason: "Packet preparation is approved inside the agency workflow and still stops before submit.",
+        },
       });
       const output = prepared.output as { application: { id: string } };
       results.push({
