@@ -16,6 +16,7 @@ import { AppShell } from "@/app/app-shell";
 import { RunDailyPlanButton } from "@/app/dashboard/daily-plan-card";
 import { LinkedInAnalyticsCard } from "@/app/dashboard/linkedin-analytics-card";
 import { MarketAnalysisCard, type MarketTrendPoint } from "@/app/dashboard/market-analysis-card";
+import { MarkAppliedButton } from "@/app/applications/mark-applied-button";
 import { ActionButton } from "@/components/action-button";
 import { AgencyRunControl } from "@/components/agency-run-control";
 import { JobRejectButton } from "@/components/job-reject-button";
@@ -51,6 +52,22 @@ type DailyPlanOutput = {
   actions?: Array<{ priority: number; category: string; title: string; detail: string; href: string; count?: number }>;
 };
 
+type DailyApplySummary = {
+  readyToApply: number;
+  reviewQueue: number;
+  blockers: number;
+  appliedToday: number;
+  latestSearchFreshness: string;
+  primaryAction: {
+    title: string;
+    detail: string;
+    label: string;
+    href?: string;
+    postTo?: string;
+    color?: "primary" | "success" | "warning";
+  };
+};
+
 const DASHBOARD_ROUTES: Array<{ href: string; label: string; group: DashboardRouteGroup }> = [
   { href: "/dashboard", label: "Overview", group: "overview" },
   { href: "/dashboard/search", label: "Search Ops", group: "search" },
@@ -62,8 +79,8 @@ const DASHBOARD_ROUTES: Array<{ href: string; label: string; group: DashboardRou
 
 const HEADER_COPY: Record<DashboardRouteGroup, { title: string; description: string }> = {
   overview: {
-    title: "Agency Command Center",
-    description: "Daily overview for the job search operating system, with links into focused command surfaces.",
+    title: "Today",
+    description: "Find good jobs, make quick decisions, apply, and follow up from one daily cockpit.",
   },
   search: {
     title: "Search Operations",
@@ -92,12 +109,12 @@ export function DashboardShell({ group, children }: { group: DashboardRouteGroup
     <AppShell>
       <Stack spacing={3}>
         <PageHeader
-          eyebrow="Command center"
+          eyebrow={group === "overview" ? "Daily workflow" : "Operations"}
           title={HEADER_COPY[group].title}
           description={HEADER_COPY[group].description}
           actions={<ActionButton href="/jobs/manual" variant="outlined" startIcon={<AddCircleOutlineIcon />}>Add manual job</ActionButton>}
         />
-        <DashboardRouteNav activeGroup={group} />
+        {group === "overview" ? null : <DashboardRouteNav activeGroup={group} />}
         {children}
       </Stack>
     </AppShell>
@@ -105,11 +122,20 @@ export function DashboardShell({ group, children }: { group: DashboardRouteGroup
 }
 
 export async function DashboardOverviewPage() {
-  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, needsReview, agentUserRequests, latestDailyPlanRun, dashboardUser] = await Promise.all([
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const [profiles, latestRun, applicationStatusCounts, readyApplicationCount, readyApplications, appliedTodayCount, needsReview, agentUserRequests, latestDailyPlanRun, dashboardUser] = await Promise.all([
     prisma.jobSearchProfile.findMany({ where: { enabled: true }, orderBy: { name: "asc" } }),
     prisma.jobSearchRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.application.groupBy({ by: ["status"], _count: { status: true } }),
     prisma.application.count({ where: { status: "ready_to_apply", resumeId: { not: null }, coverLetterId: { not: null } } }),
+    prisma.application.findMany({
+      where: { status: "ready_to_apply", resumeId: { not: null }, coverLetterId: { not: null } },
+      include: { jobPosting: true, jobProfileMatch: true },
+      orderBy: [{ jobProfileMatch: { overallScore: "desc" } }, { updatedAt: "desc" }],
+      take: 5,
+    }),
+    prisma.application.count({ where: { status: "applied", appliedAt: { gte: startOfToday } } }),
     prisma.jobProfileMatch.findMany({
       where: { status: "needs_review", jobPosting: { applications: { none: { status: { in: submittedApplicationStatuses } } } } },
       include: { jobPosting: true, jobSearchProfile: { select: { userId: true } } },
@@ -128,49 +154,231 @@ export async function DashboardOverviewPage() {
     : [null, null];
   const readiness = dashboardUser?.id ? await buildLifecycleReadiness({ userId: dashboardUser.id }) : null;
   const suppressionStates = await loadJobSuppressionStatesByUserIds(needsReview.map((match) => match.jobSearchProfile.userId));
-  const needsReviewCount = uniqueMatchesByCanonicalJob(needsReview.filter((match) => {
+  const visibleNeedsReview = uniqueMatchesByCanonicalJob(needsReview.filter((match) => {
     const suppressionState = suppressionStates.get(match.jobSearchProfile.userId);
     return !suppressionState || !isJobSuppressed(match.jobPosting, suppressionState);
-  })).length;
+  }));
+  const needsReviewCount = visibleNeedsReview.length;
   const applicationCountByStatus = new Map(applicationStatusCounts.map((count) => [count.status, count._count.status]));
   const dailyPlan = dailyPlanOutput(latestDailyPlanRun?.outputJson);
   const ns = dashboardUser?.notificationSettings as { pushoverEnabled?: boolean; emailEnabled?: boolean } | null;
   const fallbacks = getServiceFallbacks(["openai", "brave", "notifications"], { anyNotificationConfigured: Boolean(ns?.pushoverEnabled || ns?.emailEnabled) });
+  const dailySummary = buildDailyApplySummary({
+    latestRun,
+    readyToApply: readyApplicationCount,
+    reviewQueue: needsReviewCount,
+    blockers: agentUserRequests.length,
+    appliedToday: appliedTodayCount,
+  });
 
   return (
     <DashboardShell group="overview">
       <ServiceFallbackBanners items={fallbacks} />
-      <JoleneChiefOfStaffCard
-        runId={latestJoleneRun?.id ?? null}
-        brief={joleneChiefOutput(latestJoleneRun?.outputJson)}
-        operatingLoopRunId={latestOperatingLoopRun?.id ?? null}
-        operatingLoop={joleneOperatingLoopOutput(latestOperatingLoopRun?.outputJson)}
+      <DailyApplyCockpit
+        summary={dailySummary}
+        latestRun={latestRun}
+        topReviewMatch={visibleNeedsReview[0] ?? null}
+        readyApplications={readyApplications}
+        blockers={agentUserRequests}
+        dailyPlan={dailyPlan}
       />
-      {readiness ? <ReadinessOperatingCockpit readiness={readiness} /> : null}
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
-        <Metric label="Enabled profiles" value={profiles.length.toString()} helper="Active campaigns" />
-        <Metric label="Exceptions" value={needsReviewCount.toString()} helper="Needs your decision" />
-        <Metric label="Ready to apply" value={readyApplicationCount.toString()} helper="Prepared by agency" />
-        <Metric label="Latest run" value={latestRun?.status ?? "None"} helper={latestRun ? latestRun.startedAt.toLocaleString() : "No runs yet"} />
+      <SecondaryOperationsPanel
+        profilesCount={profiles.length}
+        applicationCountByStatus={applicationCountByStatus}
+        needsReviewCount={needsReviewCount}
+        blockers={agentUserRequests.length}
+        readiness={readiness}
+        jolene={{
+          runId: latestJoleneRun?.id ?? null,
+          brief: joleneChiefOutput(latestJoleneRun?.outputJson),
+          operatingLoopRunId: latestOperatingLoopRun?.id ?? null,
+          operatingLoop: joleneOperatingLoopOutput(latestOperatingLoopRun?.outputJson),
+        }}
+      />
+    </DashboardShell>
+  );
+}
+
+function DailyApplyCockpit({
+  summary,
+  latestRun,
+  topReviewMatch,
+  readyApplications,
+  blockers,
+  dailyPlan,
+}: {
+  summary: DailyApplySummary;
+  latestRun: { status: string; startedAt: Date; jobsFetched: number; jobsSaved: number } | null;
+  topReviewMatch: any | null;
+  readyApplications: Array<any>;
+  blockers: Awaited<ReturnType<typeof listOpenAgentUserRequests>>;
+  dailyPlan: DailyPlanOutput | null;
+}) {
+  const nextReadyApplication = readyApplications[0] ?? null;
+
+  return (
+    <Stack spacing={2.5}>
+      <Card sx={{ borderColor: "primary.main", bgcolor: "rgba(15, 118, 110, 0.06)" }}>
+        <CardContent>
+          <Stack direction={{ xs: "column", lg: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { lg: "center" } }}>
+            <Box>
+              <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                <Chip size="small" color="primary" label="Today's goal" />
+                <Chip size="small" variant="outlined" label={`Search ${summary.latestSearchFreshness}`} />
+              </Stack>
+              <Typography variant="h2">{summary.primaryAction.title}</Typography>
+              <Typography color="text.secondary" sx={{ mt: 0.5, maxWidth: 720 }}>{summary.primaryAction.detail}</Typography>
+            </Box>
+            <ActionButton
+              href={summary.primaryAction.href}
+              postTo={summary.primaryAction.postTo}
+              variant="contained"
+              color={summary.primaryAction.color ?? "primary"}
+              loadingLabel="Starting..."
+              sx={{ minWidth: { sm: 180 } }}
+            >
+              {summary.primaryAction.label}
+            </ActionButton>
+          </Stack>
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "repeat(5, 1fr)" }, gap: 1.25, mt: 2 }}>
+            <GoalMetric label="Ready" value={summary.readyToApply} />
+            <GoalMetric label="Review" value={summary.reviewQueue} />
+            <GoalMetric label="Blockers" value={summary.blockers} />
+            <GoalMetric label="Applied today" value={summary.appliedToday} />
+            <GoalMetric label="Search saved" value={latestRun?.jobsSaved ?? 0} />
+          </Box>
+        </CardContent>
+      </Card>
+
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "repeat(4, minmax(0, 1fr))" }, gap: 2, alignItems: "stretch" }}>
+        <WorkflowLane
+          eyebrow="Find jobs"
+          title={latestRun ? `${latestRun.jobsSaved} saved from latest search` : "Start discovery"}
+          detail={latestRun ? `${latestRun.status} · ${latestRun.jobsFetched} fetched · ${latestRun.startedAt.toLocaleString()}` : "Run search to discover fresh roles and prepare the pipeline."}
+          action={<ActionButton postTo="/api/jobs/search/run" variant="outlined" loadingLabel="Running...">Run search</ActionButton>}
+          secondary={<ActionButton href="/dashboard/search" variant="text">Open Find Jobs</ActionButton>}
+        />
+
+        <WorkflowLane
+          eyebrow="Decide"
+          title={topReviewMatch ? topReviewMatch.jobPosting.title : "No job decisions waiting"}
+          detail={topReviewMatch ? `${topReviewMatch.jobPosting.company} · ${topReviewMatch.overallScore} score · approve or reject so the agency can move.` : "The review queue is clear. New exceptions will appear here after search."}
+          action={topReviewMatch ? <ActionButton postTo={`/api/jobs/${topReviewMatch.jobPosting.id}/approve`} body={{ matchId: topReviewMatch.id }} variant="outlined">Approve</ActionButton> : <ActionButton href="/jobs" variant="outlined">Review jobs</ActionButton>}
+          secondary={topReviewMatch ? <JobRejectButton jobId={topReviewMatch.jobPosting.id} matchId={topReviewMatch.id} label={`${topReviewMatch.jobPosting.company} - ${topReviewMatch.jobPosting.title}`} variant="text" color="secondary" source="daily_cockpit_reject" /> : null}
+        />
+
+        <WorkflowLane
+          eyebrow="Apply today"
+          title={nextReadyApplication ? nextReadyApplication.jobPosting.title : "No ready applications"}
+          detail={nextReadyApplication ? `${nextReadyApplication.jobPosting.company} · materials are ready. Open the application, submit manually, then mark it applied.` : "Prepared applications will appear here after search and agency prep."}
+          action={<ActionButton href="/applications/assistant" variant="outlined">{nextReadyApplication ? "Start next application" : "Open Apply"}</ActionButton>}
+          secondary={nextReadyApplication ? <MarkAppliedButton applicationId={nextReadyApplication.id} label="I applied" /> : null}
+        />
+
+        <WorkflowLane
+          eyebrow="Follow up"
+          title={blockers[0]?.question ?? dailyPlan?.actions?.[0]?.title ?? "No blockers waiting"}
+          detail={blockers[0] ? "A human decision is needed before the system can continue." : dailyPlan?.actions?.[0]?.detail ?? "Follow-up work, email findings, and daily plan items will appear here."}
+          action={<ActionButton href={blockers[0] ? agentUserRequestHref(blockers[0]) : "/needs-me"} variant="outlined">{blockers[0] ? "Resolve blocker" : "Open Follow Up"}</ActionButton>}
+          secondary={<RunDailyPlanButton />}
+        />
       </Box>
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1.1fr 0.9fr" }, gap: 2 }}>
-        <DailyPlanCard dailyPlan={dailyPlan} />
-        <Card>
-          <CardContent>
-            <Stack spacing={2}>
-              <Typography variant="h3">Focused workspaces</Typography>
-              <Typography color="text.secondary">The old Command Center is split into smaller operating surfaces. Open the section that matches the work you need now.</Typography>
+    </Stack>
+  );
+}
+
+function WorkflowLane({ eyebrow, title, detail, action, secondary }: { eyebrow: string; title: string; detail: string; action: React.ReactNode; secondary?: React.ReactNode }) {
+  return (
+    <Card sx={{ height: "100%" }}>
+      <CardContent>
+        <Stack spacing={1.5} sx={{ height: "100%" }}>
+          <Chip size="small" variant="outlined" label={eyebrow} sx={{ alignSelf: "flex-start" }} />
+          <Box sx={{ flexGrow: 1 }}>
+            <Typography variant="h3" sx={{ overflowWrap: "anywhere" }}>{title}</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>{detail}</Typography>
+          </Box>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+            {action}
+            {secondary}
+          </Stack>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function GoalMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, bgcolor: "background.paper", p: 1.25 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>{label}</Typography>
+      <Typography variant="h2" sx={{ fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
+    </Box>
+  );
+}
+
+function SupportMetric({ label, value, helper }: { label: string; value: string; helper: string }) {
+  return (
+    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, bgcolor: "background.paper", p: 1.25 }}>
+      <Typography variant="body2" color="text.secondary">{label}</Typography>
+      <Typography variant="h2" sx={{ mt: 0.25, fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
+      <Typography variant="caption" color="text.secondary">{helper}</Typography>
+    </Box>
+  );
+}
+
+function SecondaryOperationsPanel({
+  profilesCount,
+  applicationCountByStatus,
+  needsReviewCount,
+  blockers,
+  readiness,
+  jolene,
+}: {
+  profilesCount: number;
+  applicationCountByStatus: Map<string, number>;
+  needsReviewCount: number;
+  blockers: number;
+  readiness: Awaited<ReturnType<typeof buildLifecycleReadiness>> | null;
+  jolene: {
+    runId: string | null;
+    brief: JoleneChiefOutput | null;
+    operatingLoopRunId: string | null;
+    operatingLoop: JoleneOperatingLoopOutput | null;
+  };
+}) {
+  return (
+    <Stack spacing={2}>
+      <Card>
+        <CardContent>
+          <Stack spacing={2}>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+              <Box>
+                <Typography variant="h3">System support</Typography>
+                <Typography variant="body2" color="text.secondary">Health, readiness, and chief-of-staff details stay available after the daily work.</Typography>
+              </Box>
               <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
-                {DASHBOARD_ROUTES.filter((route) => route.group !== "overview").map((route) => (
-                  <Button key={route.href} component={Link} href={route.href} variant="outlined" size="small">{route.label}</Button>
-                ))}
+                <ActionButton href="/dashboard/pipeline" variant="outlined" size="small">Pipeline health</ActionButton>
+                <ActionButton href="/profiles" variant="outlined" size="small">Search profiles</ActionButton>
+                <ActionButton href="/agents" variant="outlined" size="small">Agent board</ActionButton>
               </Stack>
             </Stack>
-          </CardContent>
-        </Card>
-      </Box>
-      <PipelineStatusSummary applicationCountByStatus={applicationCountByStatus} needsReviewCount={needsReviewCount} blockers={agentUserRequests.length} />
-    </DashboardShell>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 1.25 }}>
+              <SupportMetric label="Enabled profiles" value={profilesCount.toString()} helper="Active campaigns" />
+              <SupportMetric label="Open blockers" value={blockers.toString()} helper="Needs Me requests" />
+              <SupportMetric label="Applied" value={(applicationCountByStatus.get("applied") ?? 0).toString()} helper="Submitted applications" />
+              <SupportMetric label="Review queue" value={needsReviewCount.toString()} helper="Search exceptions" />
+            </Box>
+          </Stack>
+        </CardContent>
+      </Card>
+      {readiness ? <ReadinessOperatingCockpit readiness={readiness} /> : null}
+      <JoleneChiefOfStaffCard
+        runId={jolene.runId}
+        brief={jolene.brief}
+        operatingLoopRunId={jolene.operatingLoopRunId}
+        operatingLoop={jolene.operatingLoop}
+      />
+    </Stack>
   );
 }
 
@@ -575,7 +783,7 @@ function DashboardRouteNav({ activeGroup }: { activeGroup: DashboardRouteGroup }
       <CardContent sx={{ py: "10px !important" }}>
         <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
           <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, mr: 0.5, whiteSpace: "nowrap" }}>
-            Command Center:
+            Operations:
           </Typography>
           {DASHBOARD_ROUTES.map((section) => (
             <Button
@@ -922,6 +1130,93 @@ function serializeSearchRun(run: {
     jobsSaved: run.jobsSaved,
     progress: Array.isArray(run.progress) ? run.progress as Array<{ at: string; message: string; stats?: { jobsFetched?: number; jobsAfterDedupe?: number; jobsAfterFilters?: number; jobsSaved?: number } }> : [],
   };
+}
+
+function buildDailyApplySummary({
+  latestRun,
+  readyToApply,
+  reviewQueue,
+  blockers,
+  appliedToday,
+}: {
+  latestRun: { status: string; startedAt: Date } | null;
+  readyToApply: number;
+  reviewQueue: number;
+  blockers: number;
+  appliedToday: number;
+}): DailyApplySummary {
+  const latestSearchFreshness = latestRun ? formatSearchFreshness(latestRun.startedAt) : "not run yet";
+  if (blockers > 0) {
+    return {
+      readyToApply,
+      reviewQueue,
+      blockers,
+      appliedToday,
+      latestSearchFreshness,
+      primaryAction: {
+        title: `${blockers} blocker${blockers === 1 ? "" : "s"} need your decision`,
+        detail: "Resolve the human decision queue so search, applications, and follow-up can keep moving.",
+        label: "Review blockers",
+        href: "/needs-me",
+        color: "warning",
+      },
+    };
+  }
+  if (readyToApply > 0) {
+    return {
+      readyToApply,
+      reviewQueue,
+      blockers,
+      appliedToday,
+      latestSearchFreshness,
+      primaryAction: {
+        title: `${readyToApply} application${readyToApply === 1 ? "" : "s"} ready today`,
+        detail: "Start the next prepared application, submit manually, then mark it applied before moving on.",
+        label: "Start applying",
+        href: "/applications/assistant",
+        color: "success",
+      },
+    };
+  }
+  if (reviewQueue > 0) {
+    return {
+      readyToApply,
+      reviewQueue,
+      blockers,
+      appliedToday,
+      latestSearchFreshness,
+      primaryAction: {
+        title: `${reviewQueue} job decision${reviewQueue === 1 ? "" : "s"} waiting`,
+        detail: "Approve strong matches and reject weak ones so the agency can prepare application packets.",
+        label: "Review jobs",
+        href: "/jobs",
+        color: "primary",
+      },
+    };
+  }
+  return {
+    readyToApply,
+    reviewQueue,
+    blockers,
+    appliedToday,
+    latestSearchFreshness,
+    primaryAction: {
+      title: "Run search to create today's pipeline",
+      detail: "Discovery is the next best action when there are no ready applications or review decisions.",
+      label: "Run search",
+      postTo: "/api/jobs/search/run",
+      color: "primary",
+    },
+  };
+}
+
+function formatSearchFreshness(value: Date) {
+  const diffMs = Date.now() - value.getTime();
+  const diffHours = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
+  if (diffHours < 1) return "less than 1 hour ago";
+  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(diffHours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function Metric({ label, value, helper }: { label: string; value: string; helper: string }) {

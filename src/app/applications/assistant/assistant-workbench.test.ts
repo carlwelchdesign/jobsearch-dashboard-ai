@@ -41,12 +41,17 @@ describe("AssistantWorkbench run feedback panel", () => {
     expect(workbenchSource).not.toContain("Materials are ready. Launch the assistant when you are ready to work this item.");
   });
 
-  it("renders Apply Sprint candidate visibility tabs and funnel controls", () => {
+  it("keeps the next application first and moves visibility diagnostics into details", () => {
     const pageSource = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/page.tsx"), "utf8");
     const workbenchSource = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/assistant-workbench.tsx"), "utf8");
 
     expect(pageSource).toContain("buildApplySprintTrustFunnel");
     expect(pageSource).toContain("trustFunnel={trustFunnel}");
+    expect(workbenchSource).toContain("Next application");
+    expect(workbenchSource).toContain("Complete the selected application");
+    expect(workbenchSource).toContain("Details and recovery");
+    expect(workbenchSource).toContain("Assistant run details");
+    expect(workbenchSource).toContain("Search-to-Apply visibility");
     expect(workbenchSource).toContain("Search-to-Apply Sprint funnel");
     expect(workbenchSource).toContain("Ready (");
     expect(workbenchSource).toContain("Candidates (");

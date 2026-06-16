@@ -7,7 +7,7 @@ import Snackbar from "@mui/material/Snackbar";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function MarkAppliedButton({ applicationId, size = "small" }: { applicationId: string; size?: "small" | "medium" }) {
+export function MarkAppliedButton({ applicationId, size = "small", label = "Mark as applied" }: { applicationId: string; size?: "small" | "medium"; label?: string }) {
   const { refresh } = useRouter();
   const [notice, setNotice] = useState("");
   const [severity, setSeverity] = useState<"success" | "error">("success");
@@ -40,7 +40,7 @@ export function MarkAppliedButton({ applicationId, size = "small" }: { applicati
         disabled={loading}
         onClick={markApplied}
       >
-        {loading ? "Updating..." : "Mark as applied"}
+        {loading ? "Updating..." : label}
       </Button>
       <Snackbar open={Boolean(notice)} autoHideDuration={4500} onClose={() => setNotice("")}>
         <Alert severity={severity} variant="filled" onClose={() => setNotice("")}>

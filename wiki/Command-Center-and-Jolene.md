@@ -1,24 +1,22 @@
-# Command Center and Jolene
+# Today Cockpit and Jolene
 
-## Command Center
+## Today Cockpit
 
-The Command Center is the main operating page for the job search system. It replaces the old linear "step" flow with a live operating view.
+The Today cockpit at `/dashboard` is the main daily page for the job search system. It is optimized for the candidate's highest-value loop: find jobs, make quick decisions, apply to prepared roles, and follow up.
 
 It shows:
 
-- latest search run state
-- live search progress
-- LinkedIn post analytics KPIs and charts
-- jobs found, deduped, filtered, and saved
-- open blockers
-- application packet review needs
-- application pipeline counts
-- daily plan actions
-- links to high-priority work
+- a single daily goal strip with the next best action
+- Find jobs, Decide, Apply today, and Follow up lanes
+- ready-to-apply, review, blocker, applied-today, and search-saved counts
+- the top review decision when one is blocking packet prep
+- the next ready application and manual applied confirmation
+- blocker and daily-plan entry points
+- system support below the daily workflow
 
 ## Live Search Updates
 
-The search run command center reads the latest `JobSearchRun` and displays meaningful progress while a run is active.
+The Find Jobs page reads the latest `JobSearchRun` and displays meaningful progress while a run is active. The primary layer focuses on run status, fetched/filtered/saved counts, ready signal, and profile optimization. Charts, live event streams, agency handoff internals, and optimizer diagnostics live behind **Run details**.
 
 Tracked run data includes:
 
@@ -37,7 +35,7 @@ The goal is for the user to see what the search system is actually doing instead
 
 ## LinkedIn Analytics
 
-Command Center includes a LinkedIn Analytics card for published posts. It supports two data paths:
+The Social operations route includes a LinkedIn Analytics card for published posts. It supports two data paths:
 
 - API sync through the LinkedIn Member Post Statistics API when the analytics connection has `r_member_postAnalytics`.
 - CSV paste import when API access is unavailable or pending LinkedIn approval.
@@ -46,13 +44,13 @@ The card shows executive KPIs for impressions, reach, reactions, comments, repos
 
 Only aggregate post metrics are stored. Viewer identities, commenter identities, private profile data, job URLs, salaries, recruiters, and application-specific outcomes are not collected for this dashboard.
 
-The main search action starts the gated search improvement loop. After discovery, scoring, duplicate detection, and recruiting-agency handoff, Command Center shows a Profile Health gate. If unresolved `needs_review` jobs or prepared-but-unworked applications remain, the loop pauses and explains the manual work required. When those gates clear, the Search Profile Manager refreshes health snapshots and Market Intelligence runs from the fresh profile data.
+The main search action starts the gated search improvement loop. After discovery, scoring, duplicate detection, and recruiting-agency handoff, Find Jobs shows the Profile Health gate. If unresolved `needs_review` jobs or prepared-but-unworked applications remain, the loop pauses and explains the manual work required. When those gates clear, the Search Profile Manager refreshes health snapshots and Market Intelligence runs from the fresh profile data.
 
-## Apply Sprint Agency Command Center
+## Apply Sprint
 
-The Apply Sprint page has a dedicated Agency command center for the application workflow. It uses a primary action panel for running the recruiting agency and showing live graph activity, plus a separate operations panel for packet preparation, packet sync, sprint-console access, and launching the next ready application.
+The Apply page starts with the next ready application rather than the full diagnostic funnel. The primary path shows the selected application, actual application link, packet readiness, assistant launch, cover-letter copy, manual applied confirmation, and reject/remove action.
 
-This keeps the main agency workflow visually distinct from secondary actions and avoids mixing stateful run status, select inputs, and action buttons in one uneven toolbar.
+Candidates, agency results, hidden/suppressed rows, queue progress, reset controls, assistant run details, and raw logs remain available behind details panels. This keeps normal daily application work fast while preserving auditability and recovery for complex cases.
 
 ## Daily Plan
 

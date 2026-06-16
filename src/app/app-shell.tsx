@@ -14,12 +14,12 @@ import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import TimelineOutlinedIcon from "@mui/icons-material/TimelineOutlined";
 import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
+import MoreHorizOutlinedIcon from "@mui/icons-material/MoreHorizOutlined";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Container from "@mui/material/Container";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
-import IconButton from "@mui/material/IconButton";
 import List from "@mui/material/List";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
@@ -32,16 +32,14 @@ import Typography from "@mui/material/Typography";
 const drawerWidth = 264;
 
 const navItems = [
-  { href: "/dashboard", label: "Command Center", eyebrow: "Home", icon: DashboardOutlinedIcon },
-  { href: "/jobs", label: "Jobs", eyebrow: "Review queue", icon: WorkOutlineOutlinedIcon },
-  { href: "/applications/assistant", label: "Apply Sprint", eyebrow: "Run agent", icon: BoltOutlinedIcon },
+  { href: "/dashboard", label: "Today", eyebrow: "Daily cockpit", icon: DashboardOutlinedIcon },
+  { href: "/dashboard/search", label: "Find Jobs", eyebrow: "Search and decide", icon: WorkOutlineOutlinedIcon },
+  { href: "/applications/assistant", label: "Apply", eyebrow: "Daily sprint", icon: BoltOutlinedIcon },
   { href: "/applications", label: "Applications", eyebrow: "Track outcomes", icon: AssignmentTurnedInOutlinedIcon },
   { href: "/resumes/generated", label: "Materials", eyebrow: "Resumes", icon: DescriptionOutlinedIcon },
-  { href: "/evidence", label: "Evidence", eyebrow: "Truth store", icon: FactCheckOutlinedIcon },
-  { href: "/outcomes", label: "Outcomes", eyebrow: "Learning", icon: TimelineOutlinedIcon },
-  { href: "/architecture", label: "Architecture", eyebrow: "System map", icon: AccountTreeOutlinedIcon },
+  { href: "/needs-me", label: "Follow Up", eyebrow: "Needs you", icon: TimelineOutlinedIcon },
   { href: "/settings", label: "Settings", eyebrow: "Configure", icon: SettingsOutlinedIcon },
-  { href: "/guide", label: "User Guide", eyebrow: "How to use this", icon: MenuBookOutlinedIcon },
+  { href: "/architecture", label: "System", eyebrow: "Diagnostics", icon: MoreHorizOutlinedIcon },
 ];
 
 const settingsSubItems = [
@@ -52,10 +50,22 @@ const settingsSubItems = [
   { href: "/settings/admin", label: "Admin" },
 ];
 
+const systemSubItems = [
+  { href: "/jobs", label: "Job Admin", icon: FactCheckOutlinedIcon },
+  { href: "/evidence", label: "Evidence", icon: FactCheckOutlinedIcon },
+  { href: "/outcomes", label: "Outcomes", icon: TimelineOutlinedIcon },
+  { href: "/profiles", label: "Profiles", icon: AccountTreeOutlinedIcon },
+  { href: "/agents", label: "Agent Board", icon: AutoAwesomeOutlinedIcon },
+  { href: "/architecture", label: "Architecture", icon: AccountTreeOutlinedIcon },
+  { href: "/guide", label: "User Guide", icon: MenuBookOutlinedIcon },
+];
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
+  const systemActive = systemSubItems.some((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
   const [settingsExpanded, setSettingsExpanded] = useState(settingsActive);
+  const [systemExpanded, setSystemExpanded] = useState(systemActive);
 
   return (
     <Box
@@ -109,22 +119,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             const selected = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
             const isSettings = item.href === "/settings";
+            const isSystem = item.href === "/architecture";
             const showSettingsChildren = isSettings && (settingsExpanded || settingsActive);
+            const showSystemChildren = isSystem && (systemExpanded || systemActive);
+            const selectedForItem = isSystem ? systemActive : selected;
 
             return (
               <Box key={item.href}>
               <ListItemButton
                 component={Link}
                 href={item.href}
-                selected={selected}
+                selected={selectedForItem}
                 onClick={() => {
                   if (isSettings) setSettingsExpanded(true);
                   else setSettingsExpanded(false);
+                  if (isSystem) setSystemExpanded(true);
+                  else setSystemExpanded(false);
                 }}
                 sx={{
                   mb: 0.5,
                   minHeight: 44,
-                  color: selected ? "primary.dark" : "text.secondary",
+                  color: selectedForItem ? "primary.dark" : "text.secondary",
                   border: "1px solid transparent",
                   "&:hover": {
                     bgcolor: "#eef7f6",
@@ -139,7 +154,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   },
                 }}
               >
-                <ListItemIcon sx={{ minWidth: 38, color: selected ? "inherit" : "text.secondary" }}>
+                <ListItemIcon sx={{ minWidth: 38, color: selectedForItem ? "inherit" : "text.secondary" }}>
                   <Icon fontSize="small" />
                 </ListItemIcon>
                 <ListItemText
@@ -147,13 +162,45 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   secondary={item.eyebrow}
                   sx={{
                     "& .MuiListItemText-primary": { fontSize: 14, fontWeight: 800, lineHeight: 1.25 },
-                    "& .MuiListItemText-secondary": { color: selected ? "primary.dark" : "text.secondary", lineHeight: 1.2 },
+                    "& .MuiListItemText-secondary": { color: selectedForItem ? "primary.dark" : "text.secondary", lineHeight: 1.2 },
                   }}
                 />
               </ListItemButton>
               {showSettingsChildren ? (
                 <Stack spacing={0.25} sx={{ mb: 0.75, ml: 5 }}>
                   {settingsSubItems.map((subItem) => {
+                    const subSelected = pathname === subItem.href || pathname.startsWith(`${subItem.href}/`);
+                    return (
+                      <ListItemButton
+                        key={subItem.href}
+                        component={Link}
+                        href={subItem.href}
+                        selected={subSelected}
+                        sx={{
+                          minHeight: 32,
+                          py: 0.5,
+                          px: 1,
+                          borderRadius: 1,
+                          color: subSelected ? "primary.dark" : "text.secondary",
+                          "&.Mui-selected": {
+                            bgcolor: "#e6f5f3",
+                            color: "primary.dark",
+                            "&:hover": { bgcolor: "#d9efec" },
+                          },
+                        }}
+                      >
+                        <ListItemText
+                          primary={subItem.label}
+                          sx={{ "& .MuiListItemText-primary": { fontSize: 13, fontWeight: 800, lineHeight: 1.2 } }}
+                        />
+                      </ListItemButton>
+                    );
+                  })}
+                </Stack>
+              ) : null}
+              {showSystemChildren ? (
+                <Stack spacing={0.25} sx={{ mb: 0.75, ml: 5 }}>
+                  {systemSubItems.map((subItem) => {
                     const subSelected = pathname === subItem.href || pathname.startsWith(`${subItem.href}/`);
                     return (
                       <ListItemButton
@@ -231,26 +278,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {navItems.map((item) => {
               const selected = pathname === item.href || pathname.startsWith(`${item.href}/`);
               const Icon = item.icon;
+              const shortLabel = item.label.length > 10 ? item.label.split(" ")[0] : item.label;
 
               return (
                 <Tooltip key={item.href} title={`${item.label}: ${item.eyebrow}`}>
-                  <IconButton
+                  <Box
                     component={Link}
                     href={item.href}
                     aria-label={item.label}
-                    color={selected ? "primary" : "default"}
                     sx={{
                       flex: "0 0 auto",
-                      width: 42,
-                      height: 42,
+                      minWidth: 72,
+                      minHeight: 48,
+                      px: 1,
+                      py: 0.75,
                       borderRadius: 2,
                       border: "1px solid",
                       borderColor: selected ? "primary.main" : "divider",
-                      bgcolor: selected ? "#e6f5f3" : "transparent",
+                      bgcolor: selected ? "#e6f5f3" : "background.paper",
+                      color: selected ? "primary.dark" : "text.secondary",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 0.25,
                     }}
                   >
                     <Icon fontSize="small" />
-                  </IconButton>
+                    <Typography variant="caption" sx={{ fontSize: 11, fontWeight: 800, lineHeight: 1 }}>
+                      {shortLabel}
+                    </Typography>
+                  </Box>
                 </Tooltip>
               );
             })}
