@@ -86,6 +86,17 @@ describe("Command Center subnav routes", () => {
     expect(contentSource).toContain("Safety Policy");
   });
 
+  it("surfaces recruiting search optimization on the Search Ops route", () => {
+    const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
+    const commandCenterSource = readFileSync(resolve(process.cwd(), "src/components/search-run-command-center.tsx"), "utf8");
+
+    expect(contentSource).toContain("searchOptimizationRun.findFirst");
+    expect(contentSource).toContain("serializeSearchOptimization");
+    expect(commandCenterSource).toContain("Recruiting Search Team");
+    expect(commandCenterSource).toContain("Qualified yield");
+    expect(commandCenterSource).toContain('href="/profiles"');
+  });
+
   it("keeps market analysis centralized on the market dashboard route", () => {
     const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
     const tabsSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/market-analysis-tabs.tsx"), "utf8");

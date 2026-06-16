@@ -99,7 +99,19 @@ type SearchRun = {
   progress: ProgressEvent[];
 };
 
-export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun | null }) {
+export type LatestSearchOptimization = {
+  summary: string;
+  targetMetric: string;
+  metricsJson: {
+    qualifiedYield?: number;
+    topBlocker?: { label?: string } | null;
+    jobsAfterFilters?: number;
+    jobsFetched?: number;
+  };
+  changes: Array<{ status: string; riskLevel: string }>;
+};
+
+export function SearchRunCommandCenter({ initialRun, latestOptimization }: { initialRun: SearchRun | null; latestOptimization?: LatestSearchOptimization | null }) {
   const { refresh } = useRouter();
   const [run, setRun] = useState<SearchRun | null>(initialRun);
   const [agencyRun, setAgencyRun] = useState<AgencyRunStatus | null>(null);
@@ -206,6 +218,8 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
 
           <SearchRunAnalyticsCharts run={run} compact />
 
+          {latestOptimization ? <SearchOptimizationSummaryPanel latest={latestOptimization} /> : null}
+
           {agencyHandoff ? (
             <AgencyHandoffPanel
               handoff={agencyHandoff}
@@ -252,6 +266,29 @@ export function SearchRunCommandCenter({ initialRun }: { initialRun: SearchRun |
         </Stack>
       </CardContent>
     </Card>
+  );
+}
+
+function SearchOptimizationSummaryPanel({ latest }: { latest: LatestSearchOptimization }) {
+  const applied = latest.changes.filter((change) => change.status === "APPLIED").length;
+  const reviewOnly = latest.changes.filter((change) => change.status === "REVIEW_ONLY").length;
+  return (
+    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5, bgcolor: "background.paper" }}>
+      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+        <Box>
+          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.75 }}>
+            <Chip size="small" color="primary" label="Recruiting Search Team" />
+            <Chip size="small" variant="outlined" label={`Qualified yield ${latest.metricsJson.qualifiedYield ?? 0}%`} />
+            {latest.metricsJson.topBlocker?.label ? <Chip size="small" color="warning" variant="outlined" label={`Blocker: ${latest.metricsJson.topBlocker.label}`} /> : null}
+          </Stack>
+          <Typography sx={{ fontWeight: 850 }}>{latest.summary}</Typography>
+          <Typography variant="caption" color="text.secondary">
+            {applied} applied change(s), {reviewOnly} review-only change(s). Manage profile edits and rollback from Search Profiles.
+          </Typography>
+        </Box>
+        <Button href="/profiles" size="small" variant="outlined">Review profiles</Button>
+      </Stack>
+    </Box>
   );
 }
 

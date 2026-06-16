@@ -14,7 +14,7 @@ describe("buildJoleneChiefBrief", () => {
         { id: "run_failed", agentType: "RECRUITING_AGENCY", status: "FAILED", createdAt: new Date("2026-06-13T15:00:00.000Z"), updatedAt: new Date("2026-06-13T15:00:00.000Z"), error: "packet failed", parentRunId: null },
         { id: "run_market", agentType: "MARKET_INTELLIGENCE", status: "COMPLETED", createdAt: new Date("2026-06-11T15:00:00.000Z"), updatedAt: new Date("2026-06-11T15:00:00.000Z"), error: null, parentRunId: null },
       ],
-      latestSearchRun: { id: "search_1", status: "completed", startedAt: new Date("2026-06-10T15:00:00.000Z"), jobsFetched: 100, jobsSaved: 4, errors: [] },
+      latestSearchRun: searchRun({ startedAt: "2026-06-10T15:00:00.000Z", jobsFetched: 100, jobsAfterFilters: 12, jobsSaved: 4 }),
       applicationCounts: { ready_to_apply: 2 },
       needsReviewCount: 4,
       readyApplicationCount: 2,
@@ -57,7 +57,7 @@ describe("buildJoleneChiefBrief", () => {
       source: "manual",
       openRequests: [],
       recentRuns: [],
-      latestSearchRun: { id: "search_1", status: "completed", startedAt: new Date("2026-06-13T15:00:00.000Z"), jobsFetched: 20, jobsSaved: 2, errors: [] },
+      latestSearchRun: searchRun({ startedAt: "2026-06-13T15:00:00.000Z", jobsFetched: 20, jobsAfterFilters: 5, jobsSaved: 2 }),
       applicationCounts: {},
       needsReviewCount: 0,
       readyApplicationCount: 0,
@@ -96,3 +96,26 @@ describe("buildJoleneChiefBrief", () => {
     expect(brief.evidence).toEqual(expect.arrayContaining(["Email Ops: 3 finding(s), 2 pending approval(s), 1 calendar draft(s)."]));
   });
 });
+
+function searchRun(input: { startedAt: string; jobsFetched: number; jobsAfterFilters: number; jobsSaved: number }) {
+  return {
+    id: "search_1",
+    status: "completed",
+    startedAt: new Date(input.startedAt),
+    jobsFetched: input.jobsFetched,
+    jobsAfterDedupe: input.jobsAfterFilters,
+    jobsAfterFilters: input.jobsAfterFilters,
+    jobsSaved: input.jobsSaved,
+    progress: [{
+      stats: {
+        jobsFetched: input.jobsFetched,
+        jobsAfterDedupe: input.jobsAfterFilters,
+        jobsAfterFilters: input.jobsAfterFilters,
+        jobsSaved: input.jobsSaved,
+        jobsScored: input.jobsFetched,
+        jobsBelowThreshold: Math.max(0, input.jobsFetched - input.jobsAfterFilters),
+      },
+    }],
+    errors: [],
+  };
+}

@@ -33,11 +33,12 @@ import type { OptimizerOutput } from "./profile-optimizer-panel";
 import { ProfileRebuildPanel } from "./profile-rebuild-panel";
 import { SearchExpansionPanel } from "./search-expansion-panel";
 import type { SearchExpansionPanelOutput } from "./search-expansion-panel";
+import { SearchOptimizationPanel, type SearchOptimizationPanelData } from "./search-optimization-panel";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProfilesPage() {
-  const [profiles, latestOptimizerRun, latestExpansionRun] = await Promise.all([
+  const [profiles, latestOptimizerRun, latestExpansionRun, latestOptimizationRun] = await Promise.all([
     prisma.jobSearchProfile.findMany({
       include: {
         performanceSnapshots: {
@@ -58,6 +59,15 @@ export default async function ProfilesPage() {
       where: {
         agentType: "SEARCH_EXPANSION",
         status: "COMPLETED",
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.searchOptimizationRun.findFirst({
+      include: {
+        changes: {
+          include: { searchProfile: { select: { name: true } } },
+          orderBy: { createdAt: "desc" },
+        },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -99,6 +109,7 @@ export default async function ProfilesPage() {
 
         <ProfileSuggestionPanel />
         <ProfileRebuildPanel />
+        <SearchOptimizationPanel latest={toSearchOptimizationPanelData(latestOptimizationRun)} />
         <ProfileOptimizerPanel latest={isRecord(latestOptimizerRun?.outputJson) ? latestOptimizerRun.outputJson as OptimizerOutput : null} />
         <SearchExpansionPanel latest={isRecord(latestExpansionRun?.outputJson) ? latestExpansionRun.outputJson as SearchExpansionPanelOutput : null} />
 
@@ -248,4 +259,38 @@ function isOlderThanDays(date: Date | null, days: number) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function toSearchOptimizationPanelData(value: unknown): SearchOptimizationPanelData | null {
+  if (!isRecord(value)) return null;
+  const run = value as {
+    id: string;
+    summary: string;
+    mode: string;
+    targetMetric: string;
+    metricsJson: unknown;
+    changes: Array<{
+      id: string;
+      action: string;
+      status: string;
+      riskLevel: string;
+      rationale: string;
+      searchProfile: { name: string };
+    }>;
+  };
+  return {
+    id: run.id,
+    summary: run.summary,
+    mode: run.mode,
+    targetMetric: run.targetMetric,
+    metricsJson: isRecord(run.metricsJson) ? run.metricsJson : {},
+    changes: run.changes.map((change) => ({
+      id: change.id,
+      action: change.action,
+      status: change.status,
+      riskLevel: change.riskLevel,
+      rationale: change.rationale,
+      searchProfile: { name: change.searchProfile.name },
+    })),
+  };
 }

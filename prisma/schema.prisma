@@ -240,6 +240,12 @@ enum AgentType {
   EMAIL_PRIVACY_REVIEWER
   EMAIL_OPS_REPORTER
   SYSTEM_ARCHITECTURE
+  RECRUITING_SEARCH_DIRECTOR
+  SEARCH_YIELD_ANALYST
+  SEARCH_PROFILE_EDITOR
+  SOURCE_QUALITY_ANALYST
+  MATCH_CALIBRATION_REVIEWER
+  OUTCOME_RECRUITER
 }
 
 enum AgentRunStatus {
@@ -498,6 +504,8 @@ model User {
   resumeUploads               ResumeUpload[]
   resumes                     GeneratedResume[]
   searchProfiles              JobSearchProfile[]
+  searchOptimizationRuns      SearchOptimizationRun[]
+  searchProfileChanges        SearchProfileChange[]
   skillAdjustments            SkillAdjustment[]
   skillFeedback               SkillFeedback[]
   thankYouDrafts              ThankYouDraft[]
@@ -776,6 +784,7 @@ model JobSearchProfile {
   evaluations              JobEvaluation[]
   matches                  JobProfileMatch[]
   performanceSnapshots     SearchProfilePerformance[]
+  searchProfileChanges     SearchProfileChange[]
   user                     User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, name])
@@ -804,6 +813,57 @@ model SearchProfilePerformance {
   searchProfile           JobSearchProfile @relation(fields: [searchProfileId], references: [id], onDelete: Cascade)
 
   @@index([searchProfileId, lastEvaluatedAt])
+}
+
+model SearchOptimizationRun {
+  id              String                @id @default(cuid())
+  userId          String
+  agentRunId      String?
+  mode            String                @default("active")
+  targetMetric    String                @default("QUALIFIED_YIELD")
+  status          String                @default("COMPLETED")
+  summary         String
+  metricsJson     Json                  @default("{}")
+  recommendations Json                  @default("[]")
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  agentRun        AgentRun?             @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  changes         SearchProfileChange[]
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([agentRunId])
+  @@index([targetMetric, status])
+}
+
+model SearchProfileChange {
+  id                  String                @id @default(cuid())
+  optimizationRunId   String
+  userId              String
+  agentRunId          String?
+  searchProfileId     String
+  action              String
+  status              String                @default("PROPOSED")
+  riskLevel           String                @default("LOW")
+  fieldName           String?
+  beforeJson          Json                  @default("{}")
+  afterJson           Json                  @default("{}")
+  rollbackJson        Json                  @default("{}")
+  rationale           String
+  expectedMetricsJson Json                  @default("{}")
+  appliedAt           DateTime?
+  rolledBackAt        DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  agentRun            AgentRun?             @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  optimizationRun     SearchOptimizationRun @relation(fields: [optimizationRunId], references: [id], onDelete: Cascade)
+  searchProfile       JobSearchProfile      @relation(fields: [searchProfileId], references: [id], onDelete: Cascade)
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([searchProfileId, createdAt])
+  @@index([optimizationRunId])
+  @@index([agentRunId])
 }
 
 model ResumeProfile {
@@ -1233,6 +1293,8 @@ model AgentRun {
   linkedinPostDrafts LinkedInPostDraft[]
   emailOpsFindings   EmailOpsFinding[]
   materialClaims     MaterialClaim[]
+  searchOptimizationRuns SearchOptimizationRun[]
+  searchProfileChanges   SearchProfileChange[]
 
   @@index([agentType, createdAt])
   @@index([status, createdAt])
