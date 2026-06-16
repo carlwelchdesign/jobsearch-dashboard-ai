@@ -5,6 +5,11 @@ import { apiError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { digestRoleDescriptionToBullets, inferRoleDescriptionMetadata } from "@/lib/resumes/bullet-digest";
 import { toExperienceCategory } from "@/lib/resumes/db";
+import {
+  appendVersionSuggestions,
+  mergeResumeExperienceContext,
+  resumeContextJson,
+} from "@/lib/resumes/resume-context";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +81,15 @@ export async function POST(request: Request) {
             summary: metadata.summary ?? existingWorkExperience.summary,
             skills: mergeJsonStrings(existingWorkExperience.skills, metadata.skills) as Prisma.InputJsonValue,
             achievements: mergeJsonStrings(existingWorkExperience.achievements, metadata.achievements) as Prisma.InputJsonValue,
+            resumeContext: resumeContextJson(mergeResumeExperienceContext(
+              appendVersionSuggestions(existingWorkExperience.resumeContext, metadata.resumeContext.versionSuggestions),
+              {
+                applicationTitle: metadata.resumeContext.applicationTitle,
+                applicationSummary: metadata.resumeContext.applicationSummary,
+                users: metadata.resumeContext.users,
+                scaleImpact: metadata.resumeContext.scaleImpact,
+              },
+            )),
           },
         })
       : await prisma.workExperience.create({
@@ -90,6 +104,7 @@ export async function POST(request: Request) {
             summary: metadata.summary,
             skills: metadata.skills as Prisma.InputJsonValue,
             achievements: metadata.achievements as Prisma.InputJsonValue,
+            resumeContext: resumeContextJson(metadata.resumeContext),
           },
         });
 

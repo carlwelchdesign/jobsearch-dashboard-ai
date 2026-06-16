@@ -1137,6 +1137,7 @@ model WorkExperience {
   summary              String?
   skills               Json               @default("[]")
   achievements         Json               @default("[]")
+  resumeContext        Json               @default("{}")
   sourceResumeUploadId String?
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt

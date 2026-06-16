@@ -10,6 +10,7 @@ import {
   selectResumeSourceWorkExperiences,
   summarizeResumeSourceBullets,
 } from "@/lib/resumes/source-materials";
+import { pendingVersionSuggestionsFromContexts } from "@/lib/resumes/resume-context";
 import { syncMaterialClaimsForResume } from "@/lib/trust/material-claims";
 
 export const dynamic = "force-dynamic";
@@ -48,12 +49,14 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     const parsedUpload = user.profile.resumeUploads[0]?.parsedJson as { education?: string[]; certifications?: string[] } | undefined;
     const bullets = selectResumeSourceBullets(user.profile.experienceBullets, latestUploadId);
     const sourceMaterialSummary = summarizeResumeSourceBullets(bullets, latestUploadId);
+    const workExperiences = selectResumeSourceWorkExperiences(user.profile.workExperiences, latestUploadId);
+    const versionSuggestions = pendingVersionSuggestionsFromContexts(workExperiences.map((work) => work.resumeContext));
     const tailored = await tailorResumeForJob({
       userProfile: user.profile,
       job,
       bullets,
       projects: user.profile.projects,
-      workExperiences: selectResumeSourceWorkExperiences(user.profile.workExperiences, latestUploadId),
+      workExperiences,
       githubRepositories: user.profile.githubRepositories,
       education: Array.isArray(parsedUpload?.education) ? parsedUpload.education : [],
       certifications: Array.isArray(parsedUpload?.certifications) ? parsedUpload.certifications : [],
@@ -81,6 +84,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
           projectSelections: tailored.projectSelections,
           resumeStrategy: strategy,
           sourceMaterialSummary,
+          versionSuggestions,
         } as Prisma.InputJsonValue,
         atsChecks: atsChecks as Prisma.InputJsonValue,
       },

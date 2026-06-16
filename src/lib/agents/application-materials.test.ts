@@ -118,4 +118,21 @@ describe("reviewApplicationMaterials", () => {
     expect(qa.warnings.some((warning) => warning.includes("Top-third resume visibility"))).toBe(true);
     expect(qa.suggestedEdits.some((edit) => edit.includes("summary"))).toBe(true);
   });
+
+  it("flags unapproved inferred technology version language", () => {
+    const qa = reviewApplicationMaterials({
+      job: {
+        title: "Frontend Engineer",
+        company: "Example Co",
+        description: "React and TypeScript role.",
+      } as JobPosting,
+      resumeMarkdown: "# Candidate\nTech Used: likely React 16-17, TypeScript 3.x-4.x",
+      coverLetterBody: null,
+      evidenceRefs: ["ev1"],
+    });
+
+    expect(qa.status).toBe("NEEDS_REVIEW");
+    expect(qa.unsupportedClaims.some((claim) => claim.includes("unapproved inferred technology/version"))).toBe(true);
+    expect(qa.suggestedEdits).toContain("Remove inferred version language from the resume, or approve the exact version in the resume profile first.");
+  });
 });

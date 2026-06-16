@@ -56,6 +56,23 @@ describe("POST /api/resumes/bullets/digest", () => {
       summary: null,
       skills: ["React", "TypeScript"],
       achievements: ["Built React and TypeScript dashboards for workflow automation."],
+      resumeContext: {
+        applicationTitle: undefined,
+        applicationSummary: undefined,
+        users: undefined,
+        scaleImpact: undefined,
+        confirmedTech: [],
+        versionSuggestions: [{
+          id: "react:16-17",
+          name: "React",
+          suggestedVersion: "16-17",
+          confidence: 0.56,
+          rationale: "Estimated from role dates after React appeared in role evidence.",
+          status: "NEEDS_REVIEW",
+          source: "date_window",
+          evidence: ["React"],
+        }],
+      },
     });
     digestMock.mockResolvedValue({
       bullets: [{
@@ -170,6 +187,14 @@ describe("POST /api/resumes/bullets/digest", () => {
       summary: "Built frontend features for Revenue.io's AI-driven sales engagement and guided selling platform.",
       skills: ["React", "TypeScript", "Node.js"],
       achievements: ["Built frontend features for Revenue.io's AI-driven sales engagement and guided selling platform."],
+      resumeContext: {
+        applicationTitle: "Guided Selling Platform",
+        applicationSummary: "Built frontend features for Revenue.io's AI-driven sales engagement and guided selling platform.",
+        users: "sales teams",
+        scaleImpact: "enterprise sales operations",
+        confirmedTech: [],
+        versionSuggestions: [],
+      },
     });
     createWorkExperienceMock.mockResolvedValue({ id: "work_revenue", company: "Revenue.io", title: "Senior Software Engineer" } as Awaited<ReturnType<typeof prisma.workExperience.create>>);
 
@@ -218,6 +243,7 @@ describe("POST /api/resumes/bullets/digest", () => {
       endDate: null,
       isCurrent: false,
       summary: null,
+      resumeContext: {},
     } as Awaited<ReturnType<typeof prisma.workExperience.findFirst>>);
     updateWorkExperienceMock.mockResolvedValue({ id: "work_existing" } as Awaited<ReturnType<typeof prisma.workExperience.update>>);
     findExistingBulletsMock.mockResolvedValue([
@@ -238,6 +264,13 @@ describe("POST /api/resumes/bullets/digest", () => {
     expect(response.status).toBe(200);
     expect(updateWorkExperienceMock).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "work_existing" },
+      data: expect.objectContaining({
+        resumeContext: expect.objectContaining({
+          versionSuggestions: expect.arrayContaining([
+            expect.objectContaining({ status: "NEEDS_REVIEW", name: "React" }),
+          ]),
+        }),
+      }),
     }));
     expect(createMock).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toMatchObject({
