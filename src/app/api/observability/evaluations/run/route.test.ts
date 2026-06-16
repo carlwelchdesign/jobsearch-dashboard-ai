@@ -44,11 +44,22 @@ describe("POST /api/observability/evaluations/run", () => {
     await expect(response.json()).resolves.toMatchObject({ ok: true, scanned: 3, targets: [{ target: "RECRUITING_AGENCY" }] });
   });
 
-  it("rejects invalid targets", async () => {
+  it("runs generated-material evaluations", async () => {
     const response = await POST(new Request("http://localhost/api/observability/evaluations/run", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ target: "GENERATED_MATERIALS" }),
+    }));
+
+    expect(runEvaluationsMock).toHaveBeenCalledWith({ userId: "user_1", target: "GENERATED_MATERIALS" });
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects invalid targets", async () => {
+    const response = await POST(new Request("http://localhost/api/observability/evaluations/run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ target: "OUTREACH" }),
     }));
 
     expect(response.status).toBe(400);

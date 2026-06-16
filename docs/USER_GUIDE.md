@@ -1931,6 +1931,10 @@ Click **Settings** in the left sidebar → **Admin and supporting tools** → **
 
 The **Control Plane** section is inspect-only. It shows each registered agent's owner area, runtime, allowed tools, blocked actions, side effects, approval requirement, current status, child-run count, blocked-action count, and latest evaluation score. It does not add new autonomous controls.
 
+The **Quality Gates** section answers a different question: which agent areas are safe to scale, and which need review first. It groups the quality loop by target area, such as application assistant, recruiting agency, job search, job matching, generated materials, outreach, outcome learning, and command center recommendations. Each row shows recent examples, evaluations, score, failed or review-needed signals, proposed improvements, blocked actions, and the next manual surface to inspect. For supported targets, you can run the deterministic evaluation from this board.
+
+Treat a blocked, stale, or missing-evaluation gate as an operating signal, not as a new automation control. The board does not send applications, email recruiters, write calendar events, or publish LinkedIn content by itself.
+
 For each run you can:
 - See the input, output, and status
 - View the event log

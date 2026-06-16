@@ -30,6 +30,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { StatusChip } from "@/components/ui/status-chip";
 import { graphRunControlState } from "@/lib/agents/graph-run-controls";
+import { buildAgentQualityGates, type AgentQualityGate, type AgentQualityGateSummary } from "@/lib/agents/quality-gates";
 import { buildAgentRoster, type AgentRosterItem } from "@/lib/agents/roster";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
@@ -80,7 +81,7 @@ type AgentRunObservability = {
 };
 
 export default async function AgentReviewBoardPage() {
-  const [runs, evidenceNeedsReview, jobEvaluations, profileOptimizerRun, dailyPlanRun, resumesNeedingReview, coverLettersNeedingReview, roster] = await Promise.all([
+  const [runs, evidenceNeedsReview, jobEvaluations, profileOptimizerRun, dailyPlanRun, resumesNeedingReview, coverLettersNeedingReview, roster, qualityGates] = await Promise.all([
     prisma.agentRun.findMany({
       orderBy: { createdAt: "desc" },
       take: 40,
@@ -122,6 +123,7 @@ export default async function AgentReviewBoardPage() {
       take: 20,
     }),
     buildAgentRoster(),
+    loadAgentQualityGates(),
   ]);
   const latestProfileOutput = outputObject(profileOptimizerRun?.outputJson);
   const latestDailyPlan = outputObject(dailyPlanRun?.outputJson);
@@ -191,6 +193,8 @@ export default async function AgentReviewBoardPage() {
           <Metric icon={<AutoFixHighOutlinedIcon />} label="Job advice" value={jobEvaluations.length.toString()} helper="High-priority evaluations" />
           <Metric icon={<ReportProblemOutlinedIcon />} label="Material QA" value={materialReviewItems.length.toString()} helper="Needs review" />
         </Box>
+
+        {qualityGates ? <AgentQualityGateSection summary={qualityGates} /> : null}
 
         <AgentControlPlaneSection roster={roster} />
 
@@ -434,6 +438,112 @@ export default async function AgentReviewBoardPage() {
   );
 }
 
+async function loadAgentQualityGates() {
+  const agentUser = await prisma.user.findFirst({ select: { id: true }, orderBy: { createdAt: "asc" } });
+  return agentUser ? buildAgentQualityGates({ userId: agentUser.id }) : null;
+}
+
+const runnableEvaluationTargets = new Set(["APPLICATION_ASSISTANT", "RECRUITING_AGENCY", "JOB_SEARCH", "JOB_MATCHING", "GENERATED_MATERIALS"]);
+
+function AgentQualityGateSection({ summary }: { summary: AgentQualityGateSummary }) {
+  return (
+    <Stack spacing={1.5}>
+      <SectionTitle title="Quality Gates" />
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(5, 1fr)" }, gap: 1 }}>
+        <GateMetric label="Can scale" value={summary.canScale} color="success" />
+        <GateMetric label="Blocked" value={summary.blocked} color={summary.blocked ? "error" : "default" } />
+        <GateMetric label="Needs review" value={summary.needsReview} color={summary.needsReview ? "warning" : "default"} />
+        <GateMetric label="Stale" value={summary.stale} color={summary.stale ? "warning" : "default"} />
+        <GateMetric label="Missing eval" value={summary.missingEval} color={summary.missingEval ? "info" : "default"} />
+      </Box>
+      <TableContainer component={Card}>
+        <Table sx={{ minWidth: 1160 }}>
+          <TableHead>
+            <TableRow>
+              <TableCell>Target</TableCell>
+              <TableCell>Status</TableCell>
+              <TableCell>Score</TableCell>
+              <TableCell>Coverage</TableCell>
+              <TableCell>Signals</TableCell>
+              <TableCell>Covered Agents</TableCell>
+              <TableCell>Action</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {summary.gates.map((gate) => (
+              <TableRow key={gate.target} hover>
+                <TableCell sx={{ maxWidth: 240 }}>
+                  <Typography sx={{ fontWeight: 850 }}>{gate.label}</Typography>
+                  <Typography variant="caption" color="text.secondary">{gate.ownerArea}</Typography>
+                </TableCell>
+                <TableCell>
+                  <Stack spacing={0.5}>
+                    <Chip size="small" color={qualityGateColor(gate.status)} variant="outlined" label={formatAction(gate.status)} />
+                    <Typography variant="caption" color="text.secondary">{gate.canScale ? "Scale allowed" : "Review first"}</Typography>
+                  </Stack>
+                </TableCell>
+                <TableCell>{typeof gate.score === "number" ? <ScoreChip score={gate.score} /> : <Chip size="small" label="n/a" />}</TableCell>
+                <TableCell>
+                  <Stack spacing={0.5}>
+                    <Typography variant="body2">{gate.examples} example(s)</Typography>
+                    <Typography variant="caption" color="text.secondary">{gate.evaluations} evaluation(s)</Typography>
+                    {gate.latestEvaluationAt ? <Typography variant="caption" color="text.secondary">Last {new Date(gate.latestEvaluationAt).toLocaleDateString()}</Typography> : null}
+                  </Stack>
+                </TableCell>
+                <TableCell sx={{ maxWidth: 300 }}>
+                  <Stack spacing={0.75}>
+                    <Typography variant="body2" color="text.secondary">{gate.detail}</Typography>
+                    <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: "wrap" }}>
+                      {gate.failedEvaluations ? <Chip size="small" color="error" variant="outlined" label={`${gate.failedEvaluations} failed`} /> : null}
+                      {gate.needsReviewEvaluations ? <Chip size="small" color="warning" variant="outlined" label={`${gate.needsReviewEvaluations} needs review`} /> : null}
+                      {gate.proposedImprovements ? <Chip size="small" color="warning" variant="outlined" label={`${gate.proposedImprovements} proposals`} /> : null}
+                      {gate.blockedActions ? <Chip size="small" color="error" variant="outlined" label={`${gate.blockedActions} blocked`} /> : null}
+                    </Stack>
+                  </Stack>
+                </TableCell>
+                <TableCell sx={{ maxWidth: 260 }}>
+                  <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: "wrap" }}>
+                    {gate.coveredAgentTypes.slice(0, 5).map((agentType) => <Chip key={`${gate.target}-${agentType}`} size="small" variant="outlined" label={formatAction(agentType)} />)}
+                    {gate.coveredAgentTypes.length > 5 ? <Chip size="small" label={`+${gate.coveredAgentTypes.length - 5}`} /> : null}
+                  </Stack>
+                </TableCell>
+                <TableCell>
+                  <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                    {runnableEvaluationTargets.has(gate.target) ? (
+                      <ActionButton postTo="/api/observability/evaluations/run" body={{ target: gate.target }} size="small" variant="contained" loadingLabel="Evaluating...">
+                        Run eval
+                      </ActionButton>
+                    ) : null}
+                    <ActionButton href={gate.nextActionHref} size="small" variant="outlined" endIcon={<OpenInNewIcon />}>
+                      {gate.nextActionLabel}
+                    </ActionButton>
+                  </Stack>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Stack>
+  );
+}
+
+function GateMetric({ label, value, color }: { label: string; value: number; color: "success" | "error" | "warning" | "info" | "default" }) {
+  return (
+    <Card>
+      <CardContent>
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+          <Box>
+            <Typography variant="caption" color="text.secondary">{label}</Typography>
+            <Typography variant="h2" sx={{ fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
+          </Box>
+          <Chip size="small" color={color} variant="outlined" label={label} />
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
 function workflowNodeLabel(value: string | null) {
   if (!value) return "graph";
   return value
@@ -654,4 +764,11 @@ function runtimeColor(runtime: AgentRosterItem["runtime"]) {
   if (runtime === "langgraph") return "info";
   if (runtime === "adk") return "secondary";
   return "default";
+}
+
+function qualityGateColor(status: AgentQualityGate["status"]) {
+  if (status === "pass") return "success";
+  if (status === "blocked") return "error";
+  if (status === "needs_review" || status === "stale") return "warning";
+  return "info";
 }

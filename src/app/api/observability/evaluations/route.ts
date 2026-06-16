@@ -6,8 +6,9 @@ import { z } from "zod";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const targetSchema = z.enum(["APPLICATION_ASSISTANT", "RECRUITING_AGENCY", "JOB_SEARCH", "JOB_MATCHING"]).optional();
-const supportedTargets: AgentQualityTarget[] = ["APPLICATION_ASSISTANT", "RECRUITING_AGENCY", "JOB_SEARCH", "JOB_MATCHING"];
+const supportedTargetValues = ["APPLICATION_ASSISTANT", "RECRUITING_AGENCY", "JOB_SEARCH", "JOB_MATCHING", "GENERATED_MATERIALS"] as const satisfies readonly AgentQualityTarget[];
+const supportedTargets: AgentQualityTarget[] = [...supportedTargetValues];
+const targetSchema = z.enum(supportedTargetValues).optional();
 
 export async function GET(request: Request) {
   try {
@@ -50,7 +51,7 @@ export async function GET(request: Request) {
     const averageScore = evaluations.length
       ? Math.round(evaluations.reduce((sum, evaluation) => sum + evaluation.score, 0) / evaluations.length)
       : null;
-    const byTarget = ["APPLICATION_ASSISTANT", "RECRUITING_AGENCY", "JOB_SEARCH", "JOB_MATCHING"].map((item) => ({
+    const byTarget = supportedTargets.map((item) => ({
       target: item,
       examples: examples.filter((example) => example.target === item).length,
       evaluations: evaluations.filter((evaluation) => evaluation.target === item).length,
