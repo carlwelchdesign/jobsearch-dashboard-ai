@@ -9,6 +9,7 @@ import { captureManualJob } from "@/lib/jobs/manual-capture";
 import { prisma } from "@/lib/prisma";
 import { checkAtsReadability } from "@/lib/resumes/ats";
 import { selectResumeSourceBullets, summarizeResumeSourceBullets } from "@/lib/resumes/source-materials";
+import { syncMaterialClaimsForResume } from "@/lib/trust/material-claims";
 
 const sourceName = "Recruiter Opportunity";
 const integrationSignalPattern = /\b(mcp|model context protocol|integration|integrate|systems?|api|salesforce|gong|zoominfo|ironclad|clm|legal workflow|harvey|simplelegal|logikcull|airtable|snowflake|data platform|workflow|automation)\b/i;
@@ -257,6 +258,7 @@ async function createGeneratedResumeForMatch(jobPostingId: string, jobProfileMat
     where: { id: resume.id },
     data: { generationNotes: resumeQa.notes },
   });
+  await syncMaterialClaimsForResume(reviewedResume.id);
   await prisma.jobProfileMatch.update({
     where: { id: jobProfileMatchId },
     data: { status: "resume_generated" },

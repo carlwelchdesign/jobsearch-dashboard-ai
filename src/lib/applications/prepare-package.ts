@@ -10,6 +10,7 @@ import {
   selectResumeSourceWorkExperiences,
   summarizeResumeSourceBullets,
 } from "@/lib/resumes/source-materials";
+import { syncMaterialClaimsForCoverLetter, syncMaterialClaimsForResume } from "@/lib/trust/material-claims";
 
 export async function prepareApplicationPackage(jobId: string) {
   const job = await prisma.jobPosting.findUnique({
@@ -95,6 +96,7 @@ export async function prepareApplicationPackage(jobId: string) {
       data: { generationNotes: resumeQa.notes },
     });
   }
+  await syncMaterialClaimsForResume(resume.id);
 
   if (!coverLetter) {
     const generated = await generateCoverLetterForJob({
@@ -135,6 +137,7 @@ export async function prepareApplicationPackage(jobId: string) {
       data: { generationNotes: coverLetterQa.notes },
     });
   }
+  await syncMaterialClaimsForCoverLetter(coverLetter.id);
 
   const existingApplication = await prisma.application.findFirst({
     where: { userId: user.id, jobPostingId: job.id },

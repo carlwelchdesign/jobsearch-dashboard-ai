@@ -28,6 +28,9 @@ vi.mock("@/lib/prisma", () => ({
     jobProfileMatch: {
       findMany: vi.fn(),
     },
+    materialClaim: {
+      findMany: vi.fn(),
+    },
     user: {
       findFirst: vi.fn(),
     },
@@ -59,6 +62,7 @@ const automationRunFindManyMock = vi.mocked(prisma.applicationAutomationRun.find
 const agentRunFindManyMock = vi.mocked(prisma.agentRun.findMany);
 const jobSearchRunFindManyMock = vi.mocked(prisma.jobSearchRun.findMany);
 const jobProfileMatchFindManyMock = vi.mocked(prisma.jobProfileMatch.findMany);
+const materialClaimFindManyMock = vi.mocked(prisma.materialClaim.findMany);
 const userFindFirstMock = vi.mocked(prisma.user.findFirst);
 const exampleFindFirstMock = vi.mocked(prisma.agentQualityExample.findFirst);
 const exampleCreateMock = vi.mocked(prisma.agentQualityExample.create);
@@ -89,6 +93,7 @@ describe("agent quality evaluation loop", () => {
     agentRunFindManyMock.mockResolvedValue([] as never);
     jobSearchRunFindManyMock.mockResolvedValue([] as never);
     jobProfileMatchFindManyMock.mockResolvedValue([] as never);
+    materialClaimFindManyMock.mockResolvedValue([] as never);
     userFindFirstMock.mockResolvedValue({ id: "user_1" } as never);
   });
 
@@ -261,6 +266,65 @@ describe("agent quality evaluation loop", () => {
     }));
     expect(exampleCreateMock).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ target: "JOB_MATCHING", failureCategory: "high_score_user_rejected" }),
+    }));
+  });
+
+  it("backfills and evaluates generated material claim examples", async () => {
+    materialClaimFindManyMock.mockResolvedValue([
+      {
+        id: "claim_1",
+        userId: "user_1",
+        artifactType: "GENERATED_RESUME",
+        artifactId: "resume_1",
+        text: "Led a 50-person team",
+        status: "UNSUPPORTED",
+        sourceEvidenceIds: [],
+        sourceRefs: [],
+        reviewJson: { source: "test" },
+        updatedAt: new Date("2026-06-16T10:00:00Z"),
+      },
+    ] as never);
+    exampleFindManyMock.mockResolvedValue([
+      {
+        id: "example_claim",
+        userId: "user_1",
+        datasetId: "dataset_1",
+        agentRunId: null,
+        failureCategory: "unsupported_claim",
+        source: "BACKFILL",
+        actualJson: { status: "UNSUPPORTED", text: "Led a 50-person team" },
+        evaluations: [],
+      },
+    ] as never);
+    evaluationFindManyMock.mockResolvedValue([
+      {
+        id: "eval_claim",
+        userId: "user_1",
+        exampleId: "example_claim",
+        failureCategory: "unsupported_claim",
+        status: "FAILED",
+        example: { id: "example_claim" },
+      },
+    ] as never);
+
+    const backfill = await backfillAgentQualityExamples({ userId: "user_1", target: "GENERATED_MATERIALS" });
+    const evaluation = await runAgentQualityEvaluations({ userId: "user_1", target: "GENERATED_MATERIALS" });
+
+    expect(backfill.targets).toEqual([expect.objectContaining({ target: "GENERATED_MATERIALS", examples: 1 })]);
+    expect(exampleCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        target: "GENERATED_MATERIALS",
+        failureCategory: "unsupported_claim",
+      }),
+    }));
+    expect(evaluation.evaluated).toBe(1);
+    expect(evaluationCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        target: "GENERATED_MATERIALS",
+        evaluatorVersion: "generated-materials-quality-v1",
+        status: "FAILED",
+        score: 25,
+      }),
     }));
   });
 

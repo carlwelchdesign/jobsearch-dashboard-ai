@@ -2,6 +2,7 @@ import type { Application, ApplicationPacket, ApplicationPacketStatus, Generated
 import { syncApprovedApplicationPacketEvidence } from "@/lib/evidence/ingest";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
+import { applicationPacketClaimGate } from "@/lib/trust/material-claims";
 
 type PacketMaterialData = Omit<Prisma.ApplicationPacketUncheckedCreateInput, "id" | "userId" | "applicationId" | "jobPostingId" | "createdAt" | "updatedAt">;
 
@@ -105,6 +106,8 @@ export async function approveApplicationPacket(applicationId: string) {
 
   const approval = packetApprovalState(packet);
   if (!approval.canApprove) throw new Error(approval.reason);
+  const claimGate = await applicationPacketClaimGate(applicationId);
+  if (!claimGate.canApprove) throw new Error(claimGate.reason);
 
   const approved = await prisma.applicationPacket.update({
     where: { applicationId },

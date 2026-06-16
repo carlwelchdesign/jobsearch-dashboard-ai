@@ -598,7 +598,7 @@ The team is designed to avoid repetitive category output. It compares the new br
 
 Architecture prompts get a stricter path. If you ask for system architecture or architectural diagrams, the draft must stay on architecture, include system-layer language, and generate staff-engineer technical diagram visuals for review. System architecture requests now use a traditional topology renderer with a left-side architecture canvas, nested boundaries, compact service nodes, connector labels, and a right-side numbered legend. Workflow and process explainers can still use the older column-style renderer when that layout fits the prompt better. Deterministic rendering owns exact diagram text, wrapping, typography, spacing, and provenance; QA blocks overflowing node labels, cramped legend cards, weak topology structure, excessive text, and missing provenance. Optional OpenAI image generation can add a social polish variant when enabled, but it is not selected as the source of truth for text-heavy technical diagrams because image models can still struggle with precise text placement and layout-sensitive compositions. The prompt-fidelity review appears on the draft card with a match score and warnings if the draft drifted into unrelated generic funnel commentary. If OpenAI is not configured, deterministic fallback still has to satisfy the prompt instead of reusing the old generic content template.
 
-Content review is strict about visible evidence. A draft can be marked `NEEDS_REVIEW` if the body only says evidence exists without naming the selected source anchor, if it repeats stale generated-copy patterns, if it uses unrelated plan angles, or if a visual prompt cannot attach a passing safe app screenshot. The review also checks factual body claims against aggregate facts, selected evidence anchors, and architecture context so unsupported metrics or product claims do not publish under a clean source-facts list.
+Content review is strict about visible evidence. A draft can be marked `NEEDS_REVIEW` if the body only says evidence exists without naming the selected source anchor, if it repeats stale generated-copy patterns, if it uses unrelated plan angles, or if a visual prompt cannot attach a passing safe app screenshot. The review also syncs draft claims into the same durable claim-provenance table used by application materials, so unsupported metrics or product claims block approval and publishing even if the draft body is otherwise polished.
 
 The app can publish approved drafts when the Share on LinkedIn connection is active. You can edit the draft, review the agent-team notes, inspect provenance and privacy warnings, then click **Approve and publish**. Editing title, hook, body, hashtags, or disclosure text invalidates the prior review and moves the draft back to `NEEDS_REVIEW`; regenerate or re-review before publishing. Approval is the final user action. If privacy/provenance checks pass and the publishing token includes `w_member_social`, the app posts to LinkedIn and stores the returned post id. If LinkedIn fails, the draft stays saved with a retryable error.
 
@@ -1132,6 +1132,8 @@ For each flag, you can:
 - Add missing evidence and regenerate
 - Dismiss the flag if you disagree (with a note)
 
+The app also stores claim-level provenance for generated resumes, cover letters, application answers, application packets, and LinkedIn drafts. Unsupported claims block **Approve Packet** and LinkedIn publishing. Exports still work, so you can download PDF or plain-text materials for manual review while fixing evidence gaps.
+
 ### Packet statuses
 
 | Status | What it means |
@@ -1146,7 +1148,7 @@ For each flag, you can:
 
 1. Read through the resume, cover letter, and any application answers.
 2. Make edits as needed (the editor is in the packet detail page).
-3. Click **Approve Packet**. The job moves to **Ready to Apply** status.
+3. Click **Approve Packet**. Approval succeeds only when packet QA is passable and no related claim is unsupported. The job moves to **Ready to Apply** status.
 
 ### Resume profiles and variants
 
@@ -1920,7 +1922,9 @@ The system continuously analyzes its own performance and proposes improvements:
 
 ### The Agents Board
 
-Click **Settings** in the left sidebar → **Admin and supporting tools** → **Agent board** (`/agents`) to see a history of every agent run — job searches, recruiting agency runs, assistant workflows, and more.
+Click **Settings** in the left sidebar → **Admin and supporting tools** → **Agent board** (`/agents`) to see the agent control plane and a history of every agent run — job searches, recruiting agency runs, assistant workflows, and more.
+
+The **Control Plane** section is inspect-only. It shows each registered agent's owner area, runtime, allowed tools, blocked actions, side effects, approval requirement, current status, child-run count, blocked-action count, and latest evaluation score. It does not add new autonomous controls.
 
 For each run you can:
 - See the input, output, and status

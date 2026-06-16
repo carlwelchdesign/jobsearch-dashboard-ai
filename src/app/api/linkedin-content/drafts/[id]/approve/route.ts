@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
 import { assertLinkedInDraftReviewPassed, publishLinkedInDraft } from "@/lib/linkedin/share";
 import { prisma } from "@/lib/prisma";
+import { materialClaimGate, syncMaterialClaimsForLinkedInDraft } from "@/lib/trust/material-claims";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,9 @@ export async function POST(_request: Request, { params }: { params: { id: string
     });
     if (!reviewDraft) throw new Error("LinkedIn draft not found.");
     assertLinkedInDraftReviewPassed(reviewDraft);
+    await syncMaterialClaimsForLinkedInDraft(params.id);
+    const claimGate = await materialClaimGate({ artifactType: "LINKEDIN_POST_DRAFT", artifactId: params.id });
+    if (!claimGate.canApprove) throw new Error(claimGate.reason);
     await prisma.linkedInPostDraft.update({
       where: { id: params.id },
       data: { status: "APPROVED", approvedAt: new Date(), publishError: null },

@@ -12,7 +12,7 @@ import { prisma } from "@/lib/prisma";
 import type { SkillId } from "@/lib/skills/types";
 
 const APPLICATION_ASSISTANT_DATASET = "application_assistant_autofill";
-const SUPPORTED_EVALUATION_TARGETS = ["APPLICATION_ASSISTANT", "RECRUITING_AGENCY", "JOB_SEARCH", "JOB_MATCHING"] as const satisfies readonly AgentQualityTarget[];
+const SUPPORTED_EVALUATION_TARGETS = ["APPLICATION_ASSISTANT", "RECRUITING_AGENCY", "JOB_SEARCH", "JOB_MATCHING", "GENERATED_MATERIALS"] as const satisfies readonly AgentQualityTarget[];
 const DATASET_NAMES: Record<AgentQualityTarget, string> = {
   APPLICATION_ASSISTANT: APPLICATION_ASSISTANT_DATASET,
   RECRUITING_AGENCY: "recruiting_agency_decisions",
@@ -29,6 +29,7 @@ const EVALUATOR_VERSIONS: Record<typeof SUPPORTED_EVALUATION_TARGETS[number], st
   RECRUITING_AGENCY: "recruiting-agency-quality-v1",
   JOB_SEARCH: "job-search-quality-v1",
   JOB_MATCHING: "job-matching-quality-v1",
+  GENERATED_MATERIALS: "generated-materials-quality-v1",
 };
 
 export type ImprovementProposalActivation =
@@ -305,6 +306,8 @@ export async function backfillAgentQualityExamples(input: { userId?: string; tar
       results.push({ target, ...(await backfillJobSearchQualityExamples(input.userId)) });
     } else if (target === "JOB_MATCHING") {
       results.push({ target, ...(await backfillJobMatchingQualityExamples(input.userId)) });
+    } else if (target === "GENERATED_MATERIALS") {
+      results.push({ target, ...(await backfillGeneratedMaterialsQualityExamples(input.userId)) });
     }
   }
   return summarizeBackfillResults(results);
@@ -546,6 +549,46 @@ async function backfillJobMatchingQualityExamples(userId?: string) {
   return { scanned: matches.length, examples: createdOrFound };
 }
 
+async function backfillGeneratedMaterialsQualityExamples(userId?: string) {
+  const claims = await prisma.materialClaim.findMany({
+    where: {
+      status: { in: ["UNSUPPORTED", "NEEDS_REVIEW"] },
+      ...(userId ? { userId } : {}),
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 200,
+  });
+  let createdOrFound = 0;
+  for (const claim of claims) {
+    const category = claim.status === "UNSUPPORTED" ? "unsupported_claim" : "claim_needs_review";
+    const example = await createQualityExample({
+      userId: claim.userId,
+      target: "GENERATED_MATERIALS",
+      source: "BACKFILL",
+      title: `${claim.artifactType.toLowerCase().replaceAll("_", " ")} claim`,
+      summary: claim.text,
+      failureCategory: category,
+      inputJson: {
+        artifactType: claim.artifactType,
+        artifactId: claim.artifactId,
+        sourceEvidenceIds: claim.sourceEvidenceIds,
+        sourceRefs: claim.sourceRefs,
+      },
+      expectedJson: {
+        expectedBehavior: "Generated material claims should be supported by approved evidence before approval or publishing.",
+      },
+      actualJson: {
+        status: claim.status,
+        text: claim.text,
+        reviewJson: claim.reviewJson,
+      },
+      metadataJson: { materialClaimId: claim.id, artifactType: claim.artifactType, artifactId: claim.artifactId },
+    });
+    if (example) createdOrFound += 1;
+  }
+  return { scanned: claims.length, examples: createdOrFound };
+}
+
 async function createQualityExample(input: {
   userId: string;
   target: AgentQualityTarget;
@@ -568,6 +611,7 @@ async function createQualityExample(input: {
       ...(input.jobPostingId ? { jobPostingId: input.jobPostingId } : {}),
       ...(input.metadataJson.sourceRunId ? { metadataJson: { path: ["sourceRunId"], equals: input.metadataJson.sourceRunId } } : {}),
       ...(input.metadataJson.matchId ? { metadataJson: { path: ["matchId"], equals: input.metadataJson.matchId } } : {}),
+      ...(input.metadataJson.materialClaimId ? { metadataJson: { path: ["materialClaimId"], equals: input.metadataJson.materialClaimId } } : {}),
     },
   });
   if (existing) return existing;
@@ -853,12 +897,35 @@ function evaluateQualityExample(target: AgentQualityTarget, example: {
   if (target === "RECRUITING_AGENCY") return evaluateRecruitingAgencyExample(example);
   if (target === "JOB_SEARCH") return evaluateJobSearchExample(example);
   if (target === "JOB_MATCHING") return evaluateJobMatchingExample(example);
+  if (target === "GENERATED_MATERIALS") return evaluateGeneratedMaterialsExample(example);
   return {
     status: "NEEDS_REVIEW" as AgentQualityEvaluationStatus,
     score: 70,
     failureCategory: example.failureCategory ?? "needs_review",
     summary: `${target.toLowerCase().replaceAll("_", " ")} example needs manual review.`,
     metricsJson: { passed: 0.5 },
+  };
+}
+
+function evaluateGeneratedMaterialsExample(example: { failureCategory: string | null; actualJson: Prisma.JsonValue }) {
+  const actual = objectJson(example.actualJson);
+  const status = String(actual.status ?? "");
+  const category = example.failureCategory ?? (status === "UNSUPPORTED" ? "unsupported_claim" : "claim_needs_review");
+  if (status === "UNSUPPORTED" || category === "unsupported_claim") {
+    return {
+      status: "FAILED" as AgentQualityEvaluationStatus,
+      score: 25,
+      failureCategory: "unsupported_claim",
+      summary: "Generated material contains an unsupported claim that must block approval or publishing.",
+      metricsJson: { claimSupport: 0, gateRequired: 1 },
+    };
+  }
+  return {
+    status: "NEEDS_REVIEW" as AgentQualityEvaluationStatus,
+    score: 60,
+    failureCategory: category,
+    summary: "Generated material claim needs human review before it can be trusted for approval.",
+    metricsJson: { claimSupport: 0.5, gateRequired: 1 },
   };
 }
 
@@ -1045,6 +1112,7 @@ function scoreForFailureCategory(category: string) {
 function proposalTypeForCategory(category: string, target: AgentQualityTarget = "APPLICATION_ASSISTANT") {
   if (target === "RECRUITING_AGENCY") return "WORKFLOW";
   if (target === "JOB_SEARCH" || target === "JOB_MATCHING") return category.includes("score") || category.includes("rejected") ? "CLASSIFIER" : "WORKFLOW";
+  if (target === "GENERATED_MATERIALS") return "SKILL";
   if (category === "field_classification" || category === "cover_letter_field") return "CLASSIFIER";
   if (category === "browser_lifecycle" || category === "manual_submit_detection") return "WORKFLOW";
   return "SKILL";
@@ -1067,6 +1135,10 @@ function proposalTitleForCategory(category: string, target: AgentQualityTarget =
     if (category === "high_score_user_rejected") return "Tighten scoring for rejected high-score jobs";
     return "Review repeated job matching issue";
   }
+  if (target === "GENERATED_MATERIALS") {
+    if (category === "unsupported_claim") return "Strengthen generated-material claim grounding";
+    return "Review generated-material claim evidence";
+  }
   if (category === "cover_letter_field") return "Improve cover-letter field handling";
   if (category === "manual_submit_detection") return "Improve manual submit detection";
   if (category === "browser_lifecycle") return "Harden browser lifecycle handling";
@@ -1078,6 +1150,7 @@ function proposalRationaleForCategory(category: string, target: AgentQualityTarg
   if (target === "RECRUITING_AGENCY") return "Repeated agency examples indicate the approval workflow or packet preparation path should be reviewed before changing automation behavior.";
   if (target === "JOB_SEARCH") return "Repeated search examples indicate source quality, dedupe, suppression, or result freshness should be reviewed before changing search policy.";
   if (target === "JOB_MATCHING") return "Repeated matching examples indicate scoring weights or rejection-memory alignment should be reviewed before changing ranking behavior.";
+  if (target === "GENERATED_MATERIALS") return "Generated material examples indicate claim provenance, evidence selection, or application QA gates should be reviewed before approval behavior changes.";
   if (category === "cover_letter_field") return "Repeated examples indicate the assistant may miss obvious cover-letter text fields.";
   if (category === "manual_submit_detection") return "Repeated examples indicate submitted applications may require state repair or better submit intent tracking.";
   if (category === "browser_lifecycle") return "Repeated examples indicate browser close/frame detach events should be treated as recoverable workflow states when safe.";

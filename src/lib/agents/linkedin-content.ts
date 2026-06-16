@@ -5,6 +5,7 @@ import { buildLinkedInContentMemoryPack, jsonValue, type LinkedInContentMemoryPa
 import { createImageGeneration, parseStructuredOutput } from "@/lib/ai/openai";
 import type { SearchRunAnalytics } from "@/lib/job-search/run-analytics";
 import { prisma } from "@/lib/prisma";
+import { syncMaterialClaimsForLinkedInDraft } from "@/lib/trust/material-claims";
 import { getLinkedInContentModel, getLinkedInDiagramImageModel } from "@/lib/settings/ai-settings";
 
 export type LinkedInContentInput = {
@@ -2057,7 +2058,7 @@ async function captureRouteScreenshot(route: string, reason: string): Promise<Li
 }
 
 async function persistLinkedInPostDraft(userId: string, run: AgentRun, output: LinkedInContentOutput) {
-  return prisma.linkedInPostDraft.create({
+  const draft = await prisma.linkedInPostDraft.create({
     data: {
       userId,
       agentRunId: run.id,
@@ -2079,6 +2080,8 @@ async function persistLinkedInPostDraft(userId: string, run: AgentRun, output: L
       status: output.privacyReview.status === "PASS" ? "DRAFT" : "NEEDS_REVIEW",
     },
   });
+  await syncMaterialClaimsForLinkedInDraft(draft.id);
+  return draft;
 }
 
 function normalizeHashtags(values: string[]) {

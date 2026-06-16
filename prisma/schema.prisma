@@ -431,6 +431,20 @@ enum AgentImprovementProposalType {
   WORKFLOW
 }
 
+enum MaterialClaimArtifactType {
+  GENERATED_RESUME
+  GENERATED_COVER_LETTER
+  APPLICATION_PACKET
+  LINKEDIN_POST_DRAFT
+  APPLICATION_ANSWER
+}
+
+enum MaterialClaimStatus {
+  SUPPORTED
+  NEEDS_REVIEW
+  UNSUPPORTED
+}
+
 enum JoleneMessageRole {
   USER
   ASSISTANT
@@ -486,6 +500,7 @@ model User {
   linkedinAnalyticsConnection LinkedInAnalyticsConnection?
   linkedinAnalyticsSnapshots  LinkedInPostMetricSnapshot[]
   jobSuppressions             JobSuppression[]
+  materialClaims              MaterialClaim[]
 }
 
 model CareerMission {
@@ -1096,6 +1111,27 @@ model GeneratedCoverLetter {
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model MaterialClaim {
+  id                String                    @id @default(cuid())
+  userId            String
+  artifactType      MaterialClaimArtifactType
+  artifactId        String
+  text              String
+  status            MaterialClaimStatus       @default(NEEDS_REVIEW)
+  sourceEvidenceIds Json                      @default("[]")
+  sourceRefs        Json                      @default("[]")
+  reviewJson        Json                      @default("{}")
+  agentRunId        String?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  agentRun          AgentRun?                 @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  user              User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([artifactType, artifactId])
+  @@index([agentRunId])
+}
+
 model ApplicationPacket {
   id                     String                  @id @default(cuid())
   userId                 String
@@ -1169,6 +1205,7 @@ model AgentRun {
   events             AgentRunEvent[]
   linkedinPostDrafts LinkedInPostDraft[]
   emailOpsFindings   EmailOpsFinding[]
+  materialClaims     MaterialClaim[]
 
   @@index([agentType, createdAt])
   @@index([status, createdAt])

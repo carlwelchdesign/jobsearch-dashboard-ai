@@ -2,6 +2,7 @@ import { readFile } from "fs/promises";
 import path from "path";
 import type { LinkedInPostDraft, LinkedInShareConnection, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { materialClaimGate, syncMaterialClaimsForLinkedInDraft } from "@/lib/trust/material-claims";
 
 export type LinkedInShareTokenResponse = {
   access_token?: string;
@@ -126,6 +127,9 @@ export async function publishLinkedInDraft(draftId: string) {
   const connection = draft.user.linkedinShareConnection;
   try {
     assertLinkedInDraftReviewPassed(draft);
+    await syncMaterialClaimsForLinkedInDraft(draft.id);
+    const claimGate = await materialClaimGate({ artifactType: "LINKEDIN_POST_DRAFT", artifactId: draft.id });
+    if (!claimGate.canApprove) throw new Error(claimGate.reason);
     assertShareConnection(connection);
 
     await prisma.linkedInPostDraft.update({
