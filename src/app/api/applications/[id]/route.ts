@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 import { recordRejectedJobSuppression } from "@/lib/jobs/suppression";
 import { refreshOutcomeCalibration } from "@/lib/observability/outcome-calibration";
 import { captureJobRejectionLearning, rejectionReasonCodes, type RejectionReasonCode } from "@/lib/jobs/rejection-learning";
+import { assessApplicationUrlQuality, atsProviderFromApplicationUrl } from "@/lib/applications/application-url-quality";
 import { transitionApplicationState } from "@/lib/applications/state-transitions";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,13 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   try {
     const body = updateApplicationSchema.parse(await request.json());
     const applicationUrl = normalizeApplicationUrl(body.applicationUrl);
+    const quality = assessApplicationUrlQuality(applicationUrl);
+    if (applicationUrl && !quality.launchable) {
+      return NextResponse.json({
+        error: `Direct application URL required. ${quality.reason}`,
+        applicationUrlQuality: quality,
+      }, { status: 400 });
+    }
     const application = await prisma.application.findUnique({
       where: { id: params.id },
       select: {
@@ -47,11 +55,13 @@ export async function PATCH(request: Request, { params }: { params: { id: string
         where: { id: application.jobPostingId },
         data: {
           applicationUrl,
+          atsProvider: applicationUrl ? atsProviderFromApplicationUrl(applicationUrl) : "unknown",
           rawData: {
             ...rawData,
             manualApplicationUrlCorrection: {
               previousUrl,
               applicationUrl,
+              applicationUrlQuality: quality,
               correctedAt: new Date().toISOString(),
               source: "application_detail_page",
             },

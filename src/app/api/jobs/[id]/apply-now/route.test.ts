@@ -109,6 +109,29 @@ describe("POST /api/jobs/[id]/apply-now", () => {
     expect(startWorkflowMock).not.toHaveBeenCalled();
   });
 
+  it("rejects board URLs before updating the saved job", async () => {
+    const response = await POST(new Request("http://localhost/api/jobs/job_1/apply-now", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        applicationUrl: "https://builtin.com/job/frontend-engineer/8269411",
+      }),
+    }), { params: { id: "job_1" } });
+
+    expect(response.status).toBe(400);
+    expect(findJobMock).not.toHaveBeenCalled();
+    expect(updateJobMock).not.toHaveBeenCalled();
+    expect(preparePackageMock).not.toHaveBeenCalled();
+    expect(startWorkflowMock).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("Direct application URL required"),
+      applicationUrlQuality: expect.objectContaining({
+        launchable: false,
+        kind: "board_intermediary",
+      }),
+    });
+  });
+
   it("returns 404 when the saved job is missing", async () => {
     findJobMock.mockResolvedValue(null as never);
 

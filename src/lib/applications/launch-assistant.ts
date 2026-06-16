@@ -2,6 +2,7 @@ import { spawn, spawnSync } from "child_process";
 import { existsSync, mkdirSync, openSync } from "fs";
 import path from "path";
 import { Prisma } from "@prisma/client";
+import { requireLaunchableApplicationUrl } from "@/lib/applications/application-url-quality";
 import { createApplicationAutomationRun } from "@/lib/applications/automation-runs";
 import { prisma } from "@/lib/prisma";
 
@@ -40,6 +41,7 @@ export async function launchApplicationAssistant(applicationId: string, origin: 
     throw new Error("Prepare the application package first. The assistant only runs for ready_to_apply applications.");
   }
   if (!application.jobPosting.applicationUrl) throw new Error("This job does not have an application URL.");
+  requireLaunchableApplicationUrl(application.jobPosting.applicationUrl);
   if (!application.resume || !application.coverLetter) {
     throw new Error("A generated resume and cover letter are required before launching the assistant.");
   }

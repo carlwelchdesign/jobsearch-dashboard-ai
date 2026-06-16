@@ -1,4 +1,5 @@
 import type { Application, Prisma } from "@prisma/client";
+import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { buildAshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 import { evaluateAutoSubmitEligibility } from "@/lib/applications/auto-submit-policy";
 import { selectedApplicationAnswers } from "@/lib/applications/application-packets";
@@ -33,7 +34,10 @@ export async function findReadyApplicationByUrl(url: string) {
     orderBy: { updatedAt: "desc" },
     take: 100,
   });
-  return applications.find((application) => canonicalUrl(application.jobPosting.applicationUrl) === target) ?? null;
+  return applications.find((application) => (
+    assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable
+    && canonicalUrl(application.jobPosting.applicationUrl) === target
+  )) ?? null;
 }
 
 export async function applicationAssistantPackageForId(applicationId: string, origin: string) {
@@ -64,6 +68,16 @@ export async function buildApplicationAssistantPackage(application: AssistantPac
 
   if (!application.jobPosting.applicationUrl) {
     return { status: 400, body: { error: "This job does not have an application URL." } };
+  }
+  const applicationUrlQuality = assessApplicationUrlQuality(application.jobPosting.applicationUrl);
+  if (!applicationUrlQuality.launchable) {
+    return {
+      status: 400,
+      body: {
+        error: `Direct application URL required. ${applicationUrlQuality.reason}`,
+        applicationUrlQuality,
+      },
+    };
   }
 
   if (!application.resume || !application.coverLetter) {
@@ -141,6 +155,7 @@ export async function buildApplicationAssistantPackage(application: AssistantPac
         remoteType: application.jobPosting.remoteType,
         applicationUrl: application.jobPosting.applicationUrl,
         applicationHost,
+        applicationUrlQuality,
       },
       candidate: {
         fullName,

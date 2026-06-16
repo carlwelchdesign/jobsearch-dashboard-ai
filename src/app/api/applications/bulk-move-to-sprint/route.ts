@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
+import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { syncApplicationPacket } from "@/lib/applications/application-packets";
 import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
@@ -28,8 +29,11 @@ export async function POST(request: Request) {
         jobPosting: { select: { id: true, company: true, title: true, applicationUrl: true } },
       },
       orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-      take: input.limit,
+      take: input.limit * 4,
     });
+    const directApplications = applications
+      .filter((application) => assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable)
+      .slice(0, input.limit);
 
     const results: Array<{
       ok: boolean;
@@ -41,7 +45,7 @@ export async function POST(request: Request) {
       error?: string;
     }> = [];
 
-    for (const application of applications) {
+    for (const application of directApplications) {
       try {
         if (application.resumeId && application.coverLetterId) {
           await transitionApplicationState({

@@ -64,10 +64,58 @@ describe("GET /api/applications/ready-for-extension", () => {
           description: "Build React and TypeScript product UI.",
           score: 94,
           applicationUrl: "https://linear.app/apply",
+          applicationUrlQuality: expect.objectContaining({
+            launchable: true,
+            kind: "direct",
+            host: "linear.app",
+          }),
           atsProvider: "greenhouse",
           updatedAt: "2026-06-01T12:00:00.000Z",
         },
       ],
+    });
+  });
+
+  it("omits ready applications that only have board or intermediary URLs", async () => {
+    findApplicationsMock.mockResolvedValue([
+      {
+        id: "app_board",
+        updatedAt: new Date("2026-06-02T12:00:00.000Z"),
+        jobPosting: {
+          id: "job_board",
+          company: "Built In",
+          title: "Frontend Engineer",
+          location: "Remote",
+          description: "Board detail page.",
+          applicationUrl: "https://builtin.com/job/frontend-engineer/8269411",
+          atsProvider: "unknown",
+        },
+        jobProfileMatch: { overallScore: 99 },
+      },
+      {
+        id: "app_direct",
+        updatedAt: new Date("2026-06-01T12:00:00.000Z"),
+        jobPosting: {
+          id: "job_direct",
+          company: "Linear",
+          title: "Senior Frontend Engineer",
+          location: "Remote",
+          description: "Build React and TypeScript product UI.",
+          applicationUrl: "https://linear.app/apply",
+          atsProvider: "greenhouse",
+        },
+        jobProfileMatch: { overallScore: 94 },
+      },
+    ] as unknown as Awaited<ReturnType<typeof prisma.application.findMany>>);
+
+    const response = await GET(new Request("http://localhost/api/applications/ready-for-extension"));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.applications).toHaveLength(1);
+    expect(body.applications[0]).toMatchObject({
+      id: "app_direct",
+      applicationUrl: "https://linear.app/apply",
     });
   });
 

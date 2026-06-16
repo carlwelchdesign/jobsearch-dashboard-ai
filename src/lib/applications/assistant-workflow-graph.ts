@@ -9,6 +9,7 @@ import {
   serializeWorkflowStatus,
   workflowEvent,
 } from "@/lib/applications/assistant-workflow";
+import { requireLaunchableApplicationUrl } from "@/lib/applications/application-url-quality";
 import { launchApplicationAssistant, type LaunchAssistantResult } from "@/lib/applications/launch-assistant";
 import { langSmithTraceMetadata, traceWorkflowStep } from "@/lib/observability/langsmith";
 import { prisma } from "@/lib/prisma";
@@ -143,6 +144,7 @@ async function buildAssistantWorkflowGraph() {
       if (!application) throw new Error("Application not found.");
       if (application.status !== "ready_to_apply") throw new Error("Prepare the application package first.");
       if (!application.jobPosting.applicationUrl) throw new Error("This job does not have an application URL.");
+      requireLaunchableApplicationUrl(application.jobPosting.applicationUrl);
       if (!application.resume || !application.coverLetter) throw new Error("A generated resume and cover letter are required.");
       return {
         currentNode: "loadPackage",

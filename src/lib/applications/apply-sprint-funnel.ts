@@ -1,4 +1,5 @@
 import type { AgentRunStatus, JobMatchStatus, Prisma } from "@prisma/client";
+import { assessApplicationUrlQuality, type ApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { hasApplicationForJob, submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { createApplicationCanonicalJobKeys } from "@/lib/applications/reconciliation";
 import { isJobSuppressed, type JobSuppressionState } from "@/lib/jobs/suppression";
@@ -44,6 +45,7 @@ export type ApplySprintCandidate = {
   updatedAt: string;
   reasons: ApplySprintReasonCode[];
   canPrepare: boolean;
+  applicationUrlQuality?: ApplicationUrlQuality;
 };
 
 export type ApplySprintHiddenItem = {
@@ -58,6 +60,7 @@ export type ApplySprintHiddenItem = {
   status?: string | null;
   reasons: ApplySprintReasonCode[];
   detail: string;
+  applicationUrlQuality?: ApplicationUrlQuality;
 };
 
 export type ApplySprintAgencyResult = {
@@ -191,6 +194,7 @@ export function buildApplySprintTrustFunnel(input: {
         updatedAt: match.updatedAt.toISOString(),
         reasons,
         canPrepare,
+        applicationUrlQuality: match.jobPosting.applicationUrl ? assessApplicationUrlQuality(match.jobPosting.applicationUrl) : undefined,
       });
       continue;
     }
@@ -207,7 +211,8 @@ export function buildApplySprintTrustFunnel(input: {
         score: match.overallScore,
         status: match.status,
         reasons: reasons.length ? reasons : ["existing_match_not_new"],
-        detail: reasonSummary(reasons.length ? reasons : ["existing_match_not_new"]),
+        detail: hiddenDetail(reasons.length ? reasons : ["existing_match_not_new"], match.jobPosting.applicationUrl),
+        applicationUrlQuality: match.jobPosting.applicationUrl ? assessApplicationUrlQuality(match.jobPosting.applicationUrl) : undefined,
       });
     }
   }
@@ -226,7 +231,8 @@ export function buildApplySprintTrustFunnel(input: {
       score: null,
       status: application.status,
       reasons,
-      detail: reasonSummary(reasons),
+      detail: hiddenDetail(reasons, application.jobPosting.applicationUrl),
+      applicationUrlQuality: application.jobPosting.applicationUrl ? assessApplicationUrlQuality(application.jobPosting.applicationUrl) : undefined,
     });
   }
 
@@ -381,20 +387,7 @@ function latestStats(run: SearchRunRecord | null) {
 }
 
 function isUnsupportedApplicationUrl(value: string) {
-  try {
-    const url = new URL(value);
-    const host = url.hostname.replace(/^www\./, "");
-    const path = url.pathname.toLowerCase();
-    if (host === "example.com" || host === "remoteok.com") return true;
-    if (host === "dice.com") return path.startsWith("/jobs/") && !path.startsWith("/job-detail/");
-    if (host === "indeed.com") return path.startsWith("/q-") || path === "/jobs" || path.startsWith("/jobs/");
-    if (host === "himalayas.app") return !path.includes("/jobs/");
-    if (host === "workingnomads.com") return /remote-.+-jobs$/.test(path.slice(1));
-    if (host === "remotive.com") return path.startsWith("/remote-jobs");
-    return false;
-  } catch {
-    return true;
-  }
+  return !assessApplicationUrlQuality(value).launchable;
 }
 
 function summaryHiddenItem(reason: ApplySprintReasonCode, detail: string): ApplySprintHiddenItem {
@@ -412,6 +405,13 @@ function summaryHiddenItem(reason: ApplySprintReasonCode, detail: string): Apply
 
 function reasonSummary(reasons: ApplySprintReasonCode[]) {
   return reasons.map(reasonLabel).join(", ");
+}
+
+function hiddenDetail(reasons: ApplySprintReasonCode[], applicationUrl: string | null) {
+  if (applicationUrl && reasons.includes("unsupported_application_url")) {
+    return assessApplicationUrlQuality(applicationUrl).reason;
+  }
+  return reasonSummary(reasons);
 }
 
 function uniqueReasons(reasons: ApplySprintReasonCode[]) {

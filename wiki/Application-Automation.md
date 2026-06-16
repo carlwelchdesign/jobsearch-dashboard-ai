@@ -15,7 +15,9 @@ It can:
 - surface blocker and learning state
 - show logs and automation status
 
-The Chrome extension can start the same flow with **Apply Now** after saving a job. It remembers the last saved job, uses the active tab URL as the final application URL, prepares or reuses the custom resume and cover letter, creates the `ready_to_apply` application, and launches the local assistant.
+The Chrome extension can start the same flow with **Apply Now** after saving a job. It remembers the last saved job, uses the active tab URL only when it is a direct employer or ATS application URL, prepares or reuses the custom resume and cover letter, creates the `ready_to_apply` application, and launches the local assistant.
+
+Apply Sprint launchability is direct-only. Board, listing, auth, paywall, or intermediary URLs appear in diagnostics as unsupported until they are resolved to an employer or ATS application URL. Existing bad launch targets can be repaired with `npx tsx scripts/repair-application-urls.ts --apply`; unresolved ready applications are moved back to `approved` with audit events instead of being rejected or archived.
 
 ## Application Packets
 
@@ -68,7 +70,7 @@ Sensitive answer-memory encryption was deferred unless sensitive reuse is expand
 
 ## Local Browser Assistant
 
-The assistant is a local Playwright workflow orchestrated by a LangGraph-backed application workflow.
+The assistant is a local Playwright workflow orchestrated by a LangGraph-backed application workflow. It refuses to start unless the application package points at a direct employer or ATS application URL.
 
 Install:
 

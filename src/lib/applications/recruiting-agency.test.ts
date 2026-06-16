@@ -183,6 +183,36 @@ describe("runRecruitingAgency", () => {
     });
   });
 
+  it("excludes needs-review matches with non-direct application URLs", async () => {
+    findUserMock.mockResolvedValue({ id: "user_1" } as Awaited<ReturnType<typeof prisma.user.findFirst>>);
+    findApplicationsMock.mockResolvedValue([]);
+    const agencyMatch = match({
+      id: "match_1",
+      jobPostingId: "job_1",
+      score: 94,
+      company: "Acme",
+      title: "Senior Frontend Engineer",
+      applicationUrl: "https://builtin.com/job/frontend-engineer/8269411",
+    });
+    findMatchesMock.mockResolvedValue([agencyMatch] as Awaited<ReturnType<typeof prisma.jobProfileMatch.findMany>>);
+
+    const result = await runRecruitingAgency({ minimumScore: 90, limit: 10 });
+
+    expect(updateMatchMock).not.toHaveBeenCalled();
+    expect(preparePackageMock).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      approved: 0,
+      prepared: 0,
+      failed: 0,
+      candidateDiagnostics: expect.objectContaining({
+        rawMatches: 1,
+        excludedUnsupportedUrl: 1,
+        selected: 0,
+      }),
+      message: expect.stringContaining("non-direct application URL"),
+    });
+  });
+
   it("skips canonical duplicates that already have applications", async () => {
     findUserMock.mockResolvedValue({ id: "user_1" } as Awaited<ReturnType<typeof prisma.user.findFirst>>);
     findApplicationsMock.mockResolvedValue([
@@ -329,6 +359,7 @@ function match(input: {
   company: string;
   title: string;
   location?: string | null;
+  applicationUrl?: string | null;
 }) {
   return {
     id: input.id,
@@ -357,7 +388,7 @@ function match(input: {
       title: input.title,
       location: input.location ?? "Remote",
       lastSeenAt: new Date("2026-05-01"),
-      applicationUrl: "https://example.com/apply",
+      applicationUrl: input.applicationUrl ?? "https://example.com/apply",
     },
     jobSearchProfile: { name: "Senior Frontend" },
   };

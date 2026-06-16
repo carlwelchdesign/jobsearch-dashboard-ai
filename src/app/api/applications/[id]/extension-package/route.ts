@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
 import { applicationAssistantPackageForId } from "@/lib/applications/assistant-package";
+import { assessApplicationUrlQuality, atsProviderFromApplicationUrl } from "@/lib/applications/application-url-quality";
 import { browserExtensionAuthError } from "@/lib/browser-extension-auth";
 import { prisma } from "@/lib/prisma";
 
@@ -15,6 +16,13 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const requestUrl = new URL(request.url);
     const currentUrl = parseCurrentUrl(requestUrl.searchParams.get("currentUrl"));
     if (currentUrl) {
+      const quality = assessApplicationUrlQuality(currentUrl);
+      if (!quality.launchable) {
+        return NextResponse.json({
+          error: `Direct application URL required. ${quality.reason}`,
+          applicationUrlQuality: quality,
+        }, { status: 400 });
+      }
       const application = await prisma.application.findUnique({
         where: { id: params.id },
         select: {
@@ -36,11 +44,13 @@ export async function GET(request: Request, { params }: { params: { id: string }
         where: { id: application.jobPostingId },
         data: {
           applicationUrl: currentUrl,
+          atsProvider: atsProviderFromApplicationUrl(currentUrl),
           rawData: {
             ...(isRecord(application.jobPosting.rawData) ? application.jobPosting.rawData : {}),
             extensionSelectedFill: {
               previousUrl: application.jobPosting.applicationUrl,
               applicationUrl: currentUrl,
+              applicationUrlQuality: quality,
               capturedAt: new Date().toISOString(),
               source: "chrome_extension_selected_ready_application",
             },

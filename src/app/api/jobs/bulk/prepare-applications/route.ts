@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
+import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
     });
     const suppressionStates = await loadJobSuppressionStatesByUserIds(rawMatches.map((match) => match.jobSearchProfile.userId));
     const matches = uniqueMatchesByCanonicalJob(rawMatches)
+      .filter((match) => assessApplicationUrlQuality(match.jobPosting.applicationUrl).launchable)
       .filter((match) => {
         const suppressionState = suppressionStates.get(match.jobSearchProfile.userId);
         if (suppressionState && isJobSuppressed(match.jobPosting, suppressionState)) return false;
@@ -44,9 +46,9 @@ export async function POST(request: Request) {
       })
       .slice(0, input.limit);
 
-    const nextAvailable =
+    const nextAvailableCandidates =
       matches.length === 0
-        ? await prisma.jobProfileMatch.findFirst({
+        ? await prisma.jobProfileMatch.findMany({
             where: {
               status: { in: input.statuses },
               ...(input.profileId ? { jobSearchProfileId: input.profileId } : {}),
@@ -55,12 +57,14 @@ export async function POST(request: Request) {
               },
             },
             include: {
-              jobPosting: { select: { company: true, title: true } },
+              jobPosting: { select: { company: true, title: true, applicationUrl: true } },
               jobSearchProfile: { select: { name: true } },
             },
             orderBy: [{ overallScore: "desc" }, { createdAt: "desc" }],
+            take: 25,
           })
-        : null;
+        : [];
+    const directNextAvailable = nextAvailableCandidates.find((candidate) => assessApplicationUrlQuality(candidate.jobPosting.applicationUrl).launchable) ?? null;
 
     const results = [];
     for (const match of matches) {
@@ -96,13 +100,13 @@ export async function POST(request: Request) {
       requested: input,
       eligible: matches.length,
       candidatesFound: rawMatches.length,
-      nextAvailable: nextAvailable
+      nextAvailable: directNextAvailable
         ? {
-            score: nextAvailable.overallScore,
-            status: nextAvailable.status,
-            company: nextAvailable.jobPosting.company,
-            title: nextAvailable.jobPosting.title,
-            profile: nextAvailable.jobSearchProfile.name,
+            score: directNextAvailable.overallScore,
+            status: directNextAvailable.status,
+            company: directNextAvailable.jobPosting.company,
+            title: directNextAvailable.jobPosting.title,
+            profile: directNextAvailable.jobSearchProfile.name,
           }
         : null,
       prepared: results.filter((result) => result.ok).length,

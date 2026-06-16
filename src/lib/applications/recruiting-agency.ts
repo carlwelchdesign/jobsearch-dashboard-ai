@@ -1,4 +1,5 @@
 import { JobMatchStatus, type AgentRun, type Prisma } from "@prisma/client";
+import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { isJobSuppressed, loadJobSuppressionState } from "@/lib/jobs/suppression";
@@ -49,6 +50,7 @@ type AgencyCandidate = AgencyCandidateSearchResult["candidates"][number];
 
 type AgencyCandidateDiagnostics = {
   rawMatches: number;
+  excludedUnsupportedUrl: number;
   excludedExistingApplication: number;
   flaggedBySuppressionHistory: number;
   uniqueEligible: number;
@@ -528,9 +530,15 @@ async function findAgencyCandidates({ userId, minimumScore, limit }: { userId: s
     loadJobSuppressionState(userId),
   ]);
   const applicationKeys = applicationJobKeySet(applications);
+  let excludedUnsupportedUrl = 0;
   let excludedExistingApplication = 0;
   let flaggedBySuppressionHistory = 0;
   const eligibleMatches = rawMatches.filter((match) => {
+    const quality = assessApplicationUrlQuality(match.jobPosting.applicationUrl);
+    if (!quality.launchable) {
+      excludedUnsupportedUrl += 1;
+      return false;
+    }
     if (hasApplicationForJob(match.jobPosting, applicationKeys)) {
       excludedExistingApplication += 1;
       return false;
@@ -546,6 +554,7 @@ async function findAgencyCandidates({ userId, minimumScore, limit }: { userId: s
     candidates,
     diagnostics: {
       rawMatches: rawMatches.length,
+      excludedUnsupportedUrl,
       excludedExistingApplication,
       flaggedBySuppressionHistory,
       uniqueEligible: uniqueEligible.length,
@@ -553,6 +562,7 @@ async function findAgencyCandidates({ userId, minimumScore, limit }: { userId: s
       limit,
       summary: agencyCandidateDiagnosticsSummary({
         rawMatches: rawMatches.length,
+        excludedUnsupportedUrl,
         excludedExistingApplication,
         flaggedBySuppressionHistory,
         uniqueEligible: uniqueEligible.length,
@@ -572,6 +582,9 @@ function agencyCandidateDiagnosticsSummary(input: Omit<AgencyCandidateDiagnostic
   }
   if (input.excludedExistingApplication > 0) {
     return `No eligible agency candidates were selected. ${input.excludedExistingApplication} match${input.excludedExistingApplication === 1 ? " already has" : "es already have"} a tracked application.`;
+  }
+  if (input.excludedUnsupportedUrl > 0) {
+    return `No eligible agency candidates were selected. ${input.excludedUnsupportedUrl} match${input.excludedUnsupportedUrl === 1 ? " has" : "es have"} a non-direct application URL.`;
   }
   if (input.rawMatches === 0) {
     return "No needs-review matches met the agency score threshold and application URL requirement.";
