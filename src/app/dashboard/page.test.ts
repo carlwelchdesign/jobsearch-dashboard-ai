@@ -97,6 +97,13 @@ describe("Command Center subnav routes", () => {
     expect(commandCenterSource).toContain('href="/profiles"');
   });
 
+  it("keeps the Search Ops agency panel from duplicating the live handoff feed", () => {
+    const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
+
+    expect(contentSource).toContain("Search-triggered agency handoffs appear in the live run above.");
+    expect(contentSource).toContain('showLatestOnMount={false}');
+  });
+
   it("keeps market analysis centralized on the market dashboard route", () => {
     const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
     const tabsSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/market-analysis-tabs.tsx"), "utf8");
