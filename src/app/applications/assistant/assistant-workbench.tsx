@@ -1147,44 +1147,86 @@ function CandidatesPanel({
 }
 
 function AgencyResultsPanel({ results, latestAgencyRun }: { results: ApplySprintTrustFunnel["agencyResults"]; latestAgencyRun: ApplySprintTrustFunnel["latestAgencyRun"] }) {
+  const [selectedResult, setSelectedResult] = useState<ApplySprintTrustFunnel["agencyResults"][number] | null>(null);
+  const visibleResults = selectedResult ? [selectedResult] : results;
+
   return (
     <Card>
       <CardContent>
         <Stack spacing={2}>
-          <Box>
-            <Typography variant="h3">Agency Results</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Latest recruiting-agency packet preparation output, including failures that do not appear in Ready.
-            </Typography>
-            {latestAgencyRun ? (
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
-                Run {latestAgencyRun.id} · {latestAgencyRun.status.toLowerCase()} · updated {formatDateTime(latestAgencyRun.updatedAt)}
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { md: "flex-end" } }}>
+            <Box>
+              <Typography variant="h3">Agency Results</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Latest recruiting-agency packet preparation output, including failures that do not appear in Ready.
               </Typography>
-            ) : null}
-          </Box>
+              {latestAgencyRun ? (
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                  Run {latestAgencyRun.id} · {latestAgencyRun.status.toLowerCase()} · updated {formatDateTime(latestAgencyRun.updatedAt)}
+                </Typography>
+              ) : null}
+            </Box>
+            <Autocomplete
+              size="small"
+              options={results}
+              value={selectedResult}
+              onChange={(_, value) => setSelectedResult(value)}
+              getOptionLabel={(result) => `${result.company} - ${result.title}`}
+              isOptionEqualToValue={(option, value) => (option.applicationId ?? option.matchId ?? option.jobId ?? `${option.company}:${option.title}`) === (value.applicationId ?? value.matchId ?? value.jobId ?? `${value.company}:${value.title}`)}
+              sx={{ width: { xs: "100%", md: 360 } }}
+              renderInput={(params) => <TextField {...params} label="Search agency results" placeholder="Company or role" />}
+            />
+          </Stack>
           {results.length ? (
-            <Stack spacing={1}>
-              {results.map((result, index) => (
-                <Box key={`${result.matchId ?? result.jobId ?? index}-${result.status}`} sx={{ border: 1, borderColor: result.status === "failed" ? "error.main" : "divider", borderRadius: 1, p: 1.25 }}>
-                  <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography sx={{ fontWeight: 850 }}>{result.company}</Typography>
-                      <Typography variant="body2" color="text.secondary">{result.title}</Typography>
-                      {result.error || result.reason ? <Typography variant="caption" color="error">{result.error ?? result.reason}</Typography> : null}
-                    </Box>
-                    <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
-                      {result.score ? <Chip size="small" label={`${result.score} score`} /> : null}
-                      <Chip size="small" color={result.status === "failed" ? "error" : result.status === "ready_to_apply" ? "success" : "default"} label={result.status.replace(/_/g, " ")} />
-                      {result.applicationId ? (
-                        <Button component={Link} href={`/applications/${result.applicationId}`} size="small" variant="outlined">
-                          Application
-                        </Button>
-                      ) : null}
-                    </Stack>
-                  </Stack>
-                </Box>
-              ))}
-            </Stack>
+            <Box>
+              <TableContainer sx={{ border: 1, borderColor: "divider", borderRadius: 1, maxHeight: 420 }}>
+                <Table size="small" stickyHeader aria-label="Agency results table">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ width: 132 }}>Status</TableCell>
+                      <TableCell sx={{ width: 86 }}>Score</TableCell>
+                      <TableCell>Company</TableCell>
+                      <TableCell>Role</TableCell>
+                      <TableCell>Issue</TableCell>
+                      <TableCell align="right" sx={{ width: 118 }}>Action</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {visibleResults.map((result, index) => (
+                      <TableRow key={`${result.matchId ?? result.jobId ?? result.applicationId ?? index}-${result.status}`} hover>
+                        <TableCell>
+                          <Chip size="small" color={result.status === "failed" ? "error" : result.status === "ready_to_apply" ? "success" : "default"} label={result.status.replace(/_/g, " ")} />
+                        </TableCell>
+                        <TableCell>{typeof result.score === "number" ? result.score : "--"}</TableCell>
+                        <TableCell sx={{ fontWeight: 850, maxWidth: 180, overflowWrap: "anywhere" }}>{result.company}</TableCell>
+                        <TableCell sx={{ maxWidth: 280, overflowWrap: "anywhere" }}>{result.title}</TableCell>
+                        <TableCell>
+                          {result.error || result.reason ? (
+                            <Typography variant="body2" color={result.status === "failed" ? "error" : "text.secondary"}>{result.error ?? result.reason}</Typography>
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">No issue reported.</Typography>
+                          )}
+                        </TableCell>
+                        <TableCell align="right">
+                          {result.applicationId ? (
+                            <Button component={Link} href={`/applications/${result.applicationId}`} size="small" variant="outlined">
+                              Application
+                            </Button>
+                          ) : (
+                            <Typography variant="caption" color="text.secondary">No tracker</Typography>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              {selectedResult ? (
+                <Button size="small" variant="text" sx={{ mt: 1 }} onClick={() => setSelectedResult(null)}>
+                  Show all agency results
+                </Button>
+              ) : null}
+            </Box>
           ) : (
             <Alert severity="info">No agency result rows are available yet. Run search or run the agency for visible candidates.</Alert>
           )}

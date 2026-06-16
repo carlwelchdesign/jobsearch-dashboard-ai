@@ -62,6 +62,9 @@ describe("AssistantWorkbench run feedback panel", () => {
     expect(workbenchSource).toContain("Ready (");
     expect(workbenchSource).toContain("Candidates (");
     expect(workbenchSource).toContain("Agency Results (");
+    expect(workbenchSource).toContain("Search agency results");
+    expect(workbenchSource).toContain("Agency results table");
+    expect(workbenchSource).toContain("Show all agency results");
     expect(workbenchSource).toContain("Hidden / Suppressed (");
     expect(workbenchSource).toContain("Prepare selected");
     expect(workbenchSource).toContain("Run agency for visible candidates");
