@@ -4,6 +4,9 @@ import { requireBearerSecret } from "@/lib/security/cron-auth";
 describe("requireBearerSecret", () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
+    vi.stubEnv("CRON_SECRET", "");
+    vi.stubEnv("REQUIRE_CRON_SECRETS", "");
+    vi.stubEnv("VERCEL", "");
   });
 
   it("allows local requests when no secret is configured", () => {

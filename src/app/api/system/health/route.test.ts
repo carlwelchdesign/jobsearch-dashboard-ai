@@ -18,6 +18,11 @@ describe("/api/system/health", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    vi.stubEnv("CRON_SECRET", "");
+    vi.stubEnv("EMAIL_SYNC_SECRET", "");
+    vi.stubEnv("LINKEDIN_ANALYTICS_SYNC_SECRET", "");
+    vi.stubEnv("REQUIRE_CRON_SECRETS", "");
+    vi.stubEnv("VERCEL", "");
     queryRawMock.mockResolvedValue([{ ok: 1 }] as never);
     agentRunCountMock.mockResolvedValue(0);
     jobSearchRunCountMock.mockResolvedValue(0);

@@ -18,6 +18,10 @@ describe("/api/linkedin-analytics/sync", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    vi.stubEnv("CRON_SECRET", "");
+    vi.stubEnv("LINKEDIN_ANALYTICS_SYNC_SECRET", "");
+    vi.stubEnv("REQUIRE_CRON_SECRETS", "");
+    vi.stubEnv("VERCEL", "");
     requireSingleUserMock.mockResolvedValue({ id: "user_1" } as never);
     syncMock.mockResolvedValue({ posts: 1, snapshots: 4 });
   });
