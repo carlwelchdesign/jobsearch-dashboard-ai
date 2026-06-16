@@ -69,9 +69,9 @@ Agent action taxonomy:
 
 ### P1 Product Coherence
 
-- Add in-app lifecycle readiness on Command Center.
+- Add persisted lifecycle readiness overrides and an operating-cockpit Command Center.
 - Promote Jobs, Materials, Evidence, and Outcomes into primary navigation.
-- Convert onboarding from documentation-only into a persisted setup/readiness checklist.
+- Convert onboarding from documentation-only into a computed readiness layer with user-owned snooze, dismiss, and manual-complete overrides.
 - Reconcile README and `docs/USER_GUIDE.md` with the current navigation and dashboard subroutes.
 - Add value-proof metrics: duplicates suppressed, packets prepared, blockers resolved, answers reused, and outcomes learned.
 
@@ -114,12 +114,14 @@ Agent action taxonomy:
 | JSOS-005 | P0 | Apply Sprint candidate deep link | Product | Implemented in branch | Candidate rows link to `/jobs/[id]` or a supported focused route |
 | PLATFORM-009 | P0 | LinkedIn lead URL separation | Platform/Product | Implemented in branch | LinkedIn job URLs remain metadata unless an original employer/ATS apply URL is present |
 | OBS-001 | P0 | System health endpoint | DevOps | Implemented in branch | `/api/system/health` reports DB, stale work, secrets, provider, and worker readiness |
-| UX-001 | P1 | Lifecycle readiness Command Center | Product/UX | Implemented in branch | Overview shows setup-search-review-packet-apply-follow-up-interview-outcome states |
+| UX-001 | P1 | Lifecycle readiness Command Center | Product/UX | Implemented in Phase 4 branch | Overview shows setup-search-review-packet-apply-follow-up-interview-outcome states from the shared readiness service |
+| UX-002 | P1 | Persisted readiness overrides | Product/UX | Implemented in Phase 4 branch | User can snooze, dismiss, complete, and reset non-critical readiness items without snapshotting stale system truth |
+| UX-003 | P1 | Lifecycle page next-action panels | Product/UX | Implemented in Phase 4 branch | Jobs, Apply Sprint, Applications, Materials, Evidence, and Outcomes show compact readiness context |
 | EVID-001 | P1 | Claim-level provenance | AI/Trust | Implemented in Phase 2 branch | Unsupported claims block approval of generated materials and public content |
 | AGENT-002 | P1 | Agent roster control plane | AI/Platform | Implemented in Phase 2 branch | `/agents` shows owner, tools, status, child runs, blocked actions, side effects, and latest eval score |
 | QA-002 | P1 | Red-team trust fixtures | QA/Trust | Implemented in Phase 2 branch | Prompt injection, unsupported claims, private leakage, unauthorized external actions, LinkedIn misuse, and ungrounded public content have deterministic fixtures |
 | PLATFORM-004 | P1 | Canonical application transition service | Platform | Implemented in Phase 3 branch | Status changes become transactional and audit-backed |
-| QA-001 | P1 | Playwright critical-path suite | QA | Planned | Dashboard, search, Apply Sprint, LinkedIn drafts, and Jolene approval flow have browser coverage |
+| QA-001 | P1 | Playwright critical-path suite | QA | Implemented in Phase 4 branch | Dashboard cockpit, readiness overrides, Apply Sprint, Materials, Evidence, Outcomes, and mobile rendering have browser coverage |
 | TPM-001 | P2 | Plan metadata standard | TPM | Planned | New plans include owner, status, risk, acceptance criteria, target release, and linked PR |
 
 ## Acceptance Checks

@@ -20,6 +20,7 @@ import { ActionButton } from "@/components/action-button";
 import { AgencyRunControl } from "@/components/agency-run-control";
 import { JobRejectButton } from "@/components/job-reject-button";
 import { SearchRunCommandCenter } from "@/components/search-run-command-center";
+import { ReadinessOperatingCockpit } from "@/components/readiness/readiness-cockpit";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
@@ -37,6 +38,7 @@ import { getLatestEmailOpsSummary } from "@/lib/jolene/email-ops";
 import { getLatestJoleneOperatingLoop, type JoleneOperatingLoopOutput } from "@/lib/jolene/operating-loop";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
+import { buildLifecycleReadiness } from "@/lib/readiness/lifecycle";
 import { getServiceFallbacks } from "@/lib/service-fallbacks";
 
 export const dynamic = "force-dynamic";
@@ -124,22 +126,13 @@ export async function DashboardOverviewPage() {
         getLatestJoleneOperatingLoop(dashboardUser.id),
       ])
     : [null, null];
+  const readiness = dashboardUser?.id ? await buildLifecycleReadiness({ userId: dashboardUser.id }) : null;
   const suppressionStates = await loadJobSuppressionStatesByUserIds(needsReview.map((match) => match.jobSearchProfile.userId));
   const needsReviewCount = uniqueMatchesByCanonicalJob(needsReview.filter((match) => {
     const suppressionState = suppressionStates.get(match.jobSearchProfile.userId);
     return !suppressionState || !isJobSuppressed(match.jobPosting, suppressionState);
   })).length;
   const applicationCountByStatus = new Map(applicationStatusCounts.map((count) => [count.status, count._count.status]));
-  const [candidateProfileCount, evidenceReadyCount, evidenceReviewCount, generatedMaterialCount, openInterviewTaskCount, outcomeCount] = dashboardUser?.id
-    ? await Promise.all([
-        prisma.userProfile.count({ where: { userId: dashboardUser.id } }),
-        prisma.candidateEvidence.count({ where: { candidateProfile: { userId: dashboardUser.id }, confidence: "VERIFIED" } }),
-        prisma.candidateEvidence.count({ where: { candidateProfile: { userId: dashboardUser.id }, confidence: "NEEDS_REVIEW" } }),
-        prisma.generatedResume.count({ where: { userId: dashboardUser.id } }),
-        prisma.interviewPrepTask.count({ where: { userId: dashboardUser.id, status: "OPEN" } }),
-        prisma.applicationOutcome.count({ where: { userId: dashboardUser.id } }),
-      ])
-    : [0, 0, 0, 0, 0, 0];
   const dailyPlan = dailyPlanOutput(latestDailyPlanRun?.outputJson);
   const ns = dashboardUser?.notificationSettings as { pushoverEnabled?: boolean; emailEnabled?: boolean } | null;
   const fallbacks = getServiceFallbacks(["openai", "brave", "notifications"], { anyNotificationConfigured: Boolean(ns?.pushoverEnabled || ns?.emailEnabled) });
@@ -153,74 +146,13 @@ export async function DashboardOverviewPage() {
         operatingLoopRunId={latestOperatingLoopRun?.id ?? null}
         operatingLoop={joleneOperatingLoopOutput(latestOperatingLoopRun?.outputJson)}
       />
+      {readiness ? <ReadinessOperatingCockpit readiness={readiness} /> : null}
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 2 }}>
         <Metric label="Enabled profiles" value={profiles.length.toString()} helper="Active campaigns" />
         <Metric label="Exceptions" value={needsReviewCount.toString()} helper="Needs your decision" />
         <Metric label="Ready to apply" value={readyApplicationCount.toString()} helper="Prepared by agency" />
         <Metric label="Latest run" value={latestRun?.status ?? "None"} helper={latestRun ? latestRun.startedAt.toLocaleString() : "No runs yet"} />
       </Box>
-      <LifecycleReadinessCard
-        stages={[
-          {
-            label: "Setup",
-            href: "/resumes/profile",
-            status: candidateProfileCount && evidenceReadyCount ? "ready" : "needs_work",
-            count: evidenceReadyCount,
-            detail: candidateProfileCount
-              ? `${evidenceReadyCount} verified evidence item(s), ${evidenceReviewCount} need review.`
-              : "Create and approve the candidate profile before relying on agents.",
-          },
-          {
-            label: "Search",
-            href: "/dashboard/search",
-            status: latestRun ? "ready" : "needs_work",
-            count: latestRun?.jobsSaved ?? 0,
-            detail: latestRun ? `${latestRun.status} run saved ${latestRun.jobsSaved} job(s).` : "Run discovery to populate the queue.",
-          },
-          {
-            label: "Review",
-            href: "/jobs",
-            status: needsReviewCount ? "needs_work" : "ready",
-            count: needsReviewCount,
-            detail: needsReviewCount ? "Exceptions are waiting for approve or reject decisions." : "No visible review exceptions.",
-          },
-          {
-            label: "Packet",
-            href: "/resumes/generated",
-            status: generatedMaterialCount ? "ready" : "needs_work",
-            count: generatedMaterialCount,
-            detail: `${generatedMaterialCount} generated material artifact(s) available.`,
-          },
-          {
-            label: "Apply",
-            href: "/applications/assistant",
-            status: readyApplicationCount ? "needs_work" : "ready",
-            count: readyApplicationCount,
-            detail: readyApplicationCount ? "Prepared applications are waiting for manual submit." : "No ready applications waiting.",
-          },
-          {
-            label: "Follow-up",
-            href: "/applications",
-            status: (applicationCountByStatus.get("follow_up_due") ?? 0) ? "needs_work" : "ready",
-            count: applicationCountByStatus.get("follow_up_due") ?? 0,
-            detail: "Follow-up due items stay visible before interviews and outcomes.",
-          },
-          {
-            label: "Interview",
-            href: "/applications",
-            status: openInterviewTaskCount ? "needs_work" : "ready",
-            count: openInterviewTaskCount,
-            detail: `${openInterviewTaskCount} open interview prep task(s).`,
-          },
-          {
-            label: "Outcome",
-            href: "/outcomes",
-            status: outcomeCount ? "ready" : "needs_work",
-            count: outcomeCount,
-            detail: `${outcomeCount} outcome signal(s) recorded for learning.`,
-          },
-        ]}
-      />
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1.1fr 0.9fr" }, gap: 2 }}>
         <DailyPlanCard dailyPlan={dailyPlan} />
         <Card>
@@ -239,52 +171,6 @@ export async function DashboardOverviewPage() {
       </Box>
       <PipelineStatusSummary applicationCountByStatus={applicationCountByStatus} needsReviewCount={needsReviewCount} blockers={agentUserRequests.length} />
     </DashboardShell>
-  );
-}
-
-function LifecycleReadinessCard({ stages }: {
-  stages: Array<{
-    label: string;
-    href: string;
-    status: "ready" | "needs_work";
-    count: number;
-    detail: string;
-  }>;
-}) {
-  const next = stages.find((stage) => stage.status === "needs_work") ?? stages[0];
-  return (
-    <Card>
-      <CardContent>
-        <Stack spacing={2}>
-          <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
-            <Box>
-              <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
-                <Chip size="small" color="primary" label="Lifecycle readiness" />
-                <Chip size="small" variant="outlined" label={`${stages.filter((stage) => stage.status === "ready").length}/${stages.length} ready`} />
-              </Stack>
-              <Typography variant="h3">Job search operating loop</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {next.detail}
-              </Typography>
-            </Box>
-            <ActionButton href={next.href} variant="contained" size="small" endIcon={<OpenInNewIcon />}>
-              Open {next.label}
-            </ActionButton>
-          </Stack>
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(4, 1fr)" }, gap: 1 }}>
-            {stages.map((stage) => (
-              <Box key={stage.label} sx={{ border: 1, borderColor: stage.status === "ready" ? "success.light" : "warning.light", borderRadius: 1, p: 1.25, bgcolor: stage.status === "ready" ? "rgba(16, 185, 129, 0.08)" : "rgba(245, 158, 11, 0.08)" }}>
-                <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <Typography variant="body2" sx={{ fontWeight: 900 }}>{stage.label}</Typography>
-                  <Chip size="small" label={stage.count} variant="outlined" />
-                </Stack>
-                <Typography variant="caption" color="text.secondary">{stage.status === "ready" ? "Ready" : "Needs work"}</Typography>
-              </Box>
-            ))}
-          </Box>
-        </Stack>
-      </CardContent>
-    </Card>
   );
 }
 

@@ -23,6 +23,7 @@ import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LifecycleReadinessContext } from "@/components/readiness/lifecycle-context";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { StatusChip, formatStatus } from "@/components/ui/status-chip";
@@ -110,6 +111,7 @@ export default async function OutcomeAnalyticsPage() {
           actions={<AnalyzeOutcomesButton />}
         />
         <ServiceFallbackBanners items={fallbacks} />
+        <LifecycleReadinessContext stages={["outcome", "follow_up", "interview"]} title="Outcome learning readiness" />
 
         <Card sx={{ borderColor: nextAction.color === "success" ? "success.main" : "primary.main", bgcolor: nextAction.color === "success" ? "rgba(16, 185, 129, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
           <CardContent>

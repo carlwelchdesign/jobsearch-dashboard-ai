@@ -21,6 +21,7 @@ import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LifecycleReadinessContext } from "@/components/readiness/lifecycle-context";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { prisma } from "@/lib/prisma";
@@ -90,6 +91,7 @@ export default async function GeneratedResumesPage() {
           title="Generated Materials"
           description="Review tailored resumes, cover letters, QA warnings, and exports created from approved evidence before packets move through Applications."
         />
+        <LifecycleReadinessContext stages={["packet", "trust", "setup"]} title="Material readiness" />
         <Card sx={{ borderColor: qaReviewCount ? "warning.main" : "primary.main", bgcolor: qaReviewCount ? "rgba(245, 158, 11, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
           <CardContent>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>

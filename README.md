@@ -87,6 +87,14 @@ npm run smoke:pages
 SMOKE_BASE_URL=http://localhost:3000 npm run smoke:pages
 ```
 
+Run browser acceptance tests for the operating cockpit and lifecycle pages:
+
+```bash
+npm run test:e2e
+# or against an already-running app
+PLAYWRIGHT_BASE_URL=http://localhost:3000 npm run test:e2e
+```
+
 ## Optional Providers
 
 The app works without external service keys by using deterministic local fallbacks. Add these when you want provider-backed behavior:
@@ -114,6 +122,8 @@ With `OPENAI_API_KEY`, resume parsing, job scoring, and resume tailoring use Ope
 Custom recruiter opportunities can be handled from `/resumes/custom-opportunity`. Paste the recruiter brief, extract editable company/title/location/remote details, then generate a resume-only tailored material. The workflow saves a `Recruiter Opportunity` job record and a generated resume, but it does not create an application tracker, cover letter, or application packet unless you open the saved job and use the normal package path. MCP/integration-style briefs automatically emphasize verified Job Search OS stack evidence in the resume Summary and Skills while keeping unsupported requested systems out of claimed skills. Generated outputs can be edited and saved on the custom opportunity page, appear in `/resumes/generated`, and use the existing text/PDF export endpoints.
 
 The primary workflow is agency-first and now runs as a gated search improvement loop. Running search fetches, dedupes, scores, and saves matches, then automatically hands application-ready matches to the recruiting agency when no agency run is already active. The agency approves appropriate jobs, creates application trackers, generates resume and cover-letter packets, and moves them to `ready_to_apply`; broad or uncertain roles stay in the Jobs exception queue for manual review. After agency handoff, the loop pauses profile-health recalculation if jobs still need approve/reject decisions or prepared applications still need Apply Sprint work. When those gates are clear, the Search Profile Optimizer writes fresh profile-health snapshots and Market Intelligence refreshes the dashboard charts from those current signals. Bulk packet preparation is restricted to already-approved jobs so it cannot bypass agency approval. Application state changes now run through a canonical transition service that updates the tracker, linked match, packet state, submitted-job suppression, reconciliation, outcome calibration, and structured `ApplicationEvent` audit history with entity versions. Application state is reconciled by canonical job identity, so when one duplicate tracker is submitted/applied, stale approved or ready duplicates are archived and sibling job matches are synced. The Dashboard also audits application state integrity across trackers, matches, email confirmations, submitted assistant runs, and resurfaced jobs; use `POST /api/applications/integrity/repair` to run deterministic repairs with transition counts and event ids. Final application submission remains manual.
+
+The Command Center is now an operating cockpit backed by the shared readiness service. `buildLifecycleReadiness({ userId })` computes live setup, search, review, packet, apply, follow-up, interview, outcome, trust, and health signals; `ReadinessOverride` stores only user intent such as snooze, dismiss, or manual completion. Trust and health blockers remain system-controlled, so an override cannot make unsupported claims or stale running work appear safe. `GET /api/readiness` returns the current cockpit state, and protected `PATCH /api/readiness/[key]` applies non-critical overrides. Jobs, Apply Sprint, Applications, Generated Materials, Evidence, and Outcomes show compact readiness panels from the same source.
 
 Application detail pages also support draft-only interview thank-you messages. Use the Thank-you drafts card to enter the interview stage, interviewer details, date, and conversation notes; the app saves a `ThankYouDraft` with a full email draft and a shorter LinkedIn variant grounded in the application, role, and approved evidence. These drafts are copyable review artifacts only: the app does not send messages, create contacts, record outcomes, or change application status automatically.
 
@@ -425,6 +435,7 @@ npm run db:logs
 npm run db:down
 npm run db:reset
 npm run smoke:pages
+npm run test:e2e
 ```
 
 ## Evidence Worker

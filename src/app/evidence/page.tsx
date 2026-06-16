@@ -17,6 +17,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { AppShell } from "@/app/app-shell";
+import { LifecycleReadinessContext } from "@/components/readiness/lifecycle-context";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { jsonArray } from "@/lib/json";
@@ -72,6 +73,8 @@ export default async function EvidencePage({ searchParams }: { searchParams?: Ev
             </>
           }
         />
+
+        <LifecycleReadinessContext stages={["setup", "trust"]} title="Evidence readiness" />
 
         <Card sx={{ borderColor: nextAction.color === "warning" ? "warning.main" : "primary.main", bgcolor: nextAction.color === "warning" ? "rgba(245, 158, 11, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
           <CardContent>

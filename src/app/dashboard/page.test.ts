@@ -55,16 +55,25 @@ describe("Command Center subnav routes", () => {
 
   it("surfaces lifecycle readiness on the Command Center overview", () => {
     const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
+    const cockpitSource = readFileSync(resolve(process.cwd(), "src/components/readiness/readiness-cockpit.tsx"), "utf8");
+    const readinessSource = readFileSync(resolve(process.cwd(), "src/lib/readiness/lifecycle.ts"), "utf8");
 
-    expect(contentSource).toContain("Lifecycle readiness");
-    expect(contentSource).toContain("Setup");
-    expect(contentSource).toContain("Search");
-    expect(contentSource).toContain("Review");
-    expect(contentSource).toContain("Packet");
-    expect(contentSource).toContain("Apply");
-    expect(contentSource).toContain("Follow-up");
-    expect(contentSource).toContain("Interview");
-    expect(contentSource).toContain("Outcome");
+    expect(contentSource).toContain("ReadinessOperatingCockpit");
+    expect(contentSource).toContain("buildLifecycleReadiness");
+    expect(cockpitSource).toContain("Operating cockpit");
+    expect(cockpitSource).toContain("Lifecycle readiness");
+    expect(cockpitSource).toContain("Priority readiness worklist");
+    expect(cockpitSource).toContain("Value proof");
+    expect(readinessSource).toContain("setup.profile");
+    expect(readinessSource).toContain("search.latest_run");
+    expect(readinessSource).toContain("review.exceptions");
+    expect(readinessSource).toContain("packet.materials");
+    expect(readinessSource).toContain("apply.ready");
+    expect(readinessSource).toContain("follow_up.due");
+    expect(readinessSource).toContain("interview.prep");
+    expect(readinessSource).toContain("outcome.signals");
+    expect(readinessSource).toContain("trust.unsupported_claims");
+    expect(readinessSource).toContain("health.system");
   });
 
   it("shows Email Ops workflow controls and safety copy in its dashboard route", () => {

@@ -4,6 +4,7 @@ export const metadata = {
 };
 
 import { AppShell } from "@/app/app-shell";
+import { LifecycleReadinessContext } from "@/components/readiness/lifecycle-context";
 import { PageHeader } from "@/components/ui/page-header";
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
@@ -163,6 +164,7 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
           )}
         />
         <ServiceFallbackBanners items={fallbacks} />
+        <LifecycleReadinessContext stages={["apply", "packet", "trust"]} title="Apply Sprint readiness" />
         <AssistantWorkbench
           initialApplicationId={searchParams?.applicationId}
           atsBlockers={atsBlockers}

@@ -20,6 +20,7 @@ import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
 import { AgencyRunControl } from "@/components/agency-run-control";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LifecycleReadinessContext } from "@/components/readiness/lifecycle-context";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip, formatStatus } from "@/components/ui/status-chip";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
@@ -102,6 +103,7 @@ export default async function ApplicationsPage() {
           description="Work the applications the agency has approved and prepared. The assistant helps fill forms, but final submission stays under your control."
         />
         <ServiceFallbackBanners items={fallbacks} />
+        <LifecycleReadinessContext stages={["apply", "follow_up", "interview", "outcome"]} title="Application lifecycle readiness" />
         <Card sx={{ borderColor: nextAction.color === "success" ? "success.main" : "primary.main", bgcolor: nextAction.color === "success" ? "rgba(16, 185, 129, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
           <CardContent>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
