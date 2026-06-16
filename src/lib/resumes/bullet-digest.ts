@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { parseStructuredOutput } from "@/lib/ai/openai";
+import type { ResumeExperienceContext } from "@/lib/resumes/resume-context";
+import { inferVersionSuggestions } from "@/lib/resumes/version-inference";
 
 export const roleDescriptionBulletDigestSchema = z.object({
   bullets: z.array(z.object({
@@ -32,6 +34,7 @@ export type RoleDescriptionMetadata = {
   summary: string | null;
   skills: string[];
   achievements: string[];
+  resumeContext: ResumeExperienceContext;
 };
 
 export async function digestRoleDescriptionToBullets(input: DigestRoleDescriptionInput): Promise<RoleDescriptionBulletDigest> {
@@ -68,6 +71,9 @@ export function inferRoleDescriptionMetadata(input: DigestRoleDescriptionInput):
   const category = input.category?.trim() || inferCategoryFromText(`${input.description} ${input.focusAreas ?? ""}`);
   const dateLine = lines.find(looksLikeDateLine) ?? null;
   const dates = parseDateRange(dateLine);
+  const summary = firstSummaryLine(lines);
+  const skills = extractKeywords(input.description);
+  const achievements = extractCandidateSentences(input.description).slice(0, 10);
   return {
     company,
     role,
@@ -76,9 +82,23 @@ export function inferRoleDescriptionMetadata(input: DigestRoleDescriptionInput):
     startDate: dates.startDate,
     endDate: dates.endDate,
     isCurrent: dates.isCurrent,
-    summary: firstSummaryLine(lines),
-    skills: extractKeywords(input.description),
-    achievements: extractCandidateSentences(input.description).slice(0, 10),
+    summary,
+    skills,
+    achievements,
+    resumeContext: {
+      applicationTitle: inferApplicationTitle(lines),
+      applicationSummary: summary ?? undefined,
+      users: inferUsers(input.description),
+      scaleImpact: inferScaleImpact(input.description),
+      confirmedTech: [],
+      versionSuggestions: inferVersionSuggestions({
+        technologies: skills,
+        startDate: dates.startDate,
+        endDate: dates.endDate,
+        isCurrent: dates.isCurrent,
+        sourceText: input.description,
+      }),
+    },
   };
 }
 
@@ -192,6 +212,36 @@ function firstSummaryLine(lines: string[]) {
     && !looksLikeDateLine(line)
     && !looksLikeLocationLine(line)
   )) ?? null;
+}
+
+function inferApplicationTitle(lines: string[]) {
+  const quoted = lines.find((line) => /^["“].+["”]$/.test(line) && line.length <= 90);
+  if (quoted) return quoted.replace(/^["“]|["”]$/g, "").trim();
+  const productLine = lines.find((line) => (
+    line.length <= 90
+    && /\b(app|application|platform|portal|dashboard|system|tool|workflow|product|service)\b/i.test(line)
+    && !looksLikeDateLine(line)
+    && !looksLikeLocationLine(line)
+    && !/\b(engineer|developer|architect|manager|lead|director)\b/i.test(line)
+  ));
+  return productLine ?? undefined;
+}
+
+function inferUsers(text: string) {
+  const sentence = extractCandidateSentences(text).find((line) => /\b(users?|customers?|clients?|sales reps?|teams?|engineers?|operators?|admins?)\b/i.test(line));
+  return sentence ? trimContextSentence(sentence) : undefined;
+}
+
+function inferScaleImpact(text: string) {
+  const sentence = extractCandidateSentences(text).find((line) => (
+    hasMetric(line)
+    || /\b(scale|scalable|performance|latency|throughput|reliability|availability|growth|impact)\b/i.test(line)
+  ));
+  return sentence ? trimContextSentence(sentence) : undefined;
+}
+
+function trimContextSentence(value: string) {
+  return value.replace(/\s+/g, " ").trim().replace(/[.;]\s*$/, "").slice(0, 220);
 }
 
 function resumeBulletFromSentence(sentence: string) {

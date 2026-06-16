@@ -607,10 +607,10 @@ function AgencyActivityCard() {
             </Stack>
             <Typography variant="h3">Agency activity</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              After search saves eligible matches, the agency prepares packets for Apply Sprint automatically. Unusable or uncertain jobs remain as exceptions below.
+              Search-triggered agency handoffs appear in the live run above. Use this only to manually rerun the agency against currently eligible matches.
             </Typography>
           </Box>
-          <AgencyRunControl label="Run agency now" minimumScore={0} variant="outlined" showLatestOnMount />
+          <AgencyRunControl label="Run agency now" minimumScore={0} variant="outlined" showLatestOnMount={false} />
         </Stack>
       </CardContent>
     </Card>

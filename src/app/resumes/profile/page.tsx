@@ -7,6 +7,7 @@ import Alert from "@mui/material/Alert";
 import Stack from "@mui/material/Stack";
 import { AppShell } from "@/app/app-shell";
 import { prisma } from "@/lib/prisma";
+import { parseResumeExperienceContext } from "@/lib/resumes/resume-context";
 import { ResumeProfileClient } from "./profile-client";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,9 @@ export default async function ResumeProfilePage() {
     include: {
       experienceBullets: {
         orderBy: { createdAt: "desc" },
+      },
+      workExperiences: {
+        orderBy: [{ isCurrent: "desc" }, { updatedAt: "desc" }],
       },
     },
     orderBy: { createdAt: "asc" },
@@ -43,6 +47,16 @@ export default async function ResumeProfilePage() {
               keywords: Array.isArray(bullet.keywords) ? bullet.keywords.filter((keyword): keyword is string => typeof keyword === "string") : [],
               sourceText: bullet.sourceText,
               truthLevel: bullet.truthLevel,
+            }))}
+            workExperiences={profile.workExperiences.map((work) => ({
+              id: work.id,
+              company: work.company,
+              title: work.title,
+              startDate: work.startDate,
+              endDate: work.endDate,
+              isCurrent: work.isCurrent,
+              skills: Array.isArray(work.skills) ? work.skills.filter((skill): skill is string => typeof skill === "string") : [],
+              resumeContext: parseResumeExperienceContext(work.resumeContext),
             }))}
           />
         )}

@@ -8,6 +8,7 @@ import {
   validateGeneratedResumeSchema,
   type ParsedResume,
 } from "@/lib/resumes/schemas";
+import { parseResumeExperienceContext, techUsedLine } from "@/lib/resumes/resume-context";
 
 type TailorResumeInput = {
   userProfile: UserProfile;
@@ -62,7 +63,8 @@ export async function tailorResumeForJob({ userProfile, job, bullets, projects, 
         "Never include warnings, notes, selected project lists, tailoring commentary, or any metadata inside the resume text fields. " +
         "Compose the resume like a premium editorial document: exact section hierarchy, concise high-signal bullets, clean role/date lines, and no filler. " +
         "Use these sections in this order when supported by the source data: Summary, Skills, Professional Experience, Projects, Education, Certifications. " +
-        "Professional Experience role lines must follow 'Company - Role | Date range' when dates are available, then 3-5 concise bullets focused on outcomes, scope, tools, and measurable evidence already present in source data. " +
+        "Professional Experience role lines must follow 'Company - Role | Date range' when dates are available. When resumeContext includes applicationTitle, add it on the next line in quotes. Then add one concise application context sentence from applicationSummary, users, and scaleImpact when present. Then add 3-5 concise bullets focused on outcomes, scope, tools, and measurable evidence already present in source data. " +
+        "After each role, include 'Tech Used: ...' only when confirmedTech or approved version suggestions are supplied in resumeContext. Use exact versions only when they are confirmed or approved. Never include needs-review, likely, estimated, inferred, or available-at-the-time version language in resume text. " +
         "Do not omit any supplied workExperiences from Professional Experience. If a role is less relevant, keep the entry compact with 1-2 truthful bullets rather than creating an employment-date gap. " +
         "Never write internal bookkeeping phrases such as verified role, employment-history continuity, included for continuity, or placeholder-style role notes in the resume. " +
         "Verified bullets marked as profile updates or role-description digest evidence are recently approved user profile data. Give them strong consideration when they align with the job, even if older uploaded-resume bullets also match. " +
@@ -96,6 +98,7 @@ export async function tailorResumeForJob({ userProfile, job, bullets, projects, 
           summary: work.summary,
           skills: work.skills,
           achievements: work.achievements,
+          resumeContext: work.resumeContext,
           source: work.sourceResumeUploadId ? "resume_upload" : "profile_update",
         })),
         projects: cleanProjects.map((project) => ({
@@ -409,7 +412,13 @@ function formatExperience(bullets: ExperienceBullet[], workExperiences: WorkExpe
     const [company, role] = work ? [work.company, work.title] : displayKeyParts(key);
     const dates = work?.startDate || work?.endDate ? ` | ${[work.startDate, work.endDate].filter(Boolean).join(" - ")}` : "";
     const bulletsForRole = group.length ? group.map((bullet) => bullet.text) : fallbackWorkBullets(work);
-    return [`### ${company} - ${role}${dates}`, ...bulletsForRole.map((bullet) => `- ${bullet}`), ""];
+    return [
+      `### ${company} - ${role}${dates}`,
+      ...formatRecruiterRoleContext(work),
+      ...bulletsForRole.map((bullet) => `- ${bullet}`),
+      ...formatTechUsed(work),
+      "",
+    ];
   });
 }
 
@@ -430,7 +439,13 @@ function enforceWorkHistoryContinuity(markdownResume: string, workExperiences: W
   const additions = missingWork.flatMap((work) => {
     const dates = work.startDate || work.endDate ? ` | ${[work.startDate, work.endDate].filter(Boolean).join(" - ")}` : "";
     const roleBullets = sourceBulletsByKey.get(workKey(work.company, work.title))?.map((bullet) => bullet.text) ?? fallbackWorkBullets(work);
-    return [`### ${work.company} - ${work.title}${dates}`, ...roleBullets.slice(0, 2).map((bullet) => `- ${bullet}`), ""];
+    return [
+      `### ${work.company} - ${work.title}${dates}`,
+      ...formatRecruiterRoleContext(work),
+      ...roleBullets.slice(0, 2).map((bullet) => `- ${bullet}`),
+      ...formatTechUsed(work),
+      "",
+    ];
   });
 
   return {
@@ -456,6 +471,24 @@ function fallbackWorkBullets(work: WorkExperience | undefined) {
   const skills = jsonStringArray(work.skills).slice(0, 6);
   if (skills.length) return [`Applied ${skills.join(", ")} across product, delivery, and cross-functional work.`];
   return [`Contributed to ${work.title} responsibilities across product delivery, execution, and cross-functional collaboration.`];
+}
+
+function formatRecruiterRoleContext(work: WorkExperience | undefined) {
+  if (!work) return [];
+  const context = parseResumeExperienceContext(work.resumeContext);
+  const lines: string[] = [];
+  if (context.applicationTitle) lines.push(`"${context.applicationTitle}"`);
+  const contextSentence = [context.applicationSummary, context.users, context.scaleImpact]
+    .filter(Boolean)
+    .join(" ");
+  if (contextSentence) lines.push(contextSentence);
+  return lines;
+}
+
+function formatTechUsed(work: WorkExperience | undefined) {
+  if (!work) return [];
+  const line = techUsedLine(work.resumeContext);
+  return line ? [line] : [];
 }
 
 function sortWorkExperiences(workExperiences: WorkExperience[]) {

@@ -79,6 +79,11 @@ export function reviewApplicationMaterials({
   if (learningRules?.fieldClassificationQa) {
     warnings.push("Active learning: field-classification mistakes have been reported, so manually review unknown required fields before submit.");
   }
+  const inferredVersionClaim = inferredVersionLanguage(resume);
+  if (inferredVersionClaim) {
+    unsupportedClaims.push(inferredVersionClaim);
+    suggestedEdits.push("Remove inferred version language from the resume, or approve the exact version in the resume profile first.");
+  }
   const ashbyCriteriaVisibility = resume && isAshbyApplication({ atsProvider: job.atsProvider, applicationUrl: job.applicationUrl })
     ? evaluateAshbyCriteriaVisibility({ jobTitle: job.title, jobDescription: job.description, resumeText: resume })
     : undefined;
@@ -144,4 +149,10 @@ function riskyClaims(text: string) {
     if (item.pattern.test(text)) claims.push(item.label);
   }
   return Array.from(new Set(claims));
+}
+
+function inferredVersionLanguage(text: string) {
+  const lines = text.split("\n").filter((line) => /\b(tech used|react|typescript|node\.?js|next\.?js|angular|vue|\.net|java|python)\b/i.test(line));
+  const risky = lines.find((line) => /\b(likely|estimated|inferred|available at the time|best guess|probably)\b/i.test(line));
+  return risky ? `Contains unapproved inferred technology/version language: "${risky.slice(0, 140)}"` : null;
 }

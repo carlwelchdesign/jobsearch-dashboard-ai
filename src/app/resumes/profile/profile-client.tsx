@@ -33,6 +33,43 @@ type Bullet = {
   truthLevel: string;
 };
 
+type ResumeTechItem = {
+  name: string;
+  version?: string;
+  source?: "user_confirmed" | "source_evidence" | "approved_suggestion";
+};
+
+type ResumeVersionSuggestion = {
+  id: string;
+  name: string;
+  suggestedVersion: string;
+  confidence: number;
+  rationale: string;
+  status: "NEEDS_REVIEW" | "APPROVED" | "REJECTED";
+  source: "source_evidence" | "date_window";
+  evidence: string[];
+};
+
+type ResumeExperienceContext = {
+  applicationTitle?: string;
+  applicationSummary?: string;
+  users?: string;
+  scaleImpact?: string;
+  confirmedTech: ResumeTechItem[];
+  versionSuggestions: ResumeVersionSuggestion[];
+};
+
+type WorkExperience = {
+  id: string;
+  company: string;
+  title: string;
+  startDate: string | null;
+  endDate: string | null;
+  isCurrent: boolean;
+  skills: string[];
+  resumeContext: ResumeExperienceContext;
+};
+
 type ProfileClientProps = {
   profile: {
     id: string;
@@ -41,6 +78,7 @@ type ProfileClientProps = {
     professionalSummary: string | null;
   };
   bullets: Bullet[];
+  workExperiences: WorkExperience[];
 };
 
 const categories = [
@@ -56,7 +94,7 @@ const categories = [
   "devtools",
 ];
 
-export function ResumeProfileClient({ profile, bullets }: ProfileClientProps) {
+export function ResumeProfileClient({ profile, bullets, workExperiences }: ProfileClientProps) {
   const { refresh } = useRouter();
   const [open, setOpen] = useState(false);
   const [digestOpen, setDigestOpen] = useState(false);
@@ -207,6 +245,63 @@ export function ResumeProfileClient({ profile, bullets }: ProfileClientProps) {
     }
   }
 
+  async function updateRoleContext(event: React.FormEvent<HTMLFormElement>, work: WorkExperience) {
+    event.preventDefault();
+    setActionId(`context:${work.id}`);
+    setNotice("");
+    setError("");
+    const formData = new FormData(event.currentTarget);
+    try {
+      const response = await fetch(`/api/resumes/work-experiences/${work.id}/resume-context`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          applicationTitle: formData.get("applicationTitle"),
+          applicationSummary: formData.get("applicationSummary"),
+          users: formData.get("users"),
+          scaleImpact: formData.get("scaleImpact"),
+          confirmedTech: parseConfirmedTech(String(formData.get("confirmedTech") ?? "")),
+          versionSuggestions: work.resumeContext.versionSuggestions,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Unable to update role context.");
+      setNotice("Role resume context updated.");
+      refresh();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Unable to update role context.");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function updateSuggestionStatus(work: WorkExperience, suggestionId: string, status: ResumeVersionSuggestion["status"]) {
+    setActionId(`${work.id}:${suggestionId}:${status}`);
+    setNotice("");
+    setError("");
+    try {
+      const versionSuggestions = work.resumeContext.versionSuggestions.map((suggestion) => (
+        suggestion.id === suggestionId ? { ...suggestion, status } : suggestion
+      ));
+      const response = await fetch(`/api/resumes/work-experiences/${work.id}/resume-context`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...work.resumeContext,
+          versionSuggestions,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Unable to update version suggestion.");
+      setNotice(status === "APPROVED" ? "Version approved for resume generation." : "Version suggestion rejected.");
+      refresh();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Unable to update version suggestion.");
+    } finally {
+      setActionId(null);
+    }
+  }
+
   return (
     <Stack spacing={3}>
       <PageHeader
@@ -289,6 +384,89 @@ export function ResumeProfileClient({ profile, bullets }: ProfileClientProps) {
         </Card>
       </Collapse>
 
+      {workExperiences.length ? (
+        <Card>
+          <CardContent>
+            <Stack spacing={2}>
+              <Stack direction={{ xs: "column", sm: "row" }} sx={{ justifyContent: "space-between", gap: 1 }}>
+                <Box>
+                  <Typography variant="h3">Role Resume Context</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Confirm application context and exact tech before it appears in generated resumes.
+                  </Typography>
+                </Box>
+                <Chip
+                  color={workExperiences.some((work) => work.resumeContext.versionSuggestions.some((suggestion) => suggestion.status === "NEEDS_REVIEW")) ? "warning" : "success"}
+                  variant="outlined"
+                  label={`${workExperiences.reduce((count, work) => count + work.resumeContext.versionSuggestions.filter((suggestion) => suggestion.status === "NEEDS_REVIEW").length, 0)} version review`}
+                />
+              </Stack>
+              <Stack spacing={2}>
+                {workExperiences.map((work) => {
+                  const context = work.resumeContext;
+                  const confirmedTech = context.confirmedTech.map((tech) => [tech.name, tech.version].filter(Boolean).join(" ")).join(", ");
+                  return (
+                    <Box key={work.id} sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1, p: 2 }}>
+                      <Stack spacing={1.5}>
+                        <Stack direction={{ xs: "column", sm: "row" }} sx={{ justifyContent: "space-between", gap: 1 }}>
+                          <Box>
+                            <Typography sx={{ fontWeight: 850 }}>{work.company} - {work.title}</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {[work.startDate, work.endDate || (work.isCurrent ? "Present" : null)].filter(Boolean).join(" - ") || "Dates not set"}
+                            </Typography>
+                          </Box>
+                          {work.skills.length ? <Chip size="small" variant="outlined" label={work.skills.slice(0, 3).join(", ")} /> : null}
+                        </Stack>
+                        <Stack component="form" spacing={1.5} onSubmit={(event) => void updateRoleContext(event, work)}>
+                          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)" }, gap: 1.5 }}>
+                            <TextField size="small" name="applicationTitle" label="Application / product title" defaultValue={context.applicationTitle ?? ""} />
+                            <TextField size="small" name="confirmedTech" label="Confirmed tech" defaultValue={confirmedTech} helperText="Comma-separated; add versions only when confirmed." />
+                            <TextField multiline minRows={2} size="small" name="applicationSummary" label="Application context" defaultValue={context.applicationSummary ?? ""} />
+                            <TextField multiline minRows={2} size="small" name="users" label="Users" defaultValue={context.users ?? ""} />
+                            <TextField multiline minRows={2} size="small" name="scaleImpact" label="Scale / impact" defaultValue={context.scaleImpact ?? ""} />
+                          </Box>
+                          <Button type="submit" size="small" variant="contained" disabled={actionId === `context:${work.id}`} sx={{ alignSelf: "flex-start" }}>
+                            {actionId === `context:${work.id}` ? "Saving..." : "Save context"}
+                          </Button>
+                        </Stack>
+                        {context.versionSuggestions.length ? (
+                          <Stack spacing={1}>
+                            {context.versionSuggestions.map((suggestion) => (
+                              <Box key={suggestion.id} sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr auto" }, gap: 1, alignItems: "center" }}>
+                                <Box>
+                                  <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 0.5 }}>
+                                    <Chip size="small" color={suggestion.status === "APPROVED" ? "success" : suggestion.status === "REJECTED" ? "default" : "warning"} label={suggestion.status.toLowerCase().replace(/_/g, " ")} />
+                                    <Chip size="small" variant="outlined" label={`${suggestion.name} ${suggestion.suggestedVersion}`} />
+                                    <Chip size="small" variant="outlined" label={`${Math.round(suggestion.confidence * 100)}%`} />
+                                  </Stack>
+                                  <Typography variant="caption" color="text.secondary">{suggestion.rationale}</Typography>
+                                </Box>
+                                <Stack direction="row" spacing={1}>
+                                  {suggestion.status !== "APPROVED" ? (
+                                    <Button size="small" variant="contained" color="success" disabled={Boolean(actionId)} onClick={() => void updateSuggestionStatus(work, suggestion.id, "APPROVED")}>
+                                      Approve
+                                    </Button>
+                                  ) : null}
+                                  {suggestion.status !== "REJECTED" ? (
+                                    <Button size="small" variant="outlined" color="error" disabled={Boolean(actionId)} onClick={() => void updateSuggestionStatus(work, suggestion.id, "REJECTED")}>
+                                      Reject
+                                    </Button>
+                                  ) : null}
+                                </Stack>
+                              </Box>
+                            ))}
+                          </Stack>
+                        ) : null}
+                      </Stack>
+                    </Box>
+                  );
+                })}
+              </Stack>
+            </Stack>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardContent>
           <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center", mb: 1 }}>
@@ -356,4 +534,18 @@ export function ResumeProfileClient({ profile, bullets }: ProfileClientProps) {
       </Card>
     </Stack>
   );
+}
+
+function parseConfirmedTech(value: string): ResumeTechItem[] {
+  return value.split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const match = item.match(/^(.+?)\s+(\d+(?:[.\-x]\w*)?)$/i);
+      return {
+        name: (match?.[1] ?? item).trim(),
+        version: match?.[2]?.trim(),
+        source: "user_confirmed" as const,
+      };
+    });
 }
