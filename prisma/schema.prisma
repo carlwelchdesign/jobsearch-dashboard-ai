@@ -445,6 +445,12 @@ enum MaterialClaimStatus {
   UNSUPPORTED
 }
 
+enum ReadinessOverrideStatus {
+  MANUAL_READY
+  DISMISSED
+  SNOOZED
+}
+
 enum JoleneMessageRole {
   USER
   ASSISTANT
@@ -501,6 +507,7 @@ model User {
   linkedinAnalyticsSnapshots  LinkedInPostMetricSnapshot[]
   jobSuppressions             JobSuppression[]
   materialClaims              MaterialClaim[]
+  readinessOverrides          ReadinessOverride[]
 }
 
 model CareerMission {
@@ -531,6 +538,25 @@ model AiSettings {
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
   user                      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ReadinessOverride {
+  id            String                  @id @default(cuid())
+  userId        String
+  key           String
+  status        ReadinessOverrideStatus
+  snoozedUntil  DateTime?
+  completedAt   DateTime?
+  dismissedAt   DateTime?
+  note          String?
+  metadataJson  Json                    @default("{}")
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  user          User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId, status])
+  @@index([snoozedUntil])
 }
 
 model CareerSprintSnapshot {

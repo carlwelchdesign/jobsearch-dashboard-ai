@@ -20,6 +20,7 @@ import { ActionButton } from "@/components/action-button";
 import { BulkPrepareControl } from "@/components/bulk-prepare-control";
 import { DetectJobQualityControl } from "@/components/detect-job-quality-control";
 import { EvaluateJobsControl } from "@/components/evaluate-jobs-control";
+import { LifecycleReadinessContext } from "@/components/readiness/lifecycle-context";
 import { PageHeader } from "@/components/ui/page-header";
 import { RunSearchControl } from "@/components/run-search-control";
 import { submittedApplicationStatuses } from "@/lib/applications/job-filters";
@@ -120,6 +121,7 @@ export default async function JobsPage({ searchParams }: { searchParams?: { stat
           }
         />
         <ServiceFallbackBanners items={fallbacks} />
+        <LifecycleReadinessContext stages={["review", "search", "trust"]} title="Job review readiness" />
 
         <Card sx={{ borderColor: topReviewMatch ? "primary.main" : approvedForPrep.length ? "success.main" : "divider", bgcolor: topReviewMatch ? "rgba(37, 99, 235, 0.08)" : approvedForPrep.length ? "rgba(16, 185, 129, 0.08)" : "background.paper" }}>
           <CardContent>

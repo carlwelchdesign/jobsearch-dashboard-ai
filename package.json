@@ -10,6 +10,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:watch": "vitest",
     "smoke:pages": "tsx scripts/smoke-pages.ts",
     "chrome-extension:package": "tsx scripts/package-chrome-extension.ts",

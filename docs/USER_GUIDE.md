@@ -664,13 +664,15 @@ Click **Command Center** in the left sidebar (`/dashboard`). This is the page yo
 | **Daily Plan** | A short prioritized action list from the AI |
 | **Integrity Audit** | Warnings about data drift or inconsistencies in your tracker |
 
-### Lifecycle readiness
+### Operating cockpit and lifecycle readiness
 
-The Command Center also includes a readiness checklist for the full search lifecycle:
+The Command Center now includes an operating cockpit for the full search lifecycle:
 
-Setup → Search → Review → Packet → Apply → Follow-up → Interview → Outcome
+Setup → Search → Review → Packet → Apply → Follow-up → Interview → Outcome → Trust → Health
 
-Use this as a morning operating checklist. It pulls important readiness signals out of hidden settings and admin pages, including whether your profile, evidence, generated materials, applications, follow-ups, interviews, and outcomes have enough signal for the agents to make useful recommendations.
+Use this as a morning operating checklist. It pulls important readiness signals out of hidden settings and admin pages, including profile completeness, evidence quality, generated materials, Apply Sprint work, follow-ups, interviews, outcomes, unsupported generated claims, and stale system work.
+
+The readiness cockpit is live system truth plus your own lightweight overrides. You can snooze, dismiss, complete, or reset non-critical readiness items when a blocker is not relevant that day. Trust and health blockers stay system-controlled: unsupported claims, failed provenance, and stale running work cannot be marked safe by a manual override. Jobs, Apply Sprint, Applications, Generated Materials, Evidence, and Outcomes also show compact next-action panels from the same readiness service, so the lifecycle state is visible outside the Command Center.
 
 ### How to trigger a job search from here
 
