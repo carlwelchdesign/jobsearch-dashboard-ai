@@ -48,6 +48,10 @@ vi.mock("@/lib/resumes/ats", () => ({
   checkAtsReadability: vi.fn(),
 }));
 
+vi.mock("@/lib/trust/material-claims", () => ({
+  syncMaterialClaimsForResume: vi.fn(),
+}));
+
 const parseMock = vi.mocked(parseStructuredOutput);
 const captureManualJobMock = vi.mocked(captureManualJob);
 const runJobFitScoringAgentMock = vi.mocked(runJobFitScoringAgent);

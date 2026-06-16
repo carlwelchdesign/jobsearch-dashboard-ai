@@ -30,6 +30,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { StatusChip } from "@/components/ui/status-chip";
 import { graphRunControlState } from "@/lib/agents/graph-run-controls";
+import { buildAgentRoster, type AgentRosterItem } from "@/lib/agents/roster";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 
@@ -79,7 +80,7 @@ type AgentRunObservability = {
 };
 
 export default async function AgentReviewBoardPage() {
-  const [runs, evidenceNeedsReview, jobEvaluations, profileOptimizerRun, dailyPlanRun, resumesNeedingReview, coverLettersNeedingReview] = await Promise.all([
+  const [runs, evidenceNeedsReview, jobEvaluations, profileOptimizerRun, dailyPlanRun, resumesNeedingReview, coverLettersNeedingReview, roster] = await Promise.all([
     prisma.agentRun.findMany({
       orderBy: { createdAt: "desc" },
       take: 40,
@@ -120,6 +121,7 @@ export default async function AgentReviewBoardPage() {
       orderBy: { createdAt: "desc" },
       take: 20,
     }),
+    buildAgentRoster(),
   ]);
   const latestProfileOutput = outputObject(profileOptimizerRun?.outputJson);
   const latestDailyPlan = outputObject(dailyPlanRun?.outputJson);
@@ -189,6 +191,8 @@ export default async function AgentReviewBoardPage() {
           <Metric icon={<AutoFixHighOutlinedIcon />} label="Job advice" value={jobEvaluations.length.toString()} helper="High-priority evaluations" />
           <Metric icon={<ReportProblemOutlinedIcon />} label="Material QA" value={materialReviewItems.length.toString()} helper="Needs review" />
         </Box>
+
+        <AgentControlPlaneSection roster={roster} />
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "1.25fr 1fr" }, gap: 2 }}>
           <Stack spacing={2}>
@@ -523,6 +527,99 @@ function Metric({ icon, label, value, helper }: { icon: React.ReactNode; label: 
   );
 }
 
+function AgentControlPlaneSection({ roster }: { roster: AgentRosterItem[] }) {
+  const activeCount = roster.filter((item) => item.currentStatus === "RUNNING" || item.currentStatus === "PENDING").length;
+  const blockedCount = roster.reduce((sum, item) => sum + item.blockedActions, 0);
+  return (
+    <Stack spacing={1.5}>
+      <SectionTitle title="Control Plane" />
+      <TableContainer component={Card}>
+        <Table sx={{ minWidth: 1240 }}>
+          <TableHead>
+            <TableRow>
+              <TableCell>Agent</TableCell>
+              <TableCell>Owner</TableCell>
+              <TableCell>Runtime</TableCell>
+              <TableCell>Policy</TableCell>
+              <TableCell>Tools</TableCell>
+              <TableCell>Side Effects</TableCell>
+              <TableCell>Status</TableCell>
+              <TableCell>Child Runs</TableCell>
+              <TableCell>Blocked</TableCell>
+              <TableCell>Eval</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            <TableRow>
+              <TableCell colSpan={10} sx={{ bgcolor: "action.hover" }}>
+                <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                  <Chip size="small" color={activeCount ? "warning" : "success"} label={`${activeCount} active`} />
+                  <Chip size="small" color={blockedCount ? "warning" : "default"} variant="outlined" label={`${blockedCount} blocked actions`} />
+                  <Chip size="small" variant="outlined" label={`${roster.length} registered agents`} />
+                </Stack>
+              </TableCell>
+            </TableRow>
+            {roster.map((item) => (
+              <TableRow key={item.agentType} hover>
+                <TableCell sx={{ maxWidth: 220 }}>
+                  <Typography sx={{ fontWeight: 850 }}>{item.label}</Typography>
+                  <Typography variant="caption" color="text.secondary">{item.agentType}</Typography>
+                </TableCell>
+                <TableCell>{item.ownerArea}</TableCell>
+                <TableCell>
+                  <Chip size="small" variant="outlined" color={runtimeColor(item.runtime)} label={formatAction(item.runtime)} />
+                </TableCell>
+                <TableCell>
+                  <Stack spacing={0.5}>
+                    <Chip size="small" color={item.approvalRequired ? "warning" : "success"} variant="outlined" label={formatAction(item.actionPolicyKind)} />
+                    <Typography variant="caption" color="text.secondary">{item.approvalRequired ? "Approval required" : "No approval gate"}</Typography>
+                    {item.forbiddenActions.slice(0, 2).map((action) => (
+                      <Typography key={`${item.agentType}-${action}`} variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                        Blocks {formatAction(action)}
+                      </Typography>
+                    ))}
+                  </Stack>
+                </TableCell>
+                <TableCell sx={{ maxWidth: 260 }}>
+                  <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: "wrap" }}>
+                    {item.allowedTools.slice(0, 4).map((tool) => <Chip key={`${item.agentType}-${tool}`} size="small" variant="outlined" label={tool} />)}
+                    {item.allowedTools.length > 4 ? <Chip size="small" label={`+${item.allowedTools.length - 4}`} /> : null}
+                  </Stack>
+                </TableCell>
+                <TableCell>
+                  <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: "wrap" }}>
+                    {item.sideEffects.map((effect) => <Chip key={`${item.agentType}-${effect}`} size="small" variant="outlined" label={formatAction(effect)} />)}
+                  </Stack>
+                </TableCell>
+                <TableCell>
+                  <Stack spacing={0.5}>
+                    <StatusChip status={item.currentStatus} />
+                    {item.lastRunAt ? <Typography variant="caption" color="text.secondary">{item.lastRunAt.toLocaleString()}</Typography> : null}
+                  </Stack>
+                </TableCell>
+                <TableCell>{item.childRuns}</TableCell>
+                <TableCell>
+                  <Chip size="small" color={item.blockedActions ? "warning" : "default"} variant="outlined" label={item.blockedActions} />
+                </TableCell>
+                <TableCell>
+                  {typeof item.lastEvalScore === "number" ? (
+                    <Stack spacing={0.5}>
+                      <ScoreChip score={item.lastEvalScore} />
+                      {item.lastEvalStatus ? <Typography variant="caption" color="text.secondary">{formatAction(item.lastEvalStatus)}</Typography> : null}
+                    </Stack>
+                  ) : (
+                    <Chip size="small" label="n/a" />
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Stack>
+  );
+}
+
 function SectionTitle({ title, action }: { title: string; action?: React.ReactNode }) {
   return (
     <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -551,4 +648,10 @@ function formatAction(action: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function runtimeColor(runtime: AgentRosterItem["runtime"]) {
+  if (runtime === "langgraph") return "info";
+  if (runtime === "adk") return "secondary";
+  return "default";
 }

@@ -10,6 +10,7 @@ import {
   selectResumeSourceWorkExperiences,
   summarizeResumeSourceBullets,
 } from "@/lib/resumes/source-materials";
+import { syncMaterialClaimsForResume } from "@/lib/trust/material-claims";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +90,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       where: { id: resume.id },
       data: { generationNotes: resumeQa.notes },
     });
+    await syncMaterialClaimsForResume(reviewedResume.id);
     await prisma.jobProfileMatch.update({
       where: { id: match.id },
       data: { status: "resume_generated" },

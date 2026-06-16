@@ -15,18 +15,27 @@ const lowRiskPolicy = {
   mutatesLocalData: false,
   externalAction: "none" as const,
   autoApplyLearningKinds: ["THRESHOLD", "WARNING", "STYLE_RULE", "GUIDANCE", "QA_CHECK"],
+  allowedTools: ["read_app_state", "evaluate_local_context", "draft_recommendations"],
+  forbiddenActions: ["external_submit", "send_email", "write_calendar", "publish_linkedin"],
+  sideEffects: ["none"],
 };
 
 const localMutationPolicy = {
   mutatesLocalData: true,
   externalAction: "none" as const,
   autoApplyLearningKinds: ["THRESHOLD", "WARNING", "STYLE_RULE", "GUIDANCE", "QA_CHECK"],
+  allowedTools: ["read_app_state", "evaluate_local_context", "write_local_records"],
+  forbiddenActions: ["external_submit", "send_email", "write_calendar", "publish_linkedin"],
+  sideEffects: ["local_database_write"],
 };
 
 const manualSubmitPolicy = {
   mutatesLocalData: true,
   externalAction: "manual_submit_required" as const,
   autoApplyLearningKinds: ["THRESHOLD", "WARNING", "STYLE_RULE", "GUIDANCE", "QA_CHECK"],
+  allowedTools: ["read_app_state", "evaluate_local_context", "write_local_records", "prepare_manual_packet"],
+  forbiddenActions: ["auto_submit", "send_email", "write_calendar", "publish_linkedin"],
+  sideEffects: ["local_database_write", "approval_gate_required"],
 };
 
 export const skillRegistry = {

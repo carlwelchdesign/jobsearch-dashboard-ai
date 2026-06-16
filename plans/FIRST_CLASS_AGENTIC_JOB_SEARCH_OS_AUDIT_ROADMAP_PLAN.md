@@ -17,7 +17,7 @@ The core gap is not missing agent surface area. The main risks are:
 - Safety boundaries are inconsistent across Jolene chat, ADK operator actions, skill execution, cron routes, and external integrations.
 - Production hardening is behind product ambition: cron secrets were optional, CI was not a full release gate, and protected single-user identity was implicit.
 - The product experience is broad enough that users need a clear lifecycle operating loop instead of many powerful but scattered surfaces.
-- Evidence, claim provenance, and agent evaluations need to become release-grade gates before generated materials and public content can be treated as first-class output.
+- Evidence, claim provenance, and agent evaluations are now moving into release-grade gates before generated materials and public content can be treated as first-class output.
 - Plans are plentiful, but they need owner/status/risk/acceptance metadata to function as a managed roadmap.
 
 ## Product Wedge And ICP
@@ -99,7 +99,7 @@ Agent action taxonomy:
 | Jolene or skills mutate state without an enforceable policy | P0 | Shared action taxonomy and runtime policy checks | AI/Trust |
 | Multiple local users make first-user routes unsafe | P0 | Protected single-user helper and route migration | Platform |
 | LinkedIn leads become false application targets | P0 | Store LinkedIn URL as metadata; only non-LinkedIn employer/ATS URLs become `applicationUrl` | Product/Trust |
-| Generated materials include unsupported claims | P1 | Claim-level provenance and release-blocking generated-material evals | AI/Trust |
+| Generated materials include unsupported claims | P1 | Claim-level provenance, approval blocking, and generated-material evals | AI/Trust |
 | Product surfaces feel scattered | P1 | Lifecycle Command Center, onboarding checklist, navigation reconciliation | Product/UX |
 | Plans do not operate like a roadmap | P2 | Plan metadata standard with status, owner, risk, acceptance criteria, release, and PR | TPM |
 
@@ -115,7 +115,9 @@ Agent action taxonomy:
 | PLATFORM-009 | P0 | LinkedIn lead URL separation | Platform/Product | Implemented in branch | LinkedIn job URLs remain metadata unless an original employer/ATS apply URL is present |
 | OBS-001 | P0 | System health endpoint | DevOps | Implemented in branch | `/api/system/health` reports DB, stale work, secrets, provider, and worker readiness |
 | UX-001 | P1 | Lifecycle readiness Command Center | Product/UX | Implemented in branch | Overview shows setup-search-review-packet-apply-follow-up-interview-outcome states |
-| EVID-001 | P1 | Claim-level provenance | AI/Trust | Planned | Unsupported claims block approval of generated materials and public content |
+| EVID-001 | P1 | Claim-level provenance | AI/Trust | Implemented in Phase 2 branch | Unsupported claims block approval of generated materials and public content |
+| AGENT-002 | P1 | Agent roster control plane | AI/Platform | Implemented in Phase 2 branch | `/agents` shows owner, tools, status, child runs, blocked actions, side effects, and latest eval score |
+| QA-002 | P1 | Red-team trust fixtures | QA/Trust | Implemented in Phase 2 branch | Prompt injection, unsupported claims, private leakage, unauthorized external actions, LinkedIn misuse, and ungrounded public content have deterministic fixtures |
 | PLATFORM-004 | P1 | Canonical application transition service | Platform | Planned | Status changes become transactional and audit-backed |
 | QA-001 | P1 | Playwright critical-path suite | QA | Planned | Dashboard, search, Apply Sprint, LinkedIn drafts, and Jolene approval flow have browser coverage |
 | TPM-001 | P2 | Plan metadata standard | TPM | Planned | New plans include owner, status, risk, acceptance criteria, target release, and linked PR |
