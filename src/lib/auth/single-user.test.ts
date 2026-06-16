@@ -20,6 +20,8 @@ describe("requireSingleUser", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    vi.stubEnv("JOB_SEARCH_OS_USER_ID", "");
+    vi.stubEnv("SEED_USER_EMAIL", "");
     userCountMock.mockResolvedValue(1);
     userFindFirstMock.mockResolvedValue({ id: "user_1", email: "person@example.com" } as never);
     userFindUniqueMock.mockResolvedValue({ id: "user_1", email: "person@example.com" } as never);
