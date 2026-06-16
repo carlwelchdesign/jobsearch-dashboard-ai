@@ -1287,6 +1287,8 @@ When it hits a field it does not know how to answer safely, it **pauses** and cr
 
 When the assistant is done filling, it stops at the **Ready to Submit** stage. The browser stays open, you review everything on screen, make any changes you want, and then click Submit yourself.
 
+If you remove an item from Apply Sprint because it is not a fit, the app archives the application instead of deleting it. The record, materials, learning signal, and state history stay available for review, and the job is suppressed from resurfacing as an active recommendation.
+
 ### The Apply Sprint panel (what to watch)
 
 The panel in the app shows:
@@ -1417,6 +1419,7 @@ Click any application to open its detail page. You will find:
 - **Assistant controls**: Launch, resume, or reset the Apply Sprint assistant for this application
 - **Company Research**: A brief on the company pulled from saved context
 - **Compensation Notes**: Salary data and negotiation signals
+- **State History**: A compact timeline of recent application transitions, including source, actor, version, and before/after status
 
 ### Marking an application as applied
 

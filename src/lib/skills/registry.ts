@@ -1,6 +1,7 @@
 import { JobMatchStatus, Prisma, type SkillAdjustment } from "@prisma/client";
 import { z } from "zod";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
+import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { prisma } from "@/lib/prisma";
 import { applyNumericThresholdAdjustments, applyQualityProposalRuleAdjustments } from "@/lib/skills/adjustments";
 import type { SkillDefinition, SkillId } from "@/lib/skills/types";
@@ -394,23 +395,22 @@ async function approveAgencyMatch(input: { userId: string; matchId: string; mini
       jobPostingId: candidate.jobPostingId,
       jobProfileMatchId: candidate.id,
       status: JobMatchStatus.approved,
-      approvedAt: new Date(),
       notes: "Recruiting agency auto-approved this high-confidence match.",
     },
   });
 
-  await prisma.applicationEvent.create({
-    data: {
-      applicationId: application.id,
-      type: "status_changed",
-      payload: {
-        source: "recruiting_agency",
-        status: "approved",
-        score: candidate.overallScore,
-        jobProfileMatchId: candidate.id,
-        profile: candidate.jobSearchProfile.name,
-        appliedLearning: input.learningRules?.appliedCategories ?? [],
-      } as Prisma.InputJsonValue,
+  await transitionApplicationState({
+    applicationId: application.id,
+    toStatus: "approved",
+    source: "recruiting_agency",
+    actor: { type: "agent", id: "approve_agency_match" },
+    reason: "Recruiting agency approved a high-confidence match.",
+    note: "Recruiting agency auto-approved this high-confidence match.",
+    metadata: {
+      score: candidate.overallScore,
+      jobProfileMatchId: candidate.id,
+      profile: candidate.jobSearchProfile.name,
+      appliedLearning: input.learningRules?.appliedCategories ?? [],
     },
   });
 

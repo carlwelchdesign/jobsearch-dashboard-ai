@@ -3,6 +3,7 @@ import { generateCoverLetterForJob, tailorResumeForJob } from "@/lib/ai/resume";
 import { syncApplicationPacket } from "@/lib/applications/application-packets";
 import { attachCoverLetterQa, attachResumeQa, createResumeStrategy } from "@/lib/applications/material-agents";
 import { activeApplicationMaterialGuidance } from "@/lib/applications/material-guidance";
+import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { prisma } from "@/lib/prisma";
 import { checkAtsReadability } from "@/lib/resumes/ats";
 import {
@@ -147,11 +148,8 @@ export async function prepareApplicationPackage(jobId: string) {
         where: { id: existingApplication.id },
         data: {
           jobProfileMatchId: match.id,
-          status: "ready_to_apply",
           resumeId: resume.id,
           coverLetterId: coverLetter.id,
-          approvedAt: existingApplication.approvedAt ?? new Date(),
-          notes: mergeNotes(existingApplication.notes),
         },
       })
     : await prisma.application.create({
@@ -159,37 +157,33 @@ export async function prepareApplicationPackage(jobId: string) {
           userId: user.id,
           jobPostingId: job.id,
           jobProfileMatchId: match.id,
-          status: "ready_to_apply",
+          status: "approved",
           resumeId: resume.id,
           coverLetterId: coverLetter.id,
-          approvedAt: new Date(),
-          notes: "Application package prepared. Review materials and submit manually.",
         },
       });
 
-  await prisma.jobProfileMatch.update({
-    where: { id: match.id },
-    data: { status: "ready_to_apply", reviewedAt: match.reviewedAt ?? new Date() },
-  });
-
-  await prisma.applicationEvent.create({
-    data: {
-      applicationId: application.id,
-      type: "status_changed",
-      payload: {
-        status: "ready_to_apply",
-        resumeId: resume.id,
-        coverLetterId: coverLetter.id,
-        applicationUrl: job.applicationUrl,
-        manualSubmissionRequired: true,
-      } as Prisma.InputJsonValue,
+  const transitioned = await transitionApplicationState({
+    applicationId: application.id,
+    toStatus: "ready_to_apply",
+    source: "prepare_application_package",
+    actor: { type: "system" },
+    reason: "Application package prepared with generated resume and cover letter.",
+    note: mergeNotes(existingApplication?.notes ?? null),
+    metadata: {
+      jobProfileMatchId: match.id,
+      resumeId: resume.id,
+      coverLetterId: coverLetter.id,
+      applicationUrl: job.applicationUrl,
+      manualSubmissionRequired: true,
     },
+    sideEffects: { syncPacket: false },
   });
 
   const packet = await syncApplicationPacket(application.id);
 
   return {
-    application,
+    application: transitioned.application,
     packet,
     resume,
     coverLetter,

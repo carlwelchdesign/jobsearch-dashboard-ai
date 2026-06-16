@@ -1,6 +1,7 @@
-import type { JobMatchStatus, Prisma } from "@prisma/client";
+import type { JobMatchStatus } from "@prisma/client";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
 import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
+import { transitionApplicationState, type ApplicationTransitionStatus } from "@/lib/applications/state-transitions";
 import { clearJobSuppressionForApproval } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 
@@ -87,9 +88,6 @@ async function upsertApprovedApplication(input: {
         where: { id: existing.id },
         data: {
           jobProfileMatchId: input.jobProfileMatchId,
-          status: nextApprovedApplicationStatus(existing.status),
-          approvedAt: existing.approvedAt ?? new Date(),
-          notes: mergeApprovalNote(existing.notes, input.source),
         },
       })
     : await prisma.application.create({
@@ -103,27 +101,29 @@ async function upsertApprovedApplication(input: {
         },
       });
 
-  if (!existing) {
-    await prisma.applicationEvent.create({
-      data: {
-        applicationId: application.id,
-        type: "status_changed",
-        payload: {
-          source: input.source,
-          status: "approved",
-          jobProfileMatchId: input.jobProfileMatchId,
-          note: eventNote(input.source),
-        } as Prisma.InputJsonValue,
-      },
-    });
-  }
+  const transitioned = await transitionApplicationState({
+    applicationId: application.id,
+    toStatus: nextApprovedApplicationStatus(existing?.status ?? "approved"),
+    source: input.source,
+    actor: { type: "system" },
+    reason: eventNote(input.source),
+    note: mergeApprovalNote(existing?.notes ?? null, input.source),
+    metadata: { jobProfileMatchId: input.jobProfileMatchId },
+    sideEffects: {
+      syncPacket: false,
+      reconcile: true,
+      suppressSubmitted: false,
+      refreshOutcomeCalibration: true,
+    },
+  });
 
-  return application;
+  return transitioned.application;
 }
 
-function nextApprovedApplicationStatus(status: JobMatchStatus | string) {
+function nextApprovedApplicationStatus(status: JobMatchStatus | string): ApplicationTransitionStatus {
   if (["ready_to_apply", "resume_generated", "cover_letter_generated", "applied", "follow_up_due", "screening", "interviewing", "rejected_by_company", "offer", "archived"].includes(status)) {
-    return status as JobMatchStatus;
+    if (status === "resume_generated" || status === "cover_letter_generated") return "ready_to_apply";
+    return status as ApplicationTransitionStatus;
   }
   return "approved";
 }

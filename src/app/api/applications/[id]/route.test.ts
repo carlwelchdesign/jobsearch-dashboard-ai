@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { captureJobRejectionLearning } from "@/lib/jobs/rejection-learning";
 import { recordRejectedJobSuppression } from "@/lib/jobs/suppression";
+import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { DELETE, PATCH } from "./route";
 
 vi.mock("@/lib/prisma", () => ({
@@ -39,6 +40,10 @@ vi.mock("@/lib/observability/outcome-calibration", () => ({
   refreshOutcomeCalibration: vi.fn(),
 }));
 
+vi.mock("@/lib/applications/state-transitions", () => ({
+  transitionApplicationState: vi.fn(),
+}));
+
 const findApplicationMock = vi.mocked(prisma.application.findUnique);
 const deleteApplicationMock = vi.mocked(prisma.application.delete);
 const updateJobPostingMock = vi.mocked(prisma.jobPosting.update);
@@ -48,6 +53,7 @@ const createSkillFeedbackMock = vi.mocked(prisma.skillFeedback.create);
 const transactionMock = vi.mocked(prisma.$transaction);
 const captureJobRejectionLearningMock = vi.mocked(captureJobRejectionLearning);
 const recordRejectedJobSuppressionMock = vi.mocked(recordRejectedJobSuppression);
+const transitionApplicationStateMock = vi.mocked(transitionApplicationState);
 
 describe("DELETE /api/applications/[id]", () => {
   beforeEach(() => {
@@ -59,6 +65,7 @@ describe("DELETE /api/applications/[id]", () => {
     createSkillFeedbackMock.mockReset();
     captureJobRejectionLearningMock.mockReset();
     recordRejectedJobSuppressionMock.mockReset();
+    transitionApplicationStateMock.mockReset();
     transactionMock.mockClear();
     deleteApplicationMock.mockResolvedValue({ id: "app_1" } as Awaited<ReturnType<typeof prisma.application.delete>>);
     updateJobPostingMock.mockResolvedValue({ id: "job_1", applicationUrl: "https://jobs.acme.example/apply" } as Awaited<ReturnType<typeof prisma.jobPosting.update>>);
@@ -66,9 +73,14 @@ describe("DELETE /api/applications/[id]", () => {
     updateMatchMock.mockResolvedValue({ id: "match_1", status: "rejected" } as Awaited<ReturnType<typeof prisma.jobProfileMatch.update>>);
     createSkillFeedbackMock.mockResolvedValue({ id: "feedback_1" } as Awaited<ReturnType<typeof prisma.skillFeedback.create>>);
     captureJobRejectionLearningMock.mockResolvedValue({ created: 1 });
+    transitionApplicationStateMock.mockResolvedValue({
+      application: { id: "app_1", status: "archived" },
+      event: { id: "event_1" },
+      sideEffects: { idempotent: false, packetSynced: true, reconciliationRan: false, submittedSuppressionRecorded: false, outcomeCalibrationRefreshed: true, errors: [] },
+    } as unknown as Awaited<ReturnType<typeof transitionApplicationState>>);
   });
 
-  it("marks the linked match rejected and records agency learning feedback", async () => {
+  it("soft archives the application and records agency learning feedback", async () => {
     findApplicationMock.mockResolvedValue({
       id: "app_1",
       userId: "user_1",
@@ -107,10 +119,17 @@ describe("DELETE /api/applications/[id]", () => {
         }),
       }),
     }));
-    expect(updateMatchMock).toHaveBeenCalledWith({
-      where: { id: "match_1" },
-      data: expect.objectContaining({ status: "rejected" }),
-    });
+    expect(transitionApplicationStateMock).toHaveBeenCalledWith(expect.objectContaining({
+      applicationId: "app_1",
+      toStatus: "archived",
+      source: "applications_rejection_reason_prompt",
+      actor: { type: "user" },
+      metadata: expect.objectContaining({
+        reasons: ["job_unavailable"],
+        note: "Too much legacy Java.",
+        jobProfileMatchId: "match_1",
+      }),
+    }));
     expect(captureJobRejectionLearningMock).toHaveBeenCalledWith(expect.objectContaining({
       matchId: "match_1",
       jobPostingId: "job_1",
@@ -123,9 +142,9 @@ describe("DELETE /api/applications/[id]", () => {
       source: "applications_rejection_reason_prompt",
       reason: expect.stringContaining("job unavailable"),
     }));
-    expect(deleteApplicationMock).toHaveBeenCalledWith({ where: { id: "app_1" } });
+    expect(deleteApplicationMock).not.toHaveBeenCalled();
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ deleted: true, rejected: true });
+    await expect(response.json()).resolves.toMatchObject({ deleted: false, archived: true, rejected: true });
   });
 
   it("updates the linked job posting application URL", async () => {

@@ -937,6 +937,7 @@ model Application {
   followUpAt           DateTime?
   sourceContactId      String?
   autoSubmitOverride   Boolean?
+  version              Int                        @default(1)
   createdAt            DateTime                   @default(now())
   updatedAt            DateTime                   @updatedAt
   answerMemories       ApplicationAnswerMemory[]
@@ -1689,9 +1690,22 @@ model ApplicationEvent {
   id            String               @id @default(cuid())
   applicationId String
   type          ApplicationEventType
+  source        String               @default("legacy")
+  actorType     String               @default("system")
+  actorId       String?
+  requestId     String?
+  idempotencyKey String?
+  beforeJson    Json                 @default("{}")
+  afterJson     Json                 @default("{}")
+  entityVersion Int?
   payload       Json                 @default("{}")
   createdAt     DateTime             @default(now())
   application   Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, idempotencyKey])
+  @@index([applicationId, createdAt])
+  @@index([source, createdAt])
+  @@index([idempotencyKey])
 }
 
 model InterviewPrepTask {

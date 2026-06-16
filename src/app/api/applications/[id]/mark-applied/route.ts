@@ -1,6 +1,6 @@
 import { apiError } from "@/lib/api";
 import { recordApplicationOutcome } from "@/lib/applications/outcomes";
-import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
+import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { createQualityExampleFromAutomationRun } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
 
@@ -15,14 +15,15 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       },
     });
     if (existing) {
-      await prisma.application.update({
-        where: { id: params.id },
-        data: {
-          status: "applied",
-          appliedAt: existing.occurredAt,
-        },
+      await transitionApplicationState({
+        applicationId: params.id,
+        toStatus: "applied",
+        source: "mark_applied_existing",
+        actor: { type: "user" },
+        reason: "Application was marked applied from an existing APPLIED outcome.",
+        occurredAt: existing.occurredAt,
+        metadata: { outcomeId: existing.id },
       });
-      await reconcileApplicationCanonicalState({ applicationId: params.id, source: "mark_applied_existing" }).catch(() => null);
       return Response.json({
         outcome: existing,
         message: "Application was already marked applied.",
@@ -40,7 +41,6 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     if (latestRun && ["FAILED", "NEEDS_USER", "RUNNING"].includes(latestRun.status)) {
       await createQualityExampleFromAutomationRun(latestRun.id, "MANUAL_REPAIR").catch(() => null);
     }
-    await reconcileApplicationCanonicalState({ applicationId: params.id, source: "mark_applied" }).catch(() => null);
 
     return Response.json({ outcome: result.outcome, message: result.message });
   } catch (error) {

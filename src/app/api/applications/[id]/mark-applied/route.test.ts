@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { recordApplicationOutcome } from "@/lib/applications/outcomes";
+import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { createQualityExampleFromAutomationRun } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
 import { POST } from "./route";
 
 vi.mock("@/lib/applications/outcomes", () => ({
   recordApplicationOutcome: vi.fn(),
+}));
+
+vi.mock("@/lib/applications/state-transitions", () => ({
+  transitionApplicationState: vi.fn(),
 }));
 
 vi.mock("@/lib/observability/quality", () => ({
@@ -30,6 +35,7 @@ const findOutcomeMock = vi.mocked(prisma.applicationOutcome.findFirst);
 const updateApplicationMock = vi.mocked(prisma.application.update);
 const findAutomationRunMock = vi.mocked(prisma.applicationAutomationRun.findFirst);
 const recordApplicationOutcomeMock = vi.mocked(recordApplicationOutcome);
+const transitionApplicationStateMock = vi.mocked(transitionApplicationState);
 const createQualityExampleMock = vi.mocked(createQualityExampleFromAutomationRun);
 
 describe("POST /api/applications/[id]/mark-applied", () => {
@@ -38,7 +44,13 @@ describe("POST /api/applications/[id]/mark-applied", () => {
     updateApplicationMock.mockReset();
     findAutomationRunMock.mockReset();
     recordApplicationOutcomeMock.mockReset();
+    transitionApplicationStateMock.mockReset();
     createQualityExampleMock.mockReset();
+    transitionApplicationStateMock.mockResolvedValue({
+      application: { id: "app_1", status: "applied" },
+      event: { id: "event_1" },
+      sideEffects: { idempotent: false, packetSynced: true, reconciliationRan: true, submittedSuppressionRecorded: true, outcomeCalibrationRefreshed: true, errors: [] },
+    } as unknown as Awaited<ReturnType<typeof transitionApplicationState>>);
   });
 
   it("records an applied outcome", async () => {
@@ -80,6 +92,12 @@ describe("POST /api/applications/[id]/mark-applied", () => {
     });
 
     expect(recordApplicationOutcomeMock).not.toHaveBeenCalled();
+    expect(transitionApplicationStateMock).toHaveBeenCalledWith(expect.objectContaining({
+      applicationId: "app_1",
+      toStatus: "applied",
+      source: "mark_applied_existing",
+      metadata: { outcomeId: "outcome_1" },
+    }));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       message: "Application was already marked applied.",
