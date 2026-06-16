@@ -8,7 +8,12 @@ import DeleteOutlineOutlinedIcon from "@mui/icons-material/DeleteOutlineOutlined
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import CheckCircleOutlineOutlinedIcon from "@mui/icons-material/CheckCircleOutlineOutlined";
 import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import Accordion from "@mui/material/Accordion";
+import AccordionDetails from "@mui/material/AccordionDetails";
+import AccordionSummary from "@mui/material/AccordionSummary";
 import Alert from "@mui/material/Alert";
+import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -21,6 +26,12 @@ import MenuItem from "@mui/material/MenuItem";
 import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
 import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -324,6 +335,7 @@ export function AssistantWorkbench({
   const [resetting, setResetting] = useState(false);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [appliedIds, setAppliedIds] = useState<string[]>([]);
+  const [queueProgressSearchId, setQueueProgressSearchId] = useState<string | null>(null);
   const [copyingCoverLetterId, setCopyingCoverLetterId] = useState<string | null>(null);
   const [pendingRejectionFeedback, setPendingRejectionFeedback] = useState<Pick<ReadyApplication, "id" | "company" | "title"> | null>(null);
   const [notice, setNotice] = useState("");
@@ -347,6 +359,11 @@ export function AssistantWorkbench({
     ...application,
     progress: sprintProgressForApplication(application),
   })), [visibleApplications]);
+  const queueProgressSearchSelection = useMemo(
+    () => queueProgress.find((application) => application.id === queueProgressSearchId) ?? null,
+    [queueProgress, queueProgressSearchId],
+  );
+  const visibleQueueProgress = queueProgressSearchSelection ? [queueProgressSearchSelection] : queueProgress;
   const selectedRunActive = selected?.automationRun?.status === "RUNNING" || isLearningWorkflow(selectedWorkflow);
   const visibleCandidateIds = useMemo(() => trustFunnel.candidates.reduce<string[]>((ids, candidate) => {
     if (candidate.canPrepare) ids.push(candidate.matchId);
@@ -534,34 +551,18 @@ export function AssistantWorkbench({
 
   return (
     <>
-      <ApplySprintFunnelPanel trustFunnel={trustFunnel} readyCount={visibleApplications.length} />
-
-      <Card sx={{ mb: 2 }}>
-        <CardContent sx={{ pb: "16px !important" }}>
-          <Tabs
-            value={funnelUi.queueTab}
-            onChange={(_, value) => setFunnelUi((current) => ({ ...current, queueTab: value }))}
-            variant="scrollable"
-            scrollButtons="auto"
-            aria-label="Apply Sprint visibility tabs"
-          >
-            <Tab value="ready" label={`Ready (${visibleApplications.length})`} />
-            <Tab value="candidates" label={`Candidates (${trustFunnel.candidates.length})`} />
-            <Tab value="agency" label={`Agency Results (${trustFunnel.agencyResults.length})`} />
-            <Tab value="hidden" label={`Hidden / Suppressed (${trustFunnel.hidden.length})`} />
-          </Tabs>
-        </CardContent>
-      </Card>
-
-      {funnelUi.queueTab === "ready" ? (
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "380px 1fr" }, gap: 2 }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: "1fr", gap: 2 }}>
       <Card>
         <CardContent>
           <Stack spacing={2}>
               <Box>
-                <Typography variant="h3">Assistant queue</Typography>
+                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                  <Chip size="small" color="success" label={`Ready ${visibleApplications.length}`} />
+                  {selected?.score ? <Chip size="small" variant="outlined" label={`${selected.score} score`} /> : null}
+                </Stack>
+                <Typography variant="h3">Next application</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Pick a ready application or launch the next highest-scoring item.
+                  Complete the selected application, submit it yourself, then mark it applied before moving to the next one.
                 </Typography>
               </Box>
               <TextField
@@ -703,128 +704,135 @@ export function AssistantWorkbench({
                   <Typography variant="body2" color="text.secondary">{selectedPrimaryAction.detail}</Typography>
                 </Stack>
               ) : null}
-              <Divider />
-              <Box>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>Secondary actions</Typography>
-                <Stack spacing={1} sx={{ mt: 1 }}>
-                  <Button
-                    variant="outlined"
-                    startIcon={<PlayCircleOutlineOutlinedIcon />}
-                    disabled={loading || resetting}
-                    onClick={() => void launchSelected(true)}
-                  >
-                    Launch next unlaunched
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    color="warning"
-                    startIcon={<RefreshOutlinedIcon />}
-                    disabled={!selected || loading || resetting}
-                    onClick={() => void resetSelectedAssistant()}
-                  >
-                    {resetting ? "Resetting..." : "Reset assistant test state"}
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    startIcon={<DeleteOutlineOutlinedIcon />}
-                    disabled={!selected || deleting || loading || resetting}
-                    onClick={openRejectDialog}
-                  >
-                    {deleting ? "Rejecting..." : "Reject from queue"}
-                  </Button>
-                </Stack>
-              </Box>
+              <Accordion disableGutters>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Box>
+                    <Typography sx={{ fontWeight: 850 }}>Details and recovery</Typography>
+                    <Typography variant="caption" color="text.secondary">Queue progress, reset controls, and rejection feedback.</Typography>
+                  </Box>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Stack spacing={2}>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>Secondary actions</Typography>
+                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
+                        <Button
+                          variant="outlined"
+                          startIcon={<PlayCircleOutlineOutlinedIcon />}
+                          disabled={loading || resetting}
+                          onClick={() => void launchSelected(true)}
+                        >
+                          Launch next unlaunched
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          color="warning"
+                          startIcon={<RefreshOutlinedIcon />}
+                          disabled={!selected || loading || resetting}
+                          onClick={() => void resetSelectedAssistant()}
+                        >
+                          {resetting ? "Resetting..." : "Reset assistant test state"}
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          color="error"
+                          startIcon={<DeleteOutlineOutlinedIcon />}
+                          disabled={!selected || deleting || loading || resetting}
+                          onClick={openRejectDialog}
+                        >
+                          {deleting ? "Rejecting..." : "Reject from queue"}
+                        </Button>
+                      </Stack>
+                    </Box>
+                    {queueProgress.length ? (
+                      <QueueProgressTable
+                        activeSelectedId={activeSelectedId}
+                        applications={visibleQueueProgress}
+                        searchOptions={queueProgress}
+                        searchSelection={queueProgressSearchSelection}
+                        onSearchChange={(application) => setQueueProgressSearchId(application?.id ?? null)}
+                        onSelect={setSelectedId}
+                      />
+                    ) : null}
+                  </Stack>
+                </AccordionDetails>
+              </Accordion>
               {selectedBlocker ? (
                 <Alert severity="warning">Resolve the open blocker before launching this application again.</Alert>
-              ) : null}
-              {queueProgress.length ? (
-                <>
-                  <Divider />
-                  <Box>
-                    <Typography variant="h3">Queue progress</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Each item shows the next workflow state before it leaves Apply Sprint.
-                    </Typography>
-                  </Box>
-                  <Stack spacing={1}>
-                    {queueProgress.slice(0, 8).map((application) => (
-                      <Box
-                        key={application.id}
-                        sx={{
-                          border: 1,
-                          borderColor: application.id === activeSelectedId ? "primary.main" : "divider",
-                          borderRadius: 1,
-                          p: 1.25,
-                          bgcolor: application.id === activeSelectedId ? "rgba(37, 99, 235, 0.06)" : "background.paper",
-                        }}
-                      >
-                        <Stack spacing={1}>
-                          <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                            <Box sx={{ minWidth: 0 }}>
-                              <Typography sx={{ fontWeight: 850 }} noWrap>{application.company}</Typography>
-                              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }} noWrap>{application.title}</Typography>
-                            </Box>
-                            <Chip size="small" color={application.progress.color} label={application.progress.label} />
-                          </Stack>
-                          <LinearProgress
-                            variant="determinate"
-                            value={application.progress.value}
-                            color={application.progress.color}
-                            sx={{ height: 6, borderRadius: 1 }}
-                          />
-                          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", justifyContent: "space-between", alignItems: "center" }}>
-                            <Typography variant="caption" color="text.secondary">{application.progress.detail}</Typography>
-                            <Button size="small" variant={application.id === activeSelectedId ? "contained" : "outlined"} onClick={() => setSelectedId(application.id)}>
-                              Select
-                            </Button>
-                          </Stack>
-                        </Stack>
-                      </Box>
-                    ))}
-                  </Stack>
-                </>
               ) : null}
             </Stack>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent>
-            <Stack spacing={2}>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
-                <Box>
-                  <Typography variant="h3">Assistant run</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Live result from the local browser filler and learning session.
-                  </Typography>
-                </Box>
-                <Button variant="outlined" startIcon={<RefreshOutlinedIcon />} onClick={() => void refreshLog()}>
-                  Refresh log
-                </Button>
-              </Stack>
-              {loading || selectedRunActive ? <LinearProgress /> : null}
-              {launch ? (
-                <Alert severity="success">
-                  {launch.message}
-                  {launch.automationRunId ? <Box component="span" sx={{ display: "block", mt: 0.5 }}>Run: {launch.automationRunId}</Box> : null}
-                  {launch.logPath ? <Box component="span" sx={{ display: "block", mt: 0.5 }}>Log: {launch.logPath}</Box> : null}
-                </Alert>
-              ) : (
-                <Alert severity="info">Launch an application to see fill, upload, learning, and blocker results here.</Alert>
-              )}
-                  <AssistantRunPanel
-                    diagnostics={selectedFeedback?.diagnostics ?? null}
-                    timeline={selectedFeedback?.timeline ?? []}
-                    log={selectedFeedback?.log ?? ""}
-                    fieldLearningHref={selected ? fieldLearningHref(selected) : "/settings/learning#settings-field-learning"}
-                    onCopyLog={copyRawLog}
-                  />
-            </Stack>
-          </CardContent>
-        </Card>
       </Box>
-      ) : null}
+
+      <Accordion disableGutters sx={{ mt: 2 }}>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Box>
+            <Typography sx={{ fontWeight: 850 }}>Assistant run details</Typography>
+            <Typography variant="caption" color="text.secondary">Fill results, learning timeline, and raw log.</Typography>
+          </Box>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Stack spacing={2}>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}>
+              <Box>
+                <Typography variant="h3">Assistant run</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Live result from the local browser filler and learning session.
+                </Typography>
+              </Box>
+              <Button variant="outlined" startIcon={<RefreshOutlinedIcon />} onClick={() => void refreshLog()}>
+                Refresh log
+              </Button>
+            </Stack>
+            {loading || selectedRunActive ? <LinearProgress /> : null}
+            {launch ? (
+              <Alert severity="success">
+                {launch.message}
+                {launch.automationRunId ? <Box component="span" sx={{ display: "block", mt: 0.5 }}>Run: {launch.automationRunId}</Box> : null}
+                {launch.logPath ? <Box component="span" sx={{ display: "block", mt: 0.5 }}>Log: {launch.logPath}</Box> : null}
+              </Alert>
+            ) : (
+              <Alert severity="info">Launch an application to see fill, upload, learning, and blocker results here.</Alert>
+            )}
+            <AssistantRunPanel
+              diagnostics={selectedFeedback?.diagnostics ?? null}
+              timeline={selectedFeedback?.timeline ?? []}
+              log={selectedFeedback?.log ?? ""}
+              fieldLearningHref={selected ? fieldLearningHref(selected) : "/settings/learning#settings-field-learning"}
+              onCopyLog={copyRawLog}
+            />
+          </Stack>
+        </AccordionDetails>
+      </Accordion>
+
+      <Accordion disableGutters sx={{ mt: 2 }}>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Box>
+            <Typography sx={{ fontWeight: 850 }}>Search-to-Apply visibility</Typography>
+            <Typography variant="caption" color="text.secondary">Candidates, agency results, and hidden or suppressed rows.</Typography>
+          </Box>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Stack spacing={2}>
+            <ApplySprintFunnelPanel trustFunnel={trustFunnel} readyCount={visibleApplications.length} />
+            <Card sx={{ mb: 2 }}>
+              <CardContent sx={{ pb: "16px !important" }}>
+                <Tabs
+                  value={funnelUi.queueTab}
+                  onChange={(_, value) => setFunnelUi((current) => ({ ...current, queueTab: value }))}
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  aria-label="Apply Sprint visibility tabs"
+                >
+                  <Tab value="ready" label={`Ready (${visibleApplications.length})`} />
+                  <Tab value="candidates" label={`Candidates (${trustFunnel.candidates.length})`} />
+                  <Tab value="agency" label={`Agency Results (${trustFunnel.agencyResults.length})`} />
+                  <Tab value="hidden" label={`Hidden / Suppressed (${trustFunnel.hidden.length})`} />
+                </Tabs>
+              </CardContent>
+            </Card>
 
       {funnelUi.queueTab === "candidates" ? (
         <CandidatesPanel
@@ -849,6 +857,9 @@ export function AssistantWorkbench({
       {funnelUi.queueTab === "agency" ? <AgencyResultsPanel results={trustFunnel.agencyResults} latestAgencyRun={trustFunnel.latestAgencyRun} /> : null}
 
       {funnelUi.queueTab === "hidden" ? <HiddenSuppressedPanel items={trustFunnel.hidden} /> : null}
+          </Stack>
+        </AccordionDetails>
+      </Accordion>
 
       <ApplicationQuestionHelper applicationId={activeSelectedId || undefined} onNotice={setNotice} />
       {atsBlockers.length ? (
@@ -906,6 +917,93 @@ export function AssistantWorkbench({
         submitLabel="Reject application"
       />
     </>
+  );
+}
+
+function QueueProgressTable({
+  activeSelectedId,
+  applications,
+  searchOptions,
+  searchSelection,
+  onSearchChange,
+  onSelect,
+}: {
+  activeSelectedId: string;
+  applications: Array<ReadyApplication & { progress: ReturnType<typeof sprintProgressForApplication> }>;
+  searchOptions: Array<ReadyApplication & { progress: ReturnType<typeof sprintProgressForApplication> }>;
+  searchSelection: (ReadyApplication & { progress: ReturnType<typeof sprintProgressForApplication> }) | null;
+  onSearchChange: (application: (ReadyApplication & { progress: ReturnType<typeof sprintProgressForApplication> }) | null) => void;
+  onSelect: (applicationId: string) => void;
+}) {
+  return (
+    <Box>
+      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { md: "flex-end" }, mb: 1.5 }}>
+        <Box>
+          <Typography variant="h3">Queue progress</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Search the queue and scan each application&apos;s next workflow state.
+          </Typography>
+        </Box>
+        <Autocomplete
+          size="small"
+          options={searchOptions}
+          value={searchSelection}
+          onChange={(_, value) => onSearchChange(value)}
+          getOptionLabel={(application) => `${application.company} - ${application.title}`}
+          isOptionEqualToValue={(option, value) => option.id === value.id}
+          sx={{ width: { xs: "100%", md: 360 } }}
+          renderInput={(params) => <TextField {...params} label="Search queue" placeholder="Company or role" />}
+        />
+      </Stack>
+      <TableContainer sx={{ border: 1, borderColor: "divider", borderRadius: 1, maxHeight: 360 }}>
+        <Table size="small" stickyHeader aria-label="Queue progress table">
+          <TableHead>
+            <TableRow>
+              <TableCell sx={{ width: 132 }}>Status</TableCell>
+              <TableCell>Company</TableCell>
+              <TableCell>Role</TableCell>
+              <TableCell>Next step</TableCell>
+              <TableCell align="right" sx={{ width: 104 }}>Action</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {applications.map((application) => {
+              const selected = application.id === activeSelectedId;
+              return (
+                <TableRow key={application.id} selected={selected} hover>
+                  <TableCell>
+                    <Stack spacing={0.75}>
+                      <Chip size="small" color={application.progress.color} label={application.progress.label} sx={{ alignSelf: "flex-start" }} />
+                      <LinearProgress
+                        variant="determinate"
+                        value={application.progress.value}
+                        color={application.progress.color}
+                        sx={{ height: 5, borderRadius: 1, width: 96 }}
+                      />
+                    </Stack>
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 850, maxWidth: 180, overflowWrap: "anywhere" }}>{application.company}</TableCell>
+                  <TableCell sx={{ maxWidth: 280, overflowWrap: "anywhere" }}>{application.title}</TableCell>
+                  <TableCell>
+                    <Typography variant="body2" color="text.secondary">{application.progress.detail}</Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Button size="small" variant={selected ? "contained" : "outlined"} onClick={() => onSelect(application.id)}>
+                      Select
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </TableContainer>
+      {searchSelection ? (
+        <Button size="small" variant="text" sx={{ mt: 1 }} onClick={() => onSearchChange(null)}>
+          Show full queue
+        </Button>
+      ) : null}
+    </Box>
   );
 }
 
@@ -1049,44 +1147,86 @@ function CandidatesPanel({
 }
 
 function AgencyResultsPanel({ results, latestAgencyRun }: { results: ApplySprintTrustFunnel["agencyResults"]; latestAgencyRun: ApplySprintTrustFunnel["latestAgencyRun"] }) {
+  const [selectedResult, setSelectedResult] = useState<ApplySprintTrustFunnel["agencyResults"][number] | null>(null);
+  const visibleResults = selectedResult ? [selectedResult] : results;
+
   return (
     <Card>
       <CardContent>
         <Stack spacing={2}>
-          <Box>
-            <Typography variant="h3">Agency Results</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Latest recruiting-agency packet preparation output, including failures that do not appear in Ready.
-            </Typography>
-            {latestAgencyRun ? (
-              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
-                Run {latestAgencyRun.id} · {latestAgencyRun.status.toLowerCase()} · updated {formatDateTime(latestAgencyRun.updatedAt)}
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { md: "flex-end" } }}>
+            <Box>
+              <Typography variant="h3">Agency Results</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Latest recruiting-agency packet preparation output, including failures that do not appear in Ready.
               </Typography>
-            ) : null}
-          </Box>
+              {latestAgencyRun ? (
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                  Run {latestAgencyRun.id} · {latestAgencyRun.status.toLowerCase()} · updated {formatDateTime(latestAgencyRun.updatedAt)}
+                </Typography>
+              ) : null}
+            </Box>
+            <Autocomplete
+              size="small"
+              options={results}
+              value={selectedResult}
+              onChange={(_, value) => setSelectedResult(value)}
+              getOptionLabel={(result) => `${result.company} - ${result.title}`}
+              isOptionEqualToValue={(option, value) => (option.applicationId ?? option.matchId ?? option.jobId ?? `${option.company}:${option.title}`) === (value.applicationId ?? value.matchId ?? value.jobId ?? `${value.company}:${value.title}`)}
+              sx={{ width: { xs: "100%", md: 360 } }}
+              renderInput={(params) => <TextField {...params} label="Search agency results" placeholder="Company or role" />}
+            />
+          </Stack>
           {results.length ? (
-            <Stack spacing={1}>
-              {results.map((result, index) => (
-                <Box key={`${result.matchId ?? result.jobId ?? index}-${result.status}`} sx={{ border: 1, borderColor: result.status === "failed" ? "error.main" : "divider", borderRadius: 1, p: 1.25 }}>
-                  <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography sx={{ fontWeight: 850 }}>{result.company}</Typography>
-                      <Typography variant="body2" color="text.secondary">{result.title}</Typography>
-                      {result.error || result.reason ? <Typography variant="caption" color="error">{result.error ?? result.reason}</Typography> : null}
-                    </Box>
-                    <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
-                      {result.score ? <Chip size="small" label={`${result.score} score`} /> : null}
-                      <Chip size="small" color={result.status === "failed" ? "error" : result.status === "ready_to_apply" ? "success" : "default"} label={result.status.replace(/_/g, " ")} />
-                      {result.applicationId ? (
-                        <Button component={Link} href={`/applications/${result.applicationId}`} size="small" variant="outlined">
-                          Application
-                        </Button>
-                      ) : null}
-                    </Stack>
-                  </Stack>
-                </Box>
-              ))}
-            </Stack>
+            <Box>
+              <TableContainer sx={{ border: 1, borderColor: "divider", borderRadius: 1, maxHeight: 420 }}>
+                <Table size="small" stickyHeader aria-label="Agency results table">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ width: 132 }}>Status</TableCell>
+                      <TableCell sx={{ width: 86 }}>Score</TableCell>
+                      <TableCell>Company</TableCell>
+                      <TableCell>Role</TableCell>
+                      <TableCell>Issue</TableCell>
+                      <TableCell align="right" sx={{ width: 118 }}>Action</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {visibleResults.map((result, index) => (
+                      <TableRow key={`${result.matchId ?? result.jobId ?? result.applicationId ?? index}-${result.status}`} hover>
+                        <TableCell>
+                          <Chip size="small" color={result.status === "failed" ? "error" : result.status === "ready_to_apply" ? "success" : "default"} label={result.status.replace(/_/g, " ")} />
+                        </TableCell>
+                        <TableCell>{typeof result.score === "number" ? result.score : "--"}</TableCell>
+                        <TableCell sx={{ fontWeight: 850, maxWidth: 180, overflowWrap: "anywhere" }}>{result.company}</TableCell>
+                        <TableCell sx={{ maxWidth: 280, overflowWrap: "anywhere" }}>{result.title}</TableCell>
+                        <TableCell>
+                          {result.error || result.reason ? (
+                            <Typography variant="body2" color={result.status === "failed" ? "error" : "text.secondary"}>{result.error ?? result.reason}</Typography>
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">No issue reported.</Typography>
+                          )}
+                        </TableCell>
+                        <TableCell align="right">
+                          {result.applicationId ? (
+                            <Button component={Link} href={`/applications/${result.applicationId}`} size="small" variant="outlined">
+                              Application
+                            </Button>
+                          ) : (
+                            <Typography variant="caption" color="text.secondary">No tracker</Typography>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              {selectedResult ? (
+                <Button size="small" variant="text" sx={{ mt: 1 }} onClick={() => setSelectedResult(null)}>
+                  Show all agency results
+                </Button>
+              ) : null}
+            </Box>
           ) : (
             <Alert severity="info">No agency result rows are available yet. Run search or run the agency for visible candidates.</Alert>
           )}

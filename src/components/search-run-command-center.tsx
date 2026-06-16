@@ -4,6 +4,10 @@ import { useRouter } from "next/navigation";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import ReplayOutlinedIcon from "@mui/icons-material/ReplayOutlined";
 import BuildCircleOutlinedIcon from "@mui/icons-material/BuildCircleOutlined";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import Accordion from "@mui/material/Accordion";
+import AccordionDetails from "@mui/material/AccordionDetails";
+import AccordionSummary from "@mui/material/AccordionSummary";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -216,56 +220,86 @@ export function SearchRunCommandCenter({ initialRun, latestOptimization }: { ini
           {error ? <Alert severity="error">{error}</Alert> : null}
           {running ? <LinearProgress /> : null}
 
-          <SearchRunAnalyticsCharts run={run} compact />
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, 1fr)", md: "repeat(4, 1fr)" }, gap: 1 }}>
+            <RunMetric label="Fetched" value={run?.jobsFetched ?? 0} />
+            <RunMetric label="After filters" value={run?.jobsAfterFilters ?? 0} />
+            <RunMetric label="Saved" value={run?.jobsSaved ?? 0} color="success.main" />
+            <RunMetric label="Ready signal" value={agencyHandoff?.result?.prepared ?? 0} color="primary.main" />
+          </Box>
 
           {latestOptimization ? <SearchOptimizationSummaryPanel latest={latestOptimization} /> : null}
 
-          {agencyHandoff ? (
-            <AgencyHandoffPanel
-              handoff={agencyHandoff}
-              agencyRun={visibleAgencyRun}
-              stale={agencyStale}
-              onRepair={() => void controlAgencyRun("repair")}
-              onRetry={() => void controlAgencyRun("retry")}
-            />
-          ) : null}
-
-          {profileOptimizer ? <ProfileOptimizerPanel optimizer={profileOptimizer} /> : null}
-
-          {timeline.length ? (
-            <Stack spacing={0.75}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>
-                Live event stream
-              </Typography>
-              <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, overflow: "hidden" }}>
-                {timeline.map((event, index) => (
-                  <Box
-                    key={`${event.at}-${event.message}`}
-                    sx={{
-                      display: "grid",
-                      gridTemplateColumns: { xs: "1fr", sm: "92px 1fr" },
-                      gap: 1,
-                      px: 1.25,
-                      py: 0.9,
-                      borderTop: index === 0 ? 0 : 1,
-                      borderColor: "divider",
-                      bgcolor: index === 0 && running ? "rgba(37, 99, 235, 0.08)" : "background.paper",
-                    }}
-                  >
-                    <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
-                      {formatTime(event.at)}
-                    </Typography>
-                    <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
-                      {event.message}
-                    </Typography>
-                  </Box>
-                ))}
+          <Accordion disableGutters>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Box>
+                <Typography sx={{ fontWeight: 850 }}>Run details</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Charts, live event stream, agency handoff, and profile optimizer diagnostics.
+                </Typography>
               </Box>
-            </Stack>
-          ) : null}
+            </AccordionSummary>
+            <AccordionDetails>
+              <Stack spacing={2}>
+                <SearchRunAnalyticsCharts run={run} compact />
+
+                {agencyHandoff ? (
+                  <AgencyHandoffPanel
+                    handoff={agencyHandoff}
+                    agencyRun={visibleAgencyRun}
+                    stale={agencyStale}
+                    onRepair={() => void controlAgencyRun("repair")}
+                    onRetry={() => void controlAgencyRun("retry")}
+                  />
+                ) : null}
+
+                {profileOptimizer ? <ProfileOptimizerPanel optimizer={profileOptimizer} /> : null}
+
+                {timeline.length ? (
+                  <Stack spacing={0.75}>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>
+                      Live event stream
+                    </Typography>
+                    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, overflow: "hidden" }}>
+                      {timeline.map((event, index) => (
+                        <Box
+                          key={`${event.at}-${event.message}`}
+                          sx={{
+                            display: "grid",
+                            gridTemplateColumns: { xs: "1fr", sm: "92px 1fr" },
+                            gap: 1,
+                            px: 1.25,
+                            py: 0.9,
+                            borderTop: index === 0 ? 0 : 1,
+                            borderColor: "divider",
+                            bgcolor: index === 0 && running ? "rgba(37, 99, 235, 0.08)" : "background.paper",
+                          }}
+                        >
+                          <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                            {formatTime(event.at)}
+                          </Typography>
+                          <Typography variant="body2" sx={{ overflowWrap: "anywhere" }}>
+                            {event.message}
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Box>
+                  </Stack>
+                ) : null}
+              </Stack>
+            </AccordionDetails>
+          </Accordion>
         </Stack>
       </CardContent>
     </Card>
+  );
+}
+
+function RunMetric({ label, value, color = "text.primary" }: { label: string; value: number; color?: string }) {
+  return (
+    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25, bgcolor: "background.paper" }}>
+      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>{label}</Typography>
+      <Typography variant="h2" sx={{ color, fontVariantNumeric: "tabular-nums" }}>{value}</Typography>
+    </Box>
   );
 }
 

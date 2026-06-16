@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-describe("Command Center subnav routes", () => {
-  it("splits dashboard sections into focused subroutes with a shared subnav", () => {
+describe("Daily cockpit dashboard routes", () => {
+  it("keeps focused operations routes but removes the subnav from Today", () => {
     const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
     const overviewSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/page.tsx"), "utf8");
     const searchSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/search/page.tsx"), "utf8");
@@ -12,8 +12,8 @@ describe("Command Center subnav routes", () => {
     const marketSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/market/page.tsx"), "utf8");
     const pipelineSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/pipeline/page.tsx"), "utf8");
 
-    expect(contentSource).toContain("Command Center:");
-    expect(contentSource).toContain("Overview");
+    expect(contentSource).toContain("Operations:");
+    expect(contentSource).toContain('group === "overview" ? null : <DashboardRouteNav');
     expect(contentSource).toContain("Search Ops");
     expect(contentSource).toContain("Email Ops");
     expect(contentSource).toContain("Social");
@@ -25,6 +25,21 @@ describe("Command Center subnav routes", () => {
     expect(socialSource).toContain("DashboardSocialPage");
     expect(marketSource).toContain("DashboardMarketPage");
     expect(pipelineSource).toContain("DashboardPipelinePage");
+  });
+
+  it("renders the Today dashboard as a four-lane daily apply cockpit", () => {
+    const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
+
+    expect(contentSource).toContain("DailyApplySummary");
+    expect(contentSource).toContain("DailyApplyCockpit");
+    expect(contentSource).toContain("Today's goal");
+    expect(contentSource).toContain("Find jobs");
+    expect(contentSource).toContain("Decide");
+    expect(contentSource).toContain("Apply today");
+    expect(contentSource).toContain("Follow up");
+    expect(contentSource).toContain("Start next application");
+    expect(contentSource).toContain("I applied");
+    expect(contentSource).toContain("SecondaryOperationsPanel");
   });
 
   it("keeps LinkedIn analytics and content studio access in the Social route", () => {
@@ -53,7 +68,7 @@ describe("Command Center subnav routes", () => {
     expect(contentSource).toContain('href="/dashboard/email-ops"');
   });
 
-  it("surfaces lifecycle readiness on the Command Center overview", () => {
+  it("surfaces lifecycle readiness below the daily cockpit support area", () => {
     const contentSource = readFileSync(resolve(process.cwd(), "src/app/dashboard/dashboard-content.tsx"), "utf8");
     const cockpitSource = readFileSync(resolve(process.cwd(), "src/components/readiness/readiness-cockpit.tsx"), "utf8");
     const readinessSource = readFileSync(resolve(process.cwd(), "src/lib/readiness/lifecycle.ts"), "utf8");
@@ -95,6 +110,8 @@ describe("Command Center subnav routes", () => {
     expect(commandCenterSource).toContain("Recruiting Search Team");
     expect(commandCenterSource).toContain("Qualified yield");
     expect(commandCenterSource).toContain('href="/profiles"');
+    expect(commandCenterSource).toContain("Run details");
+    expect(commandCenterSource).toContain("Charts, live event stream, agency handoff, and profile optimizer diagnostics.");
   });
 
   it("keeps the Search Ops agency panel from duplicating the live handoff feed", () => {

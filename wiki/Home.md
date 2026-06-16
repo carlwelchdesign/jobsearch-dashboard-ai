@@ -6,8 +6,9 @@ The product is not a blind mass-apply bot. It is designed around verified candid
 
 ## Primary Surfaces
 
-- **Command Center**: daily operating view with live search updates, blockers, pipeline state, and prioritized actions.
-- **Apply Sprint**: controlled browser-assistant launch surface for approved applications, learning sessions, and hard blockers.
+- **Today**: daily apply cockpit for finding jobs, deciding on exceptions, applying to ready roles, and following up.
+- **Find Jobs**: focused search operations view with run status, saved-job counts, profile optimization, and detailed diagnostics on demand.
+- **Apply**: controlled browser-assistant launch surface for the next ready application, with learning sessions and hard blockers behind details panels.
 - **Applications**: application tracker, packets, outcomes, prep, and automation state.
 - **Settings**: provider config, cron, email, automation gates, field learning, company policies, sources, and admin links.
 - **Jolene**: persistent context-aware assistant available on every screen with text and voice interaction.
@@ -35,7 +36,7 @@ The product is not a blind mass-apply bot. It is designed around verified candid
 ## Wiki Pages
 
 - [Getting Started](https://github.com/carlwelchdesign/jobsearch-dashboard-ai/wiki/Getting-Started)
-- [Command Center and Jolene](https://github.com/carlwelchdesign/jobsearch-dashboard-ai/wiki/Command-Center-and-Jolene)
+- [Today Cockpit and Jolene](https://github.com/carlwelchdesign/jobsearch-dashboard-ai/wiki/Command-Center-and-Jolene)
 - [Agents and Workflows](https://github.com/carlwelchdesign/jobsearch-dashboard-ai/wiki/Agents-and-Workflows)
 - [Evidence, RAG, and Materials](https://github.com/carlwelchdesign/jobsearch-dashboard-ai/wiki/Evidence-RAG-and-Materials)
 - [Job Discovery and Scoring](https://github.com/carlwelchdesign/jobsearch-dashboard-ai/wiki/Job-Discovery-and-Scoring)
