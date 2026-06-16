@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { appendLinkedInLeadQueriesToSearchBacklog, buildLinkedInOriginalPostingQueries, isLinkedInJobUrl, linkedInLeadHasEnoughDetail, linkedInLeadMetadata } from "@/lib/linkedin/job-leads";
+import { appendLinkedInLeadQueriesToSearchBacklog, buildLinkedInOriginalPostingQueries, captureLinkedInReviewLead, isLinkedInJobUrl, linkedInLeadHasEnoughDetail, linkedInLeadMetadata } from "@/lib/linkedin/job-leads";
 import { prisma } from "@/lib/prisma";
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    jobPosting: {
+      create: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+    },
     jobSource: {
       findUnique: vi.fn(),
       upsert: vi.fn(),
@@ -11,12 +16,18 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
+const jobCreateMock = vi.mocked(prisma.jobPosting.create);
+const jobFindFirstMock = vi.mocked(prisma.jobPosting.findFirst);
+const jobUpdateMock = vi.mocked(prisma.jobPosting.update);
 const findUniqueMock = vi.mocked(prisma.jobSource.findUnique);
 const upsertMock = vi.mocked(prisma.jobSource.upsert);
 
 describe("LinkedIn job leads", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    jobFindFirstMock.mockResolvedValue(null);
+    jobCreateMock.mockResolvedValue({ id: "job_1" } as never);
+    jobUpdateMock.mockResolvedValue({ id: "job_1" } as never);
   });
 
   it("recognizes LinkedIn job view URLs only", () => {
@@ -98,5 +109,50 @@ describe("LinkedIn job leads", () => {
     }));
     const config = upsertMock.mock.calls[0]?.[0].update.config as { queries: string[] };
     expect(config.queries).not.toContain('site:linkedin.com/jobs/view "Senior Frontend Engineer"');
+  });
+
+  it("keeps LinkedIn job URLs out of the application URL field", async () => {
+    upsertMock.mockResolvedValue({ id: "source_1" } as never);
+
+    await captureLinkedInReviewLead({
+      pageUrl: "https://www.linkedin.com/jobs/view/123",
+      applicationUrl: "https://www.linkedin.com/jobs/view/123",
+      company: "Acme",
+      title: "Senior Frontend Engineer",
+      selectedText: "React TypeScript product UI role with design systems, accessibility, and platform ownership.",
+    });
+
+    expect(jobCreateMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        applicationUrl: null,
+        rawData: expect.objectContaining({
+          leadSource: "linkedin",
+          linkedInJobUrl: "https://www.linkedin.com/jobs/view/123",
+          originalApplicationUrl: null,
+        }),
+      }),
+    });
+  });
+
+  it("keeps real employer apply URLs separate from the LinkedIn lead URL", async () => {
+    upsertMock.mockResolvedValue({ id: "source_1" } as never);
+
+    await captureLinkedInReviewLead({
+      pageUrl: "https://www.linkedin.com/jobs/view/123",
+      applicationUrl: "https://jobs.ashbyhq.com/acme/role-1",
+      company: "Acme",
+      title: "Senior Frontend Engineer",
+      selectedText: "React TypeScript product UI role with design systems, accessibility, and platform ownership.",
+    });
+
+    expect(jobCreateMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        applicationUrl: "https://jobs.ashbyhq.com/acme/role-1",
+        rawData: expect.objectContaining({
+          linkedInJobUrl: "https://www.linkedin.com/jobs/view/123",
+          originalApplicationUrl: "https://jobs.ashbyhq.com/acme/role-1",
+        }),
+      }),
+    });
   });
 });

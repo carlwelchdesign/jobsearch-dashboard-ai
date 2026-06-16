@@ -114,7 +114,7 @@ describe("executeJoleneConfirmation", () => {
           id: "external_submit_or_send",
           label: "Confirm external action",
           detail: "Would send a message.",
-          risk: "external_manual_gate",
+          risk: "external_blocked",
           status: "planned",
           executable: false,
         },

@@ -8,8 +8,12 @@ import AssignmentTurnedInOutlinedIcon from "@mui/icons-material/AssignmentTurned
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import BoltOutlinedIcon from "@mui/icons-material/BoltOutlined";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
+import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
+import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import TimelineOutlinedIcon from "@mui/icons-material/TimelineOutlined";
+import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Container from "@mui/material/Container";
@@ -29,8 +33,12 @@ const drawerWidth = 264;
 
 const navItems = [
   { href: "/dashboard", label: "Command Center", eyebrow: "Home", icon: DashboardOutlinedIcon },
+  { href: "/jobs", label: "Jobs", eyebrow: "Review queue", icon: WorkOutlineOutlinedIcon },
   { href: "/applications/assistant", label: "Apply Sprint", eyebrow: "Run agent", icon: BoltOutlinedIcon },
   { href: "/applications", label: "Applications", eyebrow: "Track outcomes", icon: AssignmentTurnedInOutlinedIcon },
+  { href: "/resumes/generated", label: "Materials", eyebrow: "Resumes", icon: DescriptionOutlinedIcon },
+  { href: "/evidence", label: "Evidence", eyebrow: "Truth store", icon: FactCheckOutlinedIcon },
+  { href: "/outcomes", label: "Outcomes", eyebrow: "Learning", icon: TimelineOutlinedIcon },
   { href: "/architecture", label: "Architecture", eyebrow: "System map", icon: AccountTreeOutlinedIcon },
   { href: "/settings", label: "Settings", eyebrow: "Configure", icon: SettingsOutlinedIcon },
   { href: "/guide", label: "User Guide", eyebrow: "How to use this", icon: MenuBookOutlinedIcon },

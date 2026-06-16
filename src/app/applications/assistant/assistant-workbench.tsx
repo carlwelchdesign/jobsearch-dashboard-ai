@@ -1028,7 +1028,7 @@ function CandidatesPanel({
                       </Box>
                     </Stack>
                     <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
-                      <Button component={Link} href={`/jobs?jobId=${candidate.jobId}`} size="small" variant="outlined">
+                      <Button component={Link} href={`/jobs/${candidate.jobId}`} size="small" variant="outlined">
                         Open job
                       </Button>
                       <Button component="a" href={candidate.applicationUrl ?? undefined} target="_blank" rel="noreferrer" size="small" variant="outlined" disabled={!candidate.applicationUrl}>

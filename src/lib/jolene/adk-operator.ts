@@ -1,6 +1,7 @@
 import { runDailyCommandCenterAgent } from "@/lib/agents/daily-command-center";
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
+import { evaluateActionPolicy, type AgentActionPolicyKind } from "@/lib/agents/action-policy";
 import { getAdkJoleneOperatorRegistration, isAdkEnabled } from "@/lib/adk/registry";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
 import { createJoleneConfirmationPlan, type JoleneConfirmableAction, type JoleneExecutionBoundary } from "@/lib/jolene/confirmation";
@@ -10,7 +11,7 @@ import { prisma } from "@/lib/prisma";
 export type JoleneOperatorAction = {
   id: string;
   label: string;
-  risk: "read_only" | "safe_mutation" | "guarded_mutation" | "external_manual_gate";
+  risk: AgentActionPolicyKind;
   status: "planned" | "executed" | "skipped" | "failed" | "cancelled";
   detail: string;
   href?: string;
@@ -87,6 +88,12 @@ export async function executeJoleneAdkOperator(message: string, options: { userI
   let clientAction: JoleneOperatorResult["clientAction"] | undefined;
 
   for (const action of safeActions) {
+    const policy = evaluateActionPolicy({ kind: action.risk });
+    if (!policy.allowed) {
+      executed.push({ ...action, status: "skipped", detail: policy.reason });
+      continue;
+    }
+
     if (action.id === "run_job_search") {
       const result = await startJobSearchRun("manual");
       executed.push({ ...action, status: result.skipped ? "skipped" : "executed", detail: result.skipped ? `Search already running: ${result.reason ?? "active run"}.` : `Started job search run ${result.run.id}.`, href: "/dashboard" });
@@ -150,7 +157,7 @@ function safeWorkflowPlan(normalized: string): JoleneOperatorAction[] {
 function guardedActionPlan(normalized: string): { reply: string; actions: JoleneConfirmableAction[] } | null {
   if (/\b(submit|send)\b/.test(normalized) && /\b(application|applications|email|outreach|message)\b/.test(normalized)) {
     return confirmationPlan("I can help prepare or launch the workflow, but I need confirmation before external submission or sending anything.", [
-      guardedAction("external_submit_or_send", "Confirm external action", "Would submit an application, send email/outreach, or interact with a third-party system. Jolene will not execute this directly.", "external_manual_gate", { executable: false }),
+      guardedAction("external_submit_or_send", "Confirm external action", "Would submit an application, send email/outreach, or interact with a third-party system. Jolene will not execute this directly.", "external_blocked", { executable: false }),
     ]);
   }
 
@@ -270,7 +277,7 @@ function operatorMetadata() {
 }
 
 function safeAction(id: string, label: string, detail: string): JoleneOperatorAction {
-  return { id, label, detail, risk: "safe_mutation", status: "planned" };
+  return { id, label, detail, risk: "safe_internal", status: "planned" };
 }
 
 function guardedAction(

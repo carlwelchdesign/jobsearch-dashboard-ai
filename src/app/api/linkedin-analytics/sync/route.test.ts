@@ -1,26 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { requireSingleUser } from "@/lib/auth/single-user";
 import { syncLinkedInPostAnalytics } from "@/lib/linkedin/analytics";
-import { prisma } from "@/lib/prisma";
 import { POST } from "./route";
 
 vi.mock("@/lib/linkedin/analytics", () => ({
   syncLinkedInPostAnalytics: vi.fn(),
 }));
 
-vi.mock("@/lib/prisma", () => ({
-  prisma: {
-    user: { findFirst: vi.fn() },
-  },
+vi.mock("@/lib/auth/single-user", () => ({
+  requireSingleUser: vi.fn(),
 }));
 
-const userFindFirstMock = vi.mocked(prisma.user.findFirst);
+const requireSingleUserMock = vi.mocked(requireSingleUser);
 const syncMock = vi.mocked(syncLinkedInPostAnalytics);
 
 describe("/api/linkedin-analytics/sync", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
-    userFindFirstMock.mockResolvedValue({ id: "user_1" } as never);
+    requireSingleUserMock.mockResolvedValue({ id: "user_1" } as never);
     syncMock.mockResolvedValue({ posts: 1, snapshots: 4 });
   });
 
@@ -28,6 +26,7 @@ describe("/api/linkedin-analytics/sync", () => {
     const response = await POST(new Request("http://localhost/api/linkedin-analytics/sync", { method: "POST" }));
 
     expect(response.status).toBe(200);
+    expect(requireSingleUserMock).toHaveBeenCalled();
     expect(syncMock).toHaveBeenCalledWith("user_1");
     await expect(response.json()).resolves.toMatchObject({ posts: 1, snapshots: 4 });
   });

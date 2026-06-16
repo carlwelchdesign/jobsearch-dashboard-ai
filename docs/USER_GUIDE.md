@@ -48,6 +48,7 @@ Here is what it does:
 - It is not a "spray and pray" mass-apply bot. Every application requires your approval before anything is sent.
 - It will never invent a job title, skill, degree, certification, or number you have not confirmed. Everything it writes must trace back to your approved evidence.
 - It will never click Submit on an application without your say-so.
+- LinkedIn is used for lead discovery, public-content drafts, publishing, and analytics. It is not treated as an auto-apply source, and LinkedIn job URLs stay separate from employer or ATS application links.
 
 You are always in charge. The system does the boring, time-consuming parts — you make the calls.
 
@@ -662,6 +663,14 @@ Click **Command Center** in the left sidebar (`/dashboard`). This is the page yo
 | **Pipeline Summary** | Counts of jobs and applications at each stage |
 | **Daily Plan** | A short prioritized action list from the AI |
 | **Integrity Audit** | Warnings about data drift or inconsistencies in your tracker |
+
+### Lifecycle readiness
+
+The Command Center also includes a readiness checklist for the full search lifecycle:
+
+Setup → Search → Review → Packet → Apply → Follow-up → Interview → Outcome
+
+Use this as a morning operating checklist. It pulls important readiness signals out of hidden settings and admin pages, including whether your profile, evidence, generated materials, applications, follow-ups, interviews, and outcomes have enough signal for the agents to make useful recommendations.
 
 ### How to trigger a job search from here
 

@@ -13,7 +13,7 @@ export type JoleneConfirmableAction = {
   id: string;
   label: string;
   detail: string;
-  risk: "guarded_mutation" | "external_manual_gate";
+  risk: "guarded_mutation" | "external_blocked";
   status: "planned" | "executed" | "skipped" | "failed" | "cancelled";
   href?: string;
   executable?: boolean;
@@ -252,7 +252,7 @@ function parsePlannedActions(value: unknown): JoleneConfirmableAction[] {
       id: action.id,
       label: action.label,
       detail: action.detail,
-      risk: action.risk === "external_manual_gate" ? "external_manual_gate" : "guarded_mutation",
+      risk: action.risk === "external_blocked" || action.risk === "external_manual_gate" ? "external_blocked" : "guarded_mutation",
       status: action.status === "executed" || action.status === "skipped" || action.status === "failed" || action.status === "cancelled" ? action.status : "planned",
       href: typeof action.href === "string" ? action.href : undefined,
       executable: action.executable === true,

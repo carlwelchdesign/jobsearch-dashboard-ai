@@ -4,6 +4,18 @@ Personal Agentic AI-powered job search dashboard for reviewing jobs, maintaining
 
 <img width="1407" height="1278" alt="image" src="https://github.com/user-attachments/assets/8f9f935a-3409-4e11-b75d-eb292ef999ea" />
 
+## Operating Posture
+
+Job Search OS is currently treated as a **protected single-user production app**. The roadmap in [`plans/FIRST_CLASS_AGENTIC_JOB_SEARCH_OS_AUDIT_ROADMAP_PLAN.md`](./plans/FIRST_CLASS_AGENTIC_JOB_SEARCH_OS_AUDIT_ROADMAP_PLAN.md) is the canonical audit package for the first-class agentic operating system push: product wedge, current-state review, agent operating model, risk register, prioritized refactor roadmap, and implementation backlog.
+
+The default safety model is conservative:
+
+- LinkedIn is a lead and public-content channel, not a scrape or auto-apply source.
+- Application submission, employer contact, email sending, external calendar writes, and unreviewed LinkedIn publishing remain manual or explicitly approval-gated.
+- Jolene and the skill system classify actions as `read_only`, `proposal`, `safe_internal`, `guarded_mutation`, or `external_blocked`.
+- Deployed cron and sync endpoints must be protected with bearer secrets. Set `CRON_SECRET`, and use `EMAIL_SYNC_SECRET` or `LINKEDIN_ANALYTICS_SYNC_SECRET` when those sync surfaces need separate credentials.
+- `/api/system/health` reports database readiness, stale work, required secret status, provider configuration, and worker readiness.
+
 ## Local Setup
 
 Install dependencies:
