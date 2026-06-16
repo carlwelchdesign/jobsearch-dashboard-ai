@@ -67,16 +67,22 @@ export const searchQueryAdapter: JobSourceAdapter = {
     return dedupeByUrl(results).slice(0, maxFetch);
   },
   async normalize(raw: RawJobPosting): Promise<NormalizedJobPosting> {
-    const applicationUrl = sanitizeApplicationUrl(await resolveApplicationUrl(raw.applicationUrl));
+    const builtInDetail = raw.applicationUrl && isBuiltInJobUrl(raw.applicationUrl)
+      ? await fetchBuiltInJobDetail(raw.applicationUrl)
+      : undefined;
+    const resolvedApplicationUrl = await resolveApplicationUrl(raw.applicationUrl, builtInDetail);
+    const applicationUrl = raw.applicationUrl && isBuiltInJobUrl(raw.applicationUrl)
+      ? resolvedApplicationUrl
+      : sanitizeApplicationUrl(resolvedApplicationUrl);
     const haystack = `${raw.title} ${raw.location ?? ""} ${raw.description}`;
     const searchProvider = detectSearchProviderFromUrl(applicationUrl ?? raw.applicationUrl);
     return {
       sourceJobId: raw.sourceJobId,
-      company: raw.company,
-      title: raw.title,
-      location: raw.location,
+      company: builtInDetail?.company ?? raw.company,
+      title: builtInDetail?.title ?? raw.title,
+      location: builtInDetail?.location ?? raw.location,
       remoteType: /remote/i.test(haystack) ? "remote" : /hybrid/i.test(haystack) ? "hybrid" : /on-?site/i.test(haystack) ? "onsite" : "unknown",
-      description: raw.description,
+      description: builtInDetail?.description ?? raw.description,
       requirements: [],
       niceToHaves: [],
       benefits: [],
@@ -85,11 +91,25 @@ export const searchQueryAdapter: JobSourceAdapter = {
       rawData: {
         ...(isRecord(raw.rawData) ? raw.rawData : { raw }),
         searchProvider,
-        ...(applicationUrl !== raw.applicationUrl ? {
+        ...(builtInDetail ? {
+          builtIn: {
+            detailUrl: raw.applicationUrl,
+            removed: builtInDetail.removed ?? false,
+            ...(builtInDetail.reason ? { reason: builtInDetail.reason } : {}),
+          },
+        } : {}),
+        ...(applicationUrl && applicationUrl !== raw.applicationUrl ? {
           resolvedApplicationUrl: {
             source: "job_detail_page",
             originalUrl: raw.applicationUrl,
             applicationUrl,
+          },
+        } : {}),
+        ...(!applicationUrl && builtInDetail?.reason ? {
+          missingApplicationUrl: {
+            source: "builtin_detail_page",
+            detailUrl: raw.applicationUrl,
+            reason: builtInDetail.reason,
           },
         } : {}),
       },
@@ -439,6 +459,37 @@ export function parseBuiltInListingJobs(html: string, result: BraveSearchResult,
         provider: "brave",
         expansionProvider: "builtin",
         expandedFrom: listingUrl,
+        builtIn: {
+          detailUrl: jobUrl,
+        },
+        query,
+        result,
+        item,
+      },
+    });
+  }
+
+  for (const item of parseBuiltInJobCardLinks(html, listingUrl)) {
+    if (jobs.some((job) => job.applicationUrl === item.url)) continue;
+    jobs.push({
+      sourceJobId: `search:builtin:${stableId(item.url)}`,
+      company: item.company ?? companiesByUrl.get(urlPathKey(item.url)) ?? result.profile?.name ?? "Built In",
+      title: item.title,
+      location: locationFromQuery(query),
+      description: [
+        result.description ?? "",
+        `Expanded from: ${listingUrl}`,
+        `Matched query: ${query}`,
+        profile.name ? `Profile: ${profile.name}` : "",
+      ].filter(Boolean).join("\n\n"),
+      applicationUrl: item.url,
+      rawData: {
+        provider: "brave",
+        expansionProvider: "builtin",
+        expandedFrom: listingUrl,
+        builtIn: {
+          detailUrl: item.url,
+        },
         query,
         result,
         item,
@@ -735,6 +786,32 @@ function parseBuiltInCompaniesByUrl(html: string, baseUrl: string) {
   }
 
   return companiesByUrl;
+}
+
+function parseBuiltInJobCardLinks(html: string, baseUrl: string) {
+  const links: Array<{ title: string; url: string; company?: string }> = [];
+  const cardPattern = /<div\b[^>]*id=["']job-card-[^"']+["'][\s\S]*?(?=<div\b[^>]*id=["']job-card-|<div\b[^>]*class=["'][^"']*d-flex justify-content-center|<\/main>|$)/gi;
+  let cardMatch: RegExpExecArray | null;
+
+  while ((cardMatch = cardPattern.exec(html))) {
+    const cardHtml = cardMatch[0] ?? "";
+    const company = cleanText(firstMatch(cardHtml, /data-id=["']company-title["'][\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i) ?? "");
+    const titleAnchor = /<a\b([^>]*data-id=["']job-card-title["'][^>]*)>([\s\S]*?)<\/a>/i.exec(cardHtml);
+    const attributes = titleAnchor?.[1] ?? "";
+    const href = firstMatch(attributes, /\b(?:href|data-alias)=["']([^"']+)["']/i);
+    const url = href ? absoluteUrl(decodeHtmlEntities(href), baseUrl) : undefined;
+    const title = cleanTitle(titleAnchor?.[2] ?? "");
+    if (!url || !isBuiltInJobUrl(url) || !isPlausibleJobTitle(title)) continue;
+    links.push({ title, url, ...(company ? { company } : {}) });
+  }
+
+  for (const anchor of parseJobAnchors(html, baseUrl)) {
+    if (!isBuiltInJobUrl(anchor.url) || !isPlausibleJobTitle(anchor.title)) continue;
+    if (links.some((link) => link.url === anchor.url)) continue;
+    links.push({ title: anchor.title, url: anchor.url });
+  }
+
+  return links;
 }
 
 function parseJobAnchors(html: string, baseUrl: string) {
@@ -1068,7 +1145,8 @@ function isSameUrlWithoutSearch(left: string, right: string) {
 function isPlausibleJobTitle(value: string) {
   const title = cleanTitle(value);
   if (title.length < 8 || title.length > 180) return false;
-  if (/\b(jobs|job search|all jobs|view all|next|previous|sign in|log in|subscribe|filter|sort|page \d+)\b/i.test(title)) return false;
+  if (/^(next|previous)$/i.test(title)) return false;
+  if (/\b(jobs|job search|all jobs|view all|sign in|log in|subscribe|filter|sort|page \d+)\b/i.test(title)) return false;
   return /\b(engineer|developer|designer|architect|manager|lead|staff|principal|frontend|front-end|fullstack|software|product)\b/i.test(title);
 }
 
@@ -1134,7 +1212,9 @@ function locationFromQuery(query: string) {
 function isBuiltInListingUrl(value: string) {
   try {
     const url = new URL(value);
-    return url.hostname.replace(/^www\./, "") === "builtin.com" && url.pathname.startsWith("/jobs");
+    if (url.hostname.replace(/^www\./, "") !== "builtin.com") return false;
+    if (!url.pathname.startsWith("/jobs")) return false;
+    return true;
   } catch {
     return false;
   }
@@ -1159,11 +1239,10 @@ function isHimalayasJobUrl(value: string) {
   }
 }
 
-async function resolveApplicationUrl(value?: string) {
+async function resolveApplicationUrl(value?: string, builtInDetail?: BuiltInJobDetail) {
   if (!value) return value;
   if (isBuiltInJobUrl(value)) {
-    const resolved = await resolveBuiltInJobApplicationUrl(value);
-    return canonicalApplicationUrl(resolved ?? value);
+    return builtInDetail?.applicationUrl ? canonicalApplicationUrl(builtInDetail.applicationUrl) : undefined;
   }
   if (isHimalayasJobUrl(value)) {
     const resolved = await resolveHimalayasJobApplicationUrl(value);
@@ -1172,7 +1251,17 @@ async function resolveApplicationUrl(value?: string) {
   return canonicalApplicationUrl(value);
 }
 
-async function resolveBuiltInJobApplicationUrl(jobUrl: string) {
+type BuiltInJobDetail = {
+  applicationUrl?: string;
+  description?: string;
+  company?: string;
+  title?: string;
+  location?: string;
+  removed?: boolean;
+  reason?: string;
+};
+
+async function fetchBuiltInJobDetail(jobUrl: string) {
   try {
     const response = await fetch(jobUrl, {
       headers: {
@@ -1181,13 +1270,40 @@ async function resolveBuiltInJobApplicationUrl(jobUrl: string) {
       },
       signal: AbortSignal.timeout(searchTimeoutMs),
     });
-    if (!response.ok) return undefined;
+    if (!response.ok) return { reason: `Built In detail page returned HTTP ${response.status}.` };
     const html = await response.text();
-    if (isBlockedListingHtml(html)) return undefined;
-    return extractBuiltInHowToApplyUrl(html, jobUrl);
+    if (isBlockedListingHtml(html)) return { reason: "Built In detail page returned a bot-protection/block page." };
+    return extractBuiltInJobDetail(html, jobUrl);
   } catch {
-    return undefined;
+    return { reason: "Built In detail page could not be fetched." };
   }
+}
+
+export function extractBuiltInJobDetail(html: string, baseUrl: string): BuiltInJobDetail {
+  const initJson = firstMatch(html, /Builtin\.jobPostInit\((\{[\s\S]*?\})\);/);
+  const initPayload = initJson ? parseJson(decodeHtmlEntities(initJson)) : null;
+  const job = isRecord(initPayload) && isRecord(initPayload.job) ? initPayload.job : {};
+  const applicationUrl = extractBuiltInHowToApplyUrl(html, baseUrl);
+  const removed = /Sorry,\s+this job was removed/i.test(html);
+  const title = stringValue(job.title) ?? cleanTitle(firstMatch(html, /<h1\b[^>]*>([\s\S]*?)<\/h1>/i) ?? "");
+  const company = stringValue(job.companyName) ?? cleanText(firstMatch(html, /<a\b[^>]*>\s*([^<]{2,80})\s*<\/a>\s*#?\s*<\/?[^>]*>\s*[^<]*$/i) ?? "");
+  const location = firstMatch(html, /\b(?:Hiring Remotely in|Location\/Time zones?:)\s*([^<\n]+)/i);
+  const description = extractBuiltInDescription(html) ?? stringValue(job.description) ?? stringValue(job.body);
+  const reason = applicationUrl
+    ? undefined
+    : removed
+      ? "Built In detail page says the job was removed."
+      : "Built In detail page did not expose an external application URL.";
+
+  return {
+    ...(applicationUrl ? { applicationUrl } : {}),
+    ...(description ? { description } : {}),
+    ...(company ? { company } : {}),
+    ...(title ? { title } : {}),
+    ...(location ? { location: cleanText(location) } : {}),
+    ...(removed ? { removed } : {}),
+    ...(reason ? { reason } : {}),
+  };
 }
 
 export function extractBuiltInHowToApplyUrl(html: string, baseUrl: string) {
@@ -1205,6 +1321,18 @@ export function extractBuiltInHowToApplyUrl(html: string, baseUrl: string) {
 
   const atsUrl = firstMatch(html, /https:\/\/(?:jobs\.ashbyhq\.com|jobs\.lever\.co|boards\.greenhouse\.io|job-boards\.greenhouse\.io)\/[^"' <)]+/i);
   return absoluteUrl(atsUrl, baseUrl);
+}
+
+function extractBuiltInDescription(html: string) {
+  const fullDescription = firstMatch(html, /<section\b[^>]*data-id=["']job-description["'][^>]*>([\s\S]*?)<\/section>/i)
+    ?? firstMatch(html, /<div\b[^>]*(?:class|data-id)=["'][^"']*(?:job-description|description|job-post)[^"']*["'][^>]*>([\s\S]*?)<\/div>\s*(?:<h2|<section|<aside|<footer)/i);
+  if (fullDescription) return cleanText(fullDescription);
+
+  const roleStart = html.search(/\b(The Role|What you.ll do|What you’ll do|Responsibilities|About the role)\b/i);
+  if (roleStart < 0) return undefined;
+  const excerpt = html.slice(roleStart, roleStart + 8_000);
+  const end = excerpt.search(/\b(Read Full Description|Similar Jobs|The Company|Apply Instructions|Report Job)\b/i);
+  return cleanText(end > 0 ? excerpt.slice(0, end) : excerpt);
 }
 
 async function resolveHimalayasJobApplicationUrl(jobUrl: string) {
@@ -1390,6 +1518,7 @@ export function detectSearchProviderFromUrl(value?: string) {
   if (/careerbuilder/.test(normalized)) return "careerbuilder";
   if (/simplyhired/.test(normalized)) return "simplyhired";
   if (/adzuna/.test(normalized)) return "adzuna";
+  if (/builtin\.com/.test(normalized)) return "builtin";
   if (/flexjobs/.test(normalized)) return "flexjobs";
   if (/usajobs/.test(normalized)) return "usajobs";
   return "unknown";

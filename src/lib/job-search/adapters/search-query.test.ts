@@ -1,6 +1,6 @@
 import type { JobSearchProfile, JobSource } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { detectSearchProviderFromUrl, extractBuiltInHowToApplyUrl, extractHimalayasApplyUrl, parseDiceListingJobs, searchQueryAdapter } from "@/lib/job-search/adapters/search-query";
+import { detectSearchProviderFromUrl, extractBuiltInJobDetail, extractBuiltInHowToApplyUrl, extractHimalayasApplyUrl, parseDiceListingJobs, searchQueryAdapter } from "@/lib/job-search/adapters/search-query";
 
 describe("searchQueryAdapter", () => {
   beforeEach(() => {
@@ -141,21 +141,37 @@ describe("searchQueryAdapter", () => {
       headers: expect.objectContaining({ "User-Agent": "JobSearchOS/1.0" }),
     }));
     expect(normalized).toMatchObject({
+      company: "Brisk Teaching",
+      title: "Frontend Engineer, Accessibility Contractor",
       applicationUrl: "https://jobs.ashbyhq.com/brisk-teaching/efaac331-a366-4bef-88ed-e3afb3127f5c/application",
       atsProvider: "ashby",
       rawData: {
+        builtIn: {
+          detailUrl: raw.applicationUrl,
+        },
         resolvedApplicationUrl: {
           source: "job_detail_page",
           originalUrl: raw.applicationUrl,
         },
       },
     });
+    expect(normalized.description).toContain("Improve accessibility for a React product.");
   });
 
   it("extracts Built In how-to-apply URLs from job detail boot payloads", () => {
     expect(extractBuiltInHowToApplyUrl(builtInDetailHtml, "https://builtin.com/job/frontend-engineer-accessibility-contractor/9425940")).toBe(
       "https://jobs.ashbyhq.com/brisk-teaching/efaac331-a366-4bef-88ed-e3afb3127f5c",
     );
+  });
+
+  it("extracts Built In detail metadata and external apply anchors", () => {
+    const detail = extractBuiltInJobDetail(builtInExternalApplyDetailHtml, "https://builtin.com/job/frontend-engineer/8269411");
+
+    expect(detail).toMatchObject({
+      applicationUrl: "https://company.example.com/careers/frontend-engineer/apply",
+      title: "Frontend Engineer",
+    });
+    expect(detail.description).toContain("Own the complete frontend experience for geospatial workflows.");
   });
 
   it("expands Built In listing results into individual jobs", async () => {
@@ -167,7 +183,7 @@ describe("searchQueryAdapter", () => {
             results: [
               {
                 title: "Best Remote Front End Developer Jobs 2026 | Built In",
-                url: "https://builtin.com/jobs/remote/dev-engineering/front-end",
+                url: "https://builtin.com/jobs/remote/dev-engineering/search/front-end-engineer?page=2",
                 description: "Remote frontend job search results",
                 profile: { name: "Built In" },
               },
@@ -193,15 +209,133 @@ describe("searchQueryAdapter", () => {
       title: "Senior Fullstack Frontend Engineer",
       location: "Remote",
     });
-    expect(jobs[0]?.description).toContain("Expanded from: https://builtin.com/jobs/remote/dev-engineering/front-end");
+    expect(jobs[0]?.description).toContain("Expanded from: https://builtin.com/jobs/remote/dev-engineering/search/front-end-engineer?page=2");
     expect(jobs[0]?.rawData).toMatchObject({
       provider: "brave",
       expansionProvider: "builtin",
-      expandedFrom: "https://builtin.com/jobs/remote/dev-engineering/front-end",
+      expandedFrom: "https://builtin.com/jobs/remote/dev-engineering/search/front-end-engineer?page=2",
+      builtIn: {
+        detailUrl: "https://builtin.com/job/senior-fullstack-frontend-engineer/8896228",
+      },
     });
     expect(jobs).not.toContainEqual(expect.objectContaining({
-      applicationUrl: "https://builtin.com/jobs/remote/dev-engineering/front-end",
+      applicationUrl: "https://builtin.com/jobs/remote/dev-engineering/search/front-end-engineer?page=2",
     }));
+  });
+
+  it("falls back to Built In job-card anchors when JSON-LD is missing", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Best Remote Front End Developer Jobs 2026 | Built In",
+                url: "https://builtin.com/jobs/remote/dev-engineering/search/front-end-engineer?page=2",
+                description: "Remote frontend job search results",
+                profile: { name: "Built In" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => builtInListingWithoutJsonLdHtml,
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:builtin.com "Frontend Engineer" "remote"'] }));
+
+    expect(jobs.map((job) => job.applicationUrl)).toEqual([
+      "https://builtin.com/job/frontend-engineer/8269411",
+      "https://builtin.com/job/frontend-engineer-web-react-nextjs/7777777",
+    ]);
+    expect(jobs[0]).toMatchObject({
+      company: "Code Metal",
+      title: "Frontend Engineer",
+    });
+  });
+
+  it("normalizes Built In expanded jobs to true external application links", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          web: {
+            results: [
+              {
+                title: "Best Remote Front End Developer Jobs 2026 | Built In",
+                url: "https://builtin.com/jobs/remote/dev-engineering/search/front-end-engineer?page=2",
+                description: "Remote frontend job search results",
+                profile: { name: "Built In" },
+              },
+            ],
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => builtInListingWithoutJsonLdHtml,
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        text: async () => builtInExternalApplyDetailHtml,
+      } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({ queries: ['site:builtin.com "Frontend Engineer" "remote"'] }));
+    const normalized = await searchQueryAdapter.normalize(jobs[0]!);
+
+    expect(normalized).toMatchObject({
+      company: "Code Metal",
+      title: "Frontend Engineer",
+      applicationUrl: "https://company.example.com/careers/frontend-engineer/apply",
+      rawData: {
+        builtIn: {
+          detailUrl: "https://builtin.com/job/frontend-engineer/8269411",
+          removed: false,
+        },
+        resolvedApplicationUrl: {
+          source: "job_detail_page",
+          originalUrl: "https://builtin.com/job/frontend-engineer/8269411",
+          applicationUrl: "https://company.example.com/careers/frontend-engineer/apply",
+        },
+      },
+    });
+    expect(normalized.description).toContain("Own the complete frontend experience for geospatial workflows.");
+  });
+
+  it("keeps removed Built In detail pages reviewable without application URLs", async () => {
+    const raw = {
+      sourceJobId: "search:builtin:removed",
+      company: "Code Metal",
+      title: "Frontend Engineer",
+      location: "Remote",
+      description: "Listing summary",
+      applicationUrl: "https://builtin.com/job/frontend-engineer/8269411",
+      rawData: { provider: "brave", expansionProvider: "builtin" },
+    };
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      text: async () => builtInRemovedDetailHtml,
+    } as Response);
+
+    const normalized = await searchQueryAdapter.normalize(raw);
+
+    expect(normalized.applicationUrl).toBeUndefined();
+    expect(normalized.atsProvider).toBe("other");
+    expect(normalized.rawData).toMatchObject({
+      builtIn: {
+        detailUrl: raw.applicationUrl,
+        removed: true,
+        reason: "Built In detail page says the job was removed.",
+      },
+      missingApplicationUrl: {
+        source: "builtin_detail_page",
+        detailUrl: raw.applicationUrl,
+        reason: "Built In detail page says the job was removed.",
+      },
+    });
   });
 
   it("returns a listing-review record for blocked Remote Rocketship search pages", async () => {
@@ -820,13 +954,64 @@ const builtInListingHtml = `
   </html>
 `;
 
+const builtInListingWithoutJsonLdHtml = `
+  <html>
+    <body>
+      <main>
+        <div id="job-card-8269411">
+          <a data-id="company-title"><span>Code Metal</span></a>
+          <a href="/job/frontend-engineer/8269411" data-id="job-card-title">Frontend Engineer</a>
+        </div>
+        <div id="job-card-7777777">
+          <a data-id="company-title"><span>Outlive</span></a>
+          <a href="/job/frontend-engineer-web-react-nextjs/7777777" data-id="job-card-title">Frontend Engineer - Web (React / Next.js)</a>
+        </div>
+        <a href="/jobs/remote/dev-engineering/search/front-end-engineer?page=3">Next</a>
+        <a href="/companies/code-metal">Code Metal</a>
+      </main>
+    </body>
+  </html>
+`;
+
 const builtInDetailHtml = `
   <html>
     <body>
+      <section data-id="job-description">
+        <h2>The Role</h2>
+        <p>Improve accessibility for a React product.</p>
+      </section>
       <a href="https://jobs.ashbyhq.com/brisk-teaching/efaac331-a366-4bef-88ed-e3afb3127f5c" target="_blank">Apply</a>
       <script>
         Builtin.jobPostInit({"job":{"id":9425940,"howToApply":"https://jobs.ashbyhq.com/brisk-teaching/efaac331-a366-4bef-88ed-e3afb3127f5c","companyName":"Brisk Teaching","title":"Frontend Engineer, Accessibility Contractor"}});
       </script>
+    </body>
+  </html>
+`;
+
+const builtInExternalApplyDetailHtml = `
+  <html>
+    <body>
+      <a>Code Metal</a>
+      <h1>Frontend Engineer</h1>
+      <section data-id="job-description">
+        <h2>The Role</h2>
+        <p>Own the complete frontend experience for geospatial workflows.</p>
+        <p>Build React and TypeScript interfaces for mission-critical users.</p>
+      </section>
+      <a href="https://company.example.com/careers/frontend-engineer/apply">Apply Now</a>
+      <script>
+        Builtin.jobPostInit({"job":{"id":8269411,"companyName":"Code Metal","title":"Frontend Engineer"}});
+      </script>
+    </body>
+  </html>
+`;
+
+const builtInRemovedDetailHtml = `
+  <html>
+    <body>
+      <h1>Frontend Engineer</h1>
+      <p>Sorry, this job was removed at 06:22 p.m. (CST) on Thursday, Jun 04, 2026</p>
+      <button>Apply</button>
     </body>
   </html>
 `;
