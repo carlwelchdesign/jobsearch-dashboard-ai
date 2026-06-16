@@ -24,7 +24,7 @@ Use this workflow for requests shaped like: "implement this plan", "PLEASE IMPLE
    - `npm run build`
    - `git diff --check`
 9. Stage only intended files, commit with a terse message, and push the feature branch.
-10. Open a PR targeting `main` with a meaningful title and a body that includes summary, documentation, tests, safety notes, and known limitations.
+10. Open or update a PR targeting `main` using `staff-pr-writer` standards: include the product/architecture why, subsystem changes, implementation notes, data/migration impact, safety boundaries, exact verification, reviewer guide, and known limitations. Replace thin PR bodies instead of appending to them.
 11. Restart the local dev server and verify the changed routes/API surfaces.
 
 ## Repo Rules
