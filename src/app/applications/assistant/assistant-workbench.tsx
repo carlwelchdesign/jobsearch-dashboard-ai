@@ -13,6 +13,7 @@ import Accordion from "@mui/material/Accordion";
 import AccordionDetails from "@mui/material/AccordionDetails";
 import AccordionSummary from "@mui/material/AccordionSummary";
 import Alert from "@mui/material/Alert";
+import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -25,6 +26,12 @@ import MenuItem from "@mui/material/MenuItem";
 import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
 import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -328,6 +335,7 @@ export function AssistantWorkbench({
   const [resetting, setResetting] = useState(false);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [appliedIds, setAppliedIds] = useState<string[]>([]);
+  const [queueProgressSearchId, setQueueProgressSearchId] = useState<string | null>(null);
   const [copyingCoverLetterId, setCopyingCoverLetterId] = useState<string | null>(null);
   const [pendingRejectionFeedback, setPendingRejectionFeedback] = useState<Pick<ReadyApplication, "id" | "company" | "title"> | null>(null);
   const [notice, setNotice] = useState("");
@@ -351,6 +359,11 @@ export function AssistantWorkbench({
     ...application,
     progress: sprintProgressForApplication(application),
   })), [visibleApplications]);
+  const queueProgressSearchSelection = useMemo(
+    () => queueProgress.find((application) => application.id === queueProgressSearchId) ?? null,
+    [queueProgress, queueProgressSearchId],
+  );
+  const visibleQueueProgress = queueProgressSearchSelection ? [queueProgressSearchSelection] : queueProgress;
   const selectedRunActive = selected?.automationRun?.status === "RUNNING" || isLearningWorkflow(selectedWorkflow);
   const visibleCandidateIds = useMemo(() => trustFunnel.candidates.reduce<string[]>((ids, candidate) => {
     if (candidate.canPrepare) ids.push(candidate.matchId);
@@ -732,48 +745,14 @@ export function AssistantWorkbench({
                       </Stack>
                     </Box>
                     {queueProgress.length ? (
-                      <Box>
-                        <Typography variant="h3">Queue progress</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Each item shows the next workflow state before it leaves Apply Sprint.
-                        </Typography>
-                        <Stack spacing={1} sx={{ mt: 1 }}>
-                          {queueProgress.slice(0, 8).map((application) => (
-                            <Box
-                              key={application.id}
-                              sx={{
-                                border: 1,
-                                borderColor: application.id === activeSelectedId ? "primary.main" : "divider",
-                                borderRadius: 1,
-                                p: 1.25,
-                                bgcolor: application.id === activeSelectedId ? "rgba(37, 99, 235, 0.06)" : "background.paper",
-                              }}
-                            >
-                              <Stack spacing={1}>
-                                <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                                  <Box sx={{ minWidth: 0 }}>
-                                    <Typography sx={{ fontWeight: 850 }} noWrap>{application.company}</Typography>
-                                    <Typography variant="caption" color="text.secondary" sx={{ display: "block" }} noWrap>{application.title}</Typography>
-                                  </Box>
-                                  <Chip size="small" color={application.progress.color} label={application.progress.label} />
-                                </Stack>
-                                <LinearProgress
-                                  variant="determinate"
-                                  value={application.progress.value}
-                                  color={application.progress.color}
-                                  sx={{ height: 6, borderRadius: 1 }}
-                                />
-                                <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", justifyContent: "space-between", alignItems: "center" }}>
-                                  <Typography variant="caption" color="text.secondary">{application.progress.detail}</Typography>
-                                  <Button size="small" variant={application.id === activeSelectedId ? "contained" : "outlined"} onClick={() => setSelectedId(application.id)}>
-                                    Select
-                                  </Button>
-                                </Stack>
-                              </Stack>
-                            </Box>
-                          ))}
-                        </Stack>
-                      </Box>
+                      <QueueProgressTable
+                        activeSelectedId={activeSelectedId}
+                        applications={visibleQueueProgress}
+                        searchOptions={queueProgress}
+                        searchSelection={queueProgressSearchSelection}
+                        onSearchChange={(application) => setQueueProgressSearchId(application?.id ?? null)}
+                        onSelect={setSelectedId}
+                      />
                     ) : null}
                   </Stack>
                 </AccordionDetails>
@@ -938,6 +917,93 @@ export function AssistantWorkbench({
         submitLabel="Reject application"
       />
     </>
+  );
+}
+
+function QueueProgressTable({
+  activeSelectedId,
+  applications,
+  searchOptions,
+  searchSelection,
+  onSearchChange,
+  onSelect,
+}: {
+  activeSelectedId: string;
+  applications: Array<ReadyApplication & { progress: ReturnType<typeof sprintProgressForApplication> }>;
+  searchOptions: Array<ReadyApplication & { progress: ReturnType<typeof sprintProgressForApplication> }>;
+  searchSelection: (ReadyApplication & { progress: ReturnType<typeof sprintProgressForApplication> }) | null;
+  onSearchChange: (application: (ReadyApplication & { progress: ReturnType<typeof sprintProgressForApplication> }) | null) => void;
+  onSelect: (applicationId: string) => void;
+}) {
+  return (
+    <Box>
+      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ justifyContent: "space-between", alignItems: { md: "flex-end" }, mb: 1.5 }}>
+        <Box>
+          <Typography variant="h3">Queue progress</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Search the queue and scan each application&apos;s next workflow state.
+          </Typography>
+        </Box>
+        <Autocomplete
+          size="small"
+          options={searchOptions}
+          value={searchSelection}
+          onChange={(_, value) => onSearchChange(value)}
+          getOptionLabel={(application) => `${application.company} - ${application.title}`}
+          isOptionEqualToValue={(option, value) => option.id === value.id}
+          sx={{ width: { xs: "100%", md: 360 } }}
+          renderInput={(params) => <TextField {...params} label="Search queue" placeholder="Company or role" />}
+        />
+      </Stack>
+      <TableContainer sx={{ border: 1, borderColor: "divider", borderRadius: 1, maxHeight: 360 }}>
+        <Table size="small" stickyHeader aria-label="Queue progress table">
+          <TableHead>
+            <TableRow>
+              <TableCell sx={{ width: 132 }}>Status</TableCell>
+              <TableCell>Company</TableCell>
+              <TableCell>Role</TableCell>
+              <TableCell>Next step</TableCell>
+              <TableCell align="right" sx={{ width: 104 }}>Action</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {applications.map((application) => {
+              const selected = application.id === activeSelectedId;
+              return (
+                <TableRow key={application.id} selected={selected} hover>
+                  <TableCell>
+                    <Stack spacing={0.75}>
+                      <Chip size="small" color={application.progress.color} label={application.progress.label} sx={{ alignSelf: "flex-start" }} />
+                      <LinearProgress
+                        variant="determinate"
+                        value={application.progress.value}
+                        color={application.progress.color}
+                        sx={{ height: 5, borderRadius: 1, width: 96 }}
+                      />
+                    </Stack>
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 850, maxWidth: 180, overflowWrap: "anywhere" }}>{application.company}</TableCell>
+                  <TableCell sx={{ maxWidth: 280, overflowWrap: "anywhere" }}>{application.title}</TableCell>
+                  <TableCell>
+                    <Typography variant="body2" color="text.secondary">{application.progress.detail}</Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Button size="small" variant={selected ? "contained" : "outlined"} onClick={() => onSelect(application.id)}>
+                      Select
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </TableContainer>
+      {searchSelection ? (
+        <Button size="small" variant="text" sx={{ mt: 1 }} onClick={() => onSearchChange(null)}>
+          Show full queue
+        </Button>
+      ) : null}
+    </Box>
   );
 }
 

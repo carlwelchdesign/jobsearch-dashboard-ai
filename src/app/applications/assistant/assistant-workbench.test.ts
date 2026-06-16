@@ -50,6 +50,12 @@ describe("AssistantWorkbench run feedback panel", () => {
     expect(workbenchSource).toContain("Next application");
     expect(workbenchSource).toContain("Complete the selected application");
     expect(workbenchSource).toContain("Details and recovery");
+    expect(workbenchSource).toContain("QueueProgressTable");
+    expect(workbenchSource).toContain("Autocomplete");
+    expect(workbenchSource).toContain("Queue progress table");
+    expect(workbenchSource).toContain("Search queue");
+    expect(workbenchSource).toContain("Show full queue");
+    expect(workbenchSource).toContain("TableContainer");
     expect(workbenchSource).toContain("Assistant run details");
     expect(workbenchSource).toContain("Search-to-Apply visibility");
     expect(workbenchSource).toContain("Search-to-Apply Sprint funnel");
