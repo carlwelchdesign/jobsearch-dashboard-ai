@@ -1,0 +1,4 @@
+interface:
+  display_name: "Staff PR Writer"
+  short_description: "Write staff-level contextual pull requests"
+  default_prompt: "Use $staff-pr-writer to turn this branch into a contextual, reviewer-ready pull request."

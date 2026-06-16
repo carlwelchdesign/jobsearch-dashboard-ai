@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { syncApplicationPacket } from "@/lib/applications/application-packets";
 import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
+import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -44,33 +44,20 @@ export async function POST(request: Request) {
     for (const application of applications) {
       try {
         if (application.resumeId && application.coverLetterId) {
-          await prisma.application.update({
-            where: { id: application.id },
-            data: {
-              status: "ready_to_apply",
-              approvedAt: application.approvedAt ?? new Date(),
-              notes: mergeSprintNote(application.notes),
+          await transitionApplicationState({
+            applicationId: application.id,
+            toStatus: "ready_to_apply",
+            source: "bulk_move_to_apply_sprint",
+            actor: { type: "system" },
+            reason: "Bulk move prepared application for Apply Sprint.",
+            note: mergeSprintNote(application.notes),
+            metadata: {
+              resumeId: application.resumeId,
+              coverLetterId: application.coverLetterId,
+              applicationUrl: application.jobPosting.applicationUrl,
+              manualSubmissionRequired: true,
             },
-          });
-          if (application.jobProfileMatchId) {
-            await prisma.jobProfileMatch.update({
-              where: { id: application.jobProfileMatchId },
-              data: { status: "ready_to_apply", reviewedAt: new Date() },
-            }).catch(() => null);
-          }
-          await prisma.applicationEvent.create({
-            data: {
-              applicationId: application.id,
-              type: "status_changed",
-              payload: {
-                source: "bulk_move_to_apply_sprint",
-                status: "ready_to_apply",
-                resumeId: application.resumeId,
-                coverLetterId: application.coverLetterId,
-                applicationUrl: application.jobPosting.applicationUrl,
-                manualSubmissionRequired: true,
-              } as Prisma.InputJsonValue,
-            },
+            sideEffects: { syncPacket: false },
           });
           await syncApplicationPacket(application.id);
           results.push({

@@ -5,6 +5,7 @@ import { resolveApplicationFieldAnswer } from "@/lib/applications/field-answer-r
 import { storeObservedFieldLearning, type ObservedApplicationField } from "@/lib/applications/field-learning";
 import { recordApplicationOutcome } from "@/lib/applications/outcomes";
 import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
+import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { traceWorkflowStep } from "@/lib/observability/langsmith";
 import { createQualityExampleFromAutomationRun } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
@@ -999,9 +1000,13 @@ async function markApplicationSubmitted(applicationId: string, automationRunId: 
       notes: note,
       source: "assistant_state",
     }).catch(async () => {
-      await prisma.application.update({
-        where: { id: applicationId },
-        data: { status: "applied", appliedAt: new Date() },
+      await transitionApplicationState({
+        applicationId,
+        toStatus: "applied",
+        source: "assistant_state_fallback",
+        actor: { type: "system" },
+        reason: "Assistant submitted state fallback after outcome recording failed.",
+        note,
       }).catch(() => null);
     });
   }

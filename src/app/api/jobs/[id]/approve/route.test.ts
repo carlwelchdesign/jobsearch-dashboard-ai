@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { prisma } from "@/lib/prisma";
 import { POST } from "./route";
 
@@ -9,6 +10,10 @@ vi.mock("@/lib/applications/reconciliation", async (importOriginal) => ({
 
 vi.mock("@/lib/jobs/suppression", () => ({
   clearJobSuppressionForApproval: vi.fn(),
+}));
+
+vi.mock("@/lib/applications/state-transitions", () => ({
+  transitionApplicationState: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -38,6 +43,7 @@ const findApplicationMock = vi.mocked(prisma.application.findFirst);
 const createApplicationMock = vi.mocked(prisma.application.create);
 const updateApplicationMock = vi.mocked(prisma.application.update);
 const createEventMock = vi.mocked(prisma.applicationEvent.create);
+const transitionApplicationStateMock = vi.mocked(transitionApplicationState);
 
 describe("POST /api/jobs/[id]/approve", () => {
   beforeEach(() => {
@@ -48,6 +54,12 @@ describe("POST /api/jobs/[id]/approve", () => {
     createApplicationMock.mockReset();
     updateApplicationMock.mockReset();
     createEventMock.mockReset();
+    transitionApplicationStateMock.mockReset();
+    transitionApplicationStateMock.mockResolvedValue({
+      application: { id: "app_1", status: "approved" },
+      event: { id: "event_1" },
+      sideEffects: { idempotent: false, packetSynced: false, reconciliationRan: false, submittedSuppressionRecorded: false, outcomeCalibrationRefreshed: true, errors: [] },
+    } as unknown as Awaited<ReturnType<typeof transitionApplicationState>>);
   });
 
   it("approves a match and creates an application tracker", async () => {
@@ -86,11 +98,11 @@ describe("POST /api/jobs/[id]/approve", () => {
         status: "approved",
       }),
     }));
-    expect(createEventMock).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        applicationId: "app_1",
-        type: "status_changed",
-      }),
+    expect(transitionApplicationStateMock).toHaveBeenCalledWith(expect.objectContaining({
+      applicationId: "app_1",
+      toStatus: "approved",
+      source: "job_approval",
+      actor: { type: "system" },
     }));
     await expect(response.json()).resolves.toMatchObject({
       jobId: "job_1",
@@ -139,6 +151,11 @@ describe("POST /api/jobs/[id]/approve", () => {
       data: expect.objectContaining({ jobProfileMatchId: "match_1" }),
     }));
     expect(createEventMock).not.toHaveBeenCalled();
+    expect(transitionApplicationStateMock).toHaveBeenCalledWith(expect.objectContaining({
+      applicationId: "app_1",
+      toStatus: "approved",
+      source: "job_approval",
+    }));
     expect(response.status).toBe(200);
   });
 

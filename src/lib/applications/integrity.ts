@@ -1,4 +1,4 @@
-import type { Application, ApplicationAutomationRun, EmailMessageRecord, JobMatchStatus, JobPosting, JobProfileMatch, Prisma } from "@prisma/client";
+import type { Application, ApplicationAutomationRun, EmailMessageRecord, JobMatchStatus, JobPosting, JobProfileMatch } from "@prisma/client";
 import { recordApplicationOutcome } from "@/lib/applications/outcomes";
 import {
   canonicalApplicationGroupKey,
@@ -8,6 +8,7 @@ import {
   submittedStatus,
   visibleCanonicalApplications,
 } from "@/lib/applications/reconciliation";
+import { transitionApplicationState, type ApplicationTransitionStatus } from "@/lib/applications/state-transitions";
 import { recordSubmittedJobSuppression } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 
@@ -58,6 +59,10 @@ export type ApplicationIntegrityRepairResult = {
   reconciliation: {
     archivedDuplicates: number;
     syncedMatches: number;
+  };
+  transitions: {
+    count: number;
+    eventIds: string[];
   };
 };
 
@@ -220,6 +225,7 @@ export async function repairApplicationIntegrity(input: { userId?: string | null
     source,
   });
   let repaired = reconciliation.archivedDuplicates + reconciliation.syncedMatches;
+  const transitionEventIds: string[] = [];
 
   for (const issue of before.issues) {
     if ((issue.kind === "EMAIL_CONFIRMED_PENDING_APPLICATION" || issue.kind === "ASSISTANT_SUBMITTED_STATUS_DRIFT") && issue.applicationId) {
@@ -228,33 +234,42 @@ export async function repairApplicationIntegrity(input: { userId?: string | null
         select: { id: true },
       });
       if (!existing) {
-        await recordApplicationOutcome({
+        const result = await recordApplicationOutcome({
           applicationId: issue.applicationId,
           outcome: "APPLIED",
           notes: `Application state integrity repaired ${issue.kind}: ${issue.detail}`,
           source: "application_outcome",
         });
+        transitionEventIds.push(result.transition.event.id);
         repaired += 1;
       }
       continue;
     }
 
     if ((issue.kind === "MATCH_STATUS_DRIFT" || issue.kind === "RESURFACED_SUBMITTED_JOB") && issue.jobProfileMatchId && issue.expectedStatus) {
-      const result = await prisma.jobProfileMatch.updateMany({
-        where: { id: issue.jobProfileMatchId, status: { not: issue.expectedStatus } },
-        data: { status: issue.expectedStatus, reviewedAt: new Date() },
-      });
-      if (result.count) {
+      if (issue.applicationId && isApplicationTransitionStatus(issue.expectedStatus)) {
+        const transition = await transitionApplicationState({
+          applicationId: issue.applicationId,
+          toStatus: issue.expectedStatus,
+          source,
+          actor: { type: "repair" },
+          reason: issue.detail,
+          metadata: repairEventPayload(issue, source),
+          sideEffects: {
+            syncPacket: false,
+            reconcile: false,
+            suppressSubmitted: issue.kind === "RESURFACED_SUBMITTED_JOB",
+            refreshOutcomeCalibration: true,
+          },
+        });
+        transitionEventIds.push(transition.event.id);
+        repaired += 1;
+      } else {
+        const result = await prisma.jobProfileMatch.updateMany({
+          where: { id: issue.jobProfileMatchId, status: { not: issue.expectedStatus } },
+          data: { status: issue.expectedStatus, reviewedAt: new Date() },
+        });
         repaired += result.count;
-        if (issue.applicationId) {
-          await prisma.applicationEvent.create({
-            data: {
-              applicationId: issue.applicationId,
-              type: "status_changed",
-              payload: repairEventPayload(issue, source),
-            },
-          });
-        }
       }
     }
 
@@ -285,6 +300,10 @@ export async function repairApplicationIntegrity(input: { userId?: string | null
       archivedDuplicates: reconciliation.archivedDuplicates,
       syncedMatches: reconciliation.syncedMatches,
     },
+    transitions: {
+      count: transitionEventIds.length,
+      eventIds: transitionEventIds,
+    },
   };
 }
 
@@ -298,7 +317,7 @@ function emptyIssueCounts(): Record<ApplicationIntegrityIssueKind, number> {
   };
 }
 
-function repairEventPayload(issue: ApplicationIntegrityIssue, source: string): Prisma.InputJsonValue {
+function repairEventPayload(issue: ApplicationIntegrityIssue, source: string): Record<string, unknown> {
   return {
     source,
     issueKind: issue.kind,
@@ -307,4 +326,8 @@ function repairEventPayload(issue: ApplicationIntegrityIssue, source: string): P
     actualStatus: issue.actualStatus ?? null,
     detail: issue.detail,
   };
+}
+
+function isApplicationTransitionStatus(status: JobMatchStatus): status is ApplicationTransitionStatus {
+  return ["approved", "ready_to_apply", "applied", "follow_up_due", "screening", "interviewing", "offer", "rejected_by_company", "archived"].includes(status);
 }

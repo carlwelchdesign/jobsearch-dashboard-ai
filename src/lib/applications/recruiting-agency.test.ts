@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { runRecruitingAgency } from "@/lib/applications/recruiting-agency";
+import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { prisma } from "@/lib/prisma";
 
 vi.mock("@/lib/applications/prepare-package", () => ({
   prepareApplicationPackage: vi.fn(),
+}));
+
+vi.mock("@/lib/applications/state-transitions", () => ({
+  transitionApplicationState: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -54,6 +59,7 @@ const findMatchMock = vi.mocked(prisma.jobProfileMatch.findUnique);
 const updateMatchMock = vi.mocked(prisma.jobProfileMatch.update);
 const findSkillAdjustmentsMock = vi.mocked(prisma.skillAdjustment.findMany);
 const preparePackageMock = vi.mocked(prepareApplicationPackage);
+const transitionApplicationStateMock = vi.mocked(transitionApplicationState);
 
 describe("runRecruitingAgency", () => {
   beforeEach(() => {
@@ -71,7 +77,13 @@ describe("runRecruitingAgency", () => {
     updateMatchMock.mockReset();
     findSkillAdjustmentsMock.mockReset();
     preparePackageMock.mockReset();
+    transitionApplicationStateMock.mockReset();
     findSkillAdjustmentsMock.mockResolvedValue([]);
+    transitionApplicationStateMock.mockResolvedValue({
+      application: { id: "app_1", status: "approved" },
+      event: { id: "event_1" },
+      sideEffects: { idempotent: false, packetSynced: true, reconciliationRan: false, submittedSuppressionRecorded: false, outcomeCalibrationRefreshed: true, errors: [] },
+    } as unknown as Awaited<ReturnType<typeof transitionApplicationState>>);
     createAgentRunMock.mockResolvedValue({ id: "agent_run_1" } as Awaited<ReturnType<typeof prisma.agentRun.create>>);
     updateAgentRunMock.mockResolvedValue({ id: "agent_run_1" } as Awaited<ReturnType<typeof prisma.agentRun.update>>);
     createAgentRunEventMock.mockResolvedValue({ id: "event_1" } as Awaited<ReturnType<typeof prisma.agentRunEvent.create>>);
@@ -106,6 +118,12 @@ describe("runRecruitingAgency", () => {
         jobProfileMatchId: "match_1",
         status: "approved",
       }),
+    }));
+    expect(transitionApplicationStateMock).toHaveBeenCalledWith(expect.objectContaining({
+      applicationId: "app_1",
+      toStatus: "approved",
+      source: "recruiting_agency",
+      actor: { type: "agent", id: "approve_agency_match" },
     }));
     expect(preparePackageMock).toHaveBeenCalledWith("job_1");
     expect(result).toMatchObject({ agentRunId: "agent_run_1", approved: 1, prepared: 1, failed: 0 });

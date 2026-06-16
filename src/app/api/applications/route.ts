@@ -3,7 +3,7 @@ import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
 import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from "@/lib/applications/reconciliation";
-import { recordSubmittedJobSuppression } from "@/lib/jobs/suppression";
+import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 const createApplicationSchema = z.object({
   jobPostingId: z.string().min(1),
   jobProfileMatchId: z.string().optional(),
-  status: z.enum(["approved", "ready_to_apply", "applied", "follow_up_due", "screening", "interviewing", "offer", "archived"]).default("approved"),
+  status: z.enum(["approved", "ready_to_apply", "applied", "follow_up_due", "screening", "interviewing", "offer", "rejected_by_company", "archived"]).default("approved"),
   notes: z.string().optional(),
 });
 
@@ -80,32 +80,22 @@ export async function POST(request: Request) {
         userId: user.id,
         jobPostingId: body.jobPostingId,
         jobProfileMatchId: body.jobProfileMatchId || null,
-        status: body.status,
-        approvedAt: body.status === "approved" ? new Date() : null,
-        appliedAt: body.status === "applied" ? new Date() : null,
+        status: "approved",
         notes: body.notes,
       },
     });
 
-    if (body.jobProfileMatchId) {
-      await prisma.jobProfileMatch.update({
-        where: { id: body.jobProfileMatchId },
-        data: { status: body.status },
-      });
-    }
-    if (body.status === "applied") {
-      await recordSubmittedJobSuppression({
-        userId: user.id,
-        job: jobPosting,
-        jobProfileMatchId: body.jobProfileMatchId ?? null,
-        applicationId: application.id,
-        source: "application_create",
-        reason: "created_applied_application",
-      });
-      await reconcileApplicationCanonicalState({ applicationId: application.id, source: "application_create" }).catch(() => null);
-    }
+    const transitioned = await transitionApplicationState({
+      applicationId: application.id,
+      toStatus: body.status,
+      source: "application_create",
+      actor: { type: "user" },
+      reason: "Application created manually.",
+      note: body.notes ?? null,
+      metadata: { jobProfileMatchId: body.jobProfileMatchId ?? null },
+    });
 
-    return NextResponse.json({ application }, { status: 201 });
+    return NextResponse.json({ application: transitioned.application }, { status: 201 });
   } catch (error) {
     return apiError(error, 400);
   }

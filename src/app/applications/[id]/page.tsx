@@ -740,7 +740,12 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
         <Card>
           <CardContent>
             <Stack spacing={2}>
-              <Typography variant="h3">Application events</Typography>
+              <Box>
+                <Typography variant="h3">State history</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Canonical transitions record source, actor, version, and before/after state. Older events remain visible for context.
+                </Typography>
+              </Box>
               {application.events.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">No events recorded yet.</Typography>
               ) : (
@@ -758,6 +763,11 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                           </Stack>
                           <Typography sx={{ fontWeight: 800 }}>{summary.title}</Typography>
                           {summary.detail ? <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>{summary.detail}</Typography> : null}
+                          {summary.auditDetail ? (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                              {summary.auditDetail}
+                            </Typography>
+                          ) : null}
                         </Box>
                         <Typography variant="caption" color="text.secondary">{event.createdAt.toLocaleString()}</Typography>
                       </Stack>
@@ -1127,9 +1137,19 @@ function compensationOpportunityOutput(value: unknown): CompensationOpportunityO
   return value && typeof value === "object" && !Array.isArray(value) ? value as CompensationOpportunityOutput : null;
 }
 
-function applicationEventSummary(event: { type: string; payload: unknown }) {
+function applicationEventSummary(event: {
+  type: string;
+  source?: string | null;
+  actorType?: string | null;
+  actorId?: string | null;
+  beforeJson?: unknown;
+  afterJson?: unknown;
+  entityVersion?: number | null;
+  payload: unknown;
+}) {
   const payload = isRecord(event.payload) ? event.payload : {};
   const typeLabel = formatAction(event.type);
+  const transition = stateTransitionAudit(event);
 
   if (payload.source === "email_response_agent") {
     const classification = typeof payload.classification === "string" ? formatAction(payload.classification) : "Email";
@@ -1140,6 +1160,7 @@ function applicationEventSummary(event: { type: string; payload: unknown }) {
       typeLabel,
       title: `Email classified: ${classification}`,
       detail: `${subject} from ${from}`,
+      auditDetail: transition,
       chips: [
         ...(confidenceScore === null ? [] : [`${confidenceScore}% confidence`]),
         payload.actionRequired ? "Needs action" : "No action",
@@ -1156,6 +1177,7 @@ function applicationEventSummary(event: { type: string; payload: unknown }) {
       typeLabel,
       title: `${requestType} ${status.toLowerCase()}`,
       detail: question,
+      auditDetail: transition,
       chips: [payload.answerSaved ? "Answer saved" : "No answer saved"],
     };
   }
@@ -1170,6 +1192,7 @@ function applicationEventSummary(event: { type: string; payload: unknown }) {
       typeLabel,
       title: `Assistant run ${status.toLowerCase()}`,
       detail: blockerMessage ?? (logPath ? `Assistant log: ${logPath}` : null),
+      auditDetail: transition,
       chips: [
         ...(actionCount ? [`${actionCount} action${actionCount === 1 ? "" : "s"}`] : []),
         ...(screenshotCount ? [`${screenshotCount} screenshot${screenshotCount === 1 ? "" : "s"}`] : []),
@@ -1183,17 +1206,24 @@ function applicationEventSummary(event: { type: string; payload: unknown }) {
       typeLabel,
       title: payload.note,
       detail: typeof payload.logPath === "string" ? `Assistant log: ${payload.logPath}` : null,
+      auditDetail: transition,
       chips: typeof payload.automationRunId === "string" ? ["Assistant run"] : [],
     };
   }
 
   if (event.type === "status_changed") {
-    const status = typeof payload.status === "string" ? formatAction(payload.status) : "Status updated";
+    const after = isRecord(event.afterJson) ? event.afterJson : {};
+    const afterStatus = typeof after.status === "string" ? after.status : null;
+    const status = afterStatus ? formatAction(afterStatus) : typeof payload.status === "string" ? formatAction(payload.status) : "Status updated";
     return {
       typeLabel,
       title: status,
-      detail: typeof payload.applicationUrl === "string" ? `Application URL: ${payload.applicationUrl}` : null,
-      chips: payload.manualSubmissionRequired ? ["Manual checkpoint"] : [],
+      detail: transition ?? (typeof payload.applicationUrl === "string" ? `Application URL: ${payload.applicationUrl}` : null),
+      auditDetail: event.source ? `Source ${formatAction(event.source)}${event.entityVersion ? ` · Version ${event.entityVersion}` : ""}` : null,
+      chips: [
+        ...(payload.manualSubmissionRequired ? ["Manual checkpoint"] : []),
+        ...(event.actorType ? [formatAction(event.actorType)] : []),
+      ],
     };
   }
 
@@ -1202,6 +1232,7 @@ function applicationEventSummary(event: { type: string; payload: unknown }) {
       typeLabel,
       title: "Application marked applied",
       detail: typeof payload.notes === "string" ? payload.notes : null,
+      auditDetail: transition,
       chips: [],
     };
   }
@@ -1210,8 +1241,30 @@ function applicationEventSummary(event: { type: string; payload: unknown }) {
     typeLabel,
     title: typeLabel,
     detail: typeof payload.message === "string" ? payload.message : null,
+    auditDetail: transition,
     chips: [],
   };
+}
+
+function stateTransitionAudit(event: {
+  source?: string | null;
+  actorType?: string | null;
+  actorId?: string | null;
+  beforeJson?: unknown;
+  afterJson?: unknown;
+  entityVersion?: number | null;
+}) {
+  const before = isRecord(event.beforeJson) ? event.beforeJson : {};
+  const after = isRecord(event.afterJson) ? event.afterJson : {};
+  const beforeStatus = typeof before.status === "string" ? formatAction(before.status) : null;
+  const afterStatus = typeof after.status === "string" ? formatAction(after.status) : null;
+  const parts = [
+    beforeStatus && afterStatus ? `${beforeStatus} to ${afterStatus}` : null,
+    event.source ? `source ${formatAction(event.source)}` : null,
+    event.actorType ? `actor ${formatAction(event.actorType)}${event.actorId ? `:${event.actorId}` : ""}` : null,
+    event.entityVersion ? `v${event.entityVersion}` : null,
+  ].filter((part): part is string => Boolean(part));
+  return parts.length ? parts.join(" · ") : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,5 +1,6 @@
 import type { Application, JobMatchStatus, JobPosting, Prisma } from "@prisma/client";
 import { createCanonicalJobKeys, createCanonicalJobParts } from "@/lib/job-search/dedupe";
+import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { recordSubmittedJobSuppression } from "@/lib/jobs/suppression";
 import { prisma } from "@/lib/prisma";
 
@@ -55,6 +56,7 @@ export async function reconcileApplicationCanonicalState(input: {
   userId?: string | null;
   applicationId?: string | null;
   source: string;
+  useTransitions?: boolean;
 }): Promise<ApplicationReconciliationResult> {
   const scopedApplication = input.applicationId
     ? await prisma.application.findUnique({
@@ -92,27 +94,49 @@ export async function reconcileApplicationCanonicalState(input: {
     }
 
     for (const duplicate of duplicates) {
-      await prisma.application.update({
-        where: { id: duplicate.id },
-        data: {
-          status: "archived",
-          notes: appendReconciliationNote(duplicate.notes, canonical, input.source),
-        },
-      });
-      await prisma.applicationEvent.create({
-        data: {
+      if (input.useTransitions !== false) {
+        await transitionApplicationState({
           applicationId: duplicate.id,
-          type: "status_changed",
-          payload: {
-            source: "application_canonical_reconciliation",
+          toStatus: "archived",
+          source: "application_canonical_reconciliation",
+          actor: { type: "system" },
+          reason: "Archived duplicate tracker because a canonical submitted application exists.",
+          note: appendReconciliationNote(duplicate.notes, canonical, input.source),
+          metadata: {
             trigger: input.source,
-            status: "archived",
             canonicalApplicationId: canonical.id,
             canonicalStatus: canonical.status,
-            note: "Archived duplicate tracker because a canonical submitted application exists.",
-          } as Prisma.InputJsonValue,
-        },
-      });
+          },
+          sideEffects: {
+            syncPacket: false,
+            reconcile: false,
+            suppressSubmitted: false,
+            refreshOutcomeCalibration: false,
+          },
+        });
+      } else {
+        await prisma.application.update({
+          where: { id: duplicate.id },
+          data: {
+            status: "archived",
+            notes: appendReconciliationNote(duplicate.notes, canonical, input.source),
+          },
+        });
+        await prisma.applicationEvent.create({
+          data: {
+            applicationId: duplicate.id,
+            type: "status_changed",
+            payload: {
+              source: "application_canonical_reconciliation",
+              trigger: input.source,
+              status: "archived",
+              canonicalApplicationId: canonical.id,
+              canonicalStatus: canonical.status,
+              note: "Archived duplicate tracker because a canonical submitted application exists.",
+            } as Prisma.InputJsonValue,
+          },
+        });
+      }
       archivedDuplicates += 1;
     }
     syncedMatches += await syncGroupMatches(group, canonical.status);

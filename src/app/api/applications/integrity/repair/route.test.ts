@@ -19,6 +19,7 @@ describe("POST /api/applications/integrity/repair", () => {
       after: report(0),
       repaired: 2,
       reconciliation: { archivedDuplicates: 1, syncedMatches: 1 },
+      transitions: { count: 1, eventIds: ["event_1"] },
     });
 
     const response = await POST();
@@ -27,6 +28,7 @@ describe("POST /api/applications/integrity/repair", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       repaired: 2,
+      transitions: { count: 1, eventIds: ["event_1"] },
       message: "Repaired 2 application state issues.",
     });
   });

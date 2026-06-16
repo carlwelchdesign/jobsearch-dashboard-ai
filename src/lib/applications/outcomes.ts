@@ -1,10 +1,7 @@
-import type { ApplicationOutcomeType, JobMatchStatus, Prisma } from "@prisma/client";
-import { syncApplicationPacket } from "@/lib/applications/application-packets";
+import type { ApplicationOutcomeType } from "@prisma/client";
 import { ensureInterviewPrepForApplication } from "@/lib/applications/interview-prep-workflow";
-import { submittedApplicationStatuses } from "@/lib/applications/job-filters";
-import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
-import { recordSubmittedJobSuppression } from "@/lib/jobs/suppression";
-import { refreshOutcomeCalibration, type OutcomeCalibrationRefreshSource } from "@/lib/observability/outcome-calibration";
+import { transitionApplicationState, type ApplicationTransitionStatus } from "@/lib/applications/state-transitions";
+import type { OutcomeCalibrationRefreshSource } from "@/lib/observability/outcome-calibration";
 import { prisma } from "@/lib/prisma";
 
 export type RecordApplicationOutcomeInput = {
@@ -34,73 +31,33 @@ export async function recordApplicationOutcome(input: RecordApplicationOutcomeIn
 
   const occurredAt = input.occurredAt ?? new Date();
   const nextStatus = statusForOutcome(input.outcome);
-  const outcome = await prisma.$transaction(async (tx) => {
-    const created = await tx.applicationOutcome.create({
-      data: {
-        userId: application.userId,
-        applicationId: application.id,
-        jobPostingId: application.jobPostingId,
-        outcome: input.outcome,
-        notes: input.notes?.trim() || null,
-        occurredAt,
-      },
-    });
-
-    await tx.application.update({
-      where: { id: application.id },
-      data: {
-        status: nextStatus,
-        appliedAt: input.outcome === "APPLIED" && !application.appliedAt ? occurredAt : application.appliedAt,
-        followUpAt: followUpAtForOutcome({
-          outcome: input.outcome,
-          occurredAt,
-          existingFollowUpAt: application.followUpAt,
-        }),
-      },
-    });
-
-    if (application.jobProfileMatchId) {
-      await tx.jobProfileMatch.update({
-        where: { id: application.jobProfileMatchId },
-        data: {
-          status: nextStatus,
-          reviewedAt: occurredAt,
-        },
-      });
-    }
-
-    await tx.applicationEvent.create({
-      data: {
-        applicationId: application.id,
-        type: input.outcome === "APPLIED" ? "applied" : "status_changed",
-        payload: {
-          outcome: input.outcome,
-          status: nextStatus,
-          notes: input.notes ?? null,
-          occurredAt: occurredAt.toISOString(),
-          company: application.jobPosting.company,
-          title: application.jobPosting.title,
-        } as Prisma.InputJsonValue,
-      },
-    });
-
-    return created;
-  });
-  if (submittedApplicationStatuses.includes(nextStatus)) {
-    await recordSubmittedJobSuppression({
+  const outcome = await prisma.applicationOutcome.create({
+    data: {
       userId: application.userId,
-      job: application.jobPosting,
-      jobProfileMatchId: application.jobProfileMatchId,
       applicationId: application.id,
-      source: "application_outcome",
-      reason: input.outcome,
-    });
-    await reconcileApplicationCanonicalState({
-      applicationId: application.id,
-      source: input.source ?? "application_outcome",
-    }).catch(() => null);
-  }
-  await syncApplicationPacket(application.id);
+      jobPostingId: application.jobPostingId,
+      outcome: input.outcome,
+      notes: input.notes?.trim() || null,
+      occurredAt,
+    },
+  });
+
+  const transition = await transitionApplicationState({
+    applicationId: application.id,
+    toStatus: nextStatus,
+    source: input.source ?? "application_outcome",
+    actor: { type: "user" },
+    reason: `${labelForOutcome(input.outcome)} outcome recorded.`,
+    occurredAt,
+    metadata: {
+      outcome: input.outcome,
+      outcomeId: outcome.id,
+      notes: input.notes ?? null,
+      company: application.jobPosting.company,
+      title: application.jobPosting.title,
+    },
+  });
+
   if (shouldTriggerInterviewPrepForOutcome(input.outcome)) {
     await ensureInterviewPrepForApplication({
       applicationId: application.id,
@@ -108,14 +65,10 @@ export async function recordApplicationOutcome(input: RecordApplicationOutcomeIn
       source: "outcome",
     }).catch(() => null);
   }
-  refreshOutcomeCalibration({
-    userId: application.userId,
-    source: input.source ?? "application_outcome",
-  });
-
   return {
     outcome,
     status: nextStatus,
+    transition,
     message: `${labelForOutcome(input.outcome)} recorded for ${application.jobPosting.company} - ${application.jobPosting.title}.`,
   };
 }
@@ -141,7 +94,7 @@ export function followUpAtForOutcome(input: {
   return input.existingFollowUpAt ?? null;
 }
 
-export function statusForOutcome(outcome: ApplicationOutcomeType): JobMatchStatus {
+export function statusForOutcome(outcome: ApplicationOutcomeType): ApplicationTransitionStatus {
   if (outcome === "APPLIED") return "applied";
   if (outcome === "RECRUITER_SCREEN") return "screening";
   if (outcome === "TECH_SCREEN" || outcome === "ONSITE" || outcome === "FINAL") return "interviewing";

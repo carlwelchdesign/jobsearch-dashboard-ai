@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 import { recordRejectedJobSuppression } from "@/lib/jobs/suppression";
 import { refreshOutcomeCalibration } from "@/lib/observability/outcome-calibration";
 import { captureJobRejectionLearning, rejectionReasonCodes, type RejectionReasonCode } from "@/lib/jobs/rejection-learning";
+import { transitionApplicationState } from "@/lib/applications/state-transitions";
 
 export const dynamic = "force-dynamic";
 
@@ -122,57 +123,59 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     const reasonText = input.reasons.length ? input.reasons.map((reason) => reason.replace(/_/g, " ")).join(", ") : "No reason provided";
     const noteText = input.note ? ` User note: ${input.note}` : "";
     const feedbackMessage = `Deleted from Apply Sprint as not a good fit: ${application.jobPosting.company} - ${application.jobPosting.title}. Reason: ${reasonText}.${noteText} The recruiting agency should remember this as a rejected agency-approved match.`;
-    await prisma.$transaction([
-      prisma.skillFeedback.create({
-        data: {
-          userId: application.userId,
-          skillId: "approve_agency_match",
-          applicationId: application.id,
-          jobPostingId: application.jobPostingId,
-          rawMessage: feedbackMessage,
-          problemSummary: "Apply Sprint deletion means this agency-approved job was not a good fit.",
-          expectedBehavior: "Do not promote this job again; use this rejection as learning signal for future agency approvals.",
-          confidence: 0.85,
-          contextJson: {
-            contextPath: "/applications/assistant",
-            deletedApplicationId: application.id,
-            jobProfileMatchId: application.jobProfileMatchId,
-            reasons: input.reasons,
-            note: input.note,
-            job: application.jobPosting,
-            source: input.source,
-          } as Prisma.InputJsonValue,
-          adjustments: {
-            create: {
-              userId: application.userId,
-              skillId: "approve_agency_match",
-              kind: "GUIDANCE",
-              riskLevel: "LOW",
-              status: "ACTIVE",
-              patchJson: {
-                guidance: `A user deleted an agency-approved Apply Sprint item because the job was not a good fit. Reasons: ${reasonText}.${input.note ? ` Note: ${input.note}` : ""} Treat similar approvals more cautiously and preserve the rejected job signal.`,
-                source: input.source,
-                jobProfileMatchId: application.jobProfileMatchId,
-                jobPostingId: application.jobPostingId,
-                company: application.jobPosting.company,
-                title: application.jobPosting.title,
-              } as Prisma.InputJsonValue,
-              rationale: "Recorded Apply Sprint deletion as low-risk agency approval guidance and memory.",
-              appliedAt: new Date(),
-            },
+    await prisma.skillFeedback.create({
+      data: {
+        userId: application.userId,
+        skillId: "approve_agency_match",
+        applicationId: application.id,
+        jobPostingId: application.jobPostingId,
+        rawMessage: feedbackMessage,
+        problemSummary: "Apply Sprint deletion means this agency-approved job was not a good fit.",
+        expectedBehavior: "Do not promote this job again; use this rejection as learning signal for future agency approvals.",
+        confidence: 0.85,
+        contextJson: {
+          contextPath: "/applications/assistant",
+          archivedApplicationId: application.id,
+          jobProfileMatchId: application.jobProfileMatchId,
+          reasons: input.reasons,
+          note: input.note,
+          job: application.jobPosting,
+          source: input.source,
+        } as Prisma.InputJsonValue,
+        adjustments: {
+          create: {
+            userId: application.userId,
+            skillId: "approve_agency_match",
+            kind: "GUIDANCE",
+            riskLevel: "LOW",
+            status: "ACTIVE",
+            patchJson: {
+              guidance: `A user archived an agency-approved Apply Sprint item because the job was not a good fit. Reasons: ${reasonText}.${input.note ? ` Note: ${input.note}` : ""} Treat similar approvals more cautiously and preserve the rejected job signal.`,
+              source: input.source,
+              jobProfileMatchId: application.jobProfileMatchId,
+              jobPostingId: application.jobPostingId,
+              company: application.jobPosting.company,
+              title: application.jobPosting.title,
+            } as Prisma.InputJsonValue,
+            rationale: "Recorded Apply Sprint archive as low-risk agency approval guidance and memory.",
+            appliedAt: new Date(),
           },
         },
-      }),
-      prisma.application.delete({ where: { id: application.id } }),
-      ...(application.jobProfileMatchId
-        ? [
-            prisma.jobProfileMatch.update({
-              where: { id: application.jobProfileMatchId },
-              data: { status: "rejected", reviewedAt: new Date() },
-            }),
-          ]
-        : []),
-    ]);
+      },
+    });
+    await transitionApplicationState({
+      applicationId: application.id,
+      toStatus: "archived",
+      source: input.source,
+      actor: { type: "user" },
+      reason: "Archived from Apply Sprint as not a good fit.",
+      note: `Archived from Apply Sprint as not a good fit. Reasons: ${reasonText}.${input.note ? ` Note: ${input.note}` : ""}`,
+      metadata: {
+        reasons: input.reasons,
+        note: input.note,
+        jobProfileMatchId: application.jobProfileMatchId,
+      },
+    });
     if (application.jobProfileMatchId) {
       await captureJobRejectionLearning({
         userId: application.userId,
@@ -193,7 +196,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     });
     refreshOutcomeCalibration({ userId: application.userId, source: "job_rejected" });
 
-    return NextResponse.json({ deleted: true, rejected: true, message: "Application removed and job marked rejected for agency learning." });
+    return NextResponse.json({ deleted: false, archived: true, rejected: true, message: "Application archived and job rejection signal saved for agency learning." });
   } catch (error) {
     return apiError(error, 400);
   }
