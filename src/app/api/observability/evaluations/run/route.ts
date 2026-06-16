@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const requestSchema = z.object({
-  target: z.enum(["APPLICATION_ASSISTANT", "RECRUITING_AGENCY", "JOB_SEARCH", "JOB_MATCHING"]).optional(),
+  target: z.enum(["APPLICATION_ASSISTANT", "RECRUITING_AGENCY", "JOB_SEARCH", "JOB_MATCHING", "GENERATED_MATERIALS"]).optional(),
 });
 
 export async function POST(request: Request) {

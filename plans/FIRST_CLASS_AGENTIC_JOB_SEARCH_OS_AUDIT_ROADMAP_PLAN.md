@@ -119,7 +119,9 @@ Agent action taxonomy:
 | UX-003 | P1 | Lifecycle page next-action panels | Product/UX | Implemented in Phase 4 branch | Jobs, Apply Sprint, Applications, Materials, Evidence, and Outcomes show compact readiness context |
 | EVID-001 | P1 | Claim-level provenance | AI/Trust | Implemented in Phase 2 branch | Unsupported claims block approval of generated materials and public content |
 | AGENT-002 | P1 | Agent roster control plane | AI/Platform | Implemented in Phase 2 branch | `/agents` shows owner, tools, status, child runs, blocked actions, side effects, and latest eval score |
+| AGENT-003 | P1 | Agent quality gate board | AI/QA | Implemented in Phase 5 branch | `/agents` and `/api/agents/quality-gates` show pass, stale, missing-eval, needs-review, and blocked states by quality target |
 | QA-002 | P1 | Red-team trust fixtures | QA/Trust | Implemented in Phase 2 branch | Prompt injection, unsupported claims, private leakage, unauthorized external actions, LinkedIn misuse, and ungrounded public content have deterministic fixtures |
+| QA-003 | P1 | Generated-material evaluator access | AI/QA | Implemented in Phase 5 branch | Evaluation APIs accept `GENERATED_MATERIALS` so claim-backed material quality can be checked from the agent board |
 | PLATFORM-004 | P1 | Canonical application transition service | Platform | Implemented in Phase 3 branch | Status changes become transactional and audit-backed |
 | QA-001 | P1 | Playwright critical-path suite | QA | Implemented in Phase 4 branch | Dashboard cockpit, readiness overrides, Apply Sprint, Materials, Evidence, Outcomes, and mobile rendering have browser coverage |
 | TPM-001 | P2 | Plan metadata standard | TPM | Planned | New plans include owner, status, risk, acceptance criteria, target release, and linked PR |
