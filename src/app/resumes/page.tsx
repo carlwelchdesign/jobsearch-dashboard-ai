@@ -36,10 +36,10 @@ const sections = [
     description: "Approve parsed profile data before it becomes a source of truth.",
   },
   {
-    title: "Candidate Profile",
+    title: "Job Evidence Library",
     href: "/resumes/profile",
     icon: FactCheckOutlinedIcon,
-    description: "Manage skills, work experience, projects, and verified bullets.",
+    description: "Manage work history, verified bullets, confirmed tech, and duplicate cleanup.",
   },
   {
     title: "Generated Resumes",
@@ -157,9 +157,9 @@ function resumesNextAction({
   }
   if (profileCount === 0) {
     return {
-      title: "Build candidate profile",
-      detail: "Confirm skills, work history, projects, and verified bullets before generating materials.",
-      label: "Open profile",
+      title: "Build job evidence library",
+      detail: "Confirm work history, role evidence, bullets, and tech before generating materials.",
+      label: "Open evidence library",
       href: "/resumes/profile",
       color: "primary" as const,
       icon: <FactCheckOutlinedIcon />,

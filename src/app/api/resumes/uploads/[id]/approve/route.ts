@@ -59,8 +59,9 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     await prisma.workExperience.deleteMany({ where: { sourceResumeUploadId: upload.id } });
     await prisma.project.deleteMany({ where: { sourceResumeUploadId: upload.id } });
 
+    const workByKey = new Map<string, string>();
     for (const work of parsed.workExperience) {
-      await prisma.workExperience.create({
+      const createdWork = await prisma.workExperience.create({
         data: {
           userProfileId: profile.id,
           sourceResumeUploadId: upload.id,
@@ -75,6 +76,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
           achievements: work.achievements as Prisma.InputJsonValue,
         },
       });
+      workByKey.set(workKey(work.company, work.title), createdWork.id);
     }
 
     for (const bullet of parsed.experienceBullets) {
@@ -82,6 +84,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
         data: {
           userProfileId: profile.id,
           sourceResumeUploadId: upload.id,
+          workExperienceId: workByKey.get(workKey(bullet.company, bullet.role)),
           company: bullet.company,
           role: bullet.role,
           text: bullet.text,
@@ -113,4 +116,12 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   } catch (error) {
     return apiError(error, 400);
   }
+}
+
+function workKey(company: string, role: string) {
+  return `${normalize(company)}::${normalize(role)}`;
+}
+
+function normalize(value: string) {
+  return value.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
 }

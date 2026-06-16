@@ -40,6 +40,7 @@ describe("/api/resumes/bullets/[id]", () => {
     const response = await PATCH(new Request("http://localhost/api/resumes/bullets/bullet_1", {
       method: "PATCH",
       body: JSON.stringify({
+        workExperienceId: "work_1",
         company: "Revenue.io",
         role: "Senior Software Engineer",
         category: "fullstack",
@@ -52,6 +53,7 @@ describe("/api/resumes/bullets/[id]", () => {
     expect(response.status).toBe(200);
     expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
+        workExperienceId: "work_1",
         company: "Revenue.io",
         role: "Senior Software Engineer",
         category: "fullstack",

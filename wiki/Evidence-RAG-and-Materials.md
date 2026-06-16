@@ -123,11 +123,11 @@ Writing rules:
 - no obvious AI phrasing
 - no generic "excited to apply" openings
 
-## Resume Bullet Digest
+## Job Evidence Library
 
-The `/resumes/profile` page includes a role-description digest panel. Paste source text for a specific past role, including LinkedIn-style blocks with title, company, dates, location, paragraphs, and bullets, and the app proposes resume-ready experience bullets. Company, role, and category can be inferred from the pasted block or overridden manually.
+The `/resumes/profile` page is organized as a Job Evidence Library. The default view is an all-jobs career timeline where each job owns its resume bullets, application/product context, confirmed tech, version suggestions, source records, and duplicate cleanup actions. This keeps the resume generator's full-employment-history requirement visible while avoiding a flat list of repeated empty role forms.
 
-Digest output is saved as `needs_review` experience bullets. Existing verified bullets are not replaced or deleted, and generated resumes continue to use verified source data by default. The digest uses structured AI output when configured and a deterministic fallback otherwise; both paths must avoid unsupported metrics or claims.
+Paste source text for a specific past role from inside that job row. The scoped digest proposes resume-ready bullets, backfills role context, and saves output as `needs_review` experience bullets. Existing verified bullets are not replaced or deleted, and generated resumes continue to use verified source data by default. Resume-upload bullets are linked to matching work-history rows when approved, and older unlinked bullets can be reviewed and confirmed from the page. Duplicate work-history rows are grouped immediately but only merged after explicit user review.
 
 ## Custom Recruiter Opportunities
 
