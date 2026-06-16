@@ -4,7 +4,9 @@ import { runDailyCommandCenterAgent } from "@/lib/agents/daily-command-center";
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { runLinkedInContentAgent } from "@/lib/agents/linkedin-content";
 import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
+import { runRecruitingSearchOptimization } from "@/lib/agents/recruiting-search-optimization";
 import { runAgent } from "@/lib/agents/run-agent";
+import { buildSearchRunAnalytics } from "@/lib/job-search/run-analytics";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
 import { getLinkedInAnalyticsSummary } from "@/lib/linkedin/analytics";
 import { buildCareerStandup, type CareerStandup } from "@/lib/jolene/career-standup";
@@ -21,6 +23,7 @@ export type JoleneDelegatedActionId =
   | "run_job_search"
   | "run_daily_command_center"
   | "run_market_intelligence"
+  | "run_recruiting_search_optimization"
   | "check_duplicates"
   | "generate_linkedin_content"
   | "run_email_ops";
@@ -70,7 +73,7 @@ export type JoleneChiefContext = {
   source: NonNullable<JoleneChiefInput["source"]>;
   openRequests: Array<{ id: string; type: string; summary: string; href: string | null }>;
   recentRuns: Array<{ id: string; agentType: string; status: string; createdAt: Date; updatedAt: Date; error: string | null; parentRunId: string | null }>;
-  latestSearchRun: { id: string; status: string; startedAt: Date; jobsFetched: number; jobsSaved: number; errors: unknown } | null;
+  latestSearchRun: { id: string; status: string; startedAt: Date; jobsFetched: number; jobsAfterDedupe: number; jobsAfterFilters: number; jobsSaved: number; progress: Prisma.JsonValue; errors: unknown } | null;
   applicationCounts: Record<string, number>;
   needsReviewCount: number;
   readyApplicationCount: number;
@@ -236,7 +239,10 @@ export async function buildJoleneChiefContext(userId: string, source: NonNullabl
           status: latestSearchRun.status,
           startedAt: latestSearchRun.startedAt,
           jobsFetched: latestSearchRun.jobsFetched,
+          jobsAfterDedupe: latestSearchRun.jobsAfterDedupe,
+          jobsAfterFilters: latestSearchRun.jobsAfterFilters,
           jobsSaved: latestSearchRun.jobsSaved,
+          progress: latestSearchRun.progress,
           errors: latestSearchRun.errors,
         }
       : null,
@@ -276,10 +282,15 @@ export function buildJoleneChiefBrief(context: JoleneChiefContext): JoleneChiefO
   const latestMarketAgeDays = context.latestMarketRun ? (context.now.getTime() - context.latestMarketRun.createdAt.getTime()) / 86_400_000 : Infinity;
   const latestSearchAgeDays = context.latestSearchRun ? (context.now.getTime() - context.latestSearchRun.startedAt.getTime()) / 86_400_000 : Infinity;
   const latestEmailOpsAgeDays = context.emailOps?.createdAt ? (context.now.getTime() - context.emailOps.createdAt.getTime()) / 86_400_000 : Infinity;
+  const latestSearchAnalytics = context.latestSearchRun ? buildSearchRunAnalytics(context.latestSearchRun) : null;
+  const scored = latestSearchAnalytics ? latestSearchAnalytics.stats.jobsScored ?? latestSearchAnalytics.stats.detailCandidates ?? latestSearchAnalytics.stats.jobsFetched : 0;
+  const qualifiedYield = latestSearchAnalytics && scored ? Math.round((latestSearchAnalytics.stats.jobsAfterFilters / scored) * 1000) / 10 : 0;
+  const weakQualifiedYield = Boolean(latestSearchAnalytics && latestSearchAnalytics.stats.jobsFetched >= 100 && qualifiedYield < 3);
 
   evidence.push(`${context.openRequests.length} open agent blocker(s).`);
   evidence.push(`${context.readyApplicationCount} ready application(s), ${context.needsReviewCount} job(s) need review.`);
   evidence.push(`${context.recentRuns.length} recent agent run(s) reviewed.`);
+  if (latestSearchAnalytics) evidence.push(`Latest search Qualified yield ${qualifiedYield}% with ${latestSearchAnalytics.topBlocker?.label ?? "no dominant blocker"}.`);
   if (context.linkedInAnalytics) evidence.push(`${context.linkedInAnalytics.posts} LinkedIn post analytics snapshot(s), ${context.linkedInAnalytics.impressions} impression(s).`);
   if (context.emailOps?.summary) evidence.push(`Email Ops: ${context.emailOps.summary.findingsCreated} finding(s), ${context.emailOps.pendingFindings} pending approval(s), ${context.emailOps.calendarDrafts} calendar draft(s).`);
   if (context.careerStandup) evidence.push(`Sprint score ${context.careerStandup.sprintScore}/100, attention debt ${context.careerStandup.attentionDebt}.`);
@@ -380,6 +391,24 @@ export function buildJoleneChiefBrief(context: JoleneChiefContext): JoleneChiefO
       rationale: "Jolene should keep the top of funnel fed before the queue dries up.",
       evidence: [context.latestSearchRun ? `Latest search started ${context.latestSearchRun.startedAt.toLocaleString()}.` : "No job search run is recorded."],
       delegatedActionId: "run_job_search",
+    }));
+  }
+
+  if (weakQualifiedYield) {
+    addDelegated(delegated, "run_recruiting_search_optimization", "Run Recruiting Search Team", "Have Jolene orchestrate the recruiting search optimization team to improve Qualified yield.", "/profiles");
+    priorities.push(priority({
+      id: "improve-qualified-yield",
+      priority: 4,
+      title: "Improve search qualification yield",
+      detail: "The latest search brought in broad volume but too little qualified signal. Jolene can delegate the recruiting search team to tune profiles safely.",
+      href: "/profiles",
+      category: "pipeline",
+      rationale: "Better profile precision improves the top of funnel before more Apply Sprint work is created.",
+      evidence: [
+        `${latestSearchAnalytics?.stats.jobsAfterFilters ?? 0} qualified from ${scored} scored job(s).`,
+        `Top blocker: ${latestSearchAnalytics?.topBlocker?.label ?? "none recorded"}.`,
+      ],
+      delegatedActionId: "run_recruiting_search_optimization",
     }));
   }
 
@@ -509,6 +538,10 @@ export async function executeJoleneDelegatedWork(work: JoleneDelegatedWork, user
   if (work.actionId === "run_email_ops") {
     const result = await runJoleneEmailOperationsAgent({ userId, parentRunId, source: "jolene" });
     return { status: "executed", detail: `Email Ops reviewed ${result.output.scanned} message(s), created ${result.output.findingsCreated} finding(s), and drafted ${result.output.calendarDrafts} calendar item(s).`, href: "/dashboard/email-ops", childRunId: result.run.id };
+  }
+  if (work.actionId === "run_recruiting_search_optimization") {
+    const result = await runRecruitingSearchOptimization({ userId, parentRunId, mode: "active" });
+    return { status: "executed", detail: `Recruiting Search Team prepared ${result.output.changes.length} profile change(s), ${result.output.changes.filter((change) => change.status === "APPLIED").length} applied.`, href: "/profiles", childRunId: result.run.id };
   }
   if (work.actionId === "run_job_search") {
     const result = await startJobSearchRun("manual");

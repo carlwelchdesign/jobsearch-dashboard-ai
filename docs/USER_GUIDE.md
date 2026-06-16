@@ -743,6 +743,12 @@ On the Search profiles page, there is a **Suggest** or **Optimize** button that 
 
 The Command Center search improvement loop can also run the optimizer automatically, but only after review and Apply Sprint gates are clear. That keeps the **Profile Health** chart from treating unresolved jobs or unworked application packets as completed learning signal.
 
+### Recruiting Search Team
+
+The **Recruiting Search Team** panel manages profiles from actual search metrics. Jolene can run this team when Qualified yield is weak, meaning too few scored jobs are passing your profile thresholds. The team looks at top blockers, source mix, profile lanes, score buckets, saved matches, and outcomes, then records every proposed or applied profile change.
+
+Low-risk local edits can be applied automatically, such as adding excluded keywords, adding preferred companies, lowering a threshold slightly for strong near misses, or capping a noisy profile. Bigger changes, such as creating, merging, deleting, or broadly pausing profiles, stay review-only. Applied changes have rollback buttons on the Search Profiles page.
+
 ### Market Intelligence
 
 The full **Market Analysis** brief now lives on the Command Center. Click **Run market brief** to get a weekly summary of:
@@ -1934,6 +1940,8 @@ The **Control Plane** section is inspect-only. It shows each registered agent's 
 The **Quality Gates** section answers a different question: which agent areas are safe to scale, and which need review first. It groups the quality loop by target area, such as application assistant, recruiting agency, job search, job matching, generated materials, outreach, outcome learning, and command center recommendations. Each row shows recent examples, evaluations, score, failed or review-needed signals, proposed improvements, blocked actions, and the next manual surface to inspect. For supported targets, you can run the deterministic evaluation from this board.
 
 Treat a blocked, stale, or missing-evaluation gate as an operating signal, not as a new automation control. The board does not send applications, email recruiters, write calendar events, or publish LinkedIn content by itself.
+
+The recruiting search optimization agents also appear here. Jolene is the orchestrator; the Recruiting Search Director and specialist search agents do the profile diagnosis and local profile-management work.
 
 For each run you can:
 - See the input, output, and status

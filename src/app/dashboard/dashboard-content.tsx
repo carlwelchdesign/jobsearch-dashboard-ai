@@ -19,7 +19,7 @@ import { MarketAnalysisCard, type MarketTrendPoint } from "@/app/dashboard/marke
 import { ActionButton } from "@/components/action-button";
 import { AgencyRunControl } from "@/components/agency-run-control";
 import { JobRejectButton } from "@/components/job-reject-button";
-import { SearchRunCommandCenter } from "@/components/search-run-command-center";
+import { SearchRunCommandCenter, type LatestSearchOptimization } from "@/components/search-run-command-center";
 import { ReadinessOperatingCockpit } from "@/components/readiness/readiness-cockpit";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -327,13 +327,17 @@ function JoleneChiefOfStaffCard({ runId, brief, operatingLoopRunId, operatingLoo
 }
 
 export async function DashboardSearchPage() {
-  const [latestRun, needsReview] = await Promise.all([
+  const [latestRun, needsReview, latestOptimization] = await Promise.all([
     prisma.jobSearchRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.jobProfileMatch.findMany({
       where: { status: "needs_review", jobPosting: { applications: { none: { status: { in: submittedApplicationStatuses } } } } },
       include: { jobPosting: true, jobSearchProfile: { select: { name: true, userId: true } } },
       orderBy: [{ overallScore: "desc" }, { createdAt: "desc" }],
       take: 50,
+    }),
+    prisma.searchOptimizationRun.findFirst({
+      include: { changes: { select: { status: true, riskLevel: true } } },
+      orderBy: { createdAt: "desc" },
     }),
   ]);
   const suppressionStates = await loadJobSuppressionStatesByUserIds(needsReview.map((match) => match.jobSearchProfile.userId));
@@ -344,7 +348,7 @@ export async function DashboardSearchPage() {
 
   return (
     <DashboardShell group="search">
-      <SearchRunCommandCenter initialRun={latestRun ? serializeSearchRun(latestRun) : null} />
+      <SearchRunCommandCenter initialRun={latestRun ? serializeSearchRun(latestRun) : null} latestOptimization={serializeSearchOptimization(latestOptimization)} />
       <AgencyActivityCard />
       <ExceptionReview matches={visibleNeedsReview} />
     </DashboardShell>
@@ -838,6 +842,21 @@ function joleneOperatingLoopOutput(value: unknown): JoleneOperatingLoopOutput | 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function serializeSearchOptimization(value: {
+  summary: string;
+  targetMetric: string;
+  metricsJson: unknown;
+  changes: Array<{ status: string; riskLevel: string }>;
+} | null): LatestSearchOptimization | null {
+  if (!value) return null;
+  return {
+    summary: value.summary,
+    targetMetric: value.targetMetric,
+    metricsJson: isRecord(value.metricsJson) ? value.metricsJson : {},
+    changes: value.changes,
+  };
 }
 
 function jsonStringArray(value: unknown) {

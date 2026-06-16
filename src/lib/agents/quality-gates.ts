@@ -70,7 +70,7 @@ const gateDefinitions: GateDefinition[] = [
     target: "JOB_SEARCH",
     label: "Job Search",
     ownerArea: "Search",
-    coveredAgentTypes: ["SEARCH_EXPANSION", "DUPLICATE_STALE_JOB_DETECTOR", "SEARCH_PROFILE_MANAGER"],
+    coveredAgentTypes: ["SEARCH_EXPANSION", "DUPLICATE_STALE_JOB_DETECTOR", "SEARCH_PROFILE_MANAGER", "RECRUITING_SEARCH_DIRECTOR", "SEARCH_YIELD_ANALYST", "SEARCH_PROFILE_EDITOR", "SOURCE_QUALITY_ANALYST", "MATCH_CALIBRATION_REVIEWER", "OUTCOME_RECRUITER"],
     nextActionHref: "/dashboard/search",
   },
   {
