@@ -26,6 +26,9 @@ vi.mock("@/lib/prisma", () => ({
       findUnique: vi.fn(),
       count: vi.fn(),
     },
+    agentRun: {
+      findFirst: vi.fn(),
+    },
     searchProfileChange: {
       findFirst: vi.fn(),
     },
@@ -39,7 +42,9 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 const userFindFirstMock = vi.mocked(prisma.user.findFirst);
+const userFindUniqueMock = vi.mocked(prisma.user.findUnique);
 const userCountMock = vi.mocked(prisma.user.count);
+const agentRunFindFirstMock = vi.mocked(prisma.agentRun.findFirst);
 const searchProfileChangeFindFirstMock = vi.mocked(prisma.searchProfileChange.findFirst);
 const agentRunEventCreateMock = vi.mocked(prisma.agentRunEvent.create);
 const notificationLogCreateMock = vi.mocked(prisma.notificationLog.create);
@@ -52,8 +57,18 @@ describe("Slack action handler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    vi.stubEnv("JOB_SEARCH_OS_USER_ID", "");
+    vi.stubEnv("SEED_USER_EMAIL", "");
+    vi.stubEnv("SLACK_BOT_TOKEN", "");
+    vi.stubEnv("SLACK_APP_TOKEN", "");
+    vi.stubEnv("SLACK_OPS_CHANNEL_ID", "");
+    vi.stubEnv("SLACK_APPROVALS_CHANNEL_ID", "");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+    vi.stubEnv("JOB_SEARCH_OS_APP_URL", "");
     userFindFirstMock.mockResolvedValue({ id: "user_1", email: "user@example.com" } as never);
+    userFindUniqueMock.mockResolvedValue({ id: "user_1", email: "user@example.com" } as never);
     userCountMock.mockResolvedValue(1);
+    agentRunFindFirstMock.mockResolvedValue({ userId: "user_1" } as never);
     notificationLogCreateMock.mockResolvedValue({ id: "log_1" } as never);
     agentRunEventCreateMock.mockResolvedValue({ id: "event_1" } as never);
   });
@@ -68,6 +83,10 @@ describe("Slack action handler", () => {
     });
 
     expect(result).toEqual({ ok: true, message: "Jolene executed 1 delegated action." });
+    expect(agentRunFindFirstMock).toHaveBeenCalledWith({
+      where: { id: "run_1", agentType: "JOLENE_CHIEF_OF_STAFF", status: "COMPLETED" },
+      select: { userId: true },
+    });
     expect(approveChiefMock).toHaveBeenCalledWith({ userId: "user_1", runId: "run_1", proposalIds: ["proposal_1"] });
     expect(notificationLogCreateMock).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ type: "slack", status: "executed" }),
@@ -84,12 +103,33 @@ describe("Slack action handler", () => {
     });
 
     expect(result.message).toBe("Jolene Operating Loop executed 1 action.");
+    expect(agentRunFindFirstMock).toHaveBeenCalledWith({
+      where: { id: "run_2", agentType: "JOLENE_OPERATING_LOOP", status: "COMPLETED" },
+      select: { userId: true },
+    });
     expect(approveLoopMock).toHaveBeenCalledWith({ userId: "user_1", runId: "run_2", proposalIds: ["proposal_2"] });
+  });
+
+  it("approves operating loop work for the run owner even when env resolves another user", async () => {
+    vi.stubEnv("SEED_USER_EMAIL", "other@example.com");
+    userFindUniqueMock.mockResolvedValue({ id: "env_user", email: "other@example.com" } as never);
+    agentRunFindFirstMock.mockResolvedValue({ userId: "run_owner" } as never);
+    approveLoopMock.mockResolvedValue({ runId: "run_2", executed: [], message: "Jolene Operating Loop executed 1 action." } as never);
+
+    await handleSlackAction({
+      actionId: SLACK_ACTIONS.approveOperatingLoopProposal,
+      value: actionValue({ kind: "operating_loop_proposal", runId: "run_2", proposalId: "proposal_2" }),
+      slackUserId: "U1",
+    });
+
+    expect(approveLoopMock).toHaveBeenCalledWith({ userId: "run_owner", runId: "run_2", proposalIds: ["proposal_2"] });
+    expect(userFindUniqueMock).not.toHaveBeenCalled();
   });
 
   it("rejects high-risk search profile changes from Slack", async () => {
     searchProfileChangeFindFirstMock.mockResolvedValue({
       id: "change_1",
+      userId: "user_1",
       riskLevel: "HIGH",
       status: "REVIEW_ONLY",
       agentRunId: "run_1",
@@ -106,6 +146,7 @@ describe("Slack action handler", () => {
   it("applies and audits low-risk search profile changes", async () => {
     searchProfileChangeFindFirstMock.mockResolvedValue({
       id: "change_1",
+      userId: "user_1",
       riskLevel: "LOW",
       status: "REVIEW_ONLY",
       agentRunId: "run_1",
@@ -127,6 +168,7 @@ describe("Slack action handler", () => {
   it("rejects rollback when the search profile change is not applied", async () => {
     searchProfileChangeFindFirstMock.mockResolvedValue({
       id: "change_1",
+      userId: "user_1",
       status: "REVIEW_ONLY",
       agentRunId: "run_1",
     } as never);

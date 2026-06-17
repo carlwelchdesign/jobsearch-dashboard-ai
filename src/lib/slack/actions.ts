@@ -5,7 +5,6 @@ import { approveJoleneOperatingLoopActions } from "@/lib/jolene/operating-loop";
 import { parseActionValue, SLACK_ACTIONS, type SlackActionPayload } from "@/lib/slack/blocks";
 import { getSlackConfig, isSlackUserAllowed } from "@/lib/slack/config";
 import { logSlackAction } from "@/lib/slack/post";
-import { requireSingleUser } from "@/lib/auth/single-user";
 import { prisma } from "@/lib/prisma";
 
 export type HandleSlackActionInput = {
@@ -25,18 +24,18 @@ export async function handleSlackAction(input: HandleSlackActionInput): Promise<
     throw new Error("This Slack user is not allowed to approve Job Search OS actions.");
   }
 
-  const user = await requireSingleUser();
   const payload = parseActionValue(input.value);
   validateActionKind(input.actionId, payload);
 
   if (payload.kind === "chief_proposal") {
+    const userId = await findAgentRunOwner(payload.runId, "JOLENE_CHIEF_OF_STAFF", "Jolene Chief of Staff run");
     const result = await approveJoleneDelegatedWork({
-      userId: user.id,
+      userId,
       runId: payload.runId,
       proposalIds: [payload.proposalId],
     });
     await logSlackAction({
-      userId: user.id,
+      userId,
       subject: "Slack approved Jolene delegated work",
       body: result.message,
       status: "executed",
@@ -46,13 +45,14 @@ export async function handleSlackAction(input: HandleSlackActionInput): Promise<
   }
 
   if (payload.kind === "operating_loop_proposal") {
+    const userId = await findAgentRunOwner(payload.runId, "JOLENE_OPERATING_LOOP", "Jolene Operating Loop run");
     const result = await approveJoleneOperatingLoopActions({
-      userId: user.id,
+      userId,
       runId: payload.runId,
       proposalIds: [payload.proposalId],
     });
     await logSlackAction({
-      userId: user.id,
+      userId,
       subject: "Slack approved Jolene Operating Loop action",
       body: result.message,
       status: "executed",
@@ -63,8 +63,8 @@ export async function handleSlackAction(input: HandleSlackActionInput): Promise<
 
   if (payload.kind === "apply_search_profile_change") {
     const change = await prisma.searchProfileChange.findFirst({
-      where: { id: payload.changeId, userId: user.id },
-      select: { id: true, riskLevel: true, status: true, agentRunId: true },
+      where: { id: payload.changeId },
+      select: { id: true, userId: true, riskLevel: true, status: true, agentRunId: true },
     });
     if (!change) throw new Error("Search profile change was not found.");
     if (change.riskLevel !== "LOW") throw new Error("Only low-risk search profile changes can be applied from Slack.");
@@ -78,7 +78,7 @@ export async function handleSlackAction(input: HandleSlackActionInput): Promise<
       payload: { actionId: input.actionId, slackUserId: input.slackUserId, changeId: applied.id, previousStatus: change.status },
     });
     await logSlackAction({
-      userId: user.id,
+      userId: change.userId,
       subject: "Slack applied search profile change",
       body: "Slack applied a low-risk search profile change.",
       status: "executed",
@@ -89,8 +89,8 @@ export async function handleSlackAction(input: HandleSlackActionInput): Promise<
 
   if (payload.kind === "rollback_search_profile_change") {
     const change = await prisma.searchProfileChange.findFirst({
-      where: { id: payload.changeId, userId: user.id },
-      select: { id: true, status: true, agentRunId: true },
+      where: { id: payload.changeId },
+      select: { id: true, userId: true, status: true, agentRunId: true },
     });
     if (!change) throw new Error("Search profile change was not found.");
     if (change.status !== "APPLIED") throw new Error("Only applied search profile changes can be rolled back from Slack.");
@@ -103,7 +103,7 @@ export async function handleSlackAction(input: HandleSlackActionInput): Promise<
       payload: { actionId: input.actionId, slackUserId: input.slackUserId, changeId: rolledBack.id },
     });
     await logSlackAction({
-      userId: user.id,
+      userId: change.userId,
       subject: "Slack rolled back search profile change",
       body: "Slack rolled back a search profile change.",
       status: "executed",
@@ -113,6 +113,15 @@ export async function handleSlackAction(input: HandleSlackActionInput): Promise<
   }
 
   throw new Error("Unsupported Slack action.");
+}
+
+async function findAgentRunOwner(runId: string, agentType: "JOLENE_CHIEF_OF_STAFF" | "JOLENE_OPERATING_LOOP", label: string) {
+  const run = await prisma.agentRun.findFirst({
+    where: { id: runId, agentType, status: "COMPLETED" },
+    select: { userId: true },
+  });
+  if (!run?.userId) throw new Error(`${label} not found.`);
+  return run.userId;
 }
 
 function validateActionKind(actionId: string, payload: SlackActionPayload) {
