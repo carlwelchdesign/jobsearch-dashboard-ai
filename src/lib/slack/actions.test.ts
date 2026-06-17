@@ -32,6 +32,24 @@ vi.mock("@/lib/prisma", () => ({
     searchProfileChange: {
       findFirst: vi.fn(),
     },
+    searchOptimizationRun: {
+      findFirst: vi.fn(),
+    },
+    application: {
+      findFirst: vi.fn(),
+    },
+    linkedInPostDraft: {
+      findFirst: vi.fn(),
+    },
+    interviewPrepTask: {
+      findFirst: vi.fn(),
+    },
+    recruiterOutreach: {
+      findFirst: vi.fn(),
+    },
+    jobProfileMatch: {
+      findFirst: vi.fn(),
+    },
     agentRunEvent: {
       create: vi.fn(),
     },
@@ -46,6 +64,7 @@ const userFindUniqueMock = vi.mocked(prisma.user.findUnique);
 const userCountMock = vi.mocked(prisma.user.count);
 const agentRunFindFirstMock = vi.mocked(prisma.agentRun.findFirst);
 const searchProfileChangeFindFirstMock = vi.mocked(prisma.searchProfileChange.findFirst);
+const applicationFindFirstMock = vi.mocked(prisma.application.findFirst);
 const agentRunEventCreateMock = vi.mocked(prisma.agentRunEvent.create);
 const notificationLogCreateMock = vi.mocked(prisma.notificationLog.create);
 const approveChiefMock = vi.mocked(approveJoleneDelegatedWork);
@@ -63,6 +82,8 @@ describe("Slack action handler", () => {
     vi.stubEnv("SLACK_APP_TOKEN", "");
     vi.stubEnv("SLACK_OPS_CHANNEL_ID", "");
     vi.stubEnv("SLACK_APPROVALS_CHANNEL_ID", "");
+    vi.stubEnv("SLACK_ALLOWED_USER_IDS", "");
+    vi.stubEnv("SLACK_COACH_USER_IDS", "");
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
     vi.stubEnv("JOB_SEARCH_OS_APP_URL", "");
     userFindFirstMock.mockResolvedValue({ id: "user_1", email: "user@example.com" } as never);
@@ -179,5 +200,51 @@ describe("Slack action handler", () => {
       slackUserId: "U1",
     })).rejects.toThrow("Only applied");
     expect(rollbackChangeMock).not.toHaveBeenCalled();
+  });
+
+  it("records V3 needs-evidence intent without mutating app state", async () => {
+    vi.stubEnv("SLACK_BOT_TOKEN", "xoxb-token");
+    vi.stubEnv("SLACK_APP_TOKEN", "xapp-token");
+    vi.stubEnv("SLACK_OPS_CHANNEL_ID", "COPS");
+    vi.stubEnv("SLACK_APPROVALS_CHANNEL_ID", "CAPPROVALS");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://localhost:3000");
+    applicationFindFirstMock.mockResolvedValue({ userId: "user_1" } as never);
+
+    const result = await handleSlackAction({
+      actionId: SLACK_ACTIONS.needsEvidence,
+      value: actionValue({ kind: "needs_evidence", entityType: "application", entityId: "app_1", agentRunId: "run_1" }),
+      slackUserId: "U1",
+    });
+
+    expect(result.message).toContain("request for more evidence");
+    expect(agentRunEventCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ agentRunId: "run_1", type: "slack_needs_evidence" }),
+    }));
+    expect(notificationLogCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ subject: "Slack requested more evidence", status: "executed" }),
+    }));
+  });
+
+  it("allows coach users to record coach-note intent but not approve actions", async () => {
+    vi.stubEnv("SLACK_BOT_TOKEN", "xoxb-token");
+    vi.stubEnv("SLACK_APP_TOKEN", "xapp-token");
+    vi.stubEnv("SLACK_OPS_CHANNEL_ID", "COPS");
+    vi.stubEnv("SLACK_APPROVALS_CHANNEL_ID", "CAPPROVALS");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://localhost:3000");
+    vi.stubEnv("SLACK_ALLOWED_USER_IDS", "U_ALLOWED");
+    vi.stubEnv("SLACK_COACH_USER_IDS", "U_COACH");
+    applicationFindFirstMock.mockResolvedValue({ userId: "user_1" } as never);
+
+    await expect(handleSlackAction({
+      actionId: SLACK_ACTIONS.captureCoachNote,
+      value: actionValue({ kind: "capture_coach_note", entityType: "application", entityId: "app_1" }),
+      slackUserId: "U_COACH",
+    })).resolves.toEqual(expect.objectContaining({ ok: true }));
+
+    await expect(handleSlackAction({
+      actionId: SLACK_ACTIONS.needsEvidence,
+      value: actionValue({ kind: "needs_evidence", entityType: "application", entityId: "app_1" }),
+      slackUserId: "U_COACH",
+    })).rejects.toThrow("not allowed");
   });
 });

@@ -3,7 +3,7 @@ import { applySearchProfileChange, rollbackSearchProfileChange } from "@/lib/age
 import { approveJoleneDelegatedWork } from "@/lib/jolene/chief-of-staff";
 import { approveJoleneOperatingLoopActions } from "@/lib/jolene/operating-loop";
 import { parseActionValue, SLACK_ACTIONS, type SlackActionPayload } from "@/lib/slack/blocks";
-import { getSlackConfig, isSlackUserAllowed } from "@/lib/slack/config";
+import { getSlackConfig, isSlackCoachUser, isSlackUserAllowed } from "@/lib/slack/config";
 import { logSlackAction } from "@/lib/slack/post";
 import { prisma } from "@/lib/prisma";
 
@@ -26,10 +26,9 @@ export function assertSlackUserCanMutate(slackUserId: string | null | undefined)
 }
 
 export async function handleSlackAction(input: HandleSlackActionInput): Promise<HandleSlackActionResult> {
-  assertSlackUserCanMutate(input.slackUserId);
-
   const payload = parseActionValue(input.value);
   validateActionKind(input.actionId, payload);
+  assertSlackUserCanPerformAction(input.slackUserId, payload);
 
   if (payload.kind === "chief_proposal") {
     const userId = await findAgentRunOwner(payload.runId, "JOLENE_CHIEF_OF_STAFF", "Jolene Chief of Staff run");
@@ -116,6 +115,33 @@ export async function handleSlackAction(input: HandleSlackActionInput): Promise<
     return { ok: true, message: "Search profile change rolled back." };
   }
 
+  if (
+    payload.kind === "reject_recommendation"
+    || payload.kind === "needs_evidence"
+    || payload.kind === "discuss_in_thread"
+    || payload.kind === "mark_reviewed"
+    || payload.kind === "capture_coach_note"
+  ) {
+    const userId = await resolveSlackV3UserId(payload);
+    const message = v3ActionMessage(payload.kind);
+    const subject = v3ActionSubject(payload.kind);
+    await recordSlackV3Event({
+      userId,
+      agentRunId: payload.agentRunId ?? null,
+      type: `slack_${payload.kind}`,
+      message,
+      payload: { actionId: input.actionId, slackUserId: input.slackUserId ?? null, ...payload },
+    });
+    await logSlackAction({
+      userId,
+      subject,
+      body: message,
+      status: "executed",
+      payload: { actionId: input.actionId, slackUserId: input.slackUserId ?? null, ...payload },
+    });
+    return { ok: true, message };
+  }
+
   throw new Error("Unsupported Slack action.");
 }
 
@@ -134,6 +160,11 @@ function validateActionKind(actionId: string, payload: SlackActionPayload) {
     operating_loop_proposal: SLACK_ACTIONS.approveOperatingLoopProposal,
     apply_search_profile_change: SLACK_ACTIONS.applySearchProfileChange,
     rollback_search_profile_change: SLACK_ACTIONS.rollbackSearchProfileChange,
+    reject_recommendation: SLACK_ACTIONS.rejectRecommendation,
+    needs_evidence: SLACK_ACTIONS.needsEvidence,
+    discuss_in_thread: SLACK_ACTIONS.discussInThread,
+    mark_reviewed: SLACK_ACTIONS.markReviewed,
+    capture_coach_note: SLACK_ACTIONS.captureCoachNote,
     refresh_home: null,
     open_run_modal: null,
     open_link: null,
@@ -159,4 +190,91 @@ async function recordSearchProfileSlackEvent(input: {
       payloadJson: input.payload as Prisma.InputJsonValue,
     },
   });
+}
+
+function assertSlackUserCanPerformAction(slackUserId: string | null | undefined, payload: SlackActionPayload) {
+  if (payload.kind !== "capture_coach_note") {
+    assertSlackUserCanMutate(slackUserId);
+    return;
+  }
+
+  const config = getSlackConfig();
+  if (!config.configured) return;
+  if (isSlackUserAllowed(slackUserId, config.config) || isSlackCoachUser(slackUserId, config.config)) return;
+  throw new Error("This Slack user is not allowed to leave Job Search OS coach notes.");
+}
+
+async function resolveSlackV3UserId(payload: Extract<SlackActionPayload, { entityId: string }>) {
+  const agentRunId = "agentRunId" in payload ? payload.agentRunId : null;
+  if (agentRunId) {
+    const run = await prisma.agentRun.findFirst({
+      where: { id: agentRunId },
+      select: { userId: true },
+    });
+    if (run?.userId) return run.userId;
+  }
+
+  const model = entityLookup[payload.entityType];
+  const record = model ? await model(payload.entityId) : null;
+  if (record?.userId) return record.userId;
+
+  const fallback = await prisma.user.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
+  if (!fallback) throw new Error("No Job Search OS user was found for this Slack action.");
+  return fallback.id;
+}
+
+const entityLookup: Record<string, (id: string) => Promise<{ userId: string } | null>> = {
+  application: async (id) => prisma.application.findFirst({ where: { id }, select: { userId: true } }),
+  linkedin_draft: async (id) => prisma.linkedInPostDraft.findFirst({ where: { id }, select: { userId: true } }),
+  interview_prep: async (id) => prisma.interviewPrepTask.findFirst({ where: { id }, select: { userId: true } }),
+  follow_up: async (id) => prisma.recruiterOutreach.findFirst({ where: { id }, select: { userId: true } }),
+  search_optimization_run: async (id) => {
+    const change = await prisma.searchProfileChange.findFirst({ where: { id }, select: { userId: true } });
+    if (change) return change;
+    return prisma.searchOptimizationRun.findFirst({ where: { id }, select: { userId: true } });
+  },
+  job: async (id) => {
+    const application = await prisma.application.findFirst({ where: { jobPostingId: id }, select: { userId: true }, orderBy: { updatedAt: "desc" } });
+    if (application) return application;
+    const match = await prisma.jobProfileMatch.findFirst({
+      where: { jobPostingId: id },
+      select: { jobSearchProfile: { select: { userId: true } } },
+      orderBy: { updatedAt: "desc" },
+    });
+    return match?.jobSearchProfile.userId ? { userId: match.jobSearchProfile.userId } : null;
+  },
+};
+
+async function recordSlackV3Event(input: {
+  userId: string;
+  agentRunId: string | null;
+  type: string;
+  message: string;
+  payload: Record<string, unknown>;
+}) {
+  if (!input.agentRunId) return null;
+  return prisma.agentRunEvent.create({
+    data: {
+      agentRunId: input.agentRunId,
+      type: input.type,
+      message: input.message,
+      payloadJson: input.payload as Prisma.InputJsonValue,
+    },
+  });
+}
+
+function v3ActionSubject(kind: string) {
+  if (kind === "reject_recommendation") return "Slack rejected recommendation";
+  if (kind === "needs_evidence") return "Slack requested more evidence";
+  if (kind === "discuss_in_thread") return "Slack opened decision discussion";
+  if (kind === "mark_reviewed") return "Slack marked item reviewed";
+  return "Slack captured coach note intent";
+}
+
+function v3ActionMessage(kind: string) {
+  if (kind === "reject_recommendation") return "Slack recorded a rejection of this recommendation. No app state was mutated.";
+  if (kind === "needs_evidence") return "Slack recorded a request for more evidence. The app remains the source of truth.";
+  if (kind === "discuss_in_thread") return "Slack recorded that this item should be discussed in its operations thread.";
+  if (kind === "mark_reviewed") return "Slack recorded that this item was reviewed. No external action was taken.";
+  return "Slack recorded coach-note intent. Coach notes are advisory and do not mutate app state.";
 }

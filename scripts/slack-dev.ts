@@ -5,8 +5,9 @@ import type { View } from "@slack/types";
 import { appendActionResult, parseActionValue, SLACK_ACTIONS, type SlackBlock } from "@/lib/slack/blocks";
 import { assertSlackUserCanMutate, handleSlackAction } from "@/lib/slack/actions";
 import { routeJsoCommand } from "@/lib/slack/commands";
-import { requireSlackConfig } from "@/lib/slack/config";
+import { isSlackCoachUser, requireSlackConfig } from "@/lib/slack/config";
 import { buildSlackCommandCenterData, buildSlackHomeView } from "@/lib/slack/home";
+import { captureSlackThreadReply } from "@/lib/slack/opportunity-room";
 import {
   buildRunAcceptedModal,
   buildRunConfirmationModal,
@@ -31,7 +32,7 @@ const app = new App({
 app.command("/jso", async ({ command, ack, respond }) => {
   await ack();
   try {
-    const route = await routeJsoCommand(command.text);
+    const route = await routeJsoCommand(command.text, command.user_id);
     if (route.kind === "message") {
       await respond({ response_type: "ephemeral", text: route.message.text, blocks: route.message.blocks });
       return;
@@ -51,6 +52,33 @@ app.event("app_home_opened", async ({ event, client }) => {
     await publishHome(client, event.user);
   } catch (error) {
     console.error("[slack] failed to publish home", error);
+  }
+});
+
+app.event("message", async ({ event }) => {
+  const messageEvent = event as {
+    subtype?: string;
+    bot_id?: string;
+    channel?: string;
+    user?: string;
+    text?: string;
+    ts?: string;
+    thread_ts?: string;
+  };
+  if (messageEvent.subtype || messageEvent.bot_id || !messageEvent.user || !messageEvent.channel || !messageEvent.thread_ts || !messageEvent.ts) return;
+  if (messageEvent.thread_ts === messageEvent.ts) return;
+  if (!isSlackCoachUser(messageEvent.user, config)) return;
+
+  try {
+    await captureSlackThreadReply({
+      channelId: messageEvent.channel,
+      threadTs: messageEvent.thread_ts,
+      messageTs: messageEvent.ts,
+      slackUserId: messageEvent.user,
+      text: messageEvent.text ?? "",
+    });
+  } catch (error) {
+    console.error("[slack] failed to capture coach thread reply", error);
   }
 });
 
@@ -120,6 +148,11 @@ const approvalActionIds = [
   SLACK_ACTIONS.approveOperatingLoopProposal,
   SLACK_ACTIONS.applySearchProfileChange,
   SLACK_ACTIONS.rollbackSearchProfileChange,
+  SLACK_ACTIONS.rejectRecommendation,
+  SLACK_ACTIONS.needsEvidence,
+  SLACK_ACTIONS.discussInThread,
+  SLACK_ACTIONS.markReviewed,
+  SLACK_ACTIONS.captureCoachNote,
 ];
 
 for (const actionId of approvalActionIds) {

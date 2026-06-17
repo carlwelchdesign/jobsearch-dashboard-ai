@@ -8,6 +8,11 @@ export const SLACK_ACTIONS = {
   approveOperatingLoopProposal: "jso_approve_loop_proposal",
   applySearchProfileChange: "jso_apply_search_profile_change",
   rollbackSearchProfileChange: "jso_rollback_search_profile_change",
+  rejectRecommendation: "jso_reject_recommendation",
+  needsEvidence: "jso_needs_evidence",
+  discussInThread: "jso_discuss_in_thread",
+  markReviewed: "jso_mark_reviewed",
+  captureCoachNote: "jso_capture_coach_note",
   refreshHome: "jso_refresh_home",
   openRunModal: "jso_open_run_modal",
   openLink: "jso_open_link",
@@ -20,9 +25,22 @@ export type SlackActionPayload =
   | { kind: "operating_loop_proposal"; runId: string; proposalId: string }
   | { kind: "apply_search_profile_change"; changeId: string }
   | { kind: "rollback_search_profile_change"; changeId: string }
+  | SlackV3ActionPayload
   | { kind: "refresh_home" }
   | { kind: "open_run_modal"; command: SlackRunCommand }
   | { kind: "open_link"; href: string };
+
+export type SlackV3EntityType = "job" | "application" | "linkedin_draft" | "interview_prep" | "follow_up" | "search_optimization_run";
+
+export type SlackV3ActionPayload = {
+  kind: "reject_recommendation" | "needs_evidence" | "discuss_in_thread" | "mark_reviewed" | "capture_coach_note";
+  entityType: SlackV3EntityType;
+  entityId: string;
+  agentRunId?: string | null;
+  threadId?: string | null;
+  href?: string | null;
+  label?: string | null;
+};
 
 export type SlackBlock = KnownBlock | Block;
 
@@ -83,6 +101,22 @@ export function buildJoleneChiefApprovalMessage(input: {
             style: "primary",
           }),
           slackButton({
+            text: "Reject",
+            actionId: SLACK_ACTIONS.rejectRecommendation,
+            value: actionValue({ kind: "reject_recommendation", entityType: "search_optimization_run", entityId: request.proposalId, agentRunId: input.runId, label: request.label }),
+            style: "danger",
+          }),
+          slackButton({
+            text: "Needs evidence",
+            actionId: SLACK_ACTIONS.needsEvidence,
+            value: actionValue({ kind: "needs_evidence", entityType: "search_optimization_run", entityId: request.proposalId, agentRunId: input.runId, label: request.label }),
+          }),
+          slackButton({
+            text: "Discuss",
+            actionId: SLACK_ACTIONS.discussInThread,
+            value: actionValue({ kind: "discuss_in_thread", entityType: "search_optimization_run", entityId: request.proposalId, agentRunId: input.runId, href: input.appBaseUrl, label: request.label }),
+          }),
+          slackButton({
             text: "Open app",
             actionId: SLACK_ACTIONS.openLink,
             value: actionValue({ kind: "open_link", href: input.appBaseUrl }),
@@ -134,6 +168,22 @@ export function buildOperatingLoopApprovalMessage(input: {
             actionId: SLACK_ACTIONS.approveOperatingLoopProposal,
             value: actionValue({ kind: "operating_loop_proposal", runId: input.runId, proposalId: request.proposalId }),
             style: "primary",
+          }),
+          slackButton({
+            text: "Reject",
+            actionId: SLACK_ACTIONS.rejectRecommendation,
+            value: actionValue({ kind: "reject_recommendation", entityType: "search_optimization_run", entityId: request.proposalId, agentRunId: input.runId, label: request.label }),
+            style: "danger",
+          }),
+          slackButton({
+            text: "Needs evidence",
+            actionId: SLACK_ACTIONS.needsEvidence,
+            value: actionValue({ kind: "needs_evidence", entityType: "search_optimization_run", entityId: request.proposalId, agentRunId: input.runId, label: request.label }),
+          }),
+          slackButton({
+            text: "Discuss",
+            actionId: SLACK_ACTIONS.discussInThread,
+            value: actionValue({ kind: "discuss_in_thread", entityType: "search_optimization_run", entityId: request.proposalId, agentRunId: input.runId, href: input.appBaseUrl, label: request.label }),
           }),
           slackButton({
             text: "Open app",
@@ -194,6 +244,16 @@ export function buildSearchOptimizationApprovalMessage(input: {
                 value: actionValue({ kind: "apply_search_profile_change", changeId: change.id }),
                 style: "primary",
               }),
+          slackButton({
+            text: "Needs evidence",
+            actionId: SLACK_ACTIONS.needsEvidence,
+            value: actionValue({ kind: "needs_evidence", entityType: "search_optimization_run", entityId: change.id, agentRunId: input.summary.agentRunId, label: change.profileName }),
+          }),
+          slackButton({
+            text: "Discuss",
+            actionId: SLACK_ACTIONS.discussInThread,
+            value: actionValue({ kind: "discuss_in_thread", entityType: "search_optimization_run", entityId: change.id, agentRunId: input.summary.agentRunId, href: `${input.appBaseUrl}/profiles`, label: change.profileName }),
+          }),
           slackButton({
             text: "Open profiles",
             actionId: SLACK_ACTIONS.openLink,

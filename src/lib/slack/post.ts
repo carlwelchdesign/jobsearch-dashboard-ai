@@ -11,6 +11,8 @@ export type PostSlackMessageInput = {
   channel: SlackChannel;
   text: string;
   blocks: SlackBlock[];
+  threadTs?: string | null;
+  replyBroadcast?: boolean;
   payload?: Record<string, unknown>;
 };
 
@@ -30,13 +32,17 @@ export async function postSlackMessage(input: PostSlackMessageInput): Promise<Sl
   if (!channelId) return { status: "skipped", reason: `${input.channel} channel is not configured` };
 
   try {
-    const response = await slackClient(result.config).chat.postMessage({
+    const messageArgs = {
       channel: channelId,
       text: input.text,
       blocks: input.blocks,
       unfurl_links: false,
       unfurl_media: false,
-    });
+    };
+    if (input.threadTs) Object.assign(messageArgs, { thread_ts: input.threadTs });
+    if (input.replyBroadcast) Object.assign(messageArgs, { reply_broadcast: true });
+
+    const response = await slackClient(result.config).chat.postMessage(messageArgs);
     await logSlackDelivery({
       userId: input.userId,
       subject: input.text,
@@ -46,6 +52,7 @@ export async function postSlackMessage(input: PostSlackMessageInput): Promise<Sl
         ...input.payload,
         channel: input.channel,
         channelId,
+        threadTs: input.threadTs ?? null,
         response: response as unknown as Prisma.InputJsonValue,
       },
       sentAt: response.ok ? new Date() : null,
@@ -63,6 +70,7 @@ export async function postSlackMessage(input: PostSlackMessageInput): Promise<Sl
         ...input.payload,
         channel: input.channel,
         channelId,
+        threadTs: input.threadTs ?? null,
         error: message,
       },
       sentAt: null,

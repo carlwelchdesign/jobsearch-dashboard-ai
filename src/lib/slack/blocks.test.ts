@@ -37,9 +37,15 @@ describe("Slack block builders", () => {
     expect(message?.text).toContain("1 search profile action");
     expect(JSON.stringify(message?.blocks)).not.toContain("<raw>");
     expect(JSON.stringify(message?.blocks)).toContain(SLACK_ACTIONS.applySearchProfileChange);
+    expect(JSON.stringify(message?.blocks)).toContain(SLACK_ACTIONS.needsEvidence);
+    expect(JSON.stringify(message?.blocks)).toContain(SLACK_ACTIONS.discussInThread);
     const actionBlock = message?.blocks.find((block) => "elements" in block && Array.isArray(block.elements));
     const button = actionBlock && "elements" in actionBlock ? actionBlock.elements[0] : null;
     expect(button && "value" in button && button.value ? parseActionValue(button.value).kind : null).toBe("apply_search_profile_change");
+    const needsEvidence = actionBlock && "elements" in actionBlock
+      ? actionBlock.elements.find((element) => "action_id" in element && element.action_id === SLACK_ACTIONS.needsEvidence)
+      : null;
+    expect(needsEvidence && "value" in needsEvidence && needsEvidence.value ? parseActionValue(needsEvidence.value).kind : null).toBe("needs_evidence");
   });
 
   it("builds read-only status blocks", () => {

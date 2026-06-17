@@ -26,12 +26,14 @@ describe("Slack config", () => {
       SLACK_DECISION_LOG_CHANNEL_ID: "CDECISIONS",
       NEXT_PUBLIC_APP_URL: "http://localhost:3000/",
       SLACK_ALLOWED_USER_IDS: "U1, U2",
+      SLACK_COACH_USER_IDS: "U3, U4",
     });
 
     expect(result.configured).toBe(true);
     if (result.configured) {
       expect(result.config.appBaseUrl).toBe("http://localhost:3000");
       expect(result.config.allowedUserIds).toEqual(["U1", "U2"]);
+      expect(result.config.coachUserIds).toEqual(["U3", "U4"]);
       expect(isSlackUserAllowed("U2", result.config)).toBe(true);
       expect(isSlackUserAllowed("U3", result.config)).toBe(false);
     }
