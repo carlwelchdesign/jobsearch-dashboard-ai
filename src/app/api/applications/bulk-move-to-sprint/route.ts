@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 
 const requestSchema = z.object({
   limit: z.number().int().min(1).max(50).default(25),
+  regenerateBlockedMaterials: z.boolean().default(true),
 });
 
 const movableStatuses = ["approved", "resume_generated", "cover_letter_generated"] as const;
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
       company: string;
       title: string;
       action: "moved" | "prepared" | "failed";
+      regeneratedCoverLetter?: boolean;
       error?: string;
     }> = [];
 
@@ -52,14 +54,40 @@ export async function POST(request: Request) {
         if (application.resumeId && application.coverLetterId) {
           const materialQuality = applicationMaterialQualityDetail(application.coverLetter?.generationNotes);
           if (!materialQuality.launchable) {
+            if (!input.regenerateBlockedMaterials) {
+              results.push({
+                ok: false,
+                applicationId: application.id,
+                jobId: application.jobPostingId,
+                company: application.jobPosting.company,
+                title: application.jobPosting.title,
+                action: "failed",
+                error: `material_quality_needs_review: ${materialQuality.reason}`,
+              });
+              continue;
+            }
+            const prepared = await prepareApplicationPackage(application.jobPostingId, { regenerateCoverLetter: true });
+            if (prepared.readyToApply === false) {
+              results.push({
+                ok: false,
+                applicationId: prepared.application.id,
+                jobId: application.jobPostingId,
+                company: application.jobPosting.company,
+                title: application.jobPosting.title,
+                action: "failed",
+                regeneratedCoverLetter: true,
+                error: `material_quality_needs_review: ${prepared.materialQuality.reason}`,
+              });
+              continue;
+            }
             results.push({
-              ok: false,
-              applicationId: application.id,
+              ok: true,
+              applicationId: prepared.application.id,
               jobId: application.jobPostingId,
               company: application.jobPosting.company,
               title: application.jobPosting.title,
-              action: "failed",
-              error: `material_quality_needs_review: ${materialQuality.reason}`,
+              action: "prepared",
+              regeneratedCoverLetter: true,
             });
             continue;
           }
@@ -128,6 +156,7 @@ export async function POST(request: Request) {
 
     const moved = results.filter((result) => result.ok && result.action === "moved").length;
     const prepared = results.filter((result) => result.ok && result.action === "prepared").length;
+    const regenerated = results.filter((result) => result.ok && result.regeneratedCoverLetter).length;
     const failed = results.filter((result) => !result.ok).length;
     const totalMoved = moved + prepared;
 
@@ -136,6 +165,7 @@ export async function POST(request: Request) {
       scanned: applications.length,
       moved,
       prepared,
+      regenerated,
       failed,
       results,
       sprintUrl: "/applications/assistant",

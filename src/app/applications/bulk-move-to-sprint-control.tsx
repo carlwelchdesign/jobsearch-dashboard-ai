@@ -16,6 +16,7 @@ type BulkMoveResponse = {
   message?: string;
   moved?: number;
   prepared?: number;
+  regenerated?: number;
   failed?: number;
 };
 
@@ -32,22 +33,23 @@ export function BulkMoveToSprintControl({ buttonSx }: { buttonSx?: SxProps<Theme
       const request = fetch("/api/applications/bulk-move-to-sprint", {
         method: "POST",
         headers: { "content-type": "application/json", "x-run-in-background": "1" },
-        body: JSON.stringify({ limit }),
+        body: JSON.stringify({ limit, regenerateBlockedMaterials: true }),
         keepalive: true,
       });
 
       setLoading(false);
       setSeverity("info");
-      setNotice("Bulk move started. Preparing missing packets before Apply Sprint.");
+      setNotice("Bulk move started. Regenerating blocked letters and preparing packets before Apply Sprint.");
 
       request
         .then(async (response) => {
           const payload = (await response.json().catch(() => ({}))) as BulkMoveResponse;
           if (!response.ok) throw new Error(payload.error ?? "Bulk move failed.");
           const moved = (payload.moved ?? 0) + (payload.prepared ?? 0);
+          const regenerated = payload.regenerated ?? 0;
           const failed = payload.failed ?? 0;
           setSeverity(failed > 0 ? "info" : moved > 0 ? "success" : "info");
-          setNotice(payload.message ?? `Moved ${moved} application(s) into Apply Sprint. ${failed} failed.`);
+          setNotice(payload.message ?? `Moved ${moved} application(s) into Apply Sprint. ${regenerated} regenerated. ${failed} failed.`);
           refresh();
         })
         .catch((error) => {
