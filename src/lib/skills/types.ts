@@ -6,6 +6,8 @@ export type SkillId =
   | "candidate_intelligence"
   | "resume_strategy"
   | "cover_letter_writer"
+  | "application_evidence_curator"
+  | "hiring_manager_reviewer"
   | "job_fit_scorer"
   | "search_profile_manager"
   | "recruiter_intelligence"

@@ -69,6 +69,15 @@ export async function POST(request: Request, { params }: { params: { id: string 
       },
     });
     const prepared = await prepareApplicationPackage(job.id);
+    if (prepared.readyToApply === false) {
+      return NextResponse.json({
+        error: `Application material quality needs review. ${prepared.materialQuality.reason}`,
+        applicationId: prepared.application.id,
+        resumeId: prepared.resume.id,
+        coverLetterId: prepared.coverLetter.id,
+        materialQuality: prepared.materialQuality,
+      }, { status: 400 });
+    }
     const { startApplicationAssistantWorkflow } = await import("@/lib/applications/assistant-workflow-graph");
     const launch = await startApplicationAssistantWorkflow(prepared.application.id, url.origin);
 

@@ -14,6 +14,7 @@ import { summarizeAutomationBlockers } from "@/lib/applications/automation-analy
 import { recoverStaleApplicationAutomationRuns, syncRunningApplicationAutomationRunsFromLogs } from "@/lib/applications/automation-runs";
 import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { buildAshbyRiskAssessment } from "@/lib/applications/ashby-risk";
+import { applicationMaterialQualityDetail } from "@/lib/applications/material-quality";
 import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from "@/lib/applications/reconciliation";
 import { buildApplySprintTrustFunnel } from "@/lib/applications/apply-sprint-funnel";
 import { AssistantWorkbench } from "./assistant-workbench";
@@ -55,6 +56,7 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
         },
         jobPosting: true,
         resume: { select: { plainText: true, markdown: true } },
+        coverLetter: { select: { generationNotes: true } },
         user: { include: { profile: true } },
         jobProfileMatch: true,
       },
@@ -131,6 +133,9 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
             lastSeenAt: true,
           },
         },
+        coverLetter: {
+          select: { generationNotes: true },
+        },
       },
       orderBy: { updatedAt: "desc" },
       take: 1000,
@@ -139,6 +144,7 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
   const canonicalApplications = visibleCanonicalApplications(applications);
   const visibleApplications = canonicalApplications.filter((application) => (
     assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable
+    && applicationMaterialQualityDetail(application.coverLetter?.generationNotes).launchable
   ));
   const funnelUserIds = Array.from(new Set(funnelMatches.map((match) => match.jobSearchProfile.userId)));
   const suppressionByUserId = await loadJobSuppressionStatesByUserIds(funnelUserIds);

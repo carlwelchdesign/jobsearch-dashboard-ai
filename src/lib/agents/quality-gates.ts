@@ -84,7 +84,7 @@ const gateDefinitions: GateDefinition[] = [
     target: "GENERATED_MATERIALS",
     label: "Generated Materials",
     ownerArea: "Materials trust",
-    coveredAgentTypes: ["RESUME_STRATEGY", "COVER_LETTER_WRITER", "APPLICATION_QA", "ANTI_GENERIC_WRITING"],
+    coveredAgentTypes: ["RESUME_STRATEGY", "COVER_LETTER_WRITER", "APPLICATION_EVIDENCE_CURATOR", "HIRING_MANAGER_REVIEWER", "APPLICATION_QA", "ANTI_GENERIC_WRITING"],
     nextActionHref: "/resumes/generated",
   },
   {

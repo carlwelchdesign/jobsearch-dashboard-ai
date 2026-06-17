@@ -9,6 +9,7 @@ import {
   type ParsedResume,
 } from "@/lib/resumes/schemas";
 import { parseResumeExperienceContext, techUsedLine } from "@/lib/resumes/resume-context";
+import type { ApplicationEvidencePlan } from "@/lib/applications/material-quality";
 
 type TailorResumeInput = {
   userProfile: UserProfile;
@@ -21,9 +22,11 @@ type TailorResumeInput = {
   certifications?: string[];
 };
 
-type GenerateCoverLetterInput = TailorResumeInput & {
+export type GenerateCoverLetterInput = TailorResumeInput & {
   tailoredResumeMarkdown?: string | null;
   writingGuidance?: string[];
+  evidencePlan?: ApplicationEvidencePlan | null;
+  rewriteInstructions?: string | null;
 };
 
 export async function parseUploadedResume(extractedText: string): Promise<ParsedResume> {
@@ -174,6 +177,8 @@ export async function generateCoverLetterForJob({
   githubRepositories = [],
   tailoredResumeMarkdown,
   writingGuidance = [],
+  evidencePlan,
+  rewriteInstructions,
 }: GenerateCoverLetterInput) {
   const fallback = buildFallbackCoverLetter({ userProfile, job, bullets, writingGuidance });
 
@@ -184,9 +189,12 @@ export async function generateCoverLetterForJob({
       system:
         "Generate a concise, credible cover letter for this job. Use only the supplied approved candidate profile, verified bullets, projects, and tailored resume. " +
         "Follow supplied writing guidance unless it conflicts with truthfulness or the job data. " +
-        "When referring to the user's job-search application generally, call it an Agentic job search assistant. " +
-        "For AI-related roles, if mentioning that application, describe it as using agentic workflows, RAG, MCP, LangGraph, LangSmith-style observability, browser automation, email outcome tracking, application state reconciliation, duplicate detection, and learned feedback loops. " +
-        "Do not fabricate experience, metrics, credentials, employers, dates, or domain claims. Avoid hype, cliches, em dashes, and obvious AI phrasing.",
+        "Use the supplied evidence plan as the primary source of proof points. The letter must explain why this candidate fits this specific company and role. " +
+        "Do not include generic fallback scaffolding such as 'Relevant examples from my approved profile include'. " +
+        "Mention the user's Job Search OS or agentic job-search work only when it is one of the curated evidence proof points and directly maps to the job. " +
+        "Do not fabricate experience, metrics, credentials, employers, dates, or domain claims. Avoid hype, cliches, em dashes, and obvious AI phrasing. " +
+        "Keep the body between 180 and 260 words. Use 3-5 short paragraphs. " +
+        (rewriteInstructions ? `Rewrite instructions from hiring-manager review: ${rewriteInstructions}` : ""),
       input: {
         company: job.company,
         job: {
@@ -223,6 +231,7 @@ export async function generateCoverLetterForJob({
         })),
         tailoredResumeMarkdown,
         writingGuidance,
+        evidencePlan,
       },
     });
 
@@ -553,25 +562,26 @@ function titleCase(value: string) {
   return value.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function buildFallbackCoverLetter({ userProfile, job, bullets, writingGuidance = [] }: Pick<GenerateCoverLetterInput, "userProfile" | "job" | "bullets" | "writingGuidance">) {
-  const strongestBullets = bullets.slice(0, 3).map((bullet) => bullet.text);
+function buildFallbackCoverLetter({ userProfile, job, bullets }: Pick<GenerateCoverLetterInput, "userProfile" | "job" | "bullets" | "writingGuidance">) {
+  const jobTerms = tokenize(`${job.title} ${job.description}`);
+  const strongestBullets = uniqueBullets(bullets)
+    .sort((a, b) => scoreTerm(b.text, jobTerms) - scoreTerm(a.text, jobTerms))
+    .slice(0, 2)
+    .map((bullet) => bullet.text);
   const skills = [
     ...jsonStringArray(userProfile.coreSkills),
     ...jsonStringArray(userProfile.technicalSkills),
-  ].slice(0, 8);
+  ].sort((a, b) => scoreTerm(b, jobTerms) - scoreTerm(a, jobTerms)).slice(0, 6);
   const body = [
     `Dear ${job.company} hiring team,`,
     "",
-    `I am interested in the ${job.title} role. My background is strongest in ${skills.join(", ")}, with a focus on building practical product interfaces that are maintainable, testable, and useful for experienced users.`,
+    `The ${job.title} role maps to my strongest verified experience in ${skills.join(", ") || "product engineering, frontend systems, and practical software delivery"}.`,
     "",
     strongestBullets.length
-      ? `Relevant examples from my approved profile include: ${strongestBullets.join(" ")}`
+      ? strongestBullets.map((bullet) => `- ${bullet}`).join("\n")
       : userProfile.professionalSummary ?? userProfile.masterSummary,
-    aiRelatedJob(job) && writingGuidance.some((guidance) => /agentic job search assistant|agentic workflows|rag|mcp|langgraph/i.test(guidance))
-      ? "\nOne relevant example is my Agentic job search assistant, which uses agentic workflows, RAG, MCP, LangGraph, LangSmith-style observability, browser automation, email outcome tracking, application state reconciliation, duplicate detection, and learned feedback loops to review jobs against my actual experience, prepare tailored materials, track decisions, and surface better-fit opportunities over time."
-      : "",
     "",
-    `I would welcome a conversation about how this experience maps to ${job.company}'s needs for this role.`,
+    `This fallback draft is saved for review only because the structured cover-letter writer was unavailable.`,
     "",
     `Best,`,
     userProfile.fullName,
@@ -584,15 +594,6 @@ function buildFallbackCoverLetter({ userProfile, job, bullets, writingGuidance =
     unsupportedClaimsDetected: [],
     generatedBy: "deterministic_fallback",
   };
-}
-
-function aiRelatedJob(job: JobPosting) {
-  return /\b(ai|artificial intelligence|machine learning|ml|llm|agentic|rag|langchain|langgraph|automation)\b/i.test([
-    job.title,
-    job.description,
-    job.requirements,
-    job.niceToHaves,
-  ].filter(Boolean).join(" "));
 }
 
 function deduplicateByName<T extends { name: string }>(items: T[]): T[] {

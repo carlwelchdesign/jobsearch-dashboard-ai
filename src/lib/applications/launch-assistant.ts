@@ -4,6 +4,7 @@ import path from "path";
 import { Prisma } from "@prisma/client";
 import { requireLaunchableApplicationUrl } from "@/lib/applications/application-url-quality";
 import { createApplicationAutomationRun } from "@/lib/applications/automation-runs";
+import { requireLaunchableApplicationMaterials } from "@/lib/applications/material-quality";
 import { prisma } from "@/lib/prisma";
 
 export type LaunchAssistantResult = {
@@ -45,6 +46,7 @@ export async function launchApplicationAssistant(applicationId: string, origin: 
   if (!application.resume || !application.coverLetter) {
     throw new Error("A generated resume and cover letter are required before launching the assistant.");
   }
+  requireLaunchableApplicationMaterials(application.coverLetter.generationNotes);
   if (application.agentUserRequests[0]) {
     throw new Error(`Resolve this blocker before launching the assistant: ${application.agentUserRequests[0].question}`);
   }

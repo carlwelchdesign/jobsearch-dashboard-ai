@@ -3,6 +3,7 @@ import { assessApplicationUrlQuality } from "@/lib/applications/application-url-
 import { buildAshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 import { evaluateAutoSubmitEligibility } from "@/lib/applications/auto-submit-policy";
 import { selectedApplicationAnswers } from "@/lib/applications/application-packets";
+import { applicationMaterialQualityDetail } from "@/lib/applications/material-quality";
 import { fieldMemoryForAssistant, findActiveFieldMemories } from "@/lib/applications/field-learning";
 import { prisma } from "@/lib/prisma";
 
@@ -36,6 +37,7 @@ export async function findReadyApplicationByUrl(url: string) {
   });
   return applications.find((application) => (
     assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable
+    && applicationMaterialQualityDetail(application.coverLetter?.generationNotes).launchable
     && canonicalUrl(application.jobPosting.applicationUrl) === target
   )) ?? null;
 }
@@ -84,6 +86,16 @@ export async function buildApplicationAssistantPackage(application: AssistantPac
     return {
       status: 400,
       body: { error: "A generated resume and cover letter are required before assisted form filling." },
+    };
+  }
+  const materialQuality = applicationMaterialQualityDetail(application.coverLetter.generationNotes);
+  if (!materialQuality.launchable) {
+    return {
+      status: 400,
+      body: {
+        error: `Application material quality needs review. ${materialQuality.reason}`,
+        materialQuality,
+      },
     };
   }
 
@@ -181,6 +193,7 @@ export async function buildApplicationAssistantPackage(application: AssistantPac
         coverLetterId: application.coverLetter.id,
         coverLetterPdfUrl: `${origin}/api/cover-letters/${application.coverLetter.id}/pdf`,
         coverLetterBody: application.coverLetter.body,
+        materialQuality,
         selectedApplicationAnswers: selectedAnswers,
       },
       learning: {

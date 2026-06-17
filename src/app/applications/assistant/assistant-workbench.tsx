@@ -87,6 +87,7 @@ type ApplySprintReasonCode =
   | "agency_already_running"
   | "packet_generation_failed"
   | "missing_resume_or_cover_letter"
+  | "material_quality_needs_review"
   | "hidden_by_canonical_duplicate_reconciliation"
   | "review_only_broad_discovery";
 
@@ -1845,6 +1846,7 @@ function applySprintReasonLabel(reason: ApplySprintReasonCode) {
     agency_already_running: "agency already running",
     packet_generation_failed: "packet generation failed",
     missing_resume_or_cover_letter: "missing resume or cover letter",
+    material_quality_needs_review: "material quality needs review",
     hidden_by_canonical_duplicate_reconciliation: "hidden by canonical duplicate reconciliation",
     review_only_broad_discovery: "review-only broad discovery",
   };

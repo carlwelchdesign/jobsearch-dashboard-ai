@@ -76,6 +76,44 @@ describe("Apply Sprint trust funnel", () => {
     expect(reasonLabel("profile_max_results_cap")).toBe("per-profile maxResultsPerRun cap");
   });
 
+  it("hides ready applications when cover-letter material quality is blocked", () => {
+    const funnel = buildApplySprintTrustFunnel({
+      latestSearchRun: searchRun(),
+      latestAgencyRun: null,
+      matches: [],
+      applications: [
+        application({
+          id: "weak-letter",
+          jobPostingId: "linear-job",
+          company: "Linear",
+          title: "Product Engineer",
+          coverLetterGenerationNotes: {
+            materialQuality: {
+              status: "BLOCKED",
+              launchable: false,
+              reason: "Cover letter used deterministic fallback output and must be regenerated or reviewed before launch.",
+              reasons: ["deterministic_fallback"],
+              score: 44,
+              generatedBy: "deterministic_fallback",
+              evidenceRefs: [],
+            },
+          },
+        }),
+      ],
+      visibleReadyApplicationIds: new Set(),
+      suppressionByUserId: new Map(),
+    });
+
+    expect(funnel.hidden).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "weak-letter",
+        reasons: expect.arrayContaining(["material_quality_needs_review"]),
+        materialQuality: expect.objectContaining({ launchable: false }),
+      }),
+    ]));
+    expect(reasonLabel("material_quality_needs_review")).toBe("material quality needs review");
+  });
+
   it("keeps review-only broad discovery matches out of agency candidates", () => {
     const funnel = buildApplySprintTrustFunnel({
       latestSearchRun: searchRun({ reviewOnlyMatches: 1 }),
@@ -202,6 +240,19 @@ function application(overrides: Record<string, any> = {}) {
     resumeId: "resume-1",
     coverLetterId: "cover-1",
     jobProfileMatchId: null,
+    coverLetter: {
+      generationNotes: overrides.coverLetterGenerationNotes ?? {
+        materialQuality: {
+          status: "PASS",
+          launchable: true,
+          reason: "Cover letter passed material quality review.",
+          reasons: [],
+          score: 92,
+          generatedBy: "openai_structured_outputs",
+          evidenceRefs: ["ev_1"],
+        },
+      },
+    },
     jobPosting: {
       id: overrides.jobPostingId ?? "job-1",
       company: overrides.company ?? "Acme",

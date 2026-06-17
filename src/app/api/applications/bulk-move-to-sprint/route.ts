@@ -4,6 +4,7 @@ import { apiError } from "@/lib/api";
 import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { syncApplicationPacket } from "@/lib/applications/application-packets";
+import { applicationMaterialQualityDetail } from "@/lib/applications/material-quality";
 import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
 import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { prisma } from "@/lib/prisma";
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
         jobPosting: { applicationUrl: { not: null } },
       },
       include: {
+        coverLetter: { select: { generationNotes: true } },
         jobPosting: { select: { id: true, company: true, title: true, applicationUrl: true } },
       },
       orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
@@ -48,6 +50,19 @@ export async function POST(request: Request) {
     for (const application of directApplications) {
       try {
         if (application.resumeId && application.coverLetterId) {
+          const materialQuality = applicationMaterialQualityDetail(application.coverLetter?.generationNotes);
+          if (!materialQuality.launchable) {
+            results.push({
+              ok: false,
+              applicationId: application.id,
+              jobId: application.jobPostingId,
+              company: application.jobPosting.company,
+              title: application.jobPosting.title,
+              action: "failed",
+              error: `material_quality_needs_review: ${materialQuality.reason}`,
+            });
+            continue;
+          }
           await transitionApplicationState({
             applicationId: application.id,
             toStatus: "ready_to_apply",
@@ -76,6 +91,18 @@ export async function POST(request: Request) {
         }
 
         const prepared = await prepareApplicationPackage(application.jobPostingId);
+        if (prepared.readyToApply === false) {
+          results.push({
+            ok: false,
+            applicationId: prepared.application.id,
+            jobId: application.jobPostingId,
+            company: application.jobPosting.company,
+            title: application.jobPosting.title,
+            action: "failed",
+            error: `material_quality_needs_review: ${prepared.materialQuality.reason}`,
+          });
+          continue;
+        }
         results.push({
           ok: true,
           applicationId: prepared.application.id,

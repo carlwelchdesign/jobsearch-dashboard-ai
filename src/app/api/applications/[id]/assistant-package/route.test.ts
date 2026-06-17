@@ -24,6 +24,17 @@ vi.mock("@/lib/prisma", () => ({
 const evaluateAutoSubmitEligibilityMock = vi.mocked(evaluateAutoSubmitEligibility);
 const findFieldMemoriesMock = vi.mocked(findActiveFieldMemories);
 const findApplicationMock = vi.mocked(prisma.application.findUnique);
+const launchableMaterialNotes = {
+  materialQuality: {
+    status: "PASS",
+    launchable: true,
+    reason: "Cover letter passed material quality review.",
+    reasons: [],
+    score: 92,
+    generatedBy: "openai_structured_outputs",
+    evidenceRefs: ["ev_1"],
+  },
+};
 
 describe("GET /api/applications/[id]/assistant-package", () => {
   beforeEach(() => {
@@ -136,7 +147,7 @@ describe("GET /api/applications/[id]/assistant-package", () => {
         atsProvider: "greenhouse",
       },
       resume: { id: "resume_1" },
-      coverLetter: { id: "letter_1", body: "Cover letter body." },
+      coverLetter: { id: "letter_1", body: "Cover letter body.", generationNotes: launchableMaterialNotes },
       user: {
         email: "candidate@example.com",
         name: "Carl Welch",
@@ -217,6 +228,42 @@ describe("GET /api/applications/[id]/assistant-package", () => {
     expect(body.safety.manualSubmitRequired).toBe(true);
   });
 
+  it("rejects blocked cover-letter material quality before assisted form filling", async () => {
+    findApplicationMock.mockResolvedValue({
+      id: "app_1",
+      status: "ready_to_apply",
+      jobPosting: { applicationUrl: "https://linear.app/apply" },
+      resume: { id: "resume_1" },
+      coverLetter: {
+        id: "letter_1",
+        body: "Weak cover letter.",
+        generationNotes: {
+          materialQuality: {
+            status: "BLOCKED",
+            launchable: false,
+            reason: "Cover letter used deterministic fallback output and must be regenerated or reviewed before launch.",
+            reasons: ["deterministic_fallback"],
+            score: 40,
+            generatedBy: "deterministic_fallback",
+            evidenceRefs: [],
+          },
+        },
+      },
+      user: { profile: null },
+      applicationPackets: [],
+    } as unknown as Awaited<ReturnType<typeof prisma.application.findUnique>>);
+
+    const response = await GET(new Request("http://localhost/api/applications/app_1/assistant-package"), {
+      params: { id: "app_1" },
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("Application material quality needs review"),
+      materialQuality: expect.objectContaining({ launchable: false }),
+    });
+  });
+
   it("forces Ashby packages into normal-browser manual submit mode", async () => {
     evaluateAutoSubmitEligibilityMock.mockResolvedValueOnce({
       allowed: true,
@@ -250,7 +297,7 @@ describe("GET /api/applications/[id]/assistant-package", () => {
         remoteType: "remote",
       },
       resume: { id: "resume_1", plainText: "Senior Frontend Engineer with React, TypeScript, SaaS, and dashboards.", markdown: "" },
-      coverLetter: { id: "letter_1", body: "Cover letter body." },
+      coverLetter: { id: "letter_1", body: "Cover letter body.", generationNotes: launchableMaterialNotes },
       user: {
         email: "candidate@example.com",
         name: "Carl Welch",

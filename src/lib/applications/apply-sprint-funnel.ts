@@ -1,5 +1,6 @@
 import type { AgentRunStatus, JobMatchStatus, Prisma } from "@prisma/client";
 import { assessApplicationUrlQuality, type ApplicationUrlQuality } from "@/lib/applications/application-url-quality";
+import { applicationMaterialQualityDetail, type ApplicationMaterialQuality } from "@/lib/applications/material-quality";
 import { hasApplicationForJob, submittedApplicationStatuses } from "@/lib/applications/job-filters";
 import { createApplicationCanonicalJobKeys } from "@/lib/applications/reconciliation";
 import { isJobSuppressed, type JobSuppressionState } from "@/lib/jobs/suppression";
@@ -15,6 +16,7 @@ export type ApplySprintReasonCode =
   | "agency_already_running"
   | "packet_generation_failed"
   | "missing_resume_or_cover_letter"
+  | "material_quality_needs_review"
   | "hidden_by_canonical_duplicate_reconciliation"
   | "review_only_broad_discovery";
 
@@ -46,6 +48,7 @@ export type ApplySprintCandidate = {
   reasons: ApplySprintReasonCode[];
   canPrepare: boolean;
   applicationUrlQuality?: ApplicationUrlQuality;
+  materialQuality?: ApplicationMaterialQuality;
 };
 
 export type ApplySprintHiddenItem = {
@@ -61,6 +64,7 @@ export type ApplySprintHiddenItem = {
   reasons: ApplySprintReasonCode[];
   detail: string;
   applicationUrlQuality?: ApplicationUrlQuality;
+  materialQuality?: ApplicationMaterialQuality;
 };
 
 export type ApplySprintAgencyResult = {
@@ -136,6 +140,9 @@ type ApplicationRecord = {
     duplicateGroupId: string | null;
     lastSeenAt: Date;
   };
+  coverLetter?: {
+    generationNotes: Prisma.JsonValue;
+  } | null;
 };
 
 type SearchRunRecord = {
@@ -233,6 +240,7 @@ export function buildApplySprintTrustFunnel(input: {
       reasons,
       detail: hiddenDetail(reasons, application.jobPosting.applicationUrl),
       applicationUrlQuality: application.jobPosting.applicationUrl ? assessApplicationUrlQuality(application.jobPosting.applicationUrl) : undefined,
+      materialQuality: application.coverLetter ? applicationMaterialQualityDetail(application.coverLetter.generationNotes) : undefined,
     });
   }
 
@@ -305,6 +313,7 @@ export function reasonLabel(reason: ApplySprintReasonCode) {
     agency_already_running: "agency already running",
     packet_generation_failed: "packet generation failed",
     missing_resume_or_cover_letter: "missing resume or cover letter",
+    material_quality_needs_review: "material quality needs review",
     hidden_by_canonical_duplicate_reconciliation: "hidden by canonical duplicate reconciliation",
     review_only_broad_discovery: "review-only broad discovery",
   };
@@ -332,6 +341,7 @@ function reasonsForApplication(application: ApplicationRecord, visibleReadyAppli
   const reasons: ApplySprintReasonCode[] = [];
   if (application.status === "ready_to_apply") {
     if (!application.resumeId || !application.coverLetterId) reasons.push("missing_resume_or_cover_letter");
+    else if (!applicationMaterialQualityDetail(application.coverLetter?.generationNotes).launchable) reasons.push("material_quality_needs_review");
     if (!application.jobPosting.applicationUrl) reasons.push("no_application_url");
     else if (isUnsupportedApplicationUrl(application.jobPosting.applicationUrl)) reasons.push("unsupported_application_url");
     if (!visibleReadyApplicationIds.has(application.id)) reasons.push("hidden_by_canonical_duplicate_reconciliation");
@@ -410,6 +420,9 @@ function reasonSummary(reasons: ApplySprintReasonCode[]) {
 function hiddenDetail(reasons: ApplySprintReasonCode[], applicationUrl: string | null) {
   if (applicationUrl && reasons.includes("unsupported_application_url")) {
     return assessApplicationUrlQuality(applicationUrl).reason;
+  }
+  if (reasons.includes("material_quality_needs_review")) {
+    return "Cover letter material quality needs review before Apply Sprint launch.";
   }
   return reasonSummary(reasons);
 }
