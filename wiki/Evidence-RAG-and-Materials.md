@@ -111,6 +111,10 @@ Generated application packets can include:
 - evidence references
 - QA review JSON
 
+Cover-letter generation has a launch-quality gate. The application evidence curator selects job-specific proof points from approved evidence, verified bullets, projects, work history, GitHub context, and cover-letter-usable RAG results. The hiring-manager reviewer scores the draft for role fit, specificity, company fit, generic fallback language, and unsupported claims. The resulting `materialQuality` object is stored in cover-letter generation notes and copied into packet review JSON.
+
+Applications cannot enter Apply Sprint unless the cover letter has `materialQuality.launchable === true`. Deterministic fallback drafts and older weak letters remain available for manual review/export, but launch, extension-ready, next-ready, and bulk-prep paths suppress them with `material_quality_needs_review`.
+
 Writing rules:
 
 - concise
@@ -122,6 +126,16 @@ Writing rules:
 - no em dashes
 - no obvious AI phrasing
 - no generic "excited to apply" openings
+
+Repair existing materials:
+
+```bash
+npx tsx scripts/repair-application-materials.ts
+npx tsx scripts/repair-application-materials.ts --apply
+npx tsx scripts/repair-application-materials.ts --apply --regenerate
+```
+
+Dry-run reports weak or missing material-quality reviews. Apply mode writes `materialQuality`, syncs material claims and packets, and moves affected `ready_to_apply` applications back to `approved` with transition source `application_material_quality_repair`.
 
 ## Job Evidence Library
 

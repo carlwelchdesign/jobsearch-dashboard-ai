@@ -15,9 +15,9 @@ It can:
 - surface blocker and learning state
 - show logs and automation status
 
-The Chrome extension can start the same flow with **Apply Now** after saving a job. It remembers the last saved job, uses the active tab URL only when it is a direct employer or ATS application URL, prepares or reuses the custom resume and cover letter, creates the `ready_to_apply` application, and launches the local assistant.
+The Chrome extension can start the same flow with **Apply Now** after saving a job. It remembers the last saved job, uses the active tab URL only when it is a direct employer or ATS application URL, prepares or reuses the custom resume and cover letter, creates the `ready_to_apply` application only when material quality passes, and launches the local assistant.
 
-Apply Sprint launchability is direct-only. Board, listing, auth, paywall, or intermediary URLs appear in diagnostics as unsupported until they are resolved to an employer or ATS application URL. Existing bad launch targets can be repaired with `npx tsx scripts/repair-application-urls.ts --apply`; unresolved ready applications are moved back to `approved` with audit events instead of being rejected or archived.
+Apply Sprint launchability is direct-only and material-quality gated. Board, listing, auth, paywall, or intermediary URLs appear in diagnostics as unsupported until they are resolved to an employer or ATS application URL. Fallback or weak cover letters appear as `material_quality_needs_review` until regenerated or reviewed. Existing bad launch targets can be repaired with `npx tsx scripts/repair-application-urls.ts --apply`; existing weak materials can be repaired with `npx tsx scripts/repair-application-materials.ts --apply`. Unresolved ready applications are moved back to `approved` with audit events instead of being rejected or archived.
 
 ## Application Packets
 

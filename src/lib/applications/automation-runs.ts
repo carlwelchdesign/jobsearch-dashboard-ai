@@ -54,10 +54,13 @@ const defaultStaleRunMinutes = 90;
 const assistantClosedBlockerType = "assistant_closed";
 const assistantClosedBlockerMessage =
   "The assistant browser was closed or stopped before submission. Relaunch the assistant or mark the application applied if you submitted manually.";
+const turnstileBlockerMessage =
+  "Cloudflare Turnstile or bot verification blocked automation. Continue in normal Chrome and submit manually.";
 
 const blockerPatterns: Array<{ type: string; pattern: RegExp; message: string }> = [
   { type: "ats_spam_block", pattern: /we couldn.?t submit your application|possible spam|flagged as possible spam|google.?s recaptcha technology|to protect against spam and bots/i, message: "Ashby blocked submission as possible spam or reCAPTCHA risk. Retry through normal Chrome assisted fill and submit manually." },
   { type: "closed_job", pattern: /closed|removed|unavailable|no form can be filled/i, message: "The application page appears closed, removed, or unavailable." },
+  { type: "turnstile_challenge", pattern: /cloudflare turnstile|turnstile_challenge|cf-turnstile|cf_chl|challenges\.cloudflare\.com|verify visitors without captcha|bot verification blocked automation|checking if (?:the )?site connection is secure|verify (?:you are|visitors).*real|just a moment\.{0,3}/i, message: turnstileBlockerMessage },
   { type: "manual_handoff", pattern: /captcha|human verification|manual review is needed before continuing|continue in browser|assistant paused/i, message: "Assistant paused." },
   { type: "login_block", pattern: /sign-in blocked|complete login|login/i, message: "The application requires login or account access." },
   { type: "manual_handoff", pattern: /manual handling|normal browser|handing off/i, message: "The assistant handed this application off for manual browser handling." },
@@ -753,7 +756,7 @@ function severityForPhase(phase: AssistantRunDiagnostics["phase"], status: Appli
 function severityForEvent(type: string, message: string): AssistantRunTimelineItem["severity"] {
   const value = `${type} ${message}`.toLowerCase();
   if (/failed|traceback|error/.test(value)) return "error";
-  if (/blocked|closed|captcha|login|manual_handoff|needs_user|paused|unavailable|spam/.test(value)) return "warning";
+  if (/blocked|closed|captcha|turnstile|cloudflare|verification|login|manual_handoff|needs_user|paused|unavailable|spam/.test(value)) return "warning";
   if (/submitted|ready_for_manual_submit|readyforsubmit|success|filled|uploaded|learning|observed/.test(value)) return "success";
   return "info";
 }
@@ -783,6 +786,7 @@ function nextActionForAssistantRun(input: {
   if (input.phase === "waiting_for_review") return "Review the browser form, submit manually, then mark the application applied if needed.";
   if (input.blockerType === "closed_job") return "Reject this application as Job unavailable.";
   if (input.blockerType === "ats_spam_block") return "Retry in your normal Chrome profile with the extension, then submit manually.";
+  if (input.blockerType === "turnstile_challenge") return "Continue in normal Chrome, complete the visitor verification, and submit manually if the employer form is visible.";
   if (input.blockerType === "login_block" || input.blockerType === "manual_handoff") return "Complete the verification or login manually, then use assisted fill if the form is visible.";
   if (input.blockerType === assistantClosedBlockerType) return "Relaunch the assistant, or mark applied if you submitted before the browser closed.";
   if (input.status === "FAILED") return "Inspect the raw log, fix the setup issue, then relaunch.";

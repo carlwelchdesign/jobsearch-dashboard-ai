@@ -30,6 +30,8 @@ const ownerAreas: Partial<Record<AgentTypeValue, string>> = {
   CANDIDATE_INTELLIGENCE: "Candidate data",
   RESUME_STRATEGY: "Application materials",
   COVER_LETTER_WRITER: "Application materials",
+  APPLICATION_EVIDENCE_CURATOR: "Application materials",
+  HIRING_MANAGER_REVIEWER: "Application materials",
   JOB_FIT_SCORER: "Job review",
   SEARCH_PROFILE_MANAGER: "Search strategy",
   RECRUITER_INTELLIGENCE: "Outreach",

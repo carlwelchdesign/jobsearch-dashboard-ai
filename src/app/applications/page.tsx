@@ -376,7 +376,7 @@ function applicationsNextAction({ approvedCount, readyCount, agencyCandidateCoun
       detail: "Approved applications need packets and ready status before the assistant can work them.",
       label: "Bulk move to sprint",
       postTo: "/api/applications/bulk-move-to-sprint",
-      body: { limit: Math.min(Math.max(approvedCount, 1), 50) },
+      body: { limit: Math.min(Math.max(approvedCount, 1), 250) },
       runInBackground: true,
       loadingLabel: "Moving...",
       color: "primary" as const,

@@ -73,6 +73,7 @@ describe("application field learning", () => {
     for (const label of [
       "please enter otp character 1",
       "g-recaptcha-response g-recaptcha-response-100000",
+      "cf-turnstile-response",
       "advertising cookies ot-group-id-c0004",
       "vendor-search-handler cookie list search",
     ]) {

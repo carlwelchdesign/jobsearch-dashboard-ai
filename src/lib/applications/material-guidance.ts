@@ -6,7 +6,7 @@ export async function activeApplicationMaterialGuidance(userId: string) {
     where: {
       userId,
       status: "ACTIVE",
-      skillId: { in: ["cover_letter_writer", "prepare_application_packet", "anti_generic_writing"] },
+      skillId: { in: ["cover_letter_writer", "prepare_application_packet", "anti_generic_writing", "application_evidence_curator", "hiring_manager_reviewer"] },
       kind: { in: ["GUIDANCE", "STYLE_RULE"] },
     },
     orderBy: { appliedAt: "desc" },

@@ -176,6 +176,14 @@ function claimsFromMaterialNotes(value: unknown, source: string): ClaimDraft[] {
   for (const text of stringArray(qa?.styleViolations)) {
     claims.push({ text, status: "NEEDS_REVIEW", reviewJson: { source, reason: "application_qa_style_violation" } });
   }
+  const materialQuality = objectValue(notes?.materialQuality) ?? objectValue(qa?.materialQuality);
+  if (materialQuality && materialQuality.launchable === false) {
+    claims.push({
+      text: stringValue(materialQuality.reason) || "Application material quality needs review before launch.",
+      status: "NEEDS_REVIEW",
+      reviewJson: { source, reason: "material_quality_needs_review", reasons: stringArray(materialQuality.reasons) },
+    });
+  }
   for (const evidenceRef of stringArray(qa?.evidenceRefs)) {
     claims.push({
       text: `Evidence reference: ${evidenceRef}`,

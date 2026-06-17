@@ -70,6 +70,23 @@ export async function POST(request: Request) {
     for (const match of matches) {
       try {
         const prepared = await prepareApplicationPackage(match.jobPostingId);
+        if (prepared.readyToApply === false) {
+          results.push({
+            ok: false,
+            matchId: match.id,
+            jobId: match.jobPostingId,
+            company: match.jobPosting.company,
+            title: match.jobPosting.title,
+            score: match.overallScore,
+            profile: match.jobSearchProfile.name,
+            applicationId: prepared.application.id,
+            resumeId: prepared.resume.id,
+            coverLetterId: prepared.coverLetter.id,
+            materialQuality: prepared.materialQuality,
+            error: `material_quality_needs_review: ${prepared.materialQuality.reason}`,
+          });
+          continue;
+        }
         results.push({
           ok: true,
           matchId: match.id,

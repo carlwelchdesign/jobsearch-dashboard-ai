@@ -16,7 +16,10 @@ type BulkMoveResponse = {
   message?: string;
   moved?: number;
   prepared?: number;
+  regenerated?: number;
   failed?: number;
+  materialBlocked?: number;
+  quotaBlocked?: number;
 };
 
 export function BulkMoveToSprintControl({ buttonSx }: { buttonSx?: SxProps<Theme> }) {
@@ -24,7 +27,7 @@ export function BulkMoveToSprintControl({ buttonSx }: { buttonSx?: SxProps<Theme
   const [limit, setLimit] = useState(25);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState("");
-  const [severity, setSeverity] = useState<"success" | "error" | "info">("info");
+  const [severity, setSeverity] = useState<"success" | "error" | "info" | "warning">("info");
 
   async function moveToSprint() {
     setLoading(true);
@@ -32,22 +35,25 @@ export function BulkMoveToSprintControl({ buttonSx }: { buttonSx?: SxProps<Theme
       const request = fetch("/api/applications/bulk-move-to-sprint", {
         method: "POST",
         headers: { "content-type": "application/json", "x-run-in-background": "1" },
-        body: JSON.stringify({ limit }),
+        body: JSON.stringify({ limit, regenerateBlockedMaterials: true }),
         keepalive: true,
       });
 
       setLoading(false);
       setSeverity("info");
-      setNotice("Bulk move started. Preparing missing packets before Apply Sprint.");
+      setNotice("Bulk move started. Regenerating blocked letters and preparing packets before Apply Sprint.");
 
       request
         .then(async (response) => {
           const payload = (await response.json().catch(() => ({}))) as BulkMoveResponse;
           if (!response.ok) throw new Error(payload.error ?? "Bulk move failed.");
           const moved = (payload.moved ?? 0) + (payload.prepared ?? 0);
+          const regenerated = payload.regenerated ?? 0;
           const failed = payload.failed ?? 0;
-          setSeverity(failed > 0 ? "info" : moved > 0 ? "success" : "info");
-          setNotice(payload.message ?? `Moved ${moved} application(s) into Apply Sprint. ${failed} failed.`);
+          const materialBlocked = payload.materialBlocked ?? 0;
+          const quotaBlocked = payload.quotaBlocked ?? 0;
+          setSeverity(quotaBlocked || (failed > 0 && moved === 0) ? "warning" : failed > 0 ? "info" : moved > 0 ? "success" : "info");
+          setNotice(payload.message ?? `Moved ${moved} application(s) into Apply Sprint. ${regenerated} regenerated. ${failed} failed. ${materialBlocked} material-blocked.`);
           refresh();
         })
         .catch((error) => {
@@ -72,7 +78,7 @@ export function BulkMoveToSprintControl({ buttonSx }: { buttonSx?: SxProps<Theme
           onChange={(event) => setLimit(Number(event.target.value))}
           sx={{ minWidth: 112 }}
         >
-          {[5, 10, 25, 50].map((count) => <MenuItem key={count} value={count}>{count}</MenuItem>)}
+          {[5, 10, 25, 50, 100, 250].map((count) => <MenuItem key={count} value={count}>{count}</MenuItem>)}
         </TextField>
         <Button
           variant="contained"

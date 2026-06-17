@@ -30,7 +30,7 @@ export type ApplicationFieldAnswerResolution = {
 };
 
 const defaultMinimumConfidence = 82;
-const blockedPattern = /\b(password|captcha|recaptcha|hcaptcha|verification|verify|otp|one time|one-time|security code|verification code|auth code|token|secret|ssn|social security|payment|credit card|resume|cover letter|cookie|cookies|vendor|consent|privacy preference|ot-group|onetrust)\b/i;
+const blockedPattern = /\b(password|captcha|recaptcha|hcaptcha|turnstile|cf-turnstile|cf_chl|verification|verify|otp|one time|one-time|security code|verification code|auth code|token|secret|ssn|social security|payment|credit card|resume|cover letter|cookie|cookies|vendor|consent|privacy preference|ot-group|onetrust)\b/i;
 const sensitivePattern = /\b(salary|compensation|pay|wage|bonus|equity|sponsor|sponsorship|visa|authorization|authorized|work permit|legal|attest|certify|convict|felony|criminal|background|clearance|race|ethnic|gender|sex|veteran|disab|orientation|pronoun|religion|age|birth|citizenship|nationality)\b/i;
 
 export async function resolveApplicationFieldAnswer(input: ApplicationFieldAnswerRequest): Promise<ApplicationFieldAnswerResolution> {

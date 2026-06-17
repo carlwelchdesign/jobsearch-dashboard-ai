@@ -17,7 +17,7 @@ import Chip from "@mui/material/Chip";
 import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SearchRunAnalyticsCharts } from "@/components/search-run-analytics-charts";
 import { StatusChip } from "@/components/ui/status-chip";
 
@@ -115,11 +115,23 @@ export type LatestSearchOptimization = {
   changes: Array<{ status: string; riskLevel: string }>;
 };
 
-export function SearchRunCommandCenter({ initialRun, latestOptimization }: { initialRun: SearchRun | null; latestOptimization?: LatestSearchOptimization | null }) {
-  const { refresh } = useRouter();
+export function SearchRunCommandCenter({
+  initialRun,
+  latestOptimization,
+  autoOpenDetails = false,
+  autoStart = false,
+}: {
+  initialRun: SearchRun | null;
+  latestOptimization?: LatestSearchOptimization | null;
+  autoOpenDetails?: boolean;
+  autoStart?: boolean;
+}) {
+  const router = useRouter();
   const [run, setRun] = useState<SearchRun | null>(initialRun);
   const [agencyRun, setAgencyRun] = useState<AgencyRunStatus | null>(null);
   const [error, setError] = useState("");
+  const [detailsExpanded, setDetailsExpanded] = useState(() => autoOpenDetails || initialRun?.status === "running");
+  const autoStarted = useRef(false);
   const running = run?.status === "running";
   const latest = run?.progress?.[run.progress.length - 1] ?? null;
   const timeline = useMemo(() => run?.progress?.slice(-10).reverse() ?? [], [run?.progress]);
@@ -140,8 +152,9 @@ export function SearchRunCommandCenter({ initialRun, latestOptimization }: { ini
     return null;
   }
 
-  async function startRun() {
+  const startRun = useCallback(async () => {
     setError("");
+    setDetailsExpanded(true);
     const response = await fetch("/api/jobs/search/run", { method: "POST" });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -149,18 +162,28 @@ export function SearchRunCommandCenter({ initialRun, latestOptimization }: { ini
       return;
     }
     setRun(normalizeRun(body.run));
-  }
+  }, []);
+
+  useEffect(() => {
+    if (!autoStart || autoStarted.current) return;
+    autoStarted.current = true;
+    void startRun().finally(() => router.replace("/dashboard/search?details=open", { scroll: false }));
+  }, [autoStart, router, startRun]);
+
+  useEffect(() => {
+    if (running) setDetailsExpanded(true);
+  }, [running]);
 
   useEffect(() => {
     const timer = window.setInterval(async () => {
       const nextRun = await refreshLatest();
       if (run?.status === "running" && nextRun?.status && nextRun.status !== "running") {
-        refresh();
+        router.refresh();
       }
     }, running ? 1200 : 5000);
 
     return () => window.clearInterval(timer);
-  }, [refresh, run?.status, running]);
+  }, [router, run?.status, running]);
 
   useEffect(() => {
     if (!linkedAgencyRunId) return;
@@ -193,7 +216,7 @@ export function SearchRunCommandCenter({ initialRun, latestOptimization }: { ini
       return;
     }
     await refreshAgencyRun(body.childRunId ?? visibleAgencyRun.id);
-    refresh();
+    router.refresh();
   }
 
   return (
@@ -229,7 +252,7 @@ export function SearchRunCommandCenter({ initialRun, latestOptimization }: { ini
 
           {latestOptimization ? <SearchOptimizationSummaryPanel latest={latestOptimization} /> : null}
 
-          <Accordion disableGutters>
+          <Accordion disableGutters expanded={detailsExpanded} onChange={(_event, expanded) => setDetailsExpanded(expanded)}>
             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
               <Box>
                 <Typography sx={{ fontWeight: 850 }}>Run details</Typography>

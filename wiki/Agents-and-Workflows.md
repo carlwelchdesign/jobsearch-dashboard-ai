@@ -8,6 +8,8 @@ LangGraph is not used as a general replacement for every deterministic service. 
 
 ADK is available as an opt-in TypeScript control plane for selected agents. It is enabled with `ADK_ENABLED=true` and starts with Daily Command Center, Market Intelligence, and Jolene's guarded app-operator layer. ADK-managed agent runs still use the app's `AgentRun` and `AgentRunEvent` records, while Jolene stores planned, confirmed, skipped, failed, and executed operator actions in chat `actionJson`. ADK is not used for durable browser workflows in this phase; LangGraph remains responsible for assistant and recruiting-agency state machines.
 
+Application materials now include two specialist service agents in the standard `AgentRun` layer. `APPLICATION_EVIDENCE_CURATOR` builds the cover-letter evidence plan from approved candidate evidence, verified bullets, projects, work history, GitHub context, and cover-letter RAG. `HIRING_MANAGER_REVIEWER` scores cover letters as launch material, blocking deterministic fallback drafts, generic phrasing, off-target proof points, and unsupported claims before Apply Sprint or assistant launch. These agents are part of the Generated Materials quality gate with Resume Strategy, Cover Letter Writer, Application QA, and Anti-Generic Writing.
+
 Jolene's ADK operator can now render inline confirmation cards for app-local repair plans. Confirmed execution is bounded to internal maintenance actions such as application integrity repair, duplicate/stale detection, email sync, Daily Command Center refresh, Market Intelligence refresh, and graph-run repair/retry/cancel. External submissions, email/outreach sending, employer-system interaction, and broad approve/reject/archive mutations remain outside Jolene's executable boundary.
 
 The System Architecture agent is a read-only architecture confidence layer. A `SYSTEM_ARCHITECTURE` run scans App Router pages, API routes, Prisma schema models/enums, agent services, the code-first skill registry, ADK/LangGraph boundaries, docs, and `/plans`, then writes a connected map, workflow lanes, ranked architecture risks, documentation evidence, and recommended decisions to `AgentRun.outputJson`. `/architecture` renders the latest report and `POST /api/architecture` refreshes it. The agent does not execute repairs; it identifies weak connections such as missing skill coverage, undocumented high-impact API routes, unclear workflow ownership, and stale architecture docs.
@@ -71,6 +73,8 @@ Evaluation runs score examples and cluster repeated failure categories into prop
 - Job Fit Scorer
 - Resume Strategy
 - Cover Letter Writer
+- Application Evidence Curator
+- Hiring Manager Reviewer
 - Application QA
 - Anti-Generic Writing
 - Duplicate/Stale Job Detector

@@ -11,6 +11,15 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 const findApplicationsMock = vi.mocked(prisma.application.findMany);
+const launchableMaterialQuality = {
+  status: "PASS",
+  launchable: true,
+  reason: "Cover letter passed material quality review.",
+  reasons: [],
+  score: 92,
+  generatedBy: "openai_structured_outputs",
+  evidenceRefs: ["ev_1"],
+};
 
 describe("GET /api/applications/ready-for-extension", () => {
   beforeEach(() => {
@@ -20,6 +29,7 @@ describe("GET /api/applications/ready-for-extension", () => {
       {
         id: "app_1",
         updatedAt: new Date("2026-06-01T12:00:00.000Z"),
+        coverLetter: { generationNotes: { materialQuality: launchableMaterialQuality } },
         jobPosting: {
           id: "job_1",
           company: "Linear",
@@ -69,6 +79,10 @@ describe("GET /api/applications/ready-for-extension", () => {
             kind: "direct",
             host: "linear.app",
           }),
+          materialQuality: expect.objectContaining({
+            launchable: true,
+            status: "PASS",
+          }),
           atsProvider: "greenhouse",
           updatedAt: "2026-06-01T12:00:00.000Z",
         },
@@ -81,6 +95,7 @@ describe("GET /api/applications/ready-for-extension", () => {
       {
         id: "app_board",
         updatedAt: new Date("2026-06-02T12:00:00.000Z"),
+        coverLetter: { generationNotes: { materialQuality: launchableMaterialQuality } },
         jobPosting: {
           id: "job_board",
           company: "Built In",
@@ -95,6 +110,7 @@ describe("GET /api/applications/ready-for-extension", () => {
       {
         id: "app_direct",
         updatedAt: new Date("2026-06-01T12:00:00.000Z"),
+        coverLetter: { generationNotes: { materialQuality: launchableMaterialQuality } },
         jobPosting: {
           id: "job_direct",
           company: "Linear",
@@ -119,6 +135,61 @@ describe("GET /api/applications/ready-for-extension", () => {
     });
   });
 
+  it("omits ready applications with blocked material quality", async () => {
+    findApplicationsMock.mockResolvedValue([
+      {
+        id: "app_weak",
+        updatedAt: new Date("2026-06-02T12:00:00.000Z"),
+        coverLetter: {
+          generationNotes: {
+            materialQuality: {
+              status: "BLOCKED",
+              launchable: false,
+              reason: "Cover letter used deterministic fallback output and must be regenerated or reviewed before launch.",
+              reasons: ["deterministic_fallback"],
+              score: 40,
+              generatedBy: "deterministic_fallback",
+              evidenceRefs: [],
+            },
+          },
+        },
+        jobPosting: {
+          id: "job_weak",
+          company: "Linear",
+          title: "Product Engineer",
+          location: "Remote",
+          description: "Build React and TypeScript product UI.",
+          applicationUrl: "https://linear.app/apply",
+          atsProvider: "greenhouse",
+        },
+        jobProfileMatch: { overallScore: 98 },
+      },
+      {
+        id: "app_direct",
+        updatedAt: new Date("2026-06-01T12:00:00.000Z"),
+        coverLetter: { generationNotes: { materialQuality: launchableMaterialQuality } },
+        jobPosting: {
+          id: "job_direct",
+          company: "Linear",
+          title: "Senior Frontend Engineer",
+          location: "Remote",
+          description: "Build React and TypeScript product UI.",
+          applicationUrl: "https://linear.app/apply",
+          atsProvider: "greenhouse",
+        },
+        jobProfileMatch: { overallScore: 94 },
+      },
+    ] as unknown as Awaited<ReturnType<typeof prisma.application.findMany>>);
+
+    const response = await GET(new Request("http://localhost/api/applications/ready-for-extension"));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.applications).toHaveLength(1);
+    expect(body.applications[0].id).toBe("app_direct");
+  });
+
+
   it("requires the optional browser extension token when configured", async () => {
     vi.stubEnv("BROWSER_EXTENSION_TOKEN", "local-token");
 
@@ -133,6 +204,7 @@ describe("GET /api/applications/ready-for-extension", () => {
       {
         id: "app_old",
         updatedAt: new Date("2026-06-02T12:00:00.000Z"),
+        coverLetter: { generationNotes: { materialQuality: launchableMaterialQuality } },
         jobPosting: {
           id: "job_old",
           company: "Older",
@@ -147,6 +219,7 @@ describe("GET /api/applications/ready-for-extension", () => {
       {
         id: "app_elastic",
         updatedAt: new Date("2026-06-01T12:00:00.000Z"),
+        coverLetter: { generationNotes: { materialQuality: launchableMaterialQuality } },
         jobPosting: {
           id: "job_elastic",
           company: "Elastic",

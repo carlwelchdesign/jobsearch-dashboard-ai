@@ -42,6 +42,7 @@ import { RejectionReasonDialog, type RejectionReasonCode } from "@/components/jo
 import { SearchRunAnalyticsCharts } from "@/components/search-run-analytics-charts";
 import { assessApplicationUrlQuality, type ApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import type { AshbyRiskAssessment } from "@/lib/applications/ashby-risk";
+import type { ApplicationMaterialQuality } from "@/lib/applications/material-quality";
 import { summarizeApplicationJobDescription } from "@/lib/applications/job-summary";
 import { copyTextToClipboard } from "@/lib/browser/clipboard";
 
@@ -87,6 +88,7 @@ type ApplySprintReasonCode =
   | "agency_already_running"
   | "packet_generation_failed"
   | "missing_resume_or_cover_letter"
+  | "material_quality_needs_review"
   | "hidden_by_canonical_duplicate_reconciliation"
   | "review_only_broad_discovery";
 
@@ -117,6 +119,7 @@ type ApplySprintTrustFunnel = {
     agencyPrepared: number;
     agencyFailedSkipped: number;
     visibleReady: number;
+    materialQualityBlocked: number;
     belowProfileThreshold: number;
     suppressed: number;
     listingPagesSuppressed: number;
@@ -160,6 +163,7 @@ type ApplySprintTrustFunnel = {
     reasons: ApplySprintReasonCode[];
     detail: string;
     applicationUrlQuality?: ApplicationUrlQuality;
+    materialQuality?: ApplicationMaterialQuality;
   }>;
 };
 
@@ -329,6 +333,7 @@ export function AssistantWorkbench({
   const initialSelectedId = applications.some((application) => application.id === initialApplicationId)
     ? initialApplicationId!
     : applications[0]?.id ?? "";
+  const initialQueueTab: "ready" | "hidden" = applications.length === 0 && trustFunnel.summary.materialQualityBlocked > 0 ? "hidden" : "ready";
   const [selectedId, setSelectedId] = useState(initialSelectedId);
   const [launch, setLaunch] = useState<LaunchResponse | null>(null);
   const [runFeedback, setRunFeedback] = useState<RunFeedbackState | null>(null);
@@ -336,6 +341,7 @@ export function AssistantWorkbench({
   const [markingApplied, setMarkingApplied] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [retryingBulkMove, setRetryingBulkMove] = useState(false);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [appliedIds, setAppliedIds] = useState<string[]>([]);
   const [queueProgressSearchId, setQueueProgressSearchId] = useState<string | null>(null);
@@ -346,7 +352,7 @@ export function AssistantWorkbench({
     queueTab: "ready" | "candidates" | "agency" | "hidden";
     selectedCandidateIds: string[];
     preparingCandidates: boolean;
-  }>({ queueTab: "ready", selectedCandidateIds: [], preparingCandidates: false });
+  }>({ queueTab: initialQueueTab, selectedCandidateIds: [], preparingCandidates: false });
   const visibleApplications = useMemo(
     () => applications.filter((application) => !deletedIds.includes(application.id) && !appliedIds.includes(application.id)),
     [applications, appliedIds, deletedIds],
@@ -372,9 +378,17 @@ export function AssistantWorkbench({
     if (candidate.canPrepare) ids.push(candidate.matchId);
     return ids;
   }, []), [trustFunnel.candidates]);
+  const quotaBlockedCount = trustFunnel.hidden.filter((item) => item.materialQuality?.reasons.includes("openai_insufficient_quota")).length;
+  const rateLimitedCount = trustFunnel.hidden.filter((item) => item.materialQuality?.reasons.includes("openai_rate_limited")).length;
+  const timedOutCount = trustFunnel.hidden.filter((item) => item.materialQuality?.reasons.includes("openai_timeout")).length;
+  const openAiFailureDetail = [
+    quotaBlockedCount ? `${quotaBlockedCount} quota exhausted` : null,
+    rateLimitedCount ? `${rateLimitedCount} rate-limited` : null,
+    timedOutCount ? `${timedOutCount} timed out` : null,
+  ].filter(Boolean).join("; ");
 
-  async function launchSelected(next = false) {
-    const endpoint = next ? "/api/applications/next-ready/launch-assistant" : `/api/applications/${activeSelectedId}/launch-assistant`;
+  async function launchSelected() {
+    const endpoint = `/api/applications/${activeSelectedId}/launch-assistant`;
     setLoading(true);
     setRunFeedback(null);
     try {
@@ -543,6 +557,26 @@ export function AssistantWorkbench({
     }
   }
 
+  async function retryBulkMoveToSprint() {
+    setRetryingBulkMove(true);
+    try {
+      const blockedLimit = Math.min(Math.max(trustFunnel.summary.materialQualityBlocked, 1), 250);
+      const response = await fetch("/api/applications/bulk-move-to-sprint", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ limit: blockedLimit, regenerateBlockedMaterials: true }),
+      });
+      const payload = await response.json().catch(() => ({})) as { error?: string; message?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Bulk move failed.");
+      setNotice(payload.message ?? "Bulk move retried.");
+      refresh();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Bulk move failed.");
+    } finally {
+      setRetryingBulkMove(false);
+    }
+  }
+
   async function copyRawLog() {
     try {
       await copyTextToClipboard(selectedFeedback?.log || "");
@@ -644,7 +678,18 @@ export function AssistantWorkbench({
                   </Stack>
                 </Stack>
               ) : (
-                <Alert severity="info">No ready applications. Run search so eligible saved matches can be prepared for Apply Sprint automatically.</Alert>
+                <Alert
+                  severity={trustFunnel.summary.materialQualityBlocked ? "warning" : "info"}
+                  action={trustFunnel.summary.materialQualityBlocked ? (
+                    <Button color="inherit" size="small" disabled={retryingBulkMove} onClick={() => void retryBulkMoveToSprint()}>
+                      {retryingBulkMove ? "Rechecking..." : trustFunnel.summary.materialQualityBlocked <= 250 ? "Recheck/regenerate all" : "Recheck/regenerate first 250"}
+                    </Button>
+                  ) : undefined}
+                >
+                  {trustFunnel.summary.materialQualityBlocked
+                    ? `${trustFunnel.summary.materialQualityBlocked} approved application${trustFunnel.summary.materialQualityBlocked === 1 ? "" : "s"} could not enter Apply Sprint because cover-letter quality is blocked${openAiFailureDetail ? `; OpenAI generation issues: ${openAiFailureDetail}` : ""}. They remain approved and are listed under Hidden / Suppressed.`
+                    : "No ready applications. Run search so eligible saved matches can be prepared for Apply Sprint automatically."}
+                </Alert>
               )}
               <Divider />
               {selectedBlocker ? (
@@ -688,7 +733,7 @@ export function AssistantWorkbench({
                       color={selectedPrimaryAction.color}
                       startIcon={selectedPrimaryAction.kind === "launch" ? <PlayCircleOutlineOutlinedIcon /> : undefined}
                       disabled={selectedPrimaryAction.disabled || loading}
-                      onClick={selectedPrimaryAction.kind === "launch" ? () => void launchSelected(false) : undefined}
+                      onClick={selectedPrimaryAction.kind === "launch" ? () => void launchSelected() : undefined}
                     >
                       {selectedPrimaryAction.loadingLabel && loading ? selectedPrimaryAction.loadingLabel : selectedPrimaryAction.label}
                     </Button>
@@ -704,6 +749,26 @@ export function AssistantWorkbench({
                   >
                     {markingApplied ? "Updating..." : "I applied"}
                   </Button>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                    <Button
+                      variant="outlined"
+                      color="warning"
+                      startIcon={<RefreshOutlinedIcon />}
+                      disabled={!selected || loading || resetting}
+                      onClick={() => void resetSelectedAssistant()}
+                    >
+                      {resetting ? "Resetting..." : "Reset assistant test state"}
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      startIcon={<DeleteOutlineOutlinedIcon />}
+                      disabled={!selected || deleting || loading || resetting}
+                      onClick={openRejectDialog}
+                    >
+                      {deleting ? "Rejecting..." : "Reject from queue"}
+                    </Button>
+                  </Stack>
                   <Typography variant="body2" color="text.secondary">{selectedPrimaryAction.detail}</Typography>
                 </Stack>
               ) : null}
@@ -711,42 +776,11 @@ export function AssistantWorkbench({
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                   <Box>
                     <Typography sx={{ fontWeight: 850 }}>Details and recovery</Typography>
-                    <Typography variant="caption" color="text.secondary">Queue progress, reset controls, and rejection feedback.</Typography>
+                    <Typography variant="caption" color="text.secondary">Queue progress and search.</Typography>
                   </Box>
                 </AccordionSummary>
                 <AccordionDetails>
                   <Stack spacing={2}>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>Secondary actions</Typography>
-                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
-                        <Button
-                          variant="outlined"
-                          startIcon={<PlayCircleOutlineOutlinedIcon />}
-                          disabled={loading || resetting}
-                          onClick={() => void launchSelected(true)}
-                        >
-                          Launch next unlaunched
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          color="warning"
-                          startIcon={<RefreshOutlinedIcon />}
-                          disabled={!selected || loading || resetting}
-                          onClick={() => void resetSelectedAssistant()}
-                        >
-                          {resetting ? "Resetting..." : "Reset assistant test state"}
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          color="error"
-                          startIcon={<DeleteOutlineOutlinedIcon />}
-                          disabled={!selected || deleting || loading || resetting}
-                          onClick={openRejectDialog}
-                        >
-                          {deleting ? "Rejecting..." : "Reject from queue"}
-                        </Button>
-                      </Stack>
-                    </Box>
                     {queueProgress.length ? (
                       <QueueProgressTable
                         activeSelectedId={activeSelectedId}
@@ -1044,6 +1078,9 @@ function ApplySprintFunnelPanel({ trustFunnel, readyCount }: { trustFunnel: Appl
             <Chip size="small" label={`Prepared: ${trustFunnel.summary.agencyPrepared}`} />
             <Chip size="small" label={`Failed/skipped: ${trustFunnel.summary.agencyFailedSkipped}`} />
             <Chip size="small" color="success" label={`Ready: ${readyCount}`} />
+            {trustFunnel.summary.materialQualityBlocked ? (
+              <Chip size="small" color="warning" variant="outlined" label={`Material blocked: ${trustFunnel.summary.materialQualityBlocked}`} />
+            ) : null}
           </Stack>
 
           {(trustFunnel.summary.belowProfileThreshold || trustFunnel.summary.suppressed || trustFunnel.summary.listingPagesSuppressed) ? (
@@ -1264,6 +1301,19 @@ function HiddenSuppressedPanel({ items }: { items: ApplySprintTrustFunnel["hidde
                       {item.status ? <Chip size="small" variant="outlined" label={item.status.replace(/_/g, " ")} /> : null}
                       {item.score ? <Chip size="small" label={`${item.score} score`} /> : null}
                       {item.reasons.map((reason) => <Chip key={reason} size="small" color={reason === "packet_generation_failed" ? "error" : "default"} variant="outlined" label={applySprintReasonLabel(reason)} />)}
+                      {item.materialQuality?.generationFailure ? (
+                        <Chip
+                          size="small"
+                          color={item.materialQuality.generationFailure.code === "openai_insufficient_quota" ? "error" : "warning"}
+                          variant="outlined"
+                          label={item.materialQuality.generationFailure.code.replace(/_/g, " ")}
+                        />
+                      ) : null}
+                      {item.kind === "application" ? (
+                        <Button component={Link} href={`/applications/${item.id}`} size="small" variant="outlined">
+                          Review
+                        </Button>
+                      ) : null}
                       {item.applicationUrl ? (
                         <Button component="a" href={item.applicationUrl} target="_blank" rel="noreferrer" size="small" variant="outlined">
                           Open
@@ -1845,6 +1895,7 @@ function applySprintReasonLabel(reason: ApplySprintReasonCode) {
     agency_already_running: "agency already running",
     packet_generation_failed: "packet generation failed",
     missing_resume_or_cover_letter: "missing resume or cover letter",
+    material_quality_needs_review: "material quality needs review",
     hidden_by_canonical_duplicate_reconciliation: "hidden by canonical duplicate reconciliation",
     review_only_broad_discovery: "review-only broad discovery",
   };

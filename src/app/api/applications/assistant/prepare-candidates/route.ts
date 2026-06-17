@@ -55,6 +55,18 @@ export async function POST(request: Request) {
       }
       try {
         const prepared = await prepareApplicationPackage(match.jobPostingId);
+        if (prepared.readyToApply === false) {
+          results.push({
+            matchId: match.id,
+            jobId: match.jobPostingId,
+            company: match.jobPosting.company,
+            title: match.jobPosting.title,
+            status: "failed",
+            applicationId: prepared.application.id,
+            error: `material_quality_needs_review: ${prepared.materialQuality.reason}`,
+          });
+          continue;
+        }
         results.push({
           matchId: match.id,
           jobId: match.jobPostingId,

@@ -13,7 +13,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     agentRun: { findFirst: vi.fn() },
     application: { count: vi.fn() },
-    jobProfileMatch: { count: vi.fn() },
+    jobProfileMatch: { count: vi.fn(), findMany: vi.fn() },
     jobSearchRun: { findUnique: vi.fn(), update: vi.fn() },
   },
 }));
@@ -39,6 +39,7 @@ const runMarketIntelligenceMock = vi.mocked(runMarketIntelligenceAgent);
 const runSearchProfileManagerMock = vi.mocked(runSearchProfileManagerAgent);
 const agentRunFindFirstMock = vi.mocked(prisma.agentRun.findFirst);
 const matchCountMock = vi.mocked(prisma.jobProfileMatch.count);
+const matchFindManyMock = vi.mocked(prisma.jobProfileMatch.findMany);
 const applicationCountMock = vi.mocked(prisma.application.count);
 const searchRunFindUniqueMock = vi.mocked(prisma.jobSearchRun.findUnique);
 const searchRunUpdateMock = vi.mocked(prisma.jobSearchRun.update);
@@ -48,6 +49,11 @@ describe("autoRunAgencyAfterSearch", () => {
     vi.clearAllMocks();
     agentRunFindFirstMock.mockResolvedValue(null);
     matchCountMock.mockResolvedValue(3);
+    matchFindManyMock.mockResolvedValue(agencyMatches([
+      "https://jobs.ashbyhq.com/acme/frontend-engineer/application",
+      "https://job-boards.greenhouse.io/acme/jobs/123",
+      "https://jobs.lever.co/acme/backend-engineer/apply",
+    ]));
     searchRunFindUniqueMock.mockResolvedValue({ progress: [] } as never);
     searchRunUpdateMock.mockResolvedValue({ id: "search_1" } as never);
     runAgencyMock.mockImplementation(async (input = {}) => {
@@ -74,7 +80,7 @@ describe("autoRunAgencyAfterSearch", () => {
       stats: stats(),
     });
 
-    expect(matchCountMock).toHaveBeenCalledWith(expect.objectContaining({
+    expect(matchFindManyMock).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         status: "needs_review",
         jobSearchProfile: { userId: "user_1" },
@@ -105,7 +111,7 @@ describe("autoRunAgencyAfterSearch", () => {
   });
 
   it("does not require a 90+ score gate for search auto handoff", async () => {
-    matchCountMock.mockResolvedValue(1);
+    matchFindManyMock.mockResolvedValue(agencyMatches(["https://jobs.ashbyhq.com/acme/frontend-engineer/application"]));
 
     await autoRunAgencyAfterSearch({
       runId: "search_1",
@@ -115,7 +121,7 @@ describe("autoRunAgencyAfterSearch", () => {
       stats: stats({ jobsSaved: 1 }),
     });
 
-    expect(matchCountMock).toHaveBeenCalledWith(expect.objectContaining({
+    expect(matchFindManyMock).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.not.objectContaining({ overallScore: { gte: 90 } }),
     }));
     expect(runAgencyMock).toHaveBeenCalledWith(expect.objectContaining({ minimumScore: 0, limit: 1, triggeredBy: "search_auto" }));
@@ -130,7 +136,7 @@ describe("autoRunAgencyAfterSearch", () => {
       stats: stats(),
     });
 
-    expect(matchCountMock).toHaveBeenCalledWith(expect.objectContaining({
+    expect(matchFindManyMock).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         NOT: {
           recommendedAction: {
@@ -142,7 +148,7 @@ describe("autoRunAgencyAfterSearch", () => {
   });
 
   it("skips the agency when no jobs were saved and no existing eligible matches remain", async () => {
-    matchCountMock.mockResolvedValue(0);
+    matchFindManyMock.mockResolvedValue(agencyMatches([]));
 
     const result = await autoRunAgencyAfterSearch({
       runId: "search_1",
@@ -154,7 +160,7 @@ describe("autoRunAgencyAfterSearch", () => {
 
     expect(result).toMatchObject({ started: false, reason: "no_eligible_matches" });
     expect(runAgencyMock).not.toHaveBeenCalled();
-    expect(matchCountMock).toHaveBeenCalled();
+    expect(matchFindManyMock).toHaveBeenCalled();
     expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         progress: expect.arrayContaining([
@@ -179,6 +185,25 @@ describe("autoRunAgencyAfterSearch", () => {
     expect(runAgencyMock).toHaveBeenCalledWith(expect.objectContaining({ minimumScore: 0, limit: 3, triggeredBy: "search_auto" }));
   });
 
+  it("ignores non-launchable application URLs when sizing automatic agency handoff", async () => {
+    matchFindManyMock.mockResolvedValue(agencyMatches([
+      "https://builtin.com/job/frontend-engineer/8269411",
+      "https://jobs.ashbyhq.com/acme/frontend-engineer/application",
+      "https://shopapothekeeurope.recruitee.com/o/senior-frontend-engineer-react-mwd-in-berlin-or-remote-germany",
+    ]));
+
+    const result = await autoRunAgencyAfterSearch({
+      runId: "search_1",
+      userId: "user_1",
+      status: "completed",
+      jobsSaved: 3,
+      stats: stats(),
+    });
+
+    expect(result).toMatchObject({ started: true, agentRunId: "agency_1" });
+    expect(runAgencyMock).toHaveBeenCalledWith(expect.objectContaining({ minimumScore: 0, limit: 1, triggeredBy: "search_auto" }));
+  });
+
   it("skips the agency while another agency run is active", async () => {
     agentRunFindFirstMock.mockResolvedValue({ id: "agency_active" } as never);
 
@@ -192,7 +217,7 @@ describe("autoRunAgencyAfterSearch", () => {
 
     expect(result).toMatchObject({ started: false, reason: "agency_already_running", agentRunId: "agency_active" });
     expect(runAgencyMock).not.toHaveBeenCalled();
-    expect(matchCountMock).not.toHaveBeenCalled();
+    expect(matchFindManyMock).not.toHaveBeenCalled();
     expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         progress: expect.arrayContaining([
@@ -491,4 +516,10 @@ function completedOptimizerProgress() {
     result: { healthScores: 1, recommendedChanges: 1, profilesToCreate: 0 },
     gates: { needsReview: 0, pendingApplications: 0 },
   };
+}
+
+function agencyMatches(urls: string[]) {
+  return urls.map((applicationUrl) => ({
+    jobPosting: { applicationUrl },
+  })) as never;
 }

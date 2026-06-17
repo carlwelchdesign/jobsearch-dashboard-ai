@@ -277,6 +277,10 @@ async function processAgencyCandidatesNode(state: RecruitingAgencyWorkflowState)
         },
       });
       const output = prepared.output as { application: { id: string } };
+      if ((prepared.output as { readyToApply?: boolean }).readyToApply === false) {
+        const materialQuality = (prepared.output as { materialQuality?: { reason?: string } }).materialQuality;
+        throw new Error(`material_quality_needs_review: ${materialQuality?.reason ?? "Application material quality needs review."}`);
+      }
       results.push({
         matchId: candidate.id,
         jobId: candidate.jobPostingId,

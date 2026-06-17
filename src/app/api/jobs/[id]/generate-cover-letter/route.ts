@@ -1,11 +1,12 @@
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
-import { generateCoverLetterForJob } from "@/lib/ai/resume";
+import { generateReviewedCoverLetterForJob } from "@/lib/applications/cover-letter-materials";
 import { attachCoverLetterQa, createResumeStrategy } from "@/lib/applications/material-agents";
 import { activeApplicationMaterialGuidance } from "@/lib/applications/material-guidance";
+import { buildApplicationMaterialQuality, materialQualityJson } from "@/lib/applications/material-quality";
 import { prisma } from "@/lib/prisma";
-import { selectResumeSourceBullets, summarizeResumeSourceBullets } from "@/lib/resumes/source-materials";
+import { selectResumeSourceBullets, selectResumeSourceWorkExperiences, summarizeResumeSourceBullets } from "@/lib/resumes/source-materials";
 import { syncMaterialClaimsForCoverLetter } from "@/lib/trust/material-claims";
 
 export const dynamic = "force-dynamic";
@@ -46,16 +47,21 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     });
     const latestUploadId = user.profile.resumeUploads[0]?.id;
     const sourceBullets = selectResumeSourceBullets(user.profile.experienceBullets, latestUploadId);
+    const sourceWorkExperiences = selectResumeSourceWorkExperiences(user.profile.workExperiences, latestUploadId);
     const sourceMaterialSummary = summarizeResumeSourceBullets(sourceBullets, latestUploadId);
     const writingGuidance = await activeApplicationMaterialGuidance(user.id);
-    const generated = await generateCoverLetterForJob({
+    const generated = await generateReviewedCoverLetterForJob({
+      userId: user.id,
       userProfile: user.profile,
       job,
+      jobSearchProfileId: match.jobSearchProfileId,
       bullets: sourceBullets,
       projects: user.profile.projects,
+      workExperiences: sourceWorkExperiences,
       githubRepositories: user.profile.githubRepositories,
       tailoredResumeMarkdown: job.resumes[0]?.markdown,
       writingGuidance,
+      strategy,
     });
 
     const coverLetter = await prisma.generatedCoverLetter.create({
@@ -69,8 +75,13 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
           toneNotes: generated.toneNotes,
           warnings: generated.warnings,
           unsupportedClaimsDetected: generated.unsupportedClaimsDetected,
+          generationFailure: generated.generationFailure,
           resumeId: job.resumes[0]?.id ?? null,
           resumeStrategy: strategy,
+          applicationEvidencePlan: generated.evidencePlan,
+          hiringManagerReview: generated.hiringManagerReview,
+          materialQuality: materialQualityJson(generated.materialQuality),
+          rewriteAttempted: generated.rewriteAttempted,
           writingGuidance,
           sourceMaterialSummary,
         } as Prisma.InputJsonValue,
@@ -82,9 +93,23 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       userId: user.id,
       strategy,
     });
+    const finalMaterialQuality = buildApplicationMaterialQuality({
+      body: coverLetter.body,
+      generatedBy: generated.generatedBy,
+      evidencePlan: generated.evidencePlan,
+      hiringManagerReview: generated.hiringManagerReview,
+      applicationQa: coverLetterQa.qa,
+      rewriteAttempted: generated.rewriteAttempted,
+      generationFailure: generated.generationFailure,
+    });
     const reviewedCoverLetter = await prisma.generatedCoverLetter.update({
       where: { id: coverLetter.id },
-      data: { generationNotes: coverLetterQa.notes },
+      data: {
+        generationNotes: {
+          ...jsonObject(coverLetterQa.notes),
+          materialQuality: finalMaterialQuality,
+        } as Prisma.InputJsonValue,
+      },
     });
     await syncMaterialClaimsForCoverLetter(reviewedCoverLetter.id);
     await prisma.jobProfileMatch.update({
@@ -96,4 +121,8 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   } catch (error) {
     return apiError(error, 400);
   }
+}
+
+function jsonObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }

@@ -1,6 +1,7 @@
 import type { Application, ApplicationPacket, ApplicationPacketStatus, GeneratedCoverLetter, GeneratedResume, Prisma } from "@prisma/client";
 import { syncApprovedApplicationPacketEvidence } from "@/lib/evidence/ingest";
 import { jsonArray } from "@/lib/json";
+import { applicationMaterialQualityFromNotes } from "@/lib/applications/material-quality";
 import { prisma } from "@/lib/prisma";
 import { applicationPacketClaimGate } from "@/lib/trust/material-claims";
 
@@ -277,12 +278,18 @@ export function buildApplicationPacketData({
   const resumeNotes = materialNotes(resume?.generationNotes);
   const coverLetterNotes = materialNotes(coverLetter?.generationNotes);
   const qa = objectValue(coverLetterNotes.applicationQa) || objectValue(resumeNotes.applicationQa);
+  const materialQuality = applicationMaterialQualityFromNotes(coverLetterNotes);
   const strategy = objectValue(resumeNotes.resumeStrategy) || objectValue(coverLetterNotes.resumeStrategy);
   const evidenceRefs = Array.from(new Set([
     ...jsonArray(strategy?.evidenceRefs),
     ...jsonArray(qa?.evidenceRefs),
+    ...(materialQuality?.evidenceRefs ?? []),
     ...jsonArray(resume?.generationNotes && objectValue(resume.generationNotes)?.selectedExperienceBullets).map((item) => item),
   ]));
+  const qualityReview = {
+    ...(qa ?? {}),
+    ...(materialQuality ? { materialQuality } : {}),
+  };
 
   return {
     resumeProfileId,
@@ -296,8 +303,8 @@ export function buildApplicationPacketData({
     companyBrief,
     projectLinks: (projectLinks ?? []) as Prisma.InputJsonValue,
     evidenceRefs: evidenceRefs as Prisma.InputJsonValue,
-    qualityReviewJson: (qa ?? {}) as Prisma.InputJsonValue,
-    status: packetStatus(application.status, qa, existingStatus),
+    qualityReviewJson: qualityReview as Prisma.InputJsonValue,
+    status: packetStatus(application.status, qa, materialQuality, existingStatus),
   };
 }
 
@@ -310,7 +317,8 @@ export function packetApprovalState(packet: Pick<ApplicationPacket, "status" | "
   }
 
   const qa = objectValue(packet.qualityReviewJson);
-  if (packet.status === "NEEDS_REVIEW" || qa?.status === "NEEDS_REVIEW") {
+  const materialQuality = objectValue(qa?.materialQuality);
+  if (packet.status === "NEEDS_REVIEW" || qa?.status === "NEEDS_REVIEW" || materialQuality?.launchable === false) {
     return { canApprove: false, reason: "Resolve QA review items before approving this packet." };
   }
 
@@ -329,6 +337,8 @@ export function packetApprovalChecklist(packet: Pick<ApplicationPacket, "status"
 
   const qa = objectValue(packet.qualityReviewJson);
   const qaStatus = typeof qa?.status === "string" ? qa.status : null;
+  const materialQuality = objectValue(qa?.materialQuality);
+  const materialLaunchable = typeof materialQuality?.launchable === "boolean" ? materialQuality.launchable : null;
 
   return [
     {
@@ -348,8 +358,10 @@ export function packetApprovalChecklist(packet: Pick<ApplicationPacket, "status"
     },
     {
       label: "QA review",
-      complete: packet.status !== "NEEDS_REVIEW" && qaStatus !== "NEEDS_REVIEW",
-      detail: qaStatus === "NEEDS_REVIEW" || packet.status === "NEEDS_REVIEW"
+      complete: packet.status !== "NEEDS_REVIEW" && qaStatus !== "NEEDS_REVIEW" && materialLaunchable !== false,
+      detail: materialLaunchable === false
+        ? "Resolve material quality review before approval."
+        : qaStatus === "NEEDS_REVIEW" || packet.status === "NEEDS_REVIEW"
         ? "Resolve QA warnings before approval."
         : qaStatus === "PASS"
         ? "QA passed."
@@ -410,9 +422,10 @@ async function findResumeProfileForApplication(application: {
   });
 }
 
-function packetStatus(applicationStatus: Application["status"], qa: Record<string, unknown> | null, existingStatus?: ApplicationPacketStatus | null) {
+function packetStatus(applicationStatus: Application["status"], qa: Record<string, unknown> | null, materialQuality: { launchable: boolean } | null, existingStatus?: ApplicationPacketStatus | null) {
   if (applicationStatus === "archived") return "ARCHIVED" as const;
   if (["applied", "follow_up_due", "screening", "interviewing", "offer", "rejected_by_company"].includes(applicationStatus)) return "SUBMITTED" as const;
+  if (materialQuality && !materialQuality.launchable) return "NEEDS_REVIEW" as const;
   if (qa?.status === "NEEDS_REVIEW") return "NEEDS_REVIEW" as const;
   if (existingStatus === "APPROVED") return "APPROVED" as const;
   return "DRAFT" as const;
