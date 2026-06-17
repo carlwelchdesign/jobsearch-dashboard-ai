@@ -1,5 +1,6 @@
 import type { Block, KnownBlock } from "@slack/types";
 import type { SearchOptimizationSummary } from "@/lib/agents/recruiting-search-optimization";
+import type { RecruitingAgencyRunResult } from "@/lib/applications/recruiting-agency";
 import type { JoleneChiefOutput } from "@/lib/jolene/chief-of-staff";
 import type { JoleneOperatingLoopOutput } from "@/lib/jolene/operating-loop";
 
@@ -263,6 +264,47 @@ export function buildSearchOptimizationApprovalMessage(input: {
         ]),
       ]),
       context([link(`${input.appBaseUrl}/profiles`, "Open profiles"), `Optimization ${input.summary.optimizationRunId}`]),
+    ]),
+  };
+}
+
+export function buildRecruitingAgencyOpsMessage(input: {
+  result: RecruitingAgencyRunResult;
+  appBaseUrl: string;
+}): SlackMessage {
+  const topResults = input.result.results.slice(0, 6).map((result) => {
+    const status = result.status === "ready_to_apply" ? "ready" : result.status;
+    return `- ${sanitize(result.company)} - ${sanitize(result.title)} (${result.score}, ${status})`;
+  });
+  return {
+    text: input.result.message,
+    blocks: compactBlocks([
+      header("Recruiting Agency"),
+      section(`*Summary:* ${sanitize(input.result.message)}`),
+      section([
+        `*Approved:* ${input.result.approved}`,
+        `*Prepared:* ${input.result.prepared}`,
+        `*Failed:* ${input.result.failed}`,
+        `*Skipped:* ${input.result.skipped}`,
+      ].join("\n")),
+      input.result.candidateDiagnostics ? section(`*Candidate pool:* ${sanitize(input.result.candidateDiagnostics.summary)}`) : null,
+      topResults.length ? section(`*Recent decisions*\n${topResults.join("\n")}`) : null,
+      context([link(`${input.appBaseUrl}/applications`, "Open Apply Sprint"), `Run ${input.result.agentRunId}`]),
+    ]),
+  };
+}
+
+export function buildRecruitingAgencyFailureMessage(input: {
+  runId: string;
+  message: string;
+  appBaseUrl: string;
+}): SlackMessage {
+  return {
+    text: `Recruiting agency failed: ${input.message}`,
+    blocks: compactBlocks([
+      header("Recruiting Agency Failed"),
+      section(`*Failure:* ${sanitize(input.message)}`),
+      context([link(`${input.appBaseUrl}/runs`, "Open runs"), `Run ${input.runId}`]),
     ]),
   };
 }

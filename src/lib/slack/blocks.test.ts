@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSearchOptimizationApprovalMessage,
+  buildRecruitingAgencyOpsMessage,
   buildStatusMessage,
   parseActionValue,
   SLACK_ACTIONS,
@@ -63,5 +64,38 @@ describe("Slack block builders", () => {
     expect(message.text).toBe("Job Search OS status");
     expect(JSON.stringify(message.blocks)).toContain("Ready applications");
     expect(JSON.stringify(message.blocks)).toContain("Open Job Search OS");
+  });
+
+  it("builds recruiting agency ops summary blocks", () => {
+    const message = buildRecruitingAgencyOpsMessage({
+      appBaseUrl: "http://localhost:3000",
+      result: {
+        agentRunId: "run_1",
+        requested: { minimumScore: 90, limit: 5, triggeredBy: "search_auto" },
+        approved: 2,
+        prepared: 1,
+        failed: 1,
+        skipped: 0,
+        results: [
+          {
+            matchId: "match_1",
+            jobId: "job_1",
+            applicationId: "app_1",
+            company: "Acme <AI>",
+            title: "Staff Frontend & Product Engineer",
+            score: 94,
+            status: "ready_to_apply",
+          },
+        ],
+        message: "Recruiting agency prepared 1 application package from 2 approved matches. 1 failed.",
+      },
+    });
+
+    const serialized = JSON.stringify(message.blocks);
+    expect(message.text).toContain("Recruiting agency prepared");
+    expect(serialized).toContain("Prepared");
+    expect(serialized).toContain("Open Apply Sprint");
+    expect(serialized).not.toContain("<AI>");
+    expect(serialized).not.toContain("& Product");
   });
 });

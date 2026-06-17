@@ -6,6 +6,7 @@ import { isJobSuppressed, loadJobSuppressionState } from "@/lib/jobs/suppression
 import { langSmithTraceMetadata, traceWorkflowStep } from "@/lib/observability/langsmith";
 import { createQualityExampleFromAgentRun } from "@/lib/observability/quality";
 import { prisma } from "@/lib/prisma";
+import { notifySlackRecruitingAgency, notifySlackRecruitingAgencyFailure } from "@/lib/slack/notify";
 import { runSkill } from "@/lib/skills/run-skill";
 import { DEFAULT_RECRUITING_AGENCY_LIMIT, MAX_RECRUITING_AGENCY_LIMIT } from "@/lib/applications/recruiting-agency-constants";
 
@@ -140,6 +141,9 @@ export async function runRecruitingAgency(input: RecruitingAgencyRunInput = {}):
       },
     }).catch(() => null);
     await createQualityExampleFromAgentRun(agentRun.id, "RECRUITING_AGENCY", "WORKFLOW_FAILURE").catch(() => null);
+    await notifySlackRecruitingAgencyFailure({ userId: user.id, runId: agentRun.id, message }).catch((notificationError) =>
+      recordAgencySlackNotificationFailure(agentRun.id, notificationError),
+    );
     throw error;
   }
 }
@@ -367,6 +371,9 @@ async function finalizeAgencyRunNode(state: RecruitingAgencyWorkflowState): Prom
   if (failed > 0) {
     await createQualityExampleFromAgentRun(state.agentRunId, "RECRUITING_AGENCY", "CANDIDATE_FAILURE").catch(() => null);
   }
+  await notifySlackRecruitingAgency({ userId: state.userId, result: output }).catch((error) =>
+    recordAgencySlackNotificationFailure(state.agentRunId, error),
+  );
   return { currentNode: "finalizeRun", output };
 }
 
@@ -460,6 +467,12 @@ async function createAgencyRunEvent(agentRunId: string, type: string, message: s
       payloadJson: toJsonValue(payload),
     },
   });
+}
+
+async function recordAgencySlackNotificationFailure(agentRunId: string, error: unknown) {
+  await createAgencyRunEvent(agentRunId, "slack_notification_failed", "Slack notification failed after Recruiting Agency update.", {
+    error: error instanceof Error ? error.message : "Unknown Slack notification failure",
+  }).catch(() => null);
 }
 
 async function persistAgencyWorkflowState(state: RecruitingAgencyWorkflowState) {
