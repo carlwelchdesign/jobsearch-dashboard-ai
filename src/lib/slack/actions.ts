@@ -18,11 +18,15 @@ export type HandleSlackActionResult = {
   message: string;
 };
 
-export async function handleSlackAction(input: HandleSlackActionInput): Promise<HandleSlackActionResult> {
+export function assertSlackUserCanMutate(slackUserId: string | null | undefined) {
   const config = getSlackConfig();
-  if (config.configured && !isSlackUserAllowed(input.slackUserId, config.config)) {
+  if (config.configured && !isSlackUserAllowed(slackUserId, config.config)) {
     throw new Error("This Slack user is not allowed to approve Job Search OS actions.");
   }
+}
+
+export async function handleSlackAction(input: HandleSlackActionInput): Promise<HandleSlackActionResult> {
+  assertSlackUserCanMutate(input.slackUserId);
 
   const payload = parseActionValue(input.value);
   validateActionKind(input.actionId, payload);
@@ -130,7 +134,11 @@ function validateActionKind(actionId: string, payload: SlackActionPayload) {
     operating_loop_proposal: SLACK_ACTIONS.approveOperatingLoopProposal,
     apply_search_profile_change: SLACK_ACTIONS.applySearchProfileChange,
     rollback_search_profile_change: SLACK_ACTIONS.rollbackSearchProfileChange,
+    refresh_home: null,
+    open_run_modal: null,
+    open_link: null,
   }[payload.kind];
+  if (!expectedActionId) throw new Error("Unsupported Slack action.");
   if (actionId !== expectedActionId) {
     throw new Error("Slack action id does not match its payload.");
   }
