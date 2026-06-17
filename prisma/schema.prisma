@@ -168,6 +168,7 @@ enum InterviewPrepTaskStatus {
 enum NotificationType {
   email
   push
+  slack
   sms
   web_push
 }

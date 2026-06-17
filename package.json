@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "slack:dev": "tsx scripts/slack-dev.ts",
     "dev:local": "docker compose up -d --wait postgres && prisma migrate deploy && prisma db seed && next dev",
     "build": "next build",
     "start": "next start",
@@ -40,6 +41,8 @@
     "@mui/icons-material": "^9.0.1",
     "@mui/material": "^9.0.1",
     "@prisma/client": "^5.22.0",
+    "@slack/bolt": "^4.7.3",
+    "@slack/web-api": "^7.17.0",
     "imapflow": "^1.3.3",
     "langsmith": "^0.7.1",
     "mailparser": "^3.9.8",

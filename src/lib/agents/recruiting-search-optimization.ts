@@ -3,6 +3,7 @@ import { runAgent } from "@/lib/agents/run-agent";
 import { buildSearchRunAnalytics, type SearchRunAnalytics } from "@/lib/job-search/run-analytics";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
+import { notifySlackSearchOptimization } from "@/lib/slack/notify";
 
 export type SearchOptimizationMode = "diagnose_only" | "active";
 
@@ -163,7 +164,7 @@ export async function runRecruitingSearchOptimization(input: {
         },
       });
 
-      return {
+      const output: SearchOptimizationSummary = {
         optimizationRunId: optimizationRun.id,
         agentRunId: run.id,
         generatedAt: new Date().toISOString(),
@@ -185,8 +186,23 @@ export async function runRecruitingSearchOptimization(input: {
         })),
         nextActions: nextActions(context, finalChanges),
       };
+      await notifySlackSearchOptimization({ userId: input.userId, summary: output }).catch((error) => recordSlackNotificationFailure(run.id, error));
+      return output;
     },
   });
+}
+
+async function recordSlackNotificationFailure(agentRunId: string, error: unknown) {
+  await prisma.agentRunEvent.create({
+    data: {
+      agentRunId,
+      type: "slack_notification_failed",
+      message: "Slack notification failed after Recruiting Search Team completed.",
+      payloadJson: {
+        error: error instanceof Error ? error.message : "Unknown Slack notification failure",
+      } as Prisma.InputJsonValue,
+    },
+  }).catch(() => null);
 }
 
 export async function buildSearchOptimizationContext({ userId }: { userId: string }): Promise<SearchOptimizationContext> {

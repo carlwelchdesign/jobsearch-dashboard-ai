@@ -2,6 +2,7 @@ import type { AgentRun, Prisma } from "@prisma/client";
 import { executeJoleneDelegatedWork, runJoleneChiefOfStaffAgent, type JoleneChiefOutput, type JoleneDelegatedWork } from "@/lib/jolene/chief-of-staff";
 import { prisma } from "@/lib/prisma";
 import { runAgent } from "@/lib/agents/run-agent";
+import { notifySlackOperatingLoop } from "@/lib/slack/notify";
 
 export type JoleneOperatingLoopInput = {
   userId?: string;
@@ -65,9 +66,21 @@ export async function runJoleneOperatingLoopAgent(input: JoleneOperatingLoopInpu
           }),
         },
       });
+      await notifySlackOperatingLoop({ userId: user.id, runId: run.id, output }).catch((error) => recordSlackNotificationFailure(run.id, error));
       return output;
     },
   });
+}
+
+async function recordSlackNotificationFailure(agentRunId: string, error: unknown) {
+  await prisma.agentRunEvent.create({
+    data: {
+      agentRunId,
+      type: "slack_notification_failed",
+      message: "Slack notification failed after Jolene Operating Loop completed.",
+      payloadJson: toJsonInput({ error: error instanceof Error ? error.message : "Unknown Slack notification failure" }),
+    },
+  }).catch(() => null);
 }
 
 export async function getLatestJoleneOperatingLoop(userId?: string | null) {

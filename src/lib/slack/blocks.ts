@@ -1,0 +1,290 @@
+import type { Block, KnownBlock } from "@slack/types";
+import type { SearchOptimizationSummary } from "@/lib/agents/recruiting-search-optimization";
+import type { JoleneChiefOutput } from "@/lib/jolene/chief-of-staff";
+import type { JoleneOperatingLoopOutput } from "@/lib/jolene/operating-loop";
+
+export const SLACK_ACTIONS = {
+  approveChiefProposal: "jso_approve_chief_proposal",
+  approveOperatingLoopProposal: "jso_approve_loop_proposal",
+  applySearchProfileChange: "jso_apply_search_profile_change",
+  rollbackSearchProfileChange: "jso_rollback_search_profile_change",
+} as const;
+
+export type SlackActionPayload =
+  | { kind: "chief_proposal"; runId: string; proposalId: string }
+  | { kind: "operating_loop_proposal"; runId: string; proposalId: string }
+  | { kind: "apply_search_profile_change"; changeId: string }
+  | { kind: "rollback_search_profile_change"; changeId: string };
+
+export type SlackBlock = KnownBlock | Block;
+
+export type SlackMessage = {
+  text: string;
+  blocks: SlackBlock[];
+};
+
+export type SlackStatusSummary = {
+  generatedAt: Date;
+  appBaseUrl: string;
+  latestChiefRun: { id: string; status: string; updatedAt: Date } | null;
+  latestOperatingLoopRun: { id: string; status: string; updatedAt: Date } | null;
+  latestSearchOptimizationRun: { id: string; status: string; createdAt: Date; summary: string } | null;
+  openSearchProfileChanges: number;
+  readyApplications: number;
+  needsReviewJobs: number;
+};
+
+export function buildJoleneChiefOpsMessage(input: {
+  runId: string;
+  output: JoleneChiefOutput;
+  appBaseUrl: string;
+}): SlackMessage {
+  const topPriorities = input.output.priorities.slice(0, 3).map((priority) => `- ${sanitize(priority.title)} (${priority.category})`);
+  return {
+    text: `Jolene Chief of Staff brief: ${input.output.summary}`,
+    blocks: compactBlocks([
+      header("Jolene Chief of Staff"),
+      section(`*Summary:* ${sanitize(input.output.summary)}`),
+      topPriorities.length ? section(`*Top priorities*\n${topPriorities.join("\n")}`) : null,
+      section(`*Delegated proposals:* ${input.output.delegatedWork.length}\n*Confidence:* ${input.output.confidence}`),
+      context([link(input.appBaseUrl, "Open Job Search OS"), `Run ${input.runId}`]),
+    ]),
+  };
+}
+
+export function buildJoleneChiefApprovalMessage(input: {
+  runId: string;
+  output: JoleneChiefOutput;
+  appBaseUrl: string;
+}): SlackMessage | null {
+  const requests = input.output.approvalRequests.slice(0, 8);
+  if (!requests.length) return null;
+
+  return {
+    text: `Jolene has ${requests.length} delegated proposal(s) awaiting approval.`,
+    blocks: compactBlocks([
+      header("Jolene Approvals"),
+      section(`Jolene has *${requests.length}* internal proposal(s) awaiting review. The app remains the source of truth.`),
+      ...requests.flatMap((request) => [
+        section(`*${sanitize(request.label)}*\n${sanitize(request.reason)}`),
+        actions([
+          button({
+            text: "Approve",
+            actionId: SLACK_ACTIONS.approveChiefProposal,
+            value: actionValue({ kind: "chief_proposal", runId: input.runId, proposalId: request.proposalId }),
+            style: "primary",
+          }),
+        ]),
+      ]),
+      context([link(input.appBaseUrl, "Open app"), `Run ${input.runId}`]),
+    ]),
+  };
+}
+
+export function buildOperatingLoopOpsMessage(input: {
+  runId: string;
+  output: JoleneOperatingLoopOutput;
+  appBaseUrl: string;
+}): SlackMessage {
+  const signals = input.output.signalSummary.slice(0, 4).map((signal) => `- ${sanitize(signal)}`);
+  return {
+    text: `Jolene Operating Loop planned ${input.output.recommendedActions.length} action(s).`,
+    blocks: compactBlocks([
+      header("Jolene Operating Loop"),
+      section(`*Summary:* ${sanitize(input.output.summary)}`),
+      signals.length ? section(`*Signals*\n${signals.join("\n")}`) : null,
+      section(`*Proposed actions:* ${input.output.recommendedActions.length}\n*Skipped actions:* ${input.output.skippedActions.length}`),
+      context([link(input.appBaseUrl, "Open Job Search OS"), `Run ${input.runId}`]),
+    ]),
+  };
+}
+
+export function buildOperatingLoopApprovalMessage(input: {
+  runId: string;
+  output: JoleneOperatingLoopOutput;
+  appBaseUrl: string;
+}): SlackMessage | null {
+  const requests = input.output.approvalRequests.slice(0, 8);
+  if (!requests.length) return null;
+
+  return {
+    text: `Jolene Operating Loop has ${requests.length} proposal(s) awaiting approval.`,
+    blocks: compactBlocks([
+      header("Operating Loop Approvals"),
+      section(`Review *${requests.length}* proposed internal action(s). Slack can approve them, but execution is still recorded in the app.`),
+      ...requests.flatMap((request) => [
+        section(`*${sanitize(request.label)}*\n${sanitize(request.reason)}`),
+        actions([
+          button({
+            text: "Approve",
+            actionId: SLACK_ACTIONS.approveOperatingLoopProposal,
+            value: actionValue({ kind: "operating_loop_proposal", runId: input.runId, proposalId: request.proposalId }),
+            style: "primary",
+          }),
+        ]),
+      ]),
+      context([link(input.appBaseUrl, "Open app"), `Run ${input.runId}`]),
+    ]),
+  };
+}
+
+export function buildSearchOptimizationOpsMessage(input: {
+  summary: SearchOptimizationSummary;
+  appBaseUrl: string;
+}): SlackMessage {
+  const changes = input.summary.changes.slice(0, 5).map((change) => `- ${sanitize(change.profileName)}: ${change.action} (${change.status})`);
+  return {
+    text: `Recruiting Search Team completed: ${input.summary.summary}`,
+    blocks: compactBlocks([
+      header("Recruiting Search Team"),
+      section(`*Summary:* ${sanitize(input.summary.summary)}`),
+      section(`*Qualified yield:* ${Math.round(input.summary.qualifiedYield * 100)}%\n*Run quality:* ${sanitize(input.summary.runQualityLabel)}\n*Changes:* ${input.summary.changes.length}`),
+      changes.length ? section(`*Profile changes*\n${changes.join("\n")}`) : null,
+      context([link(`${input.appBaseUrl}/profiles`, "Open profiles"), `Run ${input.summary.agentRunId}`]),
+    ]),
+  };
+}
+
+export function buildSearchOptimizationApprovalMessage(input: {
+  summary: SearchOptimizationSummary;
+  appBaseUrl: string;
+}): SlackMessage | null {
+  const actionable = input.summary.changes.filter((change) =>
+    (change.riskLevel === "LOW" && change.status !== "APPLIED" && change.status !== "ROLLED_BACK") || change.status === "APPLIED",
+  ).slice(0, 8);
+  if (!actionable.length) return null;
+
+  return {
+    text: `Recruiting Search Team has ${actionable.length} search profile action(s) available.`,
+    blocks: compactBlocks([
+      header("Search Profile Actions"),
+      section("Review low-risk search-profile edits. High-risk structural changes stay review-only in the app."),
+      ...actionable.flatMap((change) => [
+        section(`*${sanitize(change.profileName)}*\n${change.action} - ${change.status}\n${sanitize(change.rationale)}`),
+        actions([
+          change.status === "APPLIED"
+            ? button({
+                text: "Rollback",
+                actionId: SLACK_ACTIONS.rollbackSearchProfileChange,
+                value: actionValue({ kind: "rollback_search_profile_change", changeId: change.id }),
+              })
+            : button({
+                text: "Apply",
+                actionId: SLACK_ACTIONS.applySearchProfileChange,
+                value: actionValue({ kind: "apply_search_profile_change", changeId: change.id }),
+                style: "primary",
+              }),
+        ]),
+      ]),
+      context([link(`${input.appBaseUrl}/profiles`, "Open profiles"), `Optimization ${input.summary.optimizationRunId}`]),
+    ]),
+  };
+}
+
+export function buildStatusMessage(status: SlackStatusSummary): SlackMessage {
+  return {
+    text: "Job Search OS status",
+    blocks: compactBlocks([
+      header("Job Search OS Status"),
+      section([
+        `*Ready applications:* ${status.readyApplications}`,
+        `*Jobs needing review:* ${status.needsReviewJobs}`,
+        `*Open search profile changes:* ${status.openSearchProfileChanges}`,
+      ].join("\n")),
+      section([
+        `*Latest Chief brief:* ${formatRun(status.latestChiefRun)}`,
+        `*Latest Operating Loop:* ${formatRun(status.latestOperatingLoopRun)}`,
+        `*Latest Search Optimization:* ${status.latestSearchOptimizationRun ? `${status.latestSearchOptimizationRun.status} (${shortDate(status.latestSearchOptimizationRun.createdAt)})` : "none"}`,
+      ].join("\n")),
+      status.latestSearchOptimizationRun ? section(`*Last search note:* ${sanitize(status.latestSearchOptimizationRun.summary)}`) : null,
+      context([link(status.appBaseUrl, "Open Job Search OS"), `Generated ${shortDate(status.generatedAt)}`]),
+    ]),
+  };
+}
+
+export function actionValue(payload: SlackActionPayload) {
+  return JSON.stringify(payload);
+}
+
+export function parseActionValue(value: string): SlackActionPayload {
+  const parsed = JSON.parse(value) as SlackActionPayload;
+  if (!parsed || typeof parsed !== "object" || !("kind" in parsed)) {
+    throw new Error("Slack action payload is invalid.");
+  }
+  return parsed;
+}
+
+export function appendActionResult(blocks: SlackBlock[] | undefined, message: string, ok: boolean): SlackBlock[] {
+  const existing = (blocks ?? []).filter((block) => !("block_id" in block) || block.block_id !== "jso_action_result");
+  return [
+    ...existing,
+    {
+      type: "context",
+      block_id: "jso_action_result",
+      elements: [{ type: "mrkdwn", text: `${ok ? "*Done:*" : "*Failed:*"} ${sanitize(message)}` }],
+    },
+  ];
+}
+
+function header(text: string): SlackBlock {
+  return { type: "header", text: { type: "plain_text", text: truncate(text, 150), emoji: false } };
+}
+
+function section(text: string): SlackBlock {
+  return { type: "section", text: { type: "mrkdwn", text: truncate(text, 2800) } };
+}
+
+function context(items: string[]): SlackBlock {
+  return { type: "context", elements: items.map((item) => ({ type: "mrkdwn", text: truncate(item, 300) })) };
+}
+
+function actions(elements: SlackBlockElement[]): SlackBlock {
+  return { type: "actions", elements };
+}
+
+type SlackBlockElement = {
+  type: "button";
+  text: { type: "plain_text"; text: string; emoji: false };
+  action_id: string;
+  value: string;
+  style?: "primary" | "danger";
+};
+
+function button(input: {
+  text: string;
+  actionId: string;
+  value: string;
+  style?: "primary" | "danger";
+}): SlackBlockElement {
+  return {
+    type: "button",
+    text: { type: "plain_text", text: truncate(input.text, 75), emoji: false },
+    action_id: input.actionId,
+    value: input.value,
+    ...(input.style ? { style: input.style } : {}),
+  };
+}
+
+function link(url: string, label: string) {
+  return `<${url}|${label}>`;
+}
+
+function sanitize(value: string | null | undefined) {
+  return truncate((value ?? "").replace(/[<>&]/g, (char) => ({ "<": "‹", ">": "›", "&": "and" }[char] ?? char)), 600);
+}
+
+function truncate(value: string, max: number) {
+  return value.length <= max ? value : `${value.slice(0, max - 1)}...`;
+}
+
+function compactBlocks(blocks: Array<SlackBlock | null>): SlackBlock[] {
+  return blocks.filter(Boolean) as SlackBlock[];
+}
+
+function formatRun(run: { status: string; updatedAt: Date } | null) {
+  return run ? `${run.status} (${shortDate(run.updatedAt)})` : "none";
+}
+
+function shortDate(date: Date) {
+  return date.toISOString().replace("T", " ").slice(0, 16);
+}
