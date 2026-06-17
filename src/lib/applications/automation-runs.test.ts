@@ -97,6 +97,14 @@ playwright._impl._errors.Error: Locator.count: Frame was detached
       status: "BLOCKED",
       blockerType: "ats_spam_block",
     });
+    expect(classifyAssistantLog("Cloudflare Turnstile or bot verification blocked automation. Turnstile is designed to verify real visitors. Continue in normal Chrome and submit manually.")).toMatchObject({
+      status: "BLOCKED",
+      blockerType: "turnstile_challenge",
+    });
+    expect(classifyAssistantLog("Verify Visitors Without CAPTCHA. Cloudflare Turnstile confirms web visitors are real.")).toMatchObject({
+      status: "BLOCKED",
+      blockerType: "turnstile_challenge",
+    });
   });
 
   it("builds diagnostics for setup and page blockers", () => {
@@ -116,6 +124,15 @@ playwright._impl._errors.Error: Locator.count: Frame was detached
       phase: "blocked",
       blockerType: "closed_job",
       nextAction: "Reject this application as Job unavailable.",
+    });
+
+    expect(buildAssistantRunFeedback({
+      log: "Cloudflare Turnstile or bot verification blocked automation.",
+      run: { status: "BLOCKED", blockerType: "turnstile_challenge" },
+    }).diagnostics).toMatchObject({
+      phase: "blocked",
+      blockerType: "turnstile_challenge",
+      nextAction: "Continue in normal Chrome, complete the visitor verification, and submit manually if the employer form is visible.",
     });
   });
 

@@ -143,7 +143,16 @@ CANDIDATE_COUNTRY_PATTERN = re.compile(r"^country\b|country\*|\bcountry\b", re.I
 PHONE_COUNTRY_ANSWER = "United States +1"
 COUNTRY_ANSWER = "United States"
 SUBMIT_PATTERNS = re.compile(r"submit|send application|apply now|complete application|finish", re.I)
-CAPTCHA_PATTERNS = re.compile(r"captcha|recaptcha|hcaptcha|verify you are human", re.I)
+CAPTCHA_PATTERNS = re.compile(r"captcha|recaptcha|hcaptcha|verify you are human|human verification", re.I)
+TURNSTILE_CHALLENGE_PATTERNS = re.compile(
+    r"cf-turnstile|challenges\.cloudflare\.com|cf_chl|cloudflare turnstile|"
+    r"verify visitors without captcha|verify (?:you are|visitors).*real|"
+    r"checking if (?:the )?site connection is secure|"
+    r"cloudflare.{0,120}(?:challenge|turnstile|verification|blocked|ray id|checking|verify)|"
+    r"(?:challenge|turnstile|verification|blocked|ray id|checking|verify).{0,120}cloudflare|"
+    r"\bjust a moment\.{0,3}\b",
+    re.I | re.S,
+)
 ASHBY_SPAM_BLOCK_PATTERNS = re.compile(
     r"we couldn.?t submit your application|possible spam|flagged as possible spam|"
     r"google.?s recaptcha technology|to protect against spam and bots|submit your application again",
@@ -264,9 +273,9 @@ def main() -> int:
             open_manual_handoff(package["job"]["applicationUrl"], workdir)
             return 0
 
-        if CAPTCHA_PATTERNS.search(body_text):
-            assistant_event(args.application_id, "blocker_found", "Assistant paused.", {"blockerType": "manual_handoff", "url": page.url})
-            print("Assistant paused.")
+        challenge_blocker = detect_bot_challenge(body_text, page.url)
+        if challenge_blocker:
+            emit_bot_challenge_block(args, page, challenge_blocker)
             browser_or_context.close()
             open_manual_handoff(package["job"]["applicationUrl"], workdir)
             return 0
@@ -303,7 +312,7 @@ def main() -> int:
                 "demographicFieldsFilled": demographic_filled,
                 "uploads": uploads,
             })
-            field_command_loop(
+            command_loop_blocked = field_command_loop(
                 args,
                 page,
                 form_contexts,
@@ -312,6 +321,10 @@ def main() -> int:
                 cover_letter_pdf,
                 inventory_after_legacy_fill,
             )
+            if command_loop_blocked:
+                browser_or_context.close()
+                open_manual_handoff(package["job"]["applicationUrl"], workdir)
+                return 0
             if not auto_submit_allowed:
                 for context in form_contexts:
                     protect_submit_buttons(context)
@@ -536,7 +549,7 @@ def field_command_loop(
     resume_pdf: Path,
     cover_letter_pdf: Path,
     inventory: list[dict[str, str]],
-) -> None:
+) -> bool:
     workflow = package.get("workflow", {}) if isinstance(package.get("workflow"), dict) else {}
     event_url = workflow.get("eventUrl") or f"{args.app_url.rstrip('/')}/api/applications/{args.application_id}/assistant-workflow/events"
     command_url = workflow.get("commandUrl") or f"{args.app_url.rstrip('/')}/api/applications/{args.application_id}/assistant-workflow/command"
@@ -559,6 +572,8 @@ def field_command_loop(
         "package": package,
     }
     for _ in range(160):
+        if bot_challenge_detected(page.context, learning_state):
+            return True
         maybe_report_field_learning(page.context, learning_state)
         try:
             payload = fetch_json(str(command_url))
@@ -610,6 +625,7 @@ def field_command_loop(
         except Exception as exc:
             print(f"Unable to report assistant workflow command result: {exc}", file=sys.stderr)
             break
+    return False
 
 
 def workflow_field(field: dict[str, str]) -> dict[str, Any]:
@@ -1785,7 +1801,7 @@ def canonical_field_key(value: str) -> str:
 
 def blocked_learning_descriptor(value: str) -> bool:
     return re.search(
-        r"password|captcha|recaptcha|hcaptcha|verification|verify|otp|one time|one-time|security code|verification code|auth code|token|secret|ssn|social security|payment|credit card|card number|"
+        r"password|captcha|recaptcha|hcaptcha|turnstile|cf-turnstile|cf_chl|cloudflare challenge|verification|verify|otp|one time|one-time|security code|verification code|auth code|token|secret|ssn|social security|payment|credit card|card number|"
         r"upload|resume|cover letter|salary|compensation|sponsor|sponsorship|visa|cookie|cookies|vendor|consent|privacy preference|ot-group|onetrust|"
         r"performance and functionality|advertising cookies|cookie list search|select all hosts|select all vendor|chkbox-id|"
         r"race|ethnic|gender|veteran|disab|birth|age|citizenship|nationality|legal|attest|certify",
@@ -1895,6 +1911,36 @@ def is_ashby_application(current_url: str, package: dict[str, Any]) -> bool:
         str(package.get("job", {}).get("applicationHost", "")),
     ]
     return any("ashbyhq.com" in value.lower() for value in values)
+
+
+def detect_bot_challenge(body_text: str, current_url: str = "") -> dict[str, str] | None:
+    haystack = f"{current_url}\n{body_text}"
+    if TURNSTILE_CHALLENGE_PATTERNS.search(haystack):
+        return {
+            "blockerType": "turnstile_challenge",
+            "message": "Cloudflare Turnstile or bot verification blocked automation.",
+            "safeRetry": "normal_chrome_manual_submit",
+        }
+    if CAPTCHA_PATTERNS.search(haystack):
+        return {
+            "blockerType": "manual_handoff",
+            "message": "Assistant paused for CAPTCHA or human verification.",
+            "safeRetry": "manual_review",
+        }
+    return None
+
+
+def emit_bot_challenge_block(args: argparse.Namespace, page: Any, blocker: dict[str, str]) -> None:
+    assistant_event(args.application_id, "blocker_found", blocker["message"], {
+        "blockerType": blocker["blockerType"],
+        "url": page.url,
+        "safeRetry": blocker["safeRetry"],
+    })
+    print(blocker["message"])
+    if blocker["blockerType"] == "turnstile_challenge":
+        print("Turnstile is designed to verify real visitors. Continue in normal Chrome and submit manually.")
+    else:
+        print("Complete the verification manually, then continue only if the employer form is visible.")
 
 
 def emit_ashby_spam_block(args: argparse.Namespace, page: Any) -> None:
@@ -2138,8 +2184,8 @@ def attempt_auto_submit(page: Any, contexts: list[Any], inventory: list[dict[str
     if required_empty:
         print(f"Auto-submit skipped: {required_empty} required empty field(s) remain.")
         return False
-    if CAPTCHA_PATTERNS.search(page.inner_text("body", timeout=5000)):
-        print("Auto-submit skipped: manual review is needed before continuing.")
+    if detect_bot_challenge(page.inner_text("body", timeout=5000), page.url):
+        print("Auto-submit skipped: CAPTCHA or bot verification requires manual review.")
         return False
 
     submit = find_submit_control(contexts)
@@ -2321,6 +2367,10 @@ def keep_open(
                 browser.close()
                 open_manual_handoff(original_url, workdir)
                 return
+            if bot_challenge_detected(browser, mark_applied_state):
+                browser.close()
+                open_manual_handoff(original_url, workdir)
+                return
             maybe_mark_manual_submit(browser, workdir, mark_applied_state)
             if browser_was_closed_without_pages(browser, mark_applied_state):
                 return
@@ -2336,6 +2386,10 @@ def keep_open(
                 open_manual_handoff(original_url, workdir)
                 return
             if ashby_spam_block_detected(browser, mark_applied_state):
+                browser.close()
+                open_manual_handoff(original_url, workdir)
+                return
+            if bot_challenge_detected(browser, mark_applied_state):
                 browser.close()
                 open_manual_handoff(original_url, workdir)
                 return
@@ -2418,6 +2472,35 @@ def ashby_spam_block_detected(browser: Any, state: dict[str, Any] | None) -> boo
                 )
                 state["ashby_spam_block_reported"] = True
             return True
+    return False
+
+
+def bot_challenge_detected(browser: Any, state: dict[str, Any] | None) -> bool:
+    for page in browser_pages(browser):
+        try:
+            body_text = page.inner_text("body", timeout=500)
+        except Exception:
+            continue
+        blocker = detect_bot_challenge(body_text, page.url)
+        if not blocker:
+            continue
+        if state is not None and not state.get("bot_challenge_reported"):
+            application_id = str(state.get("application_id") or "")
+            if application_id:
+                args = argparse.Namespace(application_id=application_id)
+                emit_bot_challenge_block(args, page, blocker)
+            post_workflow_event(
+                state,
+                "blocker_found",
+                blocker["message"],
+                {
+                    "blockerType": blocker["blockerType"],
+                    "url": page.url,
+                    "safeRetry": blocker["safeRetry"],
+                },
+            )
+            state["bot_challenge_reported"] = True
+        return True
     return False
 
 
@@ -2707,6 +2790,13 @@ def browser_pages(browser: Any) -> list[Any]:
         pages = getattr(browser, "pages", None)
         if pages is not None:
             return list(pages)
+    except Exception:
+        return []
+    try:
+        pages = []
+        for context in getattr(browser, "contexts", []):
+            pages.extend(context.pages)
+        return pages
     except Exception:
         return []
 

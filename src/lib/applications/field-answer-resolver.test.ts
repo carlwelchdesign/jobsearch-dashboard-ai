@@ -95,12 +95,14 @@ describe("resolveApplicationFieldAnswer", () => {
   });
 
   it("blocks OTP and CAPTCHA-style fields", async () => {
-    const result = await resolveApplicationFieldAnswer({
-      applicationId: "app_1",
-      field: { label: "please enter otp character 1", inputType: "text" },
-    });
+    for (const label of ["please enter otp character 1", "cf-turnstile-response"]) {
+      const result = await resolveApplicationFieldAnswer({
+        applicationId: "app_1",
+        field: { label, inputType: "text" },
+      });
 
-    expect(result).toMatchObject({ source: "blocked", autoFillAllowed: false });
+      expect(result).toMatchObject({ source: "blocked", autoFillAllowed: false });
+    }
     expect(applicationMock).not.toHaveBeenCalled();
   });
 

@@ -163,7 +163,7 @@ const SERVICE_CATALOG: ServiceDef[] = [
     id: "playwright",
     name: "Playwright local assistant",
     description:
-      "Enables the Apply Sprint browser automation workflow. The local Python / Playwright assistant fills application forms, saves field memories, and stops for review when it encounters CAPTCHAs or unknown questions. Requires the Python environment to be set up.",
+      "Enables the Apply Sprint browser automation workflow. The local Python / Playwright assistant fills application forms, saves field memories, and stops for review when it encounters CAPTCHA, bot verification, or unknown questions. Requires the Python environment to be set up.",
     guideAnchor: "python-playwright-browser-assistant-always-runs-locally",
     optional: true,
   },

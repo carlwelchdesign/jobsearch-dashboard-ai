@@ -33,7 +33,7 @@ export type FieldLearningDecision = {
 };
 
 const blockedInputTypes = new Set(["hidden", "password", "file"]);
-const blockedCategoryPatterns = /\b(password|captcha|recaptcha|hcaptcha|verification|verify|otp|one time|one-time|security code|verification code|auth code|token|secret|ssn|social_security|payment|credit_card|file|resume|cover_letter)\b/i;
+const blockedCategoryPatterns = /\b(password|captcha|recaptcha|hcaptcha|turnstile|cf-turnstile|cf_chl|verification|verify|otp|one time|one-time|security code|verification code|auth code|token|secret|ssn|social_security|payment|credit_card|file|resume|cover_letter)\b/i;
 const nonApplicationControlPattern = /\b(cookie|cookies|vendor|consent|privacy preference|ot-group|onetrust|performance and functionality|advertising cookies|cookie list search|select all hosts|select all vendor|chkbox-id)\b/i;
 const highSensitivityPattern = /\b(salary|compensation|pay|wage|bonus|equity|sponsor|sponsorship|visa|authorization|authorized|work permit|legal|attest|certify|convict|felony|criminal|background|clearance)\b/i;
 const demographicPattern = /\b(race|ethnic|gender|sex|veteran|disab|orientation|pronoun|religion|age|birth|citizenship|nationality)\b/i;

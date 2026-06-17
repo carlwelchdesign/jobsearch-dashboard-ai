@@ -387,8 +387,8 @@ export function AssistantWorkbench({
     timedOutCount ? `${timedOutCount} timed out` : null,
   ].filter(Boolean).join("; ");
 
-  async function launchSelected(next = false) {
-    const endpoint = next ? "/api/applications/next-ready/launch-assistant" : `/api/applications/${activeSelectedId}/launch-assistant`;
+  async function launchSelected() {
+    const endpoint = `/api/applications/${activeSelectedId}/launch-assistant`;
     setLoading(true);
     setRunFeedback(null);
     try {
@@ -733,7 +733,7 @@ export function AssistantWorkbench({
                       color={selectedPrimaryAction.color}
                       startIcon={selectedPrimaryAction.kind === "launch" ? <PlayCircleOutlineOutlinedIcon /> : undefined}
                       disabled={selectedPrimaryAction.disabled || loading}
-                      onClick={selectedPrimaryAction.kind === "launch" ? () => void launchSelected(false) : undefined}
+                      onClick={selectedPrimaryAction.kind === "launch" ? () => void launchSelected() : undefined}
                     >
                       {selectedPrimaryAction.loadingLabel && loading ? selectedPrimaryAction.loadingLabel : selectedPrimaryAction.label}
                     </Button>
@@ -749,6 +749,26 @@ export function AssistantWorkbench({
                   >
                     {markingApplied ? "Updating..." : "I applied"}
                   </Button>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
+                    <Button
+                      variant="outlined"
+                      color="warning"
+                      startIcon={<RefreshOutlinedIcon />}
+                      disabled={!selected || loading || resetting}
+                      onClick={() => void resetSelectedAssistant()}
+                    >
+                      {resetting ? "Resetting..." : "Reset assistant test state"}
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      startIcon={<DeleteOutlineOutlinedIcon />}
+                      disabled={!selected || deleting || loading || resetting}
+                      onClick={openRejectDialog}
+                    >
+                      {deleting ? "Rejecting..." : "Reject from queue"}
+                    </Button>
+                  </Stack>
                   <Typography variant="body2" color="text.secondary">{selectedPrimaryAction.detail}</Typography>
                 </Stack>
               ) : null}
@@ -756,42 +776,11 @@ export function AssistantWorkbench({
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                   <Box>
                     <Typography sx={{ fontWeight: 850 }}>Details and recovery</Typography>
-                    <Typography variant="caption" color="text.secondary">Queue progress, reset controls, and rejection feedback.</Typography>
+                    <Typography variant="caption" color="text.secondary">Queue progress and search.</Typography>
                   </Box>
                 </AccordionSummary>
                 <AccordionDetails>
                   <Stack spacing={2}>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>Secondary actions</Typography>
-                      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} useFlexGap sx={{ flexWrap: "wrap", mt: 1 }}>
-                        <Button
-                          variant="outlined"
-                          startIcon={<PlayCircleOutlineOutlinedIcon />}
-                          disabled={loading || resetting}
-                          onClick={() => void launchSelected(true)}
-                        >
-                          Launch next unlaunched
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          color="warning"
-                          startIcon={<RefreshOutlinedIcon />}
-                          disabled={!selected || loading || resetting}
-                          onClick={() => void resetSelectedAssistant()}
-                        >
-                          {resetting ? "Resetting..." : "Reset assistant test state"}
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          color="error"
-                          startIcon={<DeleteOutlineOutlinedIcon />}
-                          disabled={!selected || deleting || loading || resetting}
-                          onClick={openRejectDialog}
-                        >
-                          {deleting ? "Rejecting..." : "Reject from queue"}
-                        </Button>
-                      </Stack>
-                    </Box>
                     {queueProgress.length ? (
                       <QueueProgressTable
                         activeSelectedId={activeSelectedId}
