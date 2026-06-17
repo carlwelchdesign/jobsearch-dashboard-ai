@@ -59,6 +59,40 @@ Status endpoint:
 /api/jobs/search/run/status
 ```
 
+## Slack Agent Ops
+
+Slack Agent Ops is an optional Socket Mode worker. It posts redacted agent updates, sends approval cards, and answers `/jso status` while keeping durable state in Job Search OS.
+
+Required local env:
+
+```bash
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_APP_TOKEN=xapp-...
+SLACK_OPS_CHANNEL_ID=C...
+SLACK_APPROVALS_CHANNEL_ID=C...
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+Optional env:
+
+```bash
+SLACK_SIGNING_SECRET=...
+SLACK_DECISION_LOG_CHANNEL_ID=C...
+SLACK_ALLOWED_USER_IDS=U123,U456
+SLACK_LOG_LEVEL=info
+```
+
+Run Slack beside the app:
+
+```bash
+npm run dev
+npm run slack:dev
+```
+
+The worker supports `/jso status` and approval buttons for existing internal actions: Jolene delegated proposals, Jolene Operating Loop proposals, low-risk search-profile changes, and rollback of already-applied search-profile changes. Slack does not submit applications, send email, publish LinkedIn posts, or store durable approval state. The app logs Slack deliveries as `NotificationLog` rows with type `slack` and records action outcomes on existing agent run events where applicable.
+
+Use `config/slack-app-manifest.example.yml` as the starting Slack app manifest. Install the app to the workspace, invite it to the configured channels, then restart `npm run slack:dev`.
+
 ## Source Management
 
 Manage direct company sources from `/sources`. The add-company form writes to the `Company Source List` config and accepts a company name, priority, categories, and optional Greenhouse, Lever, and Ashby slugs. When slugs are blank, generated ATS slug variants are used.

@@ -12,6 +12,7 @@ import { getLinkedInAnalyticsSummary } from "@/lib/linkedin/analytics";
 import { buildCareerStandup, type CareerStandup } from "@/lib/jolene/career-standup";
 import { getLatestEmailOpsSummary, runJoleneEmailOperationsAgent, type JoleneEmailOpsSummary } from "@/lib/jolene/email-ops";
 import { prisma } from "@/lib/prisma";
+import { notifySlackJoleneChiefBrief } from "@/lib/slack/notify";
 
 export type JoleneChiefInput = {
   userId?: string;
@@ -106,9 +107,21 @@ export async function runJoleneChiefOfStaffAgent(input: JoleneChiefInput = {}) {
           payloadJson: toJsonInput({ priorityIds: output.priorities.map((priority) => priority.id), delegatedWorkIds: output.delegatedWork.map((work) => work.id) }),
         },
       });
+      await notifySlackJoleneChiefBrief({ userId: user.id, runId: run.id, output }).catch((error) => recordSlackNotificationFailure(run.id, error));
       return output;
     },
   });
+}
+
+async function recordSlackNotificationFailure(agentRunId: string, error: unknown) {
+  await prisma.agentRunEvent.create({
+    data: {
+      agentRunId,
+      type: "slack_notification_failed",
+      message: "Slack notification failed after Jolene Chief of Staff completed.",
+      payloadJson: toJsonInput({ error: error instanceof Error ? error.message : "Unknown Slack notification failure" }),
+    },
+  }).catch(() => null);
 }
 
 export async function getLatestJoleneChiefBrief(userId?: string | null) {

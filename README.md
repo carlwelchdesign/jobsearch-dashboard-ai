@@ -113,11 +113,23 @@ POSTMARK_SERVER_TOKEN=...
 NOTIFICATION_FROM_EMAIL="Job Search OS <jobs@example.com>"
 PUSHOVER_USER_KEY=...
 PUSHOVER_APP_TOKEN=...
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_APP_TOKEN=xapp-...
+SLACK_OPS_CHANNEL_ID=C...
+SLACK_APPROVALS_CHANNEL_ID=C...
 BRAVE_SEARCH_API_KEY=...
 SEARCH_QUERY_MAX_RESULTS=80
 ```
 
 With `OPENAI_API_KEY`, resume parsing, job scoring, and resume tailoring use OpenAI structured outputs. Without it, those flows still run through deterministic parsers/scorers so the dashboard remains usable. `OPENAI_MODEL` remains the app-wide default model; `/settings/system#settings-ai` also includes a runtime-editable LinkedIn content model, defaulting to `gpt-5.5`, and a LinkedIn diagram image model, defaulting to `gpt-image-2`, so public LinkedIn drafts and optional visual polish can use higher-quality models without changing the rest of the app.
+
+Slack Agent Ops is optional and runs as a local Socket Mode worker:
+
+```bash
+npm run slack:dev
+```
+
+Slack posts redacted Jolene, Operating Loop, and Recruiting Search Team updates to the configured ops channel, sends approval cards to the approvals channel, and supports `/jso status`. Slack actions only call existing internal approval/apply/rollback services; Prisma, `AgentRun`, and `AgentRunEvent` remain the source of truth. Use `SLACK_ALLOWED_USER_IDS` to restrict who can click approval buttons.
 
 Custom recruiter opportunities can be handled from `/resumes/custom-opportunity`. Paste the recruiter brief, extract editable company/title/location/remote details, then generate a resume-only tailored material. The workflow saves a `Recruiter Opportunity` job record and a generated resume, but it does not create an application tracker, cover letter, or application packet unless you open the saved job and use the normal package path. MCP/integration-style briefs automatically emphasize verified Job Search OS stack evidence in the resume Summary and Skills while keeping unsupported requested systems out of claimed skills. Generated outputs can be edited and saved on the custom opportunity page, appear in `/resumes/generated`, and use the existing text/PDF export endpoints.
 
@@ -138,6 +150,8 @@ Jolene is the persistent in-app operating assistant and now serves as **Jolene, 
 Jolene Chief of Staff uses the normal agent observability model. A `JOLENE_CHIEF_OF_STAFF` run stores the executive brief in `AgentRun.outputJson`; child agents launched after approval store `parentRunId` back to the Jolene run; and delegated decisions are logged as `AgentRunEvent` rows. `GET /api/jolene/chief-of-staff` returns the latest brief, `POST /api/jolene/chief-of-staff/run` creates a new brief, and `POST /api/jolene/chief-of-staff/approve` executes selected internal delegated proposals. Current delegated work can refresh search, run the Recruiting Search Team, Daily Command Center, Market Intelligence, duplicate/stale detection, LinkedIn content drafts, or Jolene Email Operations. Jolene proposes this work by default and asks approval before launching it.
 
 Jolene also has an internal **Operating Loop** that acts as the planner/scheduler layer under the same Chief of Staff persona. A `JOLENE_OPERATING_LOOP` run reads system signals, refreshes the Chief of Staff brief, records proposed actions, skipped actions, approval-needed work, and child-run status in `AgentRun.outputJson`, and surfaces that status on `/dashboard`. It is conservative by default: scheduled and manual loop runs create plans and approval cards, but child teams do not launch until the user approves an internal action. `GET /api/jolene/operating-loop` returns the latest loop plan, `POST /api/jolene/operating-loop/run` runs the planner, `POST /api/jolene/operating-loop/approve` approves selected proposed internal work, and `/api/cron/jolene-operating-loop` is protected by `CRON_SECRET` for scheduled refreshes.
+
+Slack Agent Ops mirrors this same propose-first boundary outside the app. When `npm run slack:dev` is running with Slack Socket Mode credentials, completed Jolene Chief of Staff, Jolene Operating Loop, and Recruiting Search Team runs post redacted summaries to Slack. Approval buttons call the same internal services used by the app UI, then log Slack delivery/action records and agent events. Slack does not submit applications, send email, publish LinkedIn posts, or own durable workflow state.
 
 The System Architecture agent gives the app a first-class way to explain how the pieces connect. A `SYSTEM_ARCHITECTURE` run deterministically scans App Router pages, API routes, Prisma models and enums, agent types, the code-first skill registry, ADK/LangGraph boundaries, README/wiki docs, and `/plans`; it stores the system map, risks, workflows, and recommended architecture decisions in `AgentRun.outputJson`. `/architecture` shows the latest map and can refresh it through `POST /api/architecture`. The agent is read-only: it reports weak connections and documentation gaps, but it does not mutate applications, email, calendar, or external systems.
 
