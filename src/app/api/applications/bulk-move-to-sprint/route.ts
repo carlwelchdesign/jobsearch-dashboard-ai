@@ -12,7 +12,7 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 const requestSchema = z.object({
-  limit: z.number().int().min(1).max(50).default(25),
+  limit: z.number().int().min(1).max(250).default(25),
   regenerateBlockedMaterials: z.boolean().default(true),
 });
 

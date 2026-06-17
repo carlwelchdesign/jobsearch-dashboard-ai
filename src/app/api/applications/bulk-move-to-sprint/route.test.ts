@@ -248,6 +248,40 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
       failed: 0,
     });
   });
+
+  it("accepts a 250 item regeneration batch for large blocked backlogs", async () => {
+    findApplicationsMock.mockResolvedValue([
+      application({
+        id: "app_pass",
+        jobPostingId: "job_pass",
+        resumeId: "resume_pass",
+        coverLetterId: "letter_pass",
+        generationNotes: {
+          materialQuality: {
+            status: "PASS",
+            launchable: true,
+            reason: "Cover letter passed material quality review.",
+            reasons: [],
+            score: 92,
+            generatedBy: "openai_structured",
+            evidenceRefs: ["evidence_1"],
+          },
+        },
+      }),
+    ] as never);
+
+    const response = await POST(new Request("http://localhost/api/applications/bulk-move-to-sprint", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ limit: 250, regenerateBlockedMaterials: true }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(findApplicationsMock).toHaveBeenCalledWith(expect.objectContaining({ take: 1000 }));
+    await expect(response.json()).resolves.toMatchObject({
+      requested: expect.objectContaining({ limit: 250, regenerateBlockedMaterials: true }),
+    });
+  });
 });
 
 function readyPackage(applicationId: string, resumeId = "resume_1", coverLetterId = "letter_1") {

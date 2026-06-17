@@ -553,10 +553,11 @@ export function AssistantWorkbench({
   async function retryBulkMoveToSprint() {
     setRetryingBulkMove(true);
     try {
+      const blockedLimit = Math.min(Math.max(trustFunnel.summary.materialQualityBlocked, 1), 250);
       const response = await fetch("/api/applications/bulk-move-to-sprint", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ limit: 50, regenerateBlockedMaterials: true }),
+        body: JSON.stringify({ limit: blockedLimit, regenerateBlockedMaterials: true }),
       });
       const payload = await response.json().catch(() => ({})) as { error?: string; message?: string };
       if (!response.ok) throw new Error(payload.error ?? "Bulk move failed.");
@@ -674,7 +675,7 @@ export function AssistantWorkbench({
                   severity={trustFunnel.summary.materialQualityBlocked ? "warning" : "info"}
                   action={trustFunnel.summary.materialQualityBlocked ? (
                     <Button color="inherit" size="small" disabled={retryingBulkMove} onClick={() => void retryBulkMoveToSprint()}>
-                      {retryingBulkMove ? "Retrying..." : "Retry bulk move"}
+                      {retryingBulkMove ? "Regenerating..." : trustFunnel.summary.materialQualityBlocked <= 250 ? "Regenerate all" : "Regenerate first 250"}
                     </Button>
                   ) : undefined}
                 >

@@ -78,7 +78,7 @@ export function BulkMoveToSprintControl({ buttonSx }: { buttonSx?: SxProps<Theme
           onChange={(event) => setLimit(Number(event.target.value))}
           sx={{ minWidth: 112 }}
         >
-          {[5, 10, 25, 50].map((count) => <MenuItem key={count} value={count}>{count}</MenuItem>)}
+          {[5, 10, 25, 50, 100, 250].map((count) => <MenuItem key={count} value={count}>{count}</MenuItem>)}
         </TextField>
         <Button
           variant="contained"
