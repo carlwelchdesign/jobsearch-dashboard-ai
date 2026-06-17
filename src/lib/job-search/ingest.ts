@@ -1,5 +1,6 @@
 import { JobSearchRun, NotificationSettings, Prisma, User } from "@prisma/client";
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
+import { controlGraphAgentRun, graphRunControlState } from "@/lib/agents/graph-run-controls";
 import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
 import { runSearchProfileManagerAgent } from "@/lib/agents/search-profile-manager";
 import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
@@ -431,16 +432,45 @@ export async function autoRunAgencyAfterSearch(input: {
 
   const activeAgencyRun = await prisma.agentRun.findFirst({
     where: { agentType: "RECRUITING_AGENCY", status: { in: ["PENDING", "RUNNING"] } },
-    select: { id: true },
+    select: {
+      id: true,
+      agentType: true,
+      status: true,
+      graphThreadId: true,
+      workflowVersion: true,
+      updatedAt: true,
+      events: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { createdAt: true },
+      },
+    },
     orderBy: { createdAt: "desc" },
   });
   if (activeAgencyRun) {
-    await appendProgress(input.runId, "Recruiting agency skipped because an agency run is already active.", input.stats, {
-      status: "running",
-      reason: "agency_already_running",
-      agentRunId: activeAgencyRun.id,
-    });
-    return { started: false, reason: "agency_already_running" as const, agentRunId: activeAgencyRun.id };
+    const controlState = graphRunControlState(activeAgencyRun);
+    if (controlState.stale && controlState.canRepair) {
+      try {
+        await controlGraphAgentRun(activeAgencyRun.id, "repair");
+        await appendProgress(input.runId, "Repaired a stale recruiting agency run before starting the next handoff.", input.stats);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown stale agency repair failure";
+        await appendProgress(input.runId, `Recruiting agency skipped because a stale agency run could not be repaired: ${message}`, input.stats, {
+          status: "running",
+          reason: "agency_already_running",
+          agentRunId: activeAgencyRun.id,
+          error: message,
+        });
+        return { started: false, reason: "agency_already_running" as const, agentRunId: activeAgencyRun.id, error: message };
+      }
+    } else {
+      await appendProgress(input.runId, "Recruiting agency skipped because an agency run is already active.", input.stats, {
+        status: "running",
+        reason: "agency_already_running",
+        agentRunId: activeAgencyRun.id,
+      });
+      return { started: false, reason: "agency_already_running" as const, agentRunId: activeAgencyRun.id };
+    }
   }
 
   const eligibleMatches = await prisma.jobProfileMatch.findMany({
