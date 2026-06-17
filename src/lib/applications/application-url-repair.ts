@@ -190,6 +190,8 @@ async function resolveKnownApplicationUrl(input: { applicationUrl: string; rawDa
       const html = await fetchHtml(input.applicationUrl);
       candidate = html ? extractDirectApplicationUrlFromHtml(html, input.applicationUrl, host) : undefined;
     }
+  } else if (isRecruiteeHostedUrl(input.applicationUrl)) {
+    candidate = await resolveRecruiteeHostedUrl(input.applicationUrl);
   }
 
   return isRepairResolvedApplicationUrl(candidate) ? assessApplicationUrlQuality(candidate).resolvedUrl ?? candidate : undefined;
@@ -229,6 +231,7 @@ function isRepairResolvedApplicationUrl(value: string | undefined) {
     const hasJobQuery = /\b(gh_jid|job_id|jobid|jobseq|req_id|requisitionid)\b/i.test(search);
     if (/\/(?:apply|application)(?:\/|[-_])\S+/i.test(path)) return true;
     if (/\b(apply|application|form)\b/i.test(path) && hasJobQuery) return true;
+    if (/^\/o\/[^/]+\/?$/i.test(path)) return true;
     if (/\/(?:jobs?|careers?|positions?|open-roles?|job-detail|detail)(?:\/|[-_])\S+/i.test(path)) return true;
     return hasJobQuery
       && /\b(detail|job|career|position|opening)\b/i.test(path);
@@ -244,6 +247,49 @@ function isKnownAtsProvider(provider: AtsProviderName) {
 function hasApplyContext(html: string, index: number) {
   const context = html.slice(Math.max(0, index - 120), index + 120);
   return /\b(apply|application|career|job|position|opening)\b/i.test(context);
+}
+
+async function resolveRecruiteeHostedUrl(jobUrl: string) {
+  try {
+    const response = await fetch(jobUrl, {
+      method: "HEAD",
+      redirect: "manual",
+      headers: {
+        Accept: "text/html",
+        "User-Agent": "JobSearchOS/1.0",
+      },
+      signal: AbortSignal.timeout(fetchTimeoutMs),
+    });
+    if (response.status === 404 || response.status === 410) return undefined;
+    const location = response.headers.get("location");
+    if (location) {
+      const resolved = absoluteUrl(location, jobUrl);
+      if (!resolved || isBrokenRecruiteeRedirectUrl(resolved)) return undefined;
+      if (!isRecruiteeHostedUrl(resolved)) return resolved;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecruiteeHostedUrl(value: string) {
+  try {
+    const host = new URL(value).hostname.toLowerCase().replace(/^www\./, "");
+    return host === "recruitee.com" || host.endsWith(".recruitee.com");
+  } catch {
+    return false;
+  }
+}
+
+function isBrokenRecruiteeRedirectUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    return host === "recruitee.com" && (/^\/(?:careers_not_hosted)?\/?$/i.test(url.pathname));
+  } catch {
+    return false;
+  }
 }
 
 function parseAnchors(html: string, baseUrl: string) {

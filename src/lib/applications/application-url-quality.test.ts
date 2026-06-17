@@ -36,11 +36,17 @@ describe("application URL quality", () => {
       "https://www.dice.com/job-detail/1c463470-ecc8-45a0-b1a7-8c72c6fcafd9",
       "https://www.indeed.com/viewjob?jk=abc123def456",
       "https://www.ziprecruiter.com/jobs/acme/frontend-engineer",
+      "https://shopapothekeeurope.recruitee.com/o/senior-frontend-engineer-react-mwd-in-berlin-or-remote-germany",
     ];
 
     for (const url of urls) {
       expect(isLaunchableApplicationUrl(url)).toBe(false);
     }
+    expect(assessApplicationUrlQuality("https://recruitee.com/careers_not_hosted")).toMatchObject({
+      kind: "auth_or_paywall",
+      launchable: false,
+      host: "recruitee.com",
+    });
   });
 
   it("rejects generic search and listing URLs", () => {

@@ -113,6 +113,15 @@ export function assessApplicationUrlQuality(value?: string | null): ApplicationU
   }
 
   const host = normalizedHost(url);
+  if (isRecruiteeHostedUrl(host)) {
+    return {
+      kind: "auth_or_paywall",
+      launchable: false,
+      host,
+      reason: "Recruitee-hosted URLs must resolve to the employer career page first; expired Recruitee links redirect to the Recruitee marketing/paywall site.",
+    };
+  }
+
   if (authOrPaywallHosts.has(host)) {
     return {
       kind: "auth_or_paywall",
@@ -192,6 +201,10 @@ function normalizedHost(url: URL) {
 
 function isNonApplicationHost(host: string) {
   return nonApplicationHostSuffixes.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
+function isRecruiteeHostedUrl(host: string) {
+  return host === "recruitee.com" || host.endsWith(".recruitee.com");
 }
 
 function isStaticAssetUrl(url: URL) {

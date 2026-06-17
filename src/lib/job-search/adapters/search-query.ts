@@ -1252,6 +1252,10 @@ async function resolveApplicationUrl(value?: string, builtInDetail?: BuiltInJobD
   if (isBuiltInJobUrl(value)) {
     return builtInDetail?.applicationUrl ? canonicalApplicationUrl(builtInDetail.applicationUrl) : undefined;
   }
+  if (isRecruiteeHostedUrl(value)) {
+    const resolved = await resolveRecruiteeHostedUrl(value);
+    return resolved ? canonicalApplicationUrl(resolved) : undefined;
+  }
   if (isHimalayasJobUrl(value)) {
     const resolved = await resolveHimalayasJobApplicationUrl(value);
     return resolved ? canonicalApplicationUrl(resolved) : undefined;
@@ -1358,6 +1362,50 @@ async function resolveHimalayasJobApplicationUrl(jobUrl: string) {
     return extractHimalayasApplyUrl(html, jobUrl);
   } catch {
     return undefined;
+  }
+}
+
+async function resolveRecruiteeHostedUrl(jobUrl: string) {
+  try {
+    const response = await fetch(jobUrl, {
+      method: "HEAD",
+      redirect: "manual",
+      headers: {
+        Accept: "text/html",
+        "User-Agent": "JobSearchOS/1.0",
+      },
+      signal: AbortSignal.timeout(searchTimeoutMs),
+    });
+    if (response.status === 404 || response.status === 410) return undefined;
+    const location = response.headers.get("location");
+    if (location) {
+      const resolved = absoluteUrl(location, jobUrl);
+      if (!resolved || isBrokenRecruiteeRedirectUrl(resolved)) return undefined;
+      if (!isRecruiteeHostedUrl(resolved)) return resolved;
+    }
+    if (response.ok && !isBrokenRecruiteeRedirectUrl(jobUrl)) return jobUrl;
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecruiteeHostedUrl(value: string) {
+  try {
+    const host = new URL(value).hostname.toLowerCase().replace(/^www\./, "");
+    return host === "recruitee.com" || host.endsWith(".recruitee.com");
+  } catch {
+    return false;
+  }
+}
+
+function isBrokenRecruiteeRedirectUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    return host === "recruitee.com" && (/^\/(?:careers_not_hosted)?\/?$/i.test(url.pathname));
+  } catch {
+    return false;
   }
 }
 

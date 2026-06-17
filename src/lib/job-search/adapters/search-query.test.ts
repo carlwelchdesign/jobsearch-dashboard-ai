@@ -614,6 +614,74 @@ describe("searchQueryAdapter", () => {
     });
   });
 
+  it("does not promote Recruitee jobs that redirect to the Recruitee marketing site", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      status: 301,
+      ok: false,
+      headers: new Headers({ location: "https://recruitee.com/careers_not_hosted" }),
+    } as Response);
+
+    const raw = {
+      sourceJobId: "search:recruitee:broken",
+      company: "Shop Apotheke Europe",
+      title: "Senior Frontend Engineer, React",
+      location: "Remote Germany",
+      description: "React frontend role.",
+      applicationUrl: "https://shopapothekeeurope.recruitee.com/o/senior-frontend-engineer-react-mwd-in-berlin-or-remote-germany",
+      rawData: { provider: "brave", searchProvider: "recruitee" },
+    };
+
+    const normalized = await searchQueryAdapter.normalize(raw);
+
+    expect(fetch).toHaveBeenCalledWith(raw.applicationUrl, expect.objectContaining({
+      method: "HEAD",
+      redirect: "manual",
+    }));
+    expect(normalized.applicationUrl).toBeUndefined();
+    expect(normalized.atsProvider).toBe("unknown");
+    expect(normalized.rawData).toMatchObject({
+      sourceApplicationUrl: {
+        url: raw.applicationUrl,
+      },
+      applicationUrlQuality: {
+        launchable: false,
+        kind: "auth_or_paywall",
+      },
+    });
+  });
+
+  it("promotes Recruitee jobs only when they redirect to a company career page", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      status: 302,
+      ok: false,
+      headers: new Headers({ location: "https://career.churchdesk.com/o/senior-frontend-engineer-react-remote" }),
+    } as Response);
+
+    const raw = {
+      sourceJobId: "search:recruitee:custom-career",
+      company: "ChurchDesk",
+      title: "Senior Frontend Engineer, React",
+      location: "Remote",
+      description: "React frontend role.",
+      applicationUrl: "https://churchdesk.recruitee.com/o/senior-frontend-engineer-react-remote",
+      rawData: { provider: "brave", searchProvider: "recruitee" },
+    };
+
+    const normalized = await searchQueryAdapter.normalize(raw);
+
+    expect(normalized).toMatchObject({
+      applicationUrl: "https://career.churchdesk.com/o/senior-frontend-engineer-react-remote",
+      atsProvider: "other",
+      rawData: {
+        resolvedApplicationUrl: {
+          source: "job_detail_page",
+          originalUrl: raw.applicationUrl,
+          applicationUrl: "https://career.churchdesk.com/o/senior-frontend-engineer-react-remote",
+        },
+      },
+    });
+  });
+
   it("expands Dice search result pages into individual job detail links", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce({
