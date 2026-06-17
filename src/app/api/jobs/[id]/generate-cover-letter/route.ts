@@ -75,6 +75,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
           toneNotes: generated.toneNotes,
           warnings: generated.warnings,
           unsupportedClaimsDetected: generated.unsupportedClaimsDetected,
+          generationFailure: generated.generationFailure,
           resumeId: job.resumes[0]?.id ?? null,
           resumeStrategy: strategy,
           applicationEvidencePlan: generated.evidencePlan,
@@ -99,6 +100,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       hiringManagerReview: generated.hiringManagerReview,
       applicationQa: coverLetterQa.qa,
       rewriteAttempted: generated.rewriteAttempted,
+      generationFailure: generated.generationFailure,
     });
     const reviewedCoverLetter = await prisma.generatedCoverLetter.update({
       where: { id: coverLetter.id },

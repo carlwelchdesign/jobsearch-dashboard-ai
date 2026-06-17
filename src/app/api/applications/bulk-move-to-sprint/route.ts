@@ -4,7 +4,7 @@ import { apiError } from "@/lib/api";
 import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { syncApplicationPacket } from "@/lib/applications/application-packets";
-import { applicationMaterialQualityDetail } from "@/lib/applications/material-quality";
+import { applicationMaterialQualityDetail, type ApplicationMaterialQuality } from "@/lib/applications/material-quality";
 import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
 import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { prisma } from "@/lib/prisma";
@@ -46,6 +46,7 @@ export async function POST(request: Request) {
       title: string;
       action: "moved" | "prepared" | "failed";
       regeneratedCoverLetter?: boolean;
+      materialQuality?: ApplicationMaterialQuality;
       error?: string;
     }> = [];
 
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
                 company: application.jobPosting.company,
                 title: application.jobPosting.title,
                 action: "failed",
+                materialQuality,
                 error: `material_quality_needs_review: ${materialQuality.reason}`,
               });
               continue;
@@ -76,6 +78,7 @@ export async function POST(request: Request) {
                 title: application.jobPosting.title,
                 action: "failed",
                 regeneratedCoverLetter: true,
+                materialQuality: prepared.materialQuality,
                 error: `material_quality_needs_review: ${prepared.materialQuality.reason}`,
               });
               continue;
@@ -127,6 +130,7 @@ export async function POST(request: Request) {
             company: application.jobPosting.company,
             title: application.jobPosting.title,
             action: "failed",
+            materialQuality: prepared.materialQuality,
             error: `material_quality_needs_review: ${prepared.materialQuality.reason}`,
           });
           continue;
@@ -158,6 +162,8 @@ export async function POST(request: Request) {
     const prepared = results.filter((result) => result.ok && result.action === "prepared").length;
     const regenerated = results.filter((result) => result.ok && result.regeneratedCoverLetter).length;
     const failed = results.filter((result) => !result.ok).length;
+    const quotaBlocked = results.filter((result) => result.materialQuality?.reasons.includes("openai_insufficient_quota")).length;
+    const materialBlocked = results.filter((result) => result.materialQuality?.reasons.includes("deterministic_fallback") || result.materialQuality?.reasons.includes("material_quality_needs_review") || result.error?.startsWith("material_quality_needs_review")).length;
     const totalMoved = moved + prepared;
 
     return NextResponse.json({
@@ -167,10 +173,16 @@ export async function POST(request: Request) {
       prepared,
       regenerated,
       failed,
+      materialBlocked,
+      quotaBlocked,
       results,
       sprintUrl: "/applications/assistant",
       message: totalMoved
         ? `Moved ${totalMoved} application${totalMoved === 1 ? "" : "s"} into Apply Sprint. ${failed} failed.`
+        : quotaBlocked
+          ? `No applications moved into Apply Sprint because OpenAI quota blocked cover-letter regeneration for ${quotaBlocked} application${quotaBlocked === 1 ? "" : "s"}. They remain approved under Hidden / Suppressed with material-quality details.`
+        : materialBlocked
+          ? `No applications moved into Apply Sprint because ${materialBlocked} application${materialBlocked === 1 ? "" : "s"} still need cover-letter quality review.`
         : failed
           ? `No applications moved into Apply Sprint. ${failed} failed.`
           : "No approved applications are waiting to move into Apply Sprint.",

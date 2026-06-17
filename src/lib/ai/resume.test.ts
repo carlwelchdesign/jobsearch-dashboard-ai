@@ -4,6 +4,7 @@ import { tailorResumeForJob } from "./resume";
 import type { ExperienceBullet, JobPosting, UserProfile, WorkExperience } from "@prisma/client";
 
 vi.mock("@/lib/ai/openai", () => ({
+  isOpenAiConfigured: vi.fn(() => true),
   parseStructuredOutput: vi.fn(),
 }));
 

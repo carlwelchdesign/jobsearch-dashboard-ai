@@ -1,5 +1,6 @@
 import type { ExperienceBullet, GithubRepository, JobPosting, Project, UserProfile, WorkExperience } from "@prisma/client";
-import { parseStructuredOutput } from "@/lib/ai/openai";
+import { isOpenAiConfigured, parseStructuredOutput } from "@/lib/ai/openai";
+import type { ApplicationMaterialGenerationFailure } from "@/lib/applications/material-quality";
 import { parseResumeHeuristically } from "@/lib/resumes/parse";
 import {
   generateCoverLetterSchema,
@@ -235,14 +236,110 @@ export async function generateCoverLetterForJob({
       },
     });
 
+    if (!generated) {
+      const generationFailure = structuredOutputEmptyFailure();
+      return {
+        ...fallback,
+        warnings: [...fallback.warnings, generationFailure.message],
+        generatedBy: fallback.generatedBy,
+        generationFailure,
+      };
+    }
+
     return {
-      ...(generated ?? fallback),
-      generatedBy: generated ? "openai_structured_outputs" : fallback.generatedBy,
+      ...generated,
+      generatedBy: "openai_structured_outputs",
     };
   } catch (error) {
     console.warn("OpenAI cover letter generation failed; using deterministic fallback.", error);
-    return fallback;
+    const generationFailure = classifyCoverLetterGenerationFailure(error);
+    return {
+      ...fallback,
+      warnings: [...fallback.warnings, generationFailure.message],
+      generationFailure,
+    };
   }
+}
+
+function structuredOutputEmptyFailure(): ApplicationMaterialGenerationFailure {
+  return isOpenAiConfigured()
+    ? {
+        provider: "openai",
+        code: "openai_structured_output_empty",
+        message: "OpenAI returned no structured cover-letter output.",
+        retryable: true,
+      }
+    : {
+        provider: "openai",
+        code: "openai_not_configured",
+        message: "OpenAI is not configured; structured cover-letter generation could not run.",
+        retryable: false,
+      };
+}
+
+function classifyCoverLetterGenerationFailure(error: unknown): ApplicationMaterialGenerationFailure {
+  const record = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const nested = record.error && typeof record.error === "object" ? record.error as Record<string, unknown> : {};
+  const status = typeof record.status === "number" ? record.status : null;
+  const code = stringValue(nested.code) || stringValue(record.code);
+  const type = stringValue(nested.type) || stringValue(record.type);
+  const message = stringValue(nested.message) || stringValue(record.message) || "Structured cover-letter generation failed.";
+
+  if (status === 429 && code === "insufficient_quota") {
+    return {
+      provider: "openai",
+      code: "openai_insufficient_quota",
+      message: "OpenAI quota is exhausted; structured cover-letter generation could not run.",
+      retryable: false,
+    };
+  }
+  if (status === 429) {
+    return {
+      provider: "openai",
+      code: "openai_rate_limited",
+      message: "OpenAI rate limits blocked structured cover-letter generation.",
+      retryable: true,
+    };
+  }
+  if (status === 401) {
+    return {
+      provider: "openai",
+      code: "openai_authentication_failed",
+      message: "OpenAI authentication failed; structured cover-letter generation could not run.",
+      retryable: false,
+    };
+  }
+  if (status === 403) {
+    return {
+      provider: "openai",
+      code: "openai_permission_denied",
+      message: "OpenAI permission denied structured cover-letter generation.",
+      retryable: false,
+    };
+  }
+  if (status === 400 || type === "invalid_request_error") {
+    return {
+      provider: "openai",
+      code: "openai_bad_request",
+      message: "OpenAI rejected the structured cover-letter generation request.",
+      retryable: false,
+    };
+  }
+  if (/timed out/i.test(message)) {
+    return {
+      provider: "openai",
+      code: "openai_timeout",
+      message: "OpenAI timed out during structured cover-letter generation.",
+      retryable: true,
+    };
+  }
+
+  return {
+    provider: "openai",
+    code: "openai_generation_failed",
+    message: "OpenAI structured cover-letter generation failed.",
+    retryable: true,
+  };
 }
 
 // Normalize any GitHub URL to the profile root — strips /repo and deeper paths
@@ -617,6 +714,10 @@ function jsonStringArray(value: unknown) {
 
 function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function tokenize(value: string) {

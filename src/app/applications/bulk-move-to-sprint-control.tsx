@@ -18,6 +18,8 @@ type BulkMoveResponse = {
   prepared?: number;
   regenerated?: number;
   failed?: number;
+  materialBlocked?: number;
+  quotaBlocked?: number;
 };
 
 export function BulkMoveToSprintControl({ buttonSx }: { buttonSx?: SxProps<Theme> }) {
@@ -25,7 +27,7 @@ export function BulkMoveToSprintControl({ buttonSx }: { buttonSx?: SxProps<Theme
   const [limit, setLimit] = useState(25);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState("");
-  const [severity, setSeverity] = useState<"success" | "error" | "info">("info");
+  const [severity, setSeverity] = useState<"success" | "error" | "info" | "warning">("info");
 
   async function moveToSprint() {
     setLoading(true);
@@ -48,8 +50,10 @@ export function BulkMoveToSprintControl({ buttonSx }: { buttonSx?: SxProps<Theme
           const moved = (payload.moved ?? 0) + (payload.prepared ?? 0);
           const regenerated = payload.regenerated ?? 0;
           const failed = payload.failed ?? 0;
-          setSeverity(failed > 0 ? "info" : moved > 0 ? "success" : "info");
-          setNotice(payload.message ?? `Moved ${moved} application(s) into Apply Sprint. ${regenerated} regenerated. ${failed} failed.`);
+          const materialBlocked = payload.materialBlocked ?? 0;
+          const quotaBlocked = payload.quotaBlocked ?? 0;
+          setSeverity(quotaBlocked || (failed > 0 && moved === 0) ? "warning" : failed > 0 ? "info" : moved > 0 ? "success" : "info");
+          setNotice(payload.message ?? `Moved ${moved} application(s) into Apply Sprint. ${regenerated} regenerated. ${failed} failed. ${materialBlocked} material-blocked.`);
           refresh();
         })
         .catch((error) => {

@@ -139,6 +139,73 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     });
   });
 
+  it("reports OpenAI quota blocks when regenerated materials still cannot launch", async () => {
+    findApplicationsMock.mockResolvedValue([
+      application({
+        id: "app_blocked",
+        jobPostingId: "job_blocked",
+        resumeId: "resume_old",
+        coverLetterId: "letter_old",
+        generationNotes: {
+          materialQuality: {
+            status: "BLOCKED",
+            launchable: false,
+            reason: "Needs regeneration.",
+            reasons: ["deterministic_fallback"],
+            score: 0,
+            generatedBy: "deterministic_fallback",
+            evidenceRefs: [],
+          },
+        },
+      }),
+    ] as never);
+    preparePackageMock.mockResolvedValue({
+      ...readyPackage("app_blocked"),
+      readyToApply: false,
+      materialQuality: {
+        status: "BLOCKED",
+        launchable: false,
+        reason: "OpenAI quota is exhausted, so the structured cover-letter writer could not run. Regeneration is required before launch.",
+        reasons: ["deterministic_fallback", "openai_insufficient_quota"],
+        score: 32,
+        generatedBy: "deterministic_fallback",
+        evidenceRefs: [],
+        generationFailure: {
+          provider: "openai",
+          code: "openai_insufficient_quota",
+          message: "OpenAI quota is exhausted; structured cover-letter generation could not run.",
+          retryable: false,
+        },
+      },
+    } as Awaited<ReturnType<typeof prepareApplicationPackage>>);
+
+    const response = await POST(new Request("http://localhost/api/applications/bulk-move-to-sprint", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ limit: 10 }),
+    }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      moved: 0,
+      prepared: 0,
+      regenerated: 0,
+      failed: 1,
+      materialBlocked: 1,
+      quotaBlocked: 1,
+      message: expect.stringContaining("OpenAI quota blocked cover-letter regeneration"),
+      results: [
+        expect.objectContaining({
+          ok: false,
+          regeneratedCoverLetter: true,
+          materialQuality: expect.objectContaining({
+            reasons: expect.arrayContaining(["openai_insufficient_quota"]),
+          }),
+        }),
+      ],
+    });
+  });
+
   it("moves existing launchable materials without regenerating", async () => {
     findApplicationsMock.mockResolvedValue([
       application({

@@ -37,6 +37,23 @@ export type HiringManagerMaterialReview = {
   confidence: number;
 };
 
+export type ApplicationMaterialGenerationFailure = {
+  provider: "openai" | "unknown";
+  code:
+    | "openai_not_configured"
+    | "openai_insufficient_quota"
+    | "openai_rate_limited"
+    | "openai_authentication_failed"
+    | "openai_permission_denied"
+    | "openai_bad_request"
+    | "openai_timeout"
+    | "openai_structured_output_empty"
+    | "openai_generation_failed"
+    | "unknown_generation_failure";
+  message: string;
+  retryable: boolean;
+};
+
 export type ApplicationMaterialQuality = {
   status: "PASS" | "NEEDS_REVIEW" | "BLOCKED";
   launchable: boolean;
@@ -47,6 +64,7 @@ export type ApplicationMaterialQuality = {
   evidenceRefs: string[];
   review?: HiringManagerMaterialReview | null;
   rewriteAttempted?: boolean;
+  generationFailure?: ApplicationMaterialGenerationFailure | null;
 };
 
 type QualityInput = {
@@ -56,6 +74,7 @@ type QualityInput = {
   hiringManagerReview?: HiringManagerMaterialReview | null;
   applicationQa?: Record<string, unknown> | null;
   rewriteAttempted?: boolean;
+  generationFailure?: ApplicationMaterialGenerationFailure | null;
 };
 
 const PASS_SCORE = 85;
@@ -65,6 +84,7 @@ export function buildApplicationMaterialQuality(input: QualityInput): Applicatio
   const generatedBy = input.generatedBy?.trim() || "unknown";
   const review = input.hiringManagerReview ?? null;
   const qa = input.applicationQa ?? null;
+  const generationFailure = input.generationFailure ?? null;
   const reasons = new Set<string>();
   const qaStatus = stringValue(qa?.status);
   const qaScore = numberValue(qa?.score);
@@ -78,6 +98,7 @@ export function buildApplicationMaterialQuality(input: QualityInput): Applicatio
   ].filter(Boolean)));
 
   if (generatedBy === "deterministic_fallback") reasons.add("deterministic_fallback");
+  if (generationFailure) reasons.add(generationFailure.code);
   for (const signal of fallbackSignals) reasons.add(signal);
   if (!review) reasons.add("missing_hiring_manager_review");
   if (review?.status === "BLOCKED") reasons.add("hiring_manager_blocked");
@@ -94,6 +115,7 @@ export function buildApplicationMaterialQuality(input: QualityInput): Applicatio
   ].filter((value): value is number => typeof value === "number");
   const score = scoreCandidates.length ? Math.min(...scoreCandidates) : fallbackSignals.length ? BLOCK_SCORE - 10 : 0;
   const hardBlocked = generatedBy === "deterministic_fallback"
+    || Boolean(generationFailure)
     || fallbackSignals.length > 0
     || review?.status === "BLOCKED"
     || unsupportedQaClaims.length > 0
@@ -111,6 +133,7 @@ export function buildApplicationMaterialQuality(input: QualityInput): Applicatio
     evidenceRefs,
     review,
     rewriteAttempted: input.rewriteAttempted,
+    generationFailure,
   };
 }
 
@@ -130,6 +153,7 @@ export function applicationMaterialQualityFromNotes(notes: unknown): Application
     evidenceRefs: stringArray(quality.evidenceRefs),
     review: objectValue(quality.review) as HiringManagerMaterialReview | null,
     rewriteAttempted: typeof quality.rewriteAttempted === "boolean" ? quality.rewriteAttempted : undefined,
+    generationFailure: materialGenerationFailureValue(quality.generationFailure) ?? materialGenerationFailureValue(object?.generationFailure),
   };
 }
 
@@ -171,6 +195,18 @@ export function materialQualityJson(quality: ApplicationMaterialQuality): Prisma
 
 function humanReason(reasons: string[]) {
   if (reasons.includes("deterministic_fallback")) {
+    if (reasons.includes("openai_insufficient_quota")) {
+      return "OpenAI quota is exhausted, so the structured cover-letter writer could not run. Regeneration is required before launch.";
+    }
+    if (reasons.includes("openai_not_configured")) {
+      return "OpenAI is not configured, so the structured cover-letter writer could not run. Regeneration is required before launch.";
+    }
+    if (reasons.includes("openai_rate_limited")) {
+      return "OpenAI rate limits blocked structured cover-letter generation. Regeneration is required before launch.";
+    }
+    if (reasons.includes("openai_timeout")) {
+      return "OpenAI timed out during structured cover-letter generation. Regeneration is required before launch.";
+    }
     return "Cover letter used deterministic fallback output and must be regenerated or reviewed before launch.";
   }
   if (reasons.includes("forced_agentic_job_search_paragraph")) {
@@ -190,6 +226,39 @@ function humanReason(reasons: string[]) {
 
 function objectValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function materialGenerationFailureValue(value: unknown): ApplicationMaterialGenerationFailure | null {
+  const object = objectValue(value);
+  if (!object) return null;
+  const provider = stringValue(object.provider);
+  const code = stringValue(object.code);
+  const message = stringValue(object.message);
+  if (!message || !provider || !code) return null;
+  return {
+    provider: provider === "openai" ? "openai" : "unknown",
+    code: materialGenerationFailureCode(code),
+    message,
+    retryable: Boolean(object.retryable),
+  };
+}
+
+function materialGenerationFailureCode(value: string): ApplicationMaterialGenerationFailure["code"] {
+  const allowed: ApplicationMaterialGenerationFailure["code"][] = [
+    "openai_not_configured",
+    "openai_insufficient_quota",
+    "openai_rate_limited",
+    "openai_authentication_failed",
+    "openai_permission_denied",
+    "openai_bad_request",
+    "openai_timeout",
+    "openai_structured_output_empty",
+    "openai_generation_failed",
+    "unknown_generation_failure",
+  ];
+  return allowed.includes(value as ApplicationMaterialGenerationFailure["code"])
+    ? value as ApplicationMaterialGenerationFailure["code"]
+    : "unknown_generation_failure";
 }
 
 function stringArray(value: unknown): string[] {

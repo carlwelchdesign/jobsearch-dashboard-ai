@@ -42,6 +42,7 @@ import { RejectionReasonDialog, type RejectionReasonCode } from "@/components/jo
 import { SearchRunAnalyticsCharts } from "@/components/search-run-analytics-charts";
 import { assessApplicationUrlQuality, type ApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import type { AshbyRiskAssessment } from "@/lib/applications/ashby-risk";
+import type { ApplicationMaterialQuality } from "@/lib/applications/material-quality";
 import { summarizeApplicationJobDescription } from "@/lib/applications/job-summary";
 import { copyTextToClipboard } from "@/lib/browser/clipboard";
 
@@ -118,6 +119,7 @@ type ApplySprintTrustFunnel = {
     agencyPrepared: number;
     agencyFailedSkipped: number;
     visibleReady: number;
+    materialQualityBlocked: number;
     belowProfileThreshold: number;
     suppressed: number;
     listingPagesSuppressed: number;
@@ -161,6 +163,7 @@ type ApplySprintTrustFunnel = {
     reasons: ApplySprintReasonCode[];
     detail: string;
     applicationUrlQuality?: ApplicationUrlQuality;
+    materialQuality?: ApplicationMaterialQuality;
   }>;
 };
 
@@ -330,6 +333,7 @@ export function AssistantWorkbench({
   const initialSelectedId = applications.some((application) => application.id === initialApplicationId)
     ? initialApplicationId!
     : applications[0]?.id ?? "";
+  const initialQueueTab: "ready" | "hidden" = applications.length === 0 && trustFunnel.summary.materialQualityBlocked > 0 ? "hidden" : "ready";
   const [selectedId, setSelectedId] = useState(initialSelectedId);
   const [launch, setLaunch] = useState<LaunchResponse | null>(null);
   const [runFeedback, setRunFeedback] = useState<RunFeedbackState | null>(null);
@@ -337,6 +341,7 @@ export function AssistantWorkbench({
   const [markingApplied, setMarkingApplied] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [retryingBulkMove, setRetryingBulkMove] = useState(false);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [appliedIds, setAppliedIds] = useState<string[]>([]);
   const [queueProgressSearchId, setQueueProgressSearchId] = useState<string | null>(null);
@@ -347,7 +352,7 @@ export function AssistantWorkbench({
     queueTab: "ready" | "candidates" | "agency" | "hidden";
     selectedCandidateIds: string[];
     preparingCandidates: boolean;
-  }>({ queueTab: "ready", selectedCandidateIds: [], preparingCandidates: false });
+  }>({ queueTab: initialQueueTab, selectedCandidateIds: [], preparingCandidates: false });
   const visibleApplications = useMemo(
     () => applications.filter((application) => !deletedIds.includes(application.id) && !appliedIds.includes(application.id)),
     [applications, appliedIds, deletedIds],
@@ -373,6 +378,7 @@ export function AssistantWorkbench({
     if (candidate.canPrepare) ids.push(candidate.matchId);
     return ids;
   }, []), [trustFunnel.candidates]);
+  const quotaBlockedCount = trustFunnel.hidden.filter((item) => item.materialQuality?.reasons.includes("openai_insufficient_quota")).length;
 
   async function launchSelected(next = false) {
     const endpoint = next ? "/api/applications/next-ready/launch-assistant" : `/api/applications/${activeSelectedId}/launch-assistant`;
@@ -544,6 +550,25 @@ export function AssistantWorkbench({
     }
   }
 
+  async function retryBulkMoveToSprint() {
+    setRetryingBulkMove(true);
+    try {
+      const response = await fetch("/api/applications/bulk-move-to-sprint", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ limit: 50, regenerateBlockedMaterials: true }),
+      });
+      const payload = await response.json().catch(() => ({})) as { error?: string; message?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Bulk move failed.");
+      setNotice(payload.message ?? "Bulk move retried.");
+      refresh();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Bulk move failed.");
+    } finally {
+      setRetryingBulkMove(false);
+    }
+  }
+
   async function copyRawLog() {
     try {
       await copyTextToClipboard(selectedFeedback?.log || "");
@@ -645,7 +670,18 @@ export function AssistantWorkbench({
                   </Stack>
                 </Stack>
               ) : (
-                <Alert severity="info">No ready applications. Run search so eligible saved matches can be prepared for Apply Sprint automatically.</Alert>
+                <Alert
+                  severity={trustFunnel.summary.materialQualityBlocked ? "warning" : "info"}
+                  action={trustFunnel.summary.materialQualityBlocked ? (
+                    <Button color="inherit" size="small" disabled={retryingBulkMove} onClick={() => void retryBulkMoveToSprint()}>
+                      {retryingBulkMove ? "Retrying..." : "Retry bulk move"}
+                    </Button>
+                  ) : undefined}
+                >
+                  {trustFunnel.summary.materialQualityBlocked
+                    ? `${trustFunnel.summary.materialQualityBlocked} approved application${trustFunnel.summary.materialQualityBlocked === 1 ? "" : "s"} could not enter Apply Sprint because cover-letter quality is blocked${quotaBlockedCount ? `; ${quotaBlockedCount} failed because OpenAI quota is exhausted` : ""}. They remain approved and are listed under Hidden / Suppressed.`
+                    : "No ready applications. Run search so eligible saved matches can be prepared for Apply Sprint automatically."}
+                </Alert>
               )}
               <Divider />
               {selectedBlocker ? (
@@ -1045,6 +1081,9 @@ function ApplySprintFunnelPanel({ trustFunnel, readyCount }: { trustFunnel: Appl
             <Chip size="small" label={`Prepared: ${trustFunnel.summary.agencyPrepared}`} />
             <Chip size="small" label={`Failed/skipped: ${trustFunnel.summary.agencyFailedSkipped}`} />
             <Chip size="small" color="success" label={`Ready: ${readyCount}`} />
+            {trustFunnel.summary.materialQualityBlocked ? (
+              <Chip size="small" color="warning" variant="outlined" label={`Material blocked: ${trustFunnel.summary.materialQualityBlocked}`} />
+            ) : null}
           </Stack>
 
           {(trustFunnel.summary.belowProfileThreshold || trustFunnel.summary.suppressed || trustFunnel.summary.listingPagesSuppressed) ? (
@@ -1265,6 +1304,19 @@ function HiddenSuppressedPanel({ items }: { items: ApplySprintTrustFunnel["hidde
                       {item.status ? <Chip size="small" variant="outlined" label={item.status.replace(/_/g, " ")} /> : null}
                       {item.score ? <Chip size="small" label={`${item.score} score`} /> : null}
                       {item.reasons.map((reason) => <Chip key={reason} size="small" color={reason === "packet_generation_failed" ? "error" : "default"} variant="outlined" label={applySprintReasonLabel(reason)} />)}
+                      {item.materialQuality?.generationFailure ? (
+                        <Chip
+                          size="small"
+                          color={item.materialQuality.generationFailure.code === "openai_insufficient_quota" ? "error" : "warning"}
+                          variant="outlined"
+                          label={item.materialQuality.generationFailure.code.replace(/_/g, " ")}
+                        />
+                      ) : null}
+                      {item.kind === "application" ? (
+                        <Button component={Link} href={`/applications/${item.id}`} size="small" variant="outlined">
+                          Review
+                        </Button>
+                      ) : null}
                       {item.applicationUrl ? (
                         <Button component="a" href={item.applicationUrl} target="_blank" rel="noreferrer" size="small" variant="outlined">
                           Open

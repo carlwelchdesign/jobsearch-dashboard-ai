@@ -5,6 +5,7 @@ import { runHiringManagerReviewerAgent } from "@/lib/agents/hiring-manager-revie
 import {
   buildApplicationMaterialQuality,
   type ApplicationEvidencePlan,
+  type ApplicationMaterialGenerationFailure,
   type ApplicationMaterialQuality,
   type HiringManagerMaterialReview,
 } from "@/lib/applications/material-quality";
@@ -16,6 +17,7 @@ export type ReviewedCoverLetterDraft = {
   toneNotes: string[];
   warnings: string[];
   unsupportedClaimsDetected: string[];
+  generationFailure?: ApplicationMaterialGenerationFailure | null;
   evidencePlan: ApplicationEvidencePlan | null;
   hiringManagerReview: HiringManagerMaterialReview | null;
   materialQuality: ApplicationMaterialQuality;
@@ -98,12 +100,14 @@ export async function generateReviewedCoverLetterForJob({
     }
   }
 
+  const draftGenerationFailure = "generationFailure" in draft ? draft.generationFailure ?? null : null;
   const materialQuality = buildApplicationMaterialQuality({
     body: draft.body,
     generatedBy: draft.generatedBy,
     evidencePlan,
     hiringManagerReview: review,
     rewriteAttempted,
+    generationFailure: draftGenerationFailure,
   });
 
   return {
@@ -112,6 +116,7 @@ export async function generateReviewedCoverLetterForJob({
     toneNotes: draft.toneNotes,
     warnings: draft.warnings,
     unsupportedClaimsDetected: draft.unsupportedClaimsDetected,
+    generationFailure: draftGenerationFailure,
     evidencePlan,
     hiringManagerReview: review,
     materialQuality,

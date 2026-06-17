@@ -134,6 +134,7 @@ export async function prepareApplicationPackage(jobId: string, options: { regene
           toneNotes: generated.toneNotes,
           warnings: generated.warnings,
           unsupportedClaimsDetected: generated.unsupportedClaimsDetected,
+          generationFailure: generated.generationFailure,
           resumeId: resume.id,
           resumeStrategy: strategy,
           applicationEvidencePlan: generated.evidencePlan,
@@ -158,6 +159,7 @@ export async function prepareApplicationPackage(jobId: string, options: { regene
       hiringManagerReview: generated.hiringManagerReview,
       applicationQa: coverLetterQa.qa,
       rewriteAttempted: generated.rewriteAttempted,
+      generationFailure: generated.generationFailure,
     });
     coverLetter = await prisma.generatedCoverLetter.update({
       where: { id: coverLetter.id },
