@@ -255,7 +255,7 @@ function DailyApplyCockpit({
           eyebrow="Find jobs"
           title={latestRun ? `${latestRun.jobsSaved} saved from latest search` : "Start discovery"}
           detail={latestRun ? `${latestRun.status} · ${latestRun.jobsFetched} fetched · ${latestRun.startedAt.toLocaleString()}` : "Run search to discover fresh roles and prepare the pipeline."}
-          action={<ActionButton postTo="/api/jobs/search/run" variant="outlined" loadingLabel="Running...">Run search</ActionButton>}
+          action={<ActionButton href="/dashboard/search?startSearch=1" variant="outlined">Run search</ActionButton>}
           secondary={<ActionButton href="/dashboard/search" variant="text">Open Find Jobs</ActionButton>}
         />
 
@@ -534,7 +534,9 @@ function JoleneChiefOfStaffCard({ runId, brief, operatingLoopRunId, operatingLoo
   );
 }
 
-export async function DashboardSearchPage() {
+export async function DashboardSearchPage({ searchParams }: { searchParams?: { startSearch?: string | string[]; details?: string | string[] } }) {
+  const autoStartSearch = searchParamValue(searchParams?.startSearch) === "1";
+  const autoOpenDetails = autoStartSearch || searchParamValue(searchParams?.details) === "open";
   const [latestRun, needsReview, latestOptimization] = await Promise.all([
     prisma.jobSearchRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.jobProfileMatch.findMany({
@@ -556,7 +558,12 @@ export async function DashboardSearchPage() {
 
   return (
     <DashboardShell group="search">
-      <SearchRunCommandCenter initialRun={latestRun ? serializeSearchRun(latestRun) : null} latestOptimization={serializeSearchOptimization(latestOptimization)} />
+      <SearchRunCommandCenter
+        initialRun={latestRun ? serializeSearchRun(latestRun) : null}
+        latestOptimization={serializeSearchOptimization(latestOptimization)}
+        autoOpenDetails={autoOpenDetails}
+        autoStart={autoStartSearch}
+      />
       <AgencyActivityCard />
       <ExceptionReview matches={visibleNeedsReview} />
     </DashboardShell>
@@ -1204,10 +1211,14 @@ function buildDailyApplySummary({
       title: "Run search to create today's pipeline",
       detail: "Discovery is the next best action when there are no ready applications or review decisions.",
       label: "Run search",
-      postTo: "/api/jobs/search/run",
+      href: "/dashboard/search?startSearch=1",
       color: "primary",
     },
   };
+}
+
+function searchParamValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function formatSearchFreshness(value: Date) {

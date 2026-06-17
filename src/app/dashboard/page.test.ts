@@ -107,9 +107,16 @@ describe("Daily cockpit dashboard routes", () => {
 
     expect(contentSource).toContain("searchOptimizationRun.findFirst");
     expect(contentSource).toContain("serializeSearchOptimization");
+    expect(contentSource).toContain("startSearch?: string | string[]");
+    expect(contentSource).toContain('href="/dashboard/search?startSearch=1"');
+    expect(contentSource).toContain("autoOpenDetails={autoOpenDetails}");
+    expect(contentSource).toContain("autoStart={autoStartSearch}");
     expect(commandCenterSource).toContain("Recruiting Search Team");
     expect(commandCenterSource).toContain("Qualified yield");
     expect(commandCenterSource).toContain('href="/profiles"');
+    expect(commandCenterSource).toContain("setDetailsExpanded(true)");
+    expect(commandCenterSource).toContain('router.replace("/dashboard/search?details=open"');
+    expect(commandCenterSource).toContain("expanded={detailsExpanded}");
     expect(commandCenterSource).toContain("Run details");
     expect(commandCenterSource).toContain("Charts, live event stream, agency handoff, and profile optimizer diagnostics.");
   });
