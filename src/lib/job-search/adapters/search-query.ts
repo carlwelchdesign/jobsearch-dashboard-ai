@@ -1,4 +1,5 @@
 import type { JobSearchProfile, JobSource } from "@prisma/client";
+import { assessApplicationUrlQuality, atsProviderFromApplicationUrl } from "@/lib/applications/application-url-quality";
 import { searchQueryTemplates } from "@/lib/job-search/source-catalog";
 import type { JobSourceAdapter, NormalizedJobPosting, RawJobPosting } from "@/lib/job-search/source-adapter";
 
@@ -71,9 +72,8 @@ export const searchQueryAdapter: JobSourceAdapter = {
       ? await fetchBuiltInJobDetail(raw.applicationUrl)
       : undefined;
     const resolvedApplicationUrl = await resolveApplicationUrl(raw.applicationUrl, builtInDetail);
-    const applicationUrl = raw.applicationUrl && isBuiltInJobUrl(raw.applicationUrl)
-      ? resolvedApplicationUrl
-      : sanitizeApplicationUrl(resolvedApplicationUrl);
+    const applicationUrl = launchableApplicationUrl(resolvedApplicationUrl);
+    const sourceUrlQuality = assessApplicationUrlQuality(resolvedApplicationUrl ?? raw.applicationUrl);
     const haystack = `${raw.title} ${raw.location ?? ""} ${raw.description}`;
     const searchProvider = detectSearchProviderFromUrl(applicationUrl ?? raw.applicationUrl);
     return {
@@ -91,6 +91,14 @@ export const searchQueryAdapter: JobSourceAdapter = {
       rawData: {
         ...(isRecord(raw.rawData) ? raw.rawData : { raw }),
         searchProvider,
+        applicationUrlQuality: sourceUrlQuality,
+        ...(!applicationUrl && raw.applicationUrl ? {
+          sourceApplicationUrl: {
+            source: "search_query",
+            url: raw.applicationUrl,
+            reason: sourceUrlQuality.reason,
+          },
+        } : {}),
         ...(builtInDetail ? {
           builtIn: {
             detailUrl: raw.applicationUrl,
@@ -1244,6 +1252,10 @@ async function resolveApplicationUrl(value?: string, builtInDetail?: BuiltInJobD
   if (isBuiltInJobUrl(value)) {
     return builtInDetail?.applicationUrl ? canonicalApplicationUrl(builtInDetail.applicationUrl) : undefined;
   }
+  if (isRecruiteeHostedUrl(value)) {
+    const resolved = await resolveRecruiteeHostedUrl(value);
+    return resolved ? canonicalApplicationUrl(resolved) : undefined;
+  }
   if (isHimalayasJobUrl(value)) {
     const resolved = await resolveHimalayasJobApplicationUrl(value);
     return resolved ? canonicalApplicationUrl(resolved) : undefined;
@@ -1353,6 +1365,50 @@ async function resolveHimalayasJobApplicationUrl(jobUrl: string) {
   }
 }
 
+async function resolveRecruiteeHostedUrl(jobUrl: string) {
+  try {
+    const response = await fetch(jobUrl, {
+      method: "HEAD",
+      redirect: "manual",
+      headers: {
+        Accept: "text/html",
+        "User-Agent": "JobSearchOS/1.0",
+      },
+      signal: AbortSignal.timeout(searchTimeoutMs),
+    });
+    if (response.status === 404 || response.status === 410) return undefined;
+    const location = response.headers.get("location");
+    if (location) {
+      const resolved = absoluteUrl(location, jobUrl);
+      if (!resolved || isBrokenRecruiteeRedirectUrl(resolved)) return undefined;
+      if (!isRecruiteeHostedUrl(resolved)) return resolved;
+    }
+    if (response.ok && !isBrokenRecruiteeRedirectUrl(jobUrl)) return jobUrl;
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecruiteeHostedUrl(value: string) {
+  try {
+    const host = new URL(value).hostname.toLowerCase().replace(/^www\./, "");
+    return host === "recruitee.com" || host.endsWith(".recruitee.com");
+  } catch {
+    return false;
+  }
+}
+
+function isBrokenRecruiteeRedirectUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    return host === "recruitee.com" && (/^\/(?:careers_not_hosted)?\/?$/i.test(url.pathname));
+  } catch {
+    return false;
+  }
+}
+
 export function extractHimalayasApplyUrl(html: string, baseUrl: string) {
   const directAtsUrl = firstMatch(
     html,
@@ -1440,26 +1496,13 @@ function canonicalApplicationUrl(value?: string) {
   }
 }
 
-function sanitizeApplicationUrl(value?: string) {
-  if (!value) return value;
-  return isUnsafeApplicationListingUrl(value) ? undefined : value;
+function launchableApplicationUrl(value?: string) {
+  const quality = assessApplicationUrlQuality(value);
+  return quality.launchable ? quality.resolvedUrl ?? value : undefined;
 }
 
 function isUnsafeApplicationListingUrl(value: string) {
-  if (isBuiltInListingUrl(value) || isLikelyListingUrl(value)) return true;
-  try {
-    const url = new URL(value);
-    const hostname = url.hostname.replace(/^www\./, "");
-    if (hostname === "dice.com") return isDiceListingUrl(url) && !isDiceJobDetailUrl(value);
-    if (hostname === "indeed.com") return isIndeedListingUrl(url);
-    if (hostname === "himalayas.app") return !isHimalayasJobUrl(value);
-    if (hostname === "workingnomads.com") return isWorkingNomadsListingUrl(url);
-    if (hostname === "remotive.com") return url.pathname.startsWith("/remote-jobs");
-    if (isAggregatorListingUrl(url)) return true;
-    return false;
-  } catch {
-    return false;
-  }
+  return !assessApplicationUrlQuality(value).launchable;
 }
 
 function absoluteUrl(value: string | undefined, baseUrl: string) {
@@ -1481,14 +1524,7 @@ function urlPathKey(value: string) {
 }
 
 function atsProviderFromUrl(value?: string): NormalizedJobPosting["atsProvider"] {
-  if (!value) return "other";
-  if (/greenhouse/i.test(value)) return "greenhouse";
-  if (/lever/i.test(value)) return "lever";
-  if (/ashby/i.test(value)) return "ashby";
-  if (/workday/i.test(value)) return "workday";
-  if (/smartrecruiters/i.test(value)) return "smartrecruiters";
-  if (/workable/i.test(value)) return "workable";
-  return "other";
+  return atsProviderFromApplicationUrl(value);
 }
 
 export function detectSearchProviderFromUrl(value?: string) {

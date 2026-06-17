@@ -12,6 +12,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { summarizeAutomationBlockers } from "@/lib/applications/automation-analytics";
 import { recoverStaleApplicationAutomationRuns, syncRunningApplicationAutomationRunsFromLogs } from "@/lib/applications/automation-runs";
+import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { buildAshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from "@/lib/applications/reconciliation";
 import { buildApplySprintTrustFunnel } from "@/lib/applications/apply-sprint-funnel";
@@ -136,7 +137,9 @@ export default async function ApplicationAssistantPage({ searchParams }: { searc
     }),
   ]);
   const canonicalApplications = visibleCanonicalApplications(applications);
-  const visibleApplications = canonicalApplications;
+  const visibleApplications = canonicalApplications.filter((application) => (
+    assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable
+  ));
   const funnelUserIds = Array.from(new Set(funnelMatches.map((match) => match.jobSearchProfile.userId)));
   const suppressionByUserId = await loadJobSuppressionStatesByUserIds(funnelUserIds);
   const trustFunnel = buildApplySprintTrustFunnel({

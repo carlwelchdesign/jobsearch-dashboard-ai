@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { requireSingleUser } from "@/lib/auth/single-user";
+import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { prisma } from "@/lib/prisma";
 
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
       select: {
         id: true,
         jobPostingId: true,
-        jobPosting: { select: { company: true, title: true } },
+        jobPosting: { select: { company: true, title: true, applicationUrl: true } },
       },
     });
 
@@ -40,6 +41,18 @@ export async function POST(request: Request) {
     }> = [];
 
     for (const match of matches) {
+      const quality = assessApplicationUrlQuality(match.jobPosting.applicationUrl);
+      if (!quality.launchable) {
+        results.push({
+          matchId: match.id,
+          jobId: match.jobPostingId,
+          company: match.jobPosting.company,
+          title: match.jobPosting.title,
+          status: "failed",
+          error: `Direct application URL required. ${quality.reason}`,
+        });
+        continue;
+      }
       try {
         const prepared = await prepareApplicationPackage(match.jobPostingId);
         results.push({

@@ -99,6 +99,30 @@ describe("GET /api/applications/[id]/assistant-package", () => {
     });
   });
 
+  it("requires a direct application URL before assisted form filling", async () => {
+    findApplicationMock.mockResolvedValue({
+      status: "ready_to_apply",
+      jobPosting: { applicationUrl: "https://wellfound.com/jobs/123" },
+      resume: { id: "resume_1" },
+      coverLetter: { id: "letter_1" },
+      user: { profile: null },
+      applicationPackets: [],
+    } as unknown as Awaited<ReturnType<typeof prisma.application.findUnique>>);
+
+    const response = await GET(new Request("http://localhost/api/applications/app_1/assistant-package"), {
+      params: { id: "app_1" },
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("Direct application URL required"),
+      applicationUrlQuality: expect.objectContaining({
+        launchable: false,
+        kind: "auth_or_paywall",
+      }),
+    });
+  });
+
   it("exports selected application answers with the local assistant package", async () => {
     findApplicationMock.mockResolvedValue({
       id: "app_1",

@@ -2,6 +2,7 @@ import { AtsProvider, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
+import { assessApplicationUrlQuality, atsProviderFromApplicationUrl } from "@/lib/applications/application-url-quality";
 import { isLocalAssistantRequest, LOCAL_ASSISTANT_ERROR } from "@/lib/applications/local-assistant-origin";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { prisma } from "@/lib/prisma";
@@ -31,6 +32,13 @@ export async function POST(request: Request, { params }: { params: { id: string 
     }
 
     const body = applyNowSchema.parse(await request.json());
+    const quality = assessApplicationUrlQuality(body.applicationUrl);
+    if (!quality.launchable) {
+      return NextResponse.json({
+        error: `Direct application URL required. ${quality.reason}`,
+        applicationUrlQuality: quality,
+      }, { status: 400 });
+    }
     const existing = await prisma.jobPosting.findUnique({
       where: { id: params.id },
       select: { rawData: true },
@@ -42,11 +50,12 @@ export async function POST(request: Request, { params }: { params: { id: string 
       where: { id: params.id },
       data: {
         applicationUrl: body.applicationUrl,
-        atsProvider: body.atsProvider ?? undefined,
+        atsProvider: body.atsProvider ?? atsProviderFromApplicationUrl(body.applicationUrl),
         rawData: {
           ...(isRecord(existing.rawData) ? existing.rawData : {}),
           applyNow: {
             applicationUrl: body.applicationUrl,
+            applicationUrlQuality: quality,
             pageUrl: body.pageUrl ?? null,
             capturedAt: new Date().toISOString(),
           },

@@ -323,7 +323,7 @@ describe("searchQueryAdapter", () => {
     const normalized = await searchQueryAdapter.normalize(raw);
 
     expect(normalized.applicationUrl).toBeUndefined();
-    expect(normalized.atsProvider).toBe("other");
+    expect(normalized.atsProvider).toBe("unknown");
     expect(normalized.rawData).toMatchObject({
       builtIn: {
         detailUrl: raw.applicationUrl,
@@ -334,6 +334,38 @@ describe("searchQueryAdapter", () => {
         source: "builtin_detail_page",
         detailUrl: raw.applicationUrl,
         reason: "Built In detail page says the job was removed.",
+      },
+    });
+  });
+
+  it("keeps Built In detail pages reviewable when they do not expose external application URLs", async () => {
+    const raw = {
+      sourceJobId: "search:builtin:unresolved",
+      company: "Built In",
+      title: "Senior Frontend Engineer",
+      location: "Remote",
+      description: "Listing summary",
+      applicationUrl: "https://builtin.com/job/frontend-engineer/8269411",
+      rawData: { provider: "brave", expansionProvider: "builtin" },
+    };
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      text: async () => "<html><body><h1>Senior Frontend Engineer</h1><button>Apply</button></body></html>",
+    } as Response);
+
+    const normalized = await searchQueryAdapter.normalize(raw);
+
+    expect(normalized.applicationUrl).toBeUndefined();
+    expect(normalized.rawData).toMatchObject({
+      sourceApplicationUrl: {
+        url: raw.applicationUrl,
+      },
+      applicationUrlQuality: {
+        launchable: false,
+        kind: "board_intermediary",
+      },
+      missingApplicationUrl: {
+        source: "builtin_detail_page",
       },
     });
   });
@@ -548,7 +580,7 @@ describe("searchQueryAdapter", () => {
     });
   });
 
-  it("accepts individual Indeed job URLs from Brave when they are not listing pages", async () => {
+  it("keeps individual Indeed job URLs reviewable without making them launchable", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -570,7 +602,84 @@ describe("searchQueryAdapter", () => {
 
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.listingReview).toBeUndefined();
-    expect(normalized.applicationUrl).toBe("https://www.indeed.com/viewjob?jk=abc123def456");
+    expect(normalized.applicationUrl).toBeUndefined();
+    expect(normalized.rawData).toMatchObject({
+      sourceApplicationUrl: {
+        url: "https://www.indeed.com/viewjob?jk=abc123def456",
+      },
+      applicationUrlQuality: {
+        launchable: false,
+        kind: "board_intermediary",
+      },
+    });
+  });
+
+  it("does not promote Recruitee jobs that redirect to the Recruitee marketing site", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      status: 301,
+      ok: false,
+      headers: new Headers({ location: "https://recruitee.com/careers_not_hosted" }),
+    } as Response);
+
+    const raw = {
+      sourceJobId: "search:recruitee:broken",
+      company: "Shop Apotheke Europe",
+      title: "Senior Frontend Engineer, React",
+      location: "Remote Germany",
+      description: "React frontend role.",
+      applicationUrl: "https://shopapothekeeurope.recruitee.com/o/senior-frontend-engineer-react-mwd-in-berlin-or-remote-germany",
+      rawData: { provider: "brave", searchProvider: "recruitee" },
+    };
+
+    const normalized = await searchQueryAdapter.normalize(raw);
+
+    expect(fetch).toHaveBeenCalledWith(raw.applicationUrl, expect.objectContaining({
+      method: "HEAD",
+      redirect: "manual",
+    }));
+    expect(normalized.applicationUrl).toBeUndefined();
+    expect(normalized.atsProvider).toBe("unknown");
+    expect(normalized.rawData).toMatchObject({
+      sourceApplicationUrl: {
+        url: raw.applicationUrl,
+      },
+      applicationUrlQuality: {
+        launchable: false,
+        kind: "auth_or_paywall",
+      },
+    });
+  });
+
+  it("promotes Recruitee jobs only when they redirect to a company career page", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      status: 302,
+      ok: false,
+      headers: new Headers({ location: "https://career.churchdesk.com/o/senior-frontend-engineer-react-remote" }),
+    } as Response);
+
+    const raw = {
+      sourceJobId: "search:recruitee:custom-career",
+      company: "ChurchDesk",
+      title: "Senior Frontend Engineer, React",
+      location: "Remote",
+      description: "React frontend role.",
+      applicationUrl: "https://churchdesk.recruitee.com/o/senior-frontend-engineer-react-remote",
+      rawData: { provider: "brave", searchProvider: "recruitee" },
+    };
+
+    const normalized = await searchQueryAdapter.normalize(raw);
+
+    expect(normalized).toMatchObject({
+      applicationUrl: "https://career.churchdesk.com/o/senior-frontend-engineer-react-remote",
+      atsProvider: "other",
+      rawData: {
+        resolvedApplicationUrl: {
+          source: "job_detail_page",
+          originalUrl: raw.applicationUrl,
+          applicationUrl: "https://career.churchdesk.com/o/senior-frontend-engineer-react-remote",
+        },
+      },
+    });
   });
 
   it("expands Dice search result pages into individual job detail links", async () => {
@@ -856,6 +965,33 @@ describe("searchQueryAdapter", () => {
         expansionProvider: "workingnomads",
         expandedFrom: "https://www.workingnomads.com/remote-typescript-jobs",
         detailUrl: "https://www.workingnomads.com/job/go/123456/",
+      },
+    });
+  });
+
+  it("does not promote Working Nomads detail URLs when no external apply URL is exposed", async () => {
+    const normalized = await searchQueryAdapter.normalize({
+      sourceJobId: "search:workingnomads:1641405",
+      company: "Proxify",
+      title: "Senior Frontend Developer",
+      location: "Remote",
+      description: "Working Nomads detail",
+      applicationUrl: "https://www.workingnomads.com/job/go/1641405/",
+      rawData: {
+        provider: "brave",
+        expansionProvider: "workingnomads",
+        detailUrl: "https://www.workingnomads.com/job/go/1641405/",
+      },
+    });
+
+    expect(normalized.applicationUrl).toBeUndefined();
+    expect(normalized.rawData).toMatchObject({
+      sourceApplicationUrl: {
+        url: "https://www.workingnomads.com/job/go/1641405/",
+      },
+      applicationUrlQuality: {
+        launchable: false,
+        kind: "board_intermediary",
       },
     });
   });

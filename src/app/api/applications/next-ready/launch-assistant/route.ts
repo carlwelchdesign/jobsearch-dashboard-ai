@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
+import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { isLocalAssistantRequest, LOCAL_ASSISTANT_ERROR } from "@/lib/applications/local-assistant-origin";
 import { prisma } from "@/lib/prisma";
 
@@ -23,10 +24,6 @@ export async function POST(request: Request) {
         coverLetterId: { not: null },
         jobPosting: {
           applicationUrl: { not: null },
-          NOT: [
-            { applicationUrl: { contains: "example.com", mode: "insensitive" } },
-            { applicationUrl: { contains: "remoteok.com", mode: "insensitive" } },
-          ],
         },
         agentUserRequests: {
           none: { status: "OPEN" },
@@ -47,10 +44,13 @@ export async function POST(request: Request) {
       ],
       take: 50,
     });
-    const application = applications.find((candidate) => !hasAssistantLaunch(candidate.events));
+    const application = applications.find((candidate) => (
+      assessApplicationUrlQuality(candidate.jobPosting.applicationUrl).launchable
+      && !hasAssistantLaunch(candidate.events)
+    ));
 
     if (!application) {
-      return NextResponse.json({ error: "No unlaunched ready_to_apply application with generated materials is available." }, { status: 404 });
+      return NextResponse.json({ error: "No unlaunched ready_to_apply application with generated materials and a direct application URL is available." }, { status: 404 });
     }
 
     const { startApplicationAssistantWorkflow } = await import("@/lib/applications/assistant-workflow-graph");

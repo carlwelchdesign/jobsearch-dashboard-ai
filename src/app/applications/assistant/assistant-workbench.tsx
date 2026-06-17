@@ -40,6 +40,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgencyRunControl } from "@/components/agency-run-control";
 import { RejectionReasonDialog, type RejectionReasonCode } from "@/components/job-reject-button";
 import { SearchRunAnalyticsCharts } from "@/components/search-run-analytics-charts";
+import { assessApplicationUrlQuality, type ApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import type { AshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 import { summarizeApplicationJobDescription } from "@/lib/applications/job-summary";
 import { copyTextToClipboard } from "@/lib/browser/clipboard";
@@ -131,8 +132,9 @@ type ApplySprintTrustFunnel = {
     profileName: string;
     score: number;
     updatedAt: string;
-    reasons: ApplySprintReasonCode[];
-    canPrepare: boolean;
+  reasons: ApplySprintReasonCode[];
+  canPrepare: boolean;
+  applicationUrlQuality?: ApplicationUrlQuality;
   }>;
   agencyResults: Array<{
     matchId?: string | null;
@@ -157,6 +159,7 @@ type ApplySprintTrustFunnel = {
     status?: string | null;
     reasons: ApplySprintReasonCode[];
     detail: string;
+    applicationUrlQuality?: ApplicationUrlQuality;
   }>;
 };
 
@@ -1827,7 +1830,7 @@ function summarizeReadyJobDescription(application: Pick<ReadyApplication, "descr
 }
 
 function isUnsupportedAssistantUrl(value: string) {
-  return /example\.com|remoteok\.com/i.test(value);
+  return !assessApplicationUrlQuality(value).launchable;
 }
 
 function applySprintReasonLabel(reason: ApplySprintReasonCode) {

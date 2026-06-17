@@ -218,6 +218,25 @@ describe("DELETE /api/applications/[id]", () => {
     await expect(response.json()).resolves.toMatchObject({ applicationUrl: null });
   });
 
+  it("rejects manual application URL updates to board URLs", async () => {
+    const response = await PATCH(new Request("http://localhost/api/applications/app_1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ applicationUrl: "https://builtin.com/job/frontend-engineer/8269411" }),
+    }), { params: { id: "app_1" } });
+
+    expect(updateJobPostingMock).not.toHaveBeenCalled();
+    expect(createApplicationEventMock).not.toHaveBeenCalled();
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("Direct application URL required"),
+      applicationUrlQuality: expect.objectContaining({
+        launchable: false,
+        kind: "board_intermediary",
+      }),
+    });
+  });
+
   it("rejects non-http application URLs", async () => {
     const response = await PATCH(new Request("http://localhost/api/applications/app_1", {
       method: "PATCH",

@@ -84,6 +84,24 @@ describe("GET /api/applications/[id]/extension-package", () => {
     expect(updateJobPostingMock).not.toHaveBeenCalled();
   });
 
+  it("rejects selected board URLs before updating the application package target", async () => {
+    const response = await GET(new Request("http://localhost/api/applications/app_1/extension-package?currentUrl=https%3A%2F%2Fbuiltin.com%2Fjob%2Ffrontend-engineer%2F8269411"), {
+      params: { id: "app_1" },
+    });
+
+    expect(response.status).toBe(400);
+    expect(findApplicationMock).not.toHaveBeenCalled();
+    expect(updateJobPostingMock).not.toHaveBeenCalled();
+    expect(packageForIdMock).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("Direct application URL required"),
+      applicationUrlQuality: expect.objectContaining({
+        launchable: false,
+        kind: "board_intermediary",
+      }),
+    });
+  });
+
   it("returns 404 when currentUrl is provided for a missing application", async () => {
     findApplicationMock.mockResolvedValue(null);
 

@@ -23,6 +23,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { LifecycleReadinessContext } from "@/components/readiness/lifecycle-context";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip, formatStatus } from "@/components/ui/status-chip";
+import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
 import { reconcileApplicationCanonicalState, visibleCanonicalApplications } from "@/lib/applications/reconciliation";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
@@ -81,12 +82,17 @@ export default async function ApplicationsPage() {
   const agencyCandidates = uniqueMatchesByCanonicalJob(
     rawAgencyMatches.filter((match) => {
       const suppressionState = suppressionStates.get(match.jobSearchProfile.userId);
-      return !hasApplicationForJob(match.jobPosting, trackedJobKeys) && (!suppressionState || !isJobSuppressed(match.jobPosting, suppressionState));
+      return assessApplicationUrlQuality(match.jobPosting.applicationUrl).launchable
+        && !hasApplicationForJob(match.jobPosting, trackedJobKeys)
+        && (!suppressionState || !isJobSuppressed(match.jobPosting, suppressionState));
     }),
   );
   const nextAction = applicationsNextAction({
     approvedCount: visibleApplications.filter((application) => application.status === "approved").length,
-    readyCount: visibleApplications.filter((application) => application.status === "ready_to_apply").length,
+    readyCount: visibleApplications.filter((application) => (
+      application.status === "ready_to_apply"
+      && assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable
+    )).length,
     agencyCandidateCount: agencyCandidates.length,
   });
 
@@ -263,7 +269,7 @@ export default async function ApplicationsPage() {
                               Review packet
                             </ActionButton>
                           </Box>
-                          {application.status === "ready_to_apply" && application.resume && application.coverLetter ? (
+                          {application.status === "ready_to_apply" && application.resume && application.coverLetter && assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable ? (
                             <Box sx={{ mt: 1 }}>
                               <Button
                                 component={Link}
@@ -298,7 +304,7 @@ export default async function ApplicationsPage() {
                               />
                             </Box>
                           ) : null}
-                          {application.status === "ready_to_apply" && application.resume && application.coverLetter ? (
+                          {application.status === "ready_to_apply" && application.resume && application.coverLetter && assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable ? (
                             <>
                               <Divider sx={{ my: 1.25 }} />
                               <Stack spacing={0.75}>

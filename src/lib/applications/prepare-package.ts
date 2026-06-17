@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { generateCoverLetterForJob, tailorResumeForJob } from "@/lib/ai/resume";
+import { requireLaunchableApplicationUrl } from "@/lib/applications/application-url-quality";
 import { syncApplicationPacket } from "@/lib/applications/application-packets";
 import { attachCoverLetterQa, attachResumeQa, createResumeStrategy } from "@/lib/applications/material-agents";
 import { activeApplicationMaterialGuidance } from "@/lib/applications/material-guidance";
@@ -40,6 +41,7 @@ export async function prepareApplicationPackage(jobId: string) {
   if (!job || !user?.profile || !job.matches[0]) {
     throw new Error("Job, match, and approved candidate profile are required.");
   }
+  requireLaunchableApplicationUrl(job.applicationUrl);
 
   const match = job.matches[0];
   let resume = job.resumes[0] ?? null;

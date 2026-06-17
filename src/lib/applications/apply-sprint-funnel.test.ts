@@ -102,6 +102,43 @@ describe("Apply Sprint trust funnel", () => {
     ]));
     expect(reasonLabel("review_only_broad_discovery")).toBe("review-only broad discovery");
   });
+
+  it("keeps intermediary board URLs out of agency candidates with a specific reason", () => {
+    const funnel = buildApplySprintTrustFunnel({
+      latestSearchRun: searchRun(),
+      latestAgencyRun: null,
+      matches: [
+        match({
+          id: "builtin-match",
+          jobPostingId: "builtin-job",
+          applicationUrl: "https://builtin.com/job/frontend-engineer/8269411",
+        }),
+      ],
+      applications: [
+        application({
+          id: "builtin-app",
+          jobPostingId: "builtin-job",
+          applicationUrl: "https://builtin.com/job/frontend-engineer/8269411",
+          status: "ready_to_apply",
+        }),
+      ],
+      visibleReadyApplicationIds: new Set(),
+      suppressionByUserId: new Map([["user-1", createEmptyJobSuppressionState()]]),
+    });
+
+    expect(funnel.summary.eligibleForAgency).toBe(0);
+    expect(funnel.hidden).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "builtin-match",
+        reasons: expect.arrayContaining(["unsupported_application_url"]),
+        detail: expect.stringContaining("job board/intermediary"),
+        applicationUrlQuality: expect.objectContaining({
+          launchable: false,
+          kind: "board_intermediary",
+        }),
+      }),
+    ]));
+  });
 });
 
 function searchRun(stats: { jobsBelowThreshold?: number; jobsSuppressed?: number; listingPagesSuppressed?: number; reviewOnlyMatches?: number } = {}) {
@@ -170,7 +207,7 @@ function application(overrides: Record<string, any> = {}) {
       company: overrides.company ?? "Acme",
       title: overrides.title ?? "Frontend Engineer",
       location: "Remote",
-      applicationUrl: "https://example.org/apply",
+      applicationUrl: overrides.applicationUrl === undefined ? "https://example.org/apply" : overrides.applicationUrl,
       duplicateGroupId: null,
       lastSeenAt: now,
     },

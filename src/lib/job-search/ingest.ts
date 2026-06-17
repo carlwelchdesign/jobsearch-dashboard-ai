@@ -2,6 +2,7 @@ import { JobSearchRun, NotificationSettings, Prisma, User } from "@prisma/client
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
 import { runSearchProfileManagerAgent } from "@/lib/agents/search-profile-manager";
+import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { MAX_RECRUITING_AGENCY_LIMIT } from "@/lib/applications/recruiting-agency-constants";
 import { runRecruitingAgency } from "@/lib/applications/recruiting-agency";
 import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
@@ -442,7 +443,7 @@ export async function autoRunAgencyAfterSearch(input: {
     return { started: false, reason: "agency_already_running" as const, agentRunId: activeAgencyRun.id };
   }
 
-  const eligibleCount = await prisma.jobProfileMatch.count({
+  const eligibleMatches = await prisma.jobProfileMatch.findMany({
     where: {
       status: "needs_review",
       ...(input.userId ? { jobSearchProfile: { userId: input.userId } } : {}),
@@ -460,7 +461,12 @@ export async function autoRunAgencyAfterSearch(input: {
         },
       },
     },
+    select: {
+      jobPosting: { select: { applicationUrl: true } },
+    },
+    take: MAX_RECRUITING_AGENCY_LIMIT * 5,
   });
+  const eligibleCount = eligibleMatches.filter((match) => assessApplicationUrlQuality(match.jobPosting.applicationUrl).launchable).length;
   if (eligibleCount <= 0) {
     const message = input.jobsSaved <= 0
       ? "Recruiting agency skipped because the search saved no new matches and no existing application-ready matches were eligible."
