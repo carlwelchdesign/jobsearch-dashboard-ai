@@ -62,6 +62,7 @@ export function reviewApplicationMaterials({
   const resume = resumeMarkdown ?? "";
   const coverLetter = coverLetterBody ?? "";
   const combined = [resume, coverLetter].filter(Boolean).join("\n\n");
+  const styleTarget = coverLetter || combined;
   const warnings: string[] = [];
   const unsupportedClaims: string[] = [];
   const styleViolations: string[] = [];
@@ -84,7 +85,7 @@ export function reviewApplicationMaterials({
     unsupportedClaims.push(inferredVersionClaim);
     suggestedEdits.push("Remove inferred version language from the resume, or approve the exact version in the resume profile first.");
   }
-  const ashbyCriteriaVisibility = resume && isAshbyApplication({ atsProvider: job.atsProvider, applicationUrl: job.applicationUrl })
+  const ashbyCriteriaVisibility = resume && !coverLetter && isAshbyApplication({ atsProvider: job.atsProvider, applicationUrl: job.applicationUrl })
     ? evaluateAshbyCriteriaVisibility({ jobTitle: job.title, jobDescription: job.description, resumeText: resume })
     : undefined;
   if (ashbyCriteriaVisibility?.warnings.length) {
@@ -92,15 +93,15 @@ export function reviewApplicationMaterials({
     suggestedEdits.push(...ashbyCriteriaVisibility.suggestedEdits);
   }
 
-  if (/[—–]/.test(combined)) {
+  if (/[—–]/.test(styleTarget)) {
     styleViolations.push("Uses em dash or en dash punctuation.");
     suggestedEdits.push("Replace em dashes and en dashes with commas, periods, or parentheses.");
   }
-  if (/\b(it'?s not\b.+\bit'?s\b|\bnot only\b.+\bbut also\b)/i.test(combined)) {
+  if (/\b(it'?s not\b.+\bit'?s\b|\bnot only\b.+\bbut also\b)/i.test(styleTarget)) {
     styleViolations.push("Contains an obvious AI-style contrast construction.");
     suggestedEdits.push("Rewrite contrast phrases as direct statements.");
   }
-  if (/\b(excited to apply|thrilled to apply|passionate about|game[- ]changer|cutting[- ]edge|world[- ]class|synergy|leverage my)\b/i.test(combined)) {
+  if (/\b(excited to apply|thrilled to apply|passionate about|game[- ]changer|cutting[- ]edge|world[- ]class|synergy|leverage my)\b/i.test(styleTarget)) {
     styleViolations.push("Contains generic or inflated application language.");
     suggestedEdits.push("Replace generic enthusiasm with one specific reason the role matches verified experience.");
   }
@@ -113,7 +114,12 @@ export function reviewApplicationMaterials({
 
   const penalty = warnings.length * 8 + unsupportedClaims.length * 18 + styleViolations.length * 10;
   const score = Math.max(0, Math.min(100, 100 - penalty));
-  const status = unsupportedClaims.length || styleViolations.length || score < 78 || ashbyCriteriaVisibility?.status !== "ready" ? "NEEDS_REVIEW" : "PASS";
+  const status = unsupportedClaims.length
+    || styleViolations.length
+    || score < 78
+    || Boolean(ashbyCriteriaVisibility && ashbyCriteriaVisibility.status !== "ready")
+    ? "NEEDS_REVIEW"
+    : "PASS";
 
   return {
     status,

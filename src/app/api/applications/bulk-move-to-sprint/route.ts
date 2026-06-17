@@ -1,13 +1,24 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { runApplicationQaAgent } from "@/lib/agents/application-qa";
+import { runHiringManagerReviewerAgent } from "@/lib/agents/hiring-manager-reviewer";
 import { apiError } from "@/lib/api";
 import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { syncApplicationPacket } from "@/lib/applications/application-packets";
-import { applicationMaterialQualityDetail, type ApplicationMaterialQuality } from "@/lib/applications/material-quality";
+import {
+  applicationMaterialQualityDetail,
+  buildApplicationMaterialQuality,
+  materialQualityJson,
+  type ApplicationEvidencePlan,
+  type ApplicationMaterialQuality,
+  type HiringManagerMaterialReview,
+} from "@/lib/applications/material-quality";
 import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
 import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { prisma } from "@/lib/prisma";
+import { syncMaterialClaimsForCoverLetter } from "@/lib/trust/material-claims";
 
 export const dynamic = "force-dynamic";
 
@@ -22,18 +33,7 @@ export async function POST(request: Request) {
   try {
     const body = request.headers.get("content-type")?.includes("application/json") ? await request.json() : {};
     const input = requestSchema.parse(body);
-    const applications = await prisma.application.findMany({
-      where: {
-        status: { in: [...movableStatuses] },
-        jobPosting: { applicationUrl: { not: null } },
-      },
-      include: {
-        coverLetter: { select: { generationNotes: true } },
-        jobPosting: { select: { id: true, company: true, title: true, applicationUrl: true } },
-      },
-      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-      take: input.limit * 4,
-    });
+    const applications = await loadApplicationsForBulkMove(input.limit);
     const directApplications = applications
       .filter((application) => assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable)
       .slice(0, input.limit);
@@ -46,6 +46,7 @@ export async function POST(request: Request) {
       title: string;
       action: "moved" | "prepared" | "failed";
       regeneratedCoverLetter?: boolean;
+      reassessedMaterialQuality?: boolean;
       materialQuality?: ApplicationMaterialQuality;
       error?: string;
     }> = [];
@@ -53,8 +54,26 @@ export async function POST(request: Request) {
     for (const application of directApplications) {
       try {
         if (application.resumeId && application.coverLetterId) {
-          const materialQuality = applicationMaterialQualityDetail(application.coverLetter?.generationNotes);
+          let materialQuality = applicationMaterialQualityDetail(application.coverLetter?.generationNotes);
           if (!materialQuality.launchable) {
+            const reassessedMaterialQuality = await reassessExistingApplicationMaterials(application, materialQuality);
+            if (reassessedMaterialQuality) {
+              materialQuality = reassessedMaterialQuality;
+              if (materialQuality.launchable) {
+                await moveApplicationToSprint(application, materialQuality);
+                results.push({
+                  ok: true,
+                  applicationId: application.id,
+                  jobId: application.jobPostingId,
+                  company: application.jobPosting.company,
+                  title: application.jobPosting.title,
+                  action: "moved",
+                  reassessedMaterialQuality: true,
+                  materialQuality,
+                });
+                continue;
+              }
+            }
             if (!input.regenerateBlockedMaterials) {
               results.push({
                 ok: false,
@@ -94,22 +113,7 @@ export async function POST(request: Request) {
             });
             continue;
           }
-          await transitionApplicationState({
-            applicationId: application.id,
-            toStatus: "ready_to_apply",
-            source: "bulk_move_to_apply_sprint",
-            actor: { type: "system" },
-            reason: "Bulk move prepared application for Apply Sprint.",
-            note: mergeSprintNote(application.notes),
-            metadata: {
-              resumeId: application.resumeId,
-              coverLetterId: application.coverLetterId,
-              applicationUrl: application.jobPosting.applicationUrl,
-              manualSubmissionRequired: true,
-            },
-            sideEffects: { syncPacket: false },
-          });
-          await syncApplicationPacket(application.id);
+          await moveApplicationToSprint(application, materialQuality);
           results.push({
             ok: true,
             applicationId: application.id,
@@ -121,6 +125,18 @@ export async function POST(request: Request) {
           continue;
         }
 
+        if (!input.regenerateBlockedMaterials) {
+          results.push({
+            ok: false,
+            applicationId: application.id,
+            jobId: application.jobPostingId,
+            company: application.jobPosting.company,
+            title: application.jobPosting.title,
+            action: "failed",
+            error: "missing_resume_or_cover_letter: Generate application materials before moving to Apply Sprint.",
+          });
+          continue;
+        }
         const prepared = await prepareApplicationPackage(application.jobPostingId);
         if (prepared.readyToApply === false) {
           results.push({
@@ -161,6 +177,7 @@ export async function POST(request: Request) {
     const moved = results.filter((result) => result.ok && result.action === "moved").length;
     const prepared = results.filter((result) => result.ok && result.action === "prepared").length;
     const regenerated = results.filter((result) => result.ok && result.regeneratedCoverLetter).length;
+    const reassessed = results.filter((result) => result.ok && result.reassessedMaterialQuality).length;
     const failed = results.filter((result) => !result.ok).length;
     const quotaBlocked = results.filter((result) => result.materialQuality?.reasons.includes("openai_insufficient_quota")).length;
     const materialBlocked = results.filter((result) => result.materialQuality?.reasons.includes("deterministic_fallback") || result.materialQuality?.reasons.includes("material_quality_needs_review") || result.error?.startsWith("material_quality_needs_review")).length;
@@ -172,6 +189,7 @@ export async function POST(request: Request) {
       moved,
       prepared,
       regenerated,
+      reassessed,
       failed,
       materialBlocked,
       quotaBlocked,
@@ -192,8 +210,128 @@ export async function POST(request: Request) {
   }
 }
 
+async function loadApplicationsForBulkMove(limit: number) {
+  return prisma.application.findMany({
+    where: {
+      status: { in: [...movableStatuses] },
+      jobPosting: { applicationUrl: { not: null } },
+    },
+    include: {
+      coverLetter: { select: { id: true, body: true, generationNotes: true } },
+      resume: { select: { markdown: true } },
+      jobPosting: { select: { id: true, company: true, title: true, applicationUrl: true } },
+    },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    take: limit * 4,
+  });
+}
+
+type BulkMoveApplication = Awaited<ReturnType<typeof loadApplicationsForBulkMove>>[number];
+
+async function reassessExistingApplicationMaterials(application: BulkMoveApplication, existingQuality: ApplicationMaterialQuality) {
+  if (!application.coverLetter || !application.resume) return null;
+  if (existingQuality.generatedBy === "deterministic_fallback" || existingQuality.reasons.includes("deterministic_fallback") || existingQuality.generationFailure) {
+    return null;
+  }
+  const notes = jsonObject(application.coverLetter.generationNotes);
+  const evidencePlan = evidencePlanFromNotes(notes);
+  const qa = await runApplicationQaAgent({
+    jobPostingId: application.jobPostingId,
+    userId: application.userId,
+    resumeMarkdown: application.resume.markdown,
+    coverLetterBody: application.coverLetter.body,
+    evidenceRefs: evidenceRefsFromNotes(notes, existingQuality),
+  });
+  const generatedBy = stringValue(notes.generatedBy) || existingQuality.generatedBy;
+  let hiringManagerReview = hiringManagerReviewFromNotes(notes) ?? existingQuality.review ?? null;
+  if (!hiringManagerReview) {
+    const review = await runHiringManagerReviewerAgent({
+      jobPostingId: application.jobPostingId,
+      userId: application.userId,
+      coverLetterBody: application.coverLetter.body,
+      generatedBy,
+      evidencePlan,
+      applicationQa: qa.output,
+    });
+    hiringManagerReview = review.output;
+  }
+  const materialQuality = buildApplicationMaterialQuality({
+    body: application.coverLetter.body,
+    generatedBy,
+    evidencePlan,
+    hiringManagerReview,
+    applicationQa: qa.output,
+    rewriteAttempted: typeof notes.rewriteAttempted === "boolean" ? notes.rewriteAttempted : existingQuality.rewriteAttempted,
+    generationFailure: existingQuality.generationFailure,
+  });
+  await prisma.generatedCoverLetter.update({
+    where: { id: application.coverLetter.id },
+    data: {
+      generationNotes: {
+        ...notes,
+        applicationQa: qa.output,
+        hiringManagerReview,
+        materialQuality: materialQualityJson(materialQuality),
+        materialQualityReassessedAt: new Date().toISOString(),
+      } as Prisma.InputJsonValue,
+    },
+  });
+  await syncMaterialClaimsForCoverLetter(application.coverLetter.id).catch(() => null);
+  return materialQuality;
+}
+
+async function moveApplicationToSprint(application: BulkMoveApplication, materialQuality: ApplicationMaterialQuality) {
+  await transitionApplicationState({
+    applicationId: application.id,
+    toStatus: "ready_to_apply",
+    source: "bulk_move_to_apply_sprint",
+    actor: { type: "system" },
+    reason: "Bulk move prepared application for Apply Sprint.",
+    note: mergeSprintNote(application.notes),
+    metadata: {
+      resumeId: application.resumeId,
+      coverLetterId: application.coverLetterId,
+      applicationUrl: application.jobPosting.applicationUrl,
+      materialQuality,
+      manualSubmissionRequired: true,
+    },
+    sideEffects: { syncPacket: false },
+  });
+  await syncApplicationPacket(application.id);
+}
+
 function mergeSprintNote(existing: string | null) {
   const note = "Moved to Apply Sprint. Review materials and submit manually.";
   if (!existing) return note;
   return existing.includes(note) ? existing : `${existing}\n${note}`;
+}
+
+function evidenceRefsFromNotes(notes: Record<string, unknown>, existingQuality: ApplicationMaterialQuality) {
+  const strategy = jsonObject(notes.resumeStrategy);
+  return [
+    ...stringArray(strategy.evidenceRefs),
+    ...existingQuality.evidenceRefs,
+  ].filter((value, index, values) => value && values.indexOf(value) === index);
+}
+
+function evidencePlanFromNotes(notes: Record<string, unknown>): ApplicationEvidencePlan | null {
+  const plan = jsonObject(notes.applicationEvidencePlan);
+  return Array.isArray(plan.evidenceRefs) && Array.isArray(plan.proofPoints) ? plan as unknown as ApplicationEvidencePlan : null;
+}
+
+function hiringManagerReviewFromNotes(notes: Record<string, unknown>): HiringManagerMaterialReview | null {
+  const review = jsonObject(notes.hiringManagerReview);
+  return typeof review.status === "string" && typeof review.score === "number" ? review as unknown as HiringManagerMaterialReview : null;
+}
+
+function jsonObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
 }

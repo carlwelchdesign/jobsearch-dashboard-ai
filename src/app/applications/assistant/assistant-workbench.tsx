@@ -379,6 +379,13 @@ export function AssistantWorkbench({
     return ids;
   }, []), [trustFunnel.candidates]);
   const quotaBlockedCount = trustFunnel.hidden.filter((item) => item.materialQuality?.reasons.includes("openai_insufficient_quota")).length;
+  const rateLimitedCount = trustFunnel.hidden.filter((item) => item.materialQuality?.reasons.includes("openai_rate_limited")).length;
+  const timedOutCount = trustFunnel.hidden.filter((item) => item.materialQuality?.reasons.includes("openai_timeout")).length;
+  const openAiFailureDetail = [
+    quotaBlockedCount ? `${quotaBlockedCount} quota exhausted` : null,
+    rateLimitedCount ? `${rateLimitedCount} rate-limited` : null,
+    timedOutCount ? `${timedOutCount} timed out` : null,
+  ].filter(Boolean).join("; ");
 
   async function launchSelected(next = false) {
     const endpoint = next ? "/api/applications/next-ready/launch-assistant" : `/api/applications/${activeSelectedId}/launch-assistant`;
@@ -675,12 +682,12 @@ export function AssistantWorkbench({
                   severity={trustFunnel.summary.materialQualityBlocked ? "warning" : "info"}
                   action={trustFunnel.summary.materialQualityBlocked ? (
                     <Button color="inherit" size="small" disabled={retryingBulkMove} onClick={() => void retryBulkMoveToSprint()}>
-                      {retryingBulkMove ? "Regenerating..." : trustFunnel.summary.materialQualityBlocked <= 250 ? "Regenerate all" : "Regenerate first 250"}
+                      {retryingBulkMove ? "Rechecking..." : trustFunnel.summary.materialQualityBlocked <= 250 ? "Recheck/regenerate all" : "Recheck/regenerate first 250"}
                     </Button>
                   ) : undefined}
                 >
                   {trustFunnel.summary.materialQualityBlocked
-                    ? `${trustFunnel.summary.materialQualityBlocked} approved application${trustFunnel.summary.materialQualityBlocked === 1 ? "" : "s"} could not enter Apply Sprint because cover-letter quality is blocked${quotaBlockedCount ? `; ${quotaBlockedCount} failed because OpenAI quota is exhausted` : ""}. They remain approved and are listed under Hidden / Suppressed.`
+                    ? `${trustFunnel.summary.materialQualityBlocked} approved application${trustFunnel.summary.materialQualityBlocked === 1 ? "" : "s"} could not enter Apply Sprint because cover-letter quality is blocked${openAiFailureDetail ? `; OpenAI generation issues: ${openAiFailureDetail}` : ""}. They remain approved and are listed under Hidden / Suppressed.`
                     : "No ready applications. Run search so eligible saved matches can be prepared for Apply Sprint automatically."}
                 </Alert>
               )}

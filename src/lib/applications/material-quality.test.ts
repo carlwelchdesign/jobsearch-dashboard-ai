@@ -89,6 +89,116 @@ describe("application material quality", () => {
     expect(quality.status).toBe("PASS");
   });
 
+  it("allows reviewed OpenAI cover letters that pass QA above the review floor", () => {
+    const body = [
+      "Dear Zettabyte hiring team,",
+      "",
+      "The Frontend Engineer role matches my verified React and TypeScript work on product workflows that need clear UX judgment and reliable implementation.",
+      "I have built customer-facing interfaces, improved component quality, and partnered across product and engineering to make complex workflows easier to use.",
+      "That background maps well to the role's focus on frontend execution, UI quality, and practical product collaboration.",
+      "My recent work has centered on translating ambiguous user needs into concrete product flows, building the interfaces behind those flows, and keeping the implementation maintainable enough for fast iteration.",
+      "I would bring that same mix of product judgment, frontend craft, and steady engineering collaboration to the team.",
+      "I am especially effective in product environments where the interface has to make complex data, workflows, and edge cases understandable without burying users in unnecessary process.",
+      "That is the same judgment I would apply here: ship useful frontend work quickly, keep the experience clear, and make the technical choices durable enough for the next iteration.",
+      "",
+      "Best,",
+      "Carl Welch",
+    ].join("\n");
+
+    const quality = buildApplicationMaterialQuality({
+      body,
+      generatedBy: "openai_structured_outputs",
+      evidencePlan: {
+        status: "READY",
+        jobSignals: ["react", "typescript", "product", "ux"],
+        proofPoints: [],
+        evidenceRefs: ["ev_product_workflows"],
+        avoidedSignals: [],
+        warnings: [],
+        rationale: "Use verified frontend product workflow evidence.",
+        confidence: 0.86,
+      },
+      hiringManagerReview: {
+        status: "PASS",
+        score: 88,
+        strengths: ["Specific and relevant."],
+        concerns: [],
+        missingSignals: [],
+        unsupportedClaims: [],
+        genericSignals: [],
+        rewriteRecommended: false,
+        reasoningSummary: "Specific and evidence-backed.",
+        confidence: 0.86,
+      },
+      applicationQa: {
+        status: "PASS",
+        score: 82,
+        warnings: [],
+        unsupportedClaims: [],
+        styleViolations: [],
+        evidenceRefs: ["ev_product_workflows"],
+      },
+    });
+
+    expect(quality.launchable).toBe(true);
+    expect(quality.status).toBe("PASS");
+    expect(quality.reasons).not.toContain("application_qa_score_below_pass");
+  });
+
+  it("treats style-only QA findings as advisory when the reviewed letter is otherwise launchable", () => {
+    const body = [
+      "Dear Notion hiring team,",
+      "",
+      "The Developer Advocate role matches my verified work building developer-facing product workflows, explaining technical systems, and turning complex implementation details into usable guidance.",
+      "I have built React and TypeScript interfaces, documented agentic workflows, and partnered across product and engineering to make sophisticated tools easier for users to adopt.",
+      "That background maps directly to developer advocacy work that needs credibility with engineers, strong product judgment, and practical examples from shipped systems.",
+      "I would bring a builder's perspective to the team, with enough communication range to explain tradeoffs clearly and enough implementation depth to stay grounded in real usage.",
+      "My goal would be to help developers understand what the product can do, where it fits in their workflow, and how to get from exploration to reliable adoption.",
+      "",
+      "Best,",
+      "Carl Welch",
+    ].join("\n");
+
+    const quality = buildApplicationMaterialQuality({
+      body,
+      generatedBy: "openai_structured_outputs",
+      evidencePlan: {
+        status: "READY",
+        jobSignals: ["developer", "product", "typescript"],
+        proofPoints: [],
+        evidenceRefs: ["ev_developer_workflows"],
+        avoidedSignals: [],
+        warnings: [],
+        rationale: "Use verified developer workflow evidence.",
+        confidence: 0.86,
+      },
+      hiringManagerReview: {
+        status: "PASS",
+        score: 92,
+        strengths: ["Specific developer-facing evidence."],
+        concerns: [],
+        missingSignals: [],
+        unsupportedClaims: [],
+        genericSignals: [],
+        rewriteRecommended: false,
+        reasoningSummary: "Specific and evidence-backed.",
+        confidence: 0.86,
+      },
+      applicationQa: {
+        status: "NEEDS_REVIEW",
+        score: 90,
+        warnings: [],
+        unsupportedClaims: [],
+        styleViolations: ["Uses em dash or en dash punctuation."],
+        evidenceRefs: ["ev_developer_workflows"],
+      },
+    });
+
+    expect(quality.launchable).toBe(true);
+    expect(quality.reasons).not.toContain("style_violations_detected");
+    expect(quality.reasons).not.toContain("application_qa_needs_review");
+  });
+
   it("blocks deterministic material with an explicit OpenAI quota failure reason", () => {
     const quality = buildApplicationMaterialQuality({
       body: "Dear Linear hiring team,\n\nThis fallback draft is saved for review only because the structured cover-letter writer was unavailable.\n\nBest,\nCarl Welch",

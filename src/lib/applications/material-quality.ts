@@ -77,7 +77,7 @@ type QualityInput = {
   generationFailure?: ApplicationMaterialGenerationFailure | null;
 };
 
-const PASS_SCORE = 85;
+const REVIEW_SCORE_FLOOR = 78;
 const BLOCK_SCORE = 70;
 
 export function buildApplicationMaterialQuality(input: QualityInput): ApplicationMaterialQuality {
@@ -91,6 +91,14 @@ export function buildApplicationMaterialQuality(input: QualityInput): Applicatio
   const unsupportedQaClaims = stringArray(qa?.unsupportedClaims);
   const styleViolations = stringArray(qa?.styleViolations);
   const fallbackSignals = fallbackCoverLetterSignals(input.body);
+  const qaScoreBelowReviewFloor = qaScore !== null && qaScore < REVIEW_SCORE_FLOOR;
+  const qaStyleOnlyReview = styleViolations.length > 0
+    && unsupportedQaClaims.length === 0
+    && !qaScoreBelowReviewFloor
+    && generatedBy !== "deterministic_fallback"
+    && !generationFailure
+    && fallbackSignals.length === 0
+    && review?.status === "PASS";
   const evidenceRefs = Array.from(new Set([
     ...(input.evidencePlan?.evidenceRefs ?? []),
     ...(review ? input.evidencePlan?.proofPoints.map((point) => point.sourceId) ?? [] : []),
@@ -104,10 +112,10 @@ export function buildApplicationMaterialQuality(input: QualityInput): Applicatio
   if (review?.status === "BLOCKED") reasons.add("hiring_manager_blocked");
   if (review?.status === "NEEDS_REVIEW") reasons.add("hiring_manager_needs_review");
   if (input.evidencePlan?.status === "INSUFFICIENT") reasons.add("insufficient_job_specific_evidence");
-  if (qaStatus && qaStatus !== "PASS") reasons.add("application_qa_needs_review");
-  if (qaScore !== null && qaScore < PASS_SCORE) reasons.add("application_qa_score_below_pass");
+  if (qaStatus && qaStatus !== "PASS" && !qaStyleOnlyReview) reasons.add("application_qa_needs_review");
+  if (qaScoreBelowReviewFloor) reasons.add("application_qa_score_below_pass");
   if (unsupportedQaClaims.length) reasons.add("unsupported_claims_detected");
-  if (styleViolations.length) reasons.add("style_violations_detected");
+  if (styleViolations.length && !qaStyleOnlyReview) reasons.add("style_violations_detected");
 
   const scoreCandidates = [
     review?.score,
@@ -120,7 +128,7 @@ export function buildApplicationMaterialQuality(input: QualityInput): Applicatio
     || review?.status === "BLOCKED"
     || unsupportedQaClaims.length > 0
     || score < BLOCK_SCORE;
-  const needsReview = hardBlocked || reasons.size > 0 || !review || score < PASS_SCORE;
+  const needsReview = hardBlocked || reasons.size > 0 || !review || score < REVIEW_SCORE_FLOOR;
   const status: ApplicationMaterialQuality["status"] = hardBlocked ? "BLOCKED" : needsReview ? "NEEDS_REVIEW" : "PASS";
 
   return {

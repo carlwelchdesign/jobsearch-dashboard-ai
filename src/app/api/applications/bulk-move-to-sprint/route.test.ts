@@ -1,10 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { runApplicationQaAgent } from "@/lib/agents/application-qa";
+import { runHiringManagerReviewerAgent } from "@/lib/agents/hiring-manager-reviewer";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { syncApplicationPacket } from "@/lib/applications/application-packets";
 import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
 import { transitionApplicationState } from "@/lib/applications/state-transitions";
+import { syncMaterialClaimsForCoverLetter } from "@/lib/trust/material-claims";
 import { prisma } from "@/lib/prisma";
 import { POST } from "./route";
+
+vi.mock("@/lib/agents/application-qa", () => ({
+  runApplicationQaAgent: vi.fn(),
+}));
+
+vi.mock("@/lib/agents/hiring-manager-reviewer", () => ({
+  runHiringManagerReviewerAgent: vi.fn(),
+}));
 
 vi.mock("@/lib/applications/prepare-package", () => ({
   prepareApplicationPackage: vi.fn(),
@@ -25,12 +36,21 @@ vi.mock("@/lib/applications/state-transitions", () => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     application: { findMany: vi.fn() },
+    generatedCoverLetter: { update: vi.fn() },
   },
 }));
 
+vi.mock("@/lib/trust/material-claims", () => ({
+  syncMaterialClaimsForCoverLetter: vi.fn(),
+}));
+
 const findApplicationsMock = vi.mocked(prisma.application.findMany);
+const updateCoverLetterMock = vi.mocked(prisma.generatedCoverLetter.update);
+const runApplicationQaMock = vi.mocked(runApplicationQaAgent);
+const runHiringManagerReviewMock = vi.mocked(runHiringManagerReviewerAgent);
 const preparePackageMock = vi.mocked(prepareApplicationPackage);
 const syncPacketMock = vi.mocked(syncApplicationPacket);
+const syncClaimsMock = vi.mocked(syncMaterialClaimsForCoverLetter);
 const reconcileMock = vi.mocked(reconcileApplicationCanonicalState);
 const transitionMock = vi.mocked(transitionApplicationState);
 
@@ -38,7 +58,39 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     findApplicationsMock.mockResolvedValue([] as never);
+    runApplicationQaMock.mockResolvedValue({
+      run: { id: "agent_run_1" },
+      output: {
+        status: "PASS",
+        score: 90,
+        warnings: [],
+        unsupportedClaims: [],
+        styleViolations: [],
+        suggestedEdits: [],
+        evidenceRefs: ["evidence_1"],
+        reasoningSummary: "QA passed.",
+        confidence: 0.84,
+      },
+    } as unknown as Awaited<ReturnType<typeof runApplicationQaAgent>>);
+    runHiringManagerReviewMock.mockResolvedValue({
+      run: { id: "agent_run_review" },
+      output: {
+        status: "PASS",
+        score: 90,
+        strengths: ["Specific and relevant."],
+        concerns: [],
+        missingSignals: [],
+        unsupportedClaims: [],
+        genericSignals: [],
+        rewriteRecommended: false,
+        rewriteInstructions: null,
+        reasoningSummary: "Hiring-manager review passed.",
+        confidence: 0.84,
+      },
+    } as unknown as Awaited<ReturnType<typeof runHiringManagerReviewerAgent>>);
     preparePackageMock.mockResolvedValue(readyPackage("app_prepared"));
+    updateCoverLetterMock.mockResolvedValue({ id: "letter_1" } as never);
+    syncClaimsMock.mockResolvedValue([]);
     transitionMock.mockResolvedValue({ application: { id: "app_moved", status: "ready_to_apply" } } as Awaited<ReturnType<typeof transitionApplicationState>>);
     syncPacketMock.mockResolvedValue({ id: "packet_1" } as never);
     reconcileMock.mockResolvedValue(undefined as never);
@@ -139,6 +191,47 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     });
   });
 
+  it("does not generate missing materials when regeneration is disabled", async () => {
+    findApplicationsMock.mockResolvedValue([
+      {
+        id: "app_missing_materials",
+        userId: "user_1",
+        jobPostingId: "job_missing_materials",
+        resumeId: null,
+        coverLetterId: null,
+        notes: null,
+        jobPosting: {
+          id: "job_missing_materials",
+          company: "Acme",
+          title: "Frontend Engineer",
+          applicationUrl: "https://jobs.ashbyhq.com/acme/frontend-engineer/application",
+        },
+        resume: null,
+        coverLetter: null,
+      },
+    ] as never);
+
+    const response = await POST(new Request("http://localhost/api/applications/bulk-move-to-sprint", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ limit: 10, regenerateBlockedMaterials: false }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(preparePackageMock).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      moved: 0,
+      prepared: 0,
+      failed: 1,
+      results: [
+        expect.objectContaining({
+          ok: false,
+          error: expect.stringContaining("missing_resume_or_cover_letter"),
+        }),
+      ],
+    });
+  });
+
   it("reports OpenAI quota blocks when regenerated materials still cannot launch", async () => {
     findApplicationsMock.mockResolvedValue([
       application({
@@ -203,6 +296,168 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
           }),
         }),
       ],
+    });
+  });
+
+  it("reassesses existing structured cover letters before spending a regeneration call", async () => {
+    findApplicationsMock.mockResolvedValue([
+      application({
+        id: "app_structured",
+        jobPostingId: "job_structured",
+        resumeId: "resume_structured",
+        coverLetterId: "letter_structured",
+        generationNotes: {
+          generatedBy: "openai_structured_outputs",
+          applicationEvidencePlan: {
+            status: "READY",
+            jobSignals: ["react", "typescript", "product"],
+            proofPoints: [],
+            evidenceRefs: ["evidence_1"],
+            avoidedSignals: [],
+            warnings: [],
+            rationale: "Use verified frontend evidence.",
+            confidence: 0.86,
+          },
+          hiringManagerReview: {
+            status: "PASS",
+            score: 88,
+            strengths: ["Specific and relevant."],
+            concerns: [],
+            missingSignals: [],
+            unsupportedClaims: [],
+            genericSignals: [],
+            rewriteRecommended: false,
+            reasoningSummary: "Specific and evidence-backed.",
+            confidence: 0.86,
+          },
+          materialQuality: {
+            status: "NEEDS_REVIEW",
+            launchable: false,
+            reason: "Application QA marked the generated materials as needing review.",
+            reasons: ["application_qa_needs_review", "application_qa_score_below_pass"],
+            score: 82,
+            generatedBy: "openai_structured_outputs",
+            evidenceRefs: ["evidence_1"],
+          },
+        },
+      }),
+    ] as never);
+    runApplicationQaMock.mockResolvedValue({
+      run: { id: "agent_run_qa" },
+      output: {
+        status: "PASS",
+        score: 82,
+        warnings: [],
+        unsupportedClaims: [],
+        styleViolations: [],
+        suggestedEdits: [],
+        evidenceRefs: ["evidence_1"],
+        reasoningSummary: "QA passed after scoped reassessment.",
+        confidence: 0.84,
+      },
+    } as unknown as Awaited<ReturnType<typeof runApplicationQaAgent>>);
+
+    const response = await POST(new Request("http://localhost/api/applications/bulk-move-to-sprint", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ limit: 10 }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(runApplicationQaMock).toHaveBeenCalledWith(expect.objectContaining({
+      jobPostingId: "job_structured",
+      coverLetterBody: expect.stringContaining("Frontend Engineer"),
+    }));
+    expect(runHiringManagerReviewMock).not.toHaveBeenCalled();
+    expect(updateCoverLetterMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "letter_structured" },
+      data: expect.objectContaining({
+        generationNotes: expect.objectContaining({
+          materialQuality: expect.objectContaining({ launchable: true, status: "PASS" }),
+        }),
+      }),
+    }));
+    expect(syncClaimsMock).toHaveBeenCalledWith("letter_structured");
+    expect(preparePackageMock).not.toHaveBeenCalled();
+    expect(transitionMock).toHaveBeenCalledWith(expect.objectContaining({
+      applicationId: "app_structured",
+      toStatus: "ready_to_apply",
+      source: "bulk_move_to_apply_sprint",
+    }));
+    await expect(response.json()).resolves.toMatchObject({
+      moved: 1,
+      prepared: 0,
+      regenerated: 0,
+      reassessed: 1,
+      failed: 0,
+      results: [
+        expect.objectContaining({
+          ok: true,
+          action: "moved",
+          reassessedMaterialQuality: true,
+        }),
+      ],
+    });
+  });
+
+  it("creates a missing hiring-manager review during structured cover-letter reassessment", async () => {
+    findApplicationsMock.mockResolvedValue([
+      application({
+        id: "app_missing_review",
+        jobPostingId: "job_missing_review",
+        resumeId: "resume_missing_review",
+        coverLetterId: "letter_missing_review",
+        generationNotes: {
+          generatedBy: "openai_structured_outputs",
+          applicationEvidencePlan: {
+            status: "READY",
+            jobSignals: ["react", "typescript", "product"],
+            proofPoints: [],
+            evidenceRefs: ["evidence_1"],
+            avoidedSignals: [],
+            warnings: [],
+            rationale: "Use verified frontend evidence.",
+            confidence: 0.86,
+          },
+          materialQuality: {
+            status: "NEEDS_REVIEW",
+            launchable: false,
+            reason: "Cover letter needs material quality review before launch.",
+            reasons: ["missing_hiring_manager_review"],
+            score: 90,
+            generatedBy: "openai_structured_outputs",
+            evidenceRefs: ["evidence_1"],
+          },
+        },
+      }),
+    ] as never);
+
+    const response = await POST(new Request("http://localhost/api/applications/bulk-move-to-sprint", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ limit: 10 }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(runHiringManagerReviewMock).toHaveBeenCalledWith(expect.objectContaining({
+      jobPostingId: "job_missing_review",
+      coverLetterBody: expect.stringContaining("Frontend Engineer"),
+      generatedBy: "openai_structured_outputs",
+    }));
+    expect(updateCoverLetterMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "letter_missing_review" },
+      data: expect.objectContaining({
+        generationNotes: expect.objectContaining({
+          hiringManagerReview: expect.objectContaining({ status: "PASS" }),
+          materialQuality: expect.objectContaining({ launchable: true, status: "PASS" }),
+        }),
+      }),
+    }));
+    expect(preparePackageMock).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      moved: 1,
+      reassessed: 1,
+      failed: 0,
     });
   });
 
@@ -313,6 +568,7 @@ function application(input: {
 }) {
   return {
     id: input.id,
+    userId: "user_1",
     jobPostingId: input.jobPostingId,
     resumeId: input.resumeId,
     coverLetterId: input.coverLetterId,
@@ -323,7 +579,24 @@ function application(input: {
       title: input.title ?? "Frontend Engineer",
       applicationUrl: "https://jobs.ashbyhq.com/acme/frontend-engineer/application",
     },
+    resume: {
+      markdown: "Senior frontend engineer with React, TypeScript, and product workflow experience.".repeat(30),
+    },
     coverLetter: {
+      id: input.coverLetterId,
+      body: [
+        `Dear ${input.company ?? "Acme"} hiring team,`,
+        "",
+        `The ${input.title ?? "Frontend Engineer"} role maps to my verified React and TypeScript product workflow experience.`,
+        "I have built customer-facing interfaces with clear component boundaries, pragmatic QA, and close product collaboration.",
+        "My recent work has focused on making dense workflows easier to scan, safer to operate, and more reliable for teams that need speed without losing control.",
+        "I would bring that same product-minded frontend execution to this role, from shaping ambiguous requirements through implementation details that remain maintainable after launch.",
+        "I am especially useful when a team needs someone who can reason through user flows, edge cases, component behavior, and implementation tradeoffs in the same conversation.",
+        "That mix helps me move quickly without turning the product into disconnected UI, and it is the approach I would bring to this application.",
+        "",
+        "Best,",
+        "Carl Welch",
+      ].join("\n"),
       generationNotes: input.generationNotes,
     },
   };
