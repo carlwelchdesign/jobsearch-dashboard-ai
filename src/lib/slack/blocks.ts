@@ -8,13 +8,21 @@ export const SLACK_ACTIONS = {
   approveOperatingLoopProposal: "jso_approve_loop_proposal",
   applySearchProfileChange: "jso_apply_search_profile_change",
   rollbackSearchProfileChange: "jso_rollback_search_profile_change",
+  refreshHome: "jso_refresh_home",
+  openRunModal: "jso_open_run_modal",
+  openLink: "jso_open_link",
 } as const;
+
+export type SlackRunCommand = "jolene" | "loop" | "search-team" | "email-ops";
 
 export type SlackActionPayload =
   | { kind: "chief_proposal"; runId: string; proposalId: string }
   | { kind: "operating_loop_proposal"; runId: string; proposalId: string }
   | { kind: "apply_search_profile_change"; changeId: string }
-  | { kind: "rollback_search_profile_change"; changeId: string };
+  | { kind: "rollback_search_profile_change"; changeId: string }
+  | { kind: "refresh_home" }
+  | { kind: "open_run_modal"; command: SlackRunCommand }
+  | { kind: "open_link"; href: string };
 
 export type SlackBlock = KnownBlock | Block;
 
@@ -68,11 +76,17 @@ export function buildJoleneChiefApprovalMessage(input: {
       ...requests.flatMap((request) => [
         section(`*${sanitize(request.label)}*\n${sanitize(request.reason)}`),
         actions([
-          button({
+          slackButton({
             text: "Approve",
             actionId: SLACK_ACTIONS.approveChiefProposal,
             value: actionValue({ kind: "chief_proposal", runId: input.runId, proposalId: request.proposalId }),
             style: "primary",
+          }),
+          slackButton({
+            text: "Open app",
+            actionId: SLACK_ACTIONS.openLink,
+            value: actionValue({ kind: "open_link", href: input.appBaseUrl }),
+            url: input.appBaseUrl,
           }),
         ]),
       ]),
@@ -115,11 +129,17 @@ export function buildOperatingLoopApprovalMessage(input: {
       ...requests.flatMap((request) => [
         section(`*${sanitize(request.label)}*\n${sanitize(request.reason)}`),
         actions([
-          button({
+          slackButton({
             text: "Approve",
             actionId: SLACK_ACTIONS.approveOperatingLoopProposal,
             value: actionValue({ kind: "operating_loop_proposal", runId: input.runId, proposalId: request.proposalId }),
             style: "primary",
+          }),
+          slackButton({
+            text: "Open app",
+            actionId: SLACK_ACTIONS.openLink,
+            value: actionValue({ kind: "open_link", href: input.appBaseUrl }),
+            url: input.appBaseUrl,
           }),
         ]),
       ]),
@@ -163,17 +183,23 @@ export function buildSearchOptimizationApprovalMessage(input: {
         section(`*${sanitize(change.profileName)}*\n${change.action} - ${change.status}\n${sanitize(change.rationale)}`),
         actions([
           change.status === "APPLIED"
-            ? button({
+            ? slackButton({
                 text: "Rollback",
                 actionId: SLACK_ACTIONS.rollbackSearchProfileChange,
                 value: actionValue({ kind: "rollback_search_profile_change", changeId: change.id }),
               })
-            : button({
+            : slackButton({
                 text: "Apply",
                 actionId: SLACK_ACTIONS.applySearchProfileChange,
                 value: actionValue({ kind: "apply_search_profile_change", changeId: change.id }),
                 style: "primary",
               }),
+          slackButton({
+            text: "Open profiles",
+            actionId: SLACK_ACTIONS.openLink,
+            value: actionValue({ kind: "open_link", href: `${input.appBaseUrl}/profiles` }),
+            url: `${input.appBaseUrl}/profiles`,
+          }),
         ]),
       ]),
       context([link(`${input.appBaseUrl}/profiles`, "Open profiles"), `Optimization ${input.summary.optimizationRunId}`]),
@@ -226,50 +252,53 @@ export function appendActionResult(blocks: SlackBlock[] | undefined, message: st
   ];
 }
 
-function header(text: string): SlackBlock {
+export function header(text: string): SlackBlock {
   return { type: "header", text: { type: "plain_text", text: truncate(text, 150), emoji: false } };
 }
 
-function section(text: string): SlackBlock {
+export function section(text: string): SlackBlock {
   return { type: "section", text: { type: "mrkdwn", text: truncate(text, 2800) } };
 }
 
-function context(items: string[]): SlackBlock {
+export function context(items: string[]): SlackBlock {
   return { type: "context", elements: items.map((item) => ({ type: "mrkdwn", text: truncate(item, 300) })) };
 }
 
-function actions(elements: SlackBlockElement[]): SlackBlock {
+export function actions(elements: SlackBlockElement[]): SlackBlock {
   return { type: "actions", elements };
 }
 
-type SlackBlockElement = {
+export type SlackBlockElement = {
   type: "button";
   text: { type: "plain_text"; text: string; emoji: false };
   action_id: string;
-  value: string;
+  value?: string;
+  url?: string;
   style?: "primary" | "danger";
 };
 
-function button(input: {
+export function slackButton(input: {
   text: string;
   actionId: string;
-  value: string;
+  value?: string;
+  url?: string;
   style?: "primary" | "danger";
 }): SlackBlockElement {
   return {
     type: "button",
     text: { type: "plain_text", text: truncate(input.text, 75), emoji: false },
     action_id: input.actionId,
-    value: input.value,
+    ...(input.value ? { value: input.value } : {}),
+    ...(input.url ? { url: input.url } : {}),
     ...(input.style ? { style: input.style } : {}),
   };
 }
 
-function link(url: string, label: string) {
+export function link(url: string, label: string) {
   return `<${url}|${label}>`;
 }
 
-function sanitize(value: string | null | undefined) {
+export function sanitize(value: string | null | undefined) {
   return truncate((value ?? "").replace(/[<>&]/g, (char) => ({ "<": "‹", ">": "›", "&": "and" }[char] ?? char)), 600);
 }
 
@@ -277,7 +306,7 @@ function truncate(value: string, max: number) {
   return value.length <= max ? value : `${value.slice(0, max - 1)}...`;
 }
 
-function compactBlocks(blocks: Array<SlackBlock | null>): SlackBlock[] {
+export function compactBlocks(blocks: Array<SlackBlock | null>): SlackBlock[] {
   return blocks.filter(Boolean) as SlackBlock[];
 }
 
@@ -285,6 +314,6 @@ function formatRun(run: { status: string; updatedAt: Date } | null) {
   return run ? `${run.status} (${shortDate(run.updatedAt)})` : "none";
 }
 
-function shortDate(date: Date) {
+export function shortDate(date: Date) {
   return date.toISOString().replace("T", " ").slice(0, 16);
 }

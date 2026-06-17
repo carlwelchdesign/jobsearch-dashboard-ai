@@ -89,9 +89,11 @@ npm run dev
 npm run slack:dev
 ```
 
-The worker supports `/jso status` and approval buttons for existing internal actions: Jolene delegated proposals, Jolene Operating Loop proposals, low-risk search-profile changes, and rollback of already-applied search-profile changes. Slack does not submit applications, send email, publish LinkedIn posts, or store durable approval state. The app logs Slack deliveries as `NotificationLog` rows with type `slack` and records action outcomes on existing agent run events where applicable.
+The worker supports the Slack Home tab plus `/jso status`, `/jso approvals`, `/jso runs`, `/jso run jolene`, `/jso run loop`, `/jso run search-team`, and `/jso help`. The Home tab is a compact command center with today status, pending approval groups, recent runs, recent Slack decisions, and safe internal starters.
 
-Use `config/slack-app-manifest.example.yml` as the starting Slack app manifest. Install the app to the workspace, invite it to the configured channels, then restart `npm run slack:dev`.
+Approval buttons still use existing internal actions: Jolene delegated proposals, Jolene Operating Loop proposals, low-risk search-profile changes, and rollback of already-applied search-profile changes. Any Slack action that starts a new internal run opens a confirmation modal before execution. Slack does not submit applications, send email, publish LinkedIn posts, contact employers, mutate external calendars, or store durable approval state. The app logs Slack deliveries and run starts as `NotificationLog` rows with type `slack` and records action outcomes on existing agent run events where applicable.
+
+Use `config/slack-app-manifest.example.yml` as the starting Slack app manifest. Install or reinstall the app after adding Home tab/event subscription support, invite it to the configured channels, then restart `npm run slack:dev`.
 
 ## Source Management
 

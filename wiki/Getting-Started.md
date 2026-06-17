@@ -85,6 +85,8 @@ SLACK_APPROVALS_CHANNEL_ID=C...
 SLACK_ALLOWED_USER_IDS=U...
 ```
 
+Slack Agent Ops uses Socket Mode. After installing or reinstalling the app from `config/slack-app-manifest.example.yml`, run `npm run slack:dev`. The Home tab shows the Job Search OS command center, and `/jso help` lists status, approvals, runs, and confirmation-gated internal run commands.
+
 Run the Slack worker beside the app when you want Slack updates, `/jso status`, and approval buttons:
 
 ```bash
