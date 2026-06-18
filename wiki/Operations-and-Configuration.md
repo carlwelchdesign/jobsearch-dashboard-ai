@@ -79,6 +79,7 @@ Optional env:
 SLACK_SIGNING_SECRET=...
 SLACK_DECISION_LOG_CHANNEL_ID=C...
 SLACK_ALLOWED_USER_IDS=U123,U456
+SLACK_COACH_USER_IDS=U789
 SLACK_LOG_LEVEL=info
 ```
 
@@ -89,11 +90,11 @@ npm run dev
 npm run slack:dev
 ```
 
-The worker supports the Slack Home tab plus `/jso status`, `/jso approvals`, `/jso runs`, `/jso run jolene`, `/jso run loop`, `/jso run search-team`, and `/jso help`. The Home tab is a compact command center with today status, pending approval groups, recent runs, recent Slack decisions, and safe internal starters.
+The worker supports the Slack Home tab plus `/jso status`, `/jso approvals`, `/jso runs`, `/jso morning`, `/jso evening`, `/jso focus`, `/jso opportunity <job id or application id>`, `/jso coach summary`, `/jso run jolene`, `/jso run loop`, `/jso run search-team`, and `/jso help`. The Home tab is a compact command center with today status, pending approval groups, recent runs, recent Slack decisions, and safe internal starters.
 
-Approval buttons still use existing internal actions: Jolene delegated proposals, Jolene Operating Loop proposals, low-risk search-profile changes, and rollback of already-applied search-profile changes. Any Slack action that starts a new internal run opens a confirmation modal before execution. Slack does not submit applications, send email, publish LinkedIn posts, contact employers, mutate external calendars, or store durable approval state. The app logs Slack deliveries and run starts as `NotificationLog` rows with type `slack` and records action outcomes on existing agent run events where applicable.
+Approval buttons still use existing internal actions: Jolene delegated proposals, Jolene Operating Loop proposals, low-risk search-profile changes, and rollback of already-applied search-profile changes. V3 action buttons can also record Reject, Needs evidence, Discuss, Mark reviewed, and coach-note intent without mutating app workflow state. Opportunity rooms are stored as `SlackThreadLink` records and default to threads inside `SLACK_OPS_CHANNEL_ID`, not new Slack channels. Trusted reviewers listed in `SLACK_COACH_USER_IDS` can reply in mapped threads; those replies are captured as advisory `NotificationLog` records and do not approve, reject, send, publish, or mutate records. Any Slack action that starts a new internal run opens a confirmation modal before execution. Slack does not submit applications, send email, publish LinkedIn posts, contact employers, mutate external calendars, or store durable approval state. The app logs Slack deliveries and run starts as `NotificationLog` rows with type `slack` and records action outcomes on existing agent run events where applicable.
 
-Use `config/slack-app-manifest.example.yml` as the starting Slack app manifest. Install or reinstall the app after adding Home tab/event subscription support, invite it to the configured channels, then restart `npm run slack:dev`.
+Use `config/slack-app-manifest.example.yml` as the starting Slack app manifest. Install or reinstall the app after adding Home tab/event subscription support, channel/group message events, and history scopes, invite it to the configured channels, then restart `npm run slack:dev`.
 
 ## Source Management
 

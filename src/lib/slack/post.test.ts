@@ -70,4 +70,29 @@ describe("Slack posting", () => {
     expect(slackMocks.postMessage).not.toHaveBeenCalled();
     expect(notificationLogCreateMock).not.toHaveBeenCalled();
   });
+
+  it("posts thread replies and logs the thread timestamp", async () => {
+    slackMocks.postMessage.mockResolvedValue({ ok: true, ts: "124.000" });
+
+    const result = await postSlackMessage({
+      userId: "user_1",
+      channel: "ops",
+      text: "Thread reply",
+      blocks: [],
+      threadTs: "123.000",
+      replyBroadcast: true,
+    });
+
+    expect(result).toEqual({ status: "sent", channelId: "COPS", ts: "124.000" });
+    expect(slackMocks.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      channel: "COPS",
+      thread_ts: "123.000",
+      reply_broadcast: true,
+    }));
+    expect(notificationLogCreateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        payload: expect.objectContaining({ threadTs: "123.000" }),
+      }),
+    }));
+  });
 });

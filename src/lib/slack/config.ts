@@ -7,6 +7,7 @@ export type SlackConfig = {
   decisionLogChannelId: string | null;
   appBaseUrl: string;
   allowedUserIds: string[];
+  coachUserIds: string[];
 };
 
 export type SlackConfigResult =
@@ -46,6 +47,7 @@ export function getSlackConfig(env: SlackEnv = process.env): SlackConfigResult {
       signingSecret: normalize(env.SLACK_SIGNING_SECRET) ?? DEFAULT_SIGNING_SECRET,
       decisionLogChannelId: normalize(env.SLACK_DECISION_LOG_CHANNEL_ID) ?? null,
       allowedUserIds: splitCsv(env.SLACK_ALLOWED_USER_IDS),
+      coachUserIds: splitCsv(env.SLACK_COACH_USER_IDS),
     },
   };
 }
@@ -59,6 +61,10 @@ export function requireSlackConfig(env: SlackEnv = process.env): SlackConfig {
 export function isSlackUserAllowed(slackUserId: string | null | undefined, config: Pick<SlackConfig, "allowedUserIds">) {
   if (!config.allowedUserIds.length) return true;
   return Boolean(slackUserId && config.allowedUserIds.includes(slackUserId));
+}
+
+export function isSlackCoachUser(slackUserId: string | null | undefined, config: Pick<SlackConfig, "coachUserIds">) {
+  return Boolean(slackUserId && config.coachUserIds.includes(slackUserId));
 }
 
 function normalize(value: string | null | undefined) {

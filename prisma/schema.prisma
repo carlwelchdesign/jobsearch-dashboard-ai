@@ -173,6 +173,15 @@ enum NotificationType {
   web_push
 }
 
+enum SlackThreadEntityType {
+  JOB
+  APPLICATION
+  LINKEDIN_DRAFT
+  INTERVIEW_PREP
+  FOLLOW_UP
+  SEARCH_OPTIMIZATION_RUN
+}
+
 enum DigestMode {
   every_run
   daily_summary
@@ -519,6 +528,7 @@ model User {
   jobSuppressions             JobSuppression[]
   materialClaims              MaterialClaim[]
   readinessOverrides          ReadinessOverride[]
+  slackThreadLinks            SlackThreadLink[]
 }
 
 model CareerMission {
@@ -1299,6 +1309,7 @@ model AgentRun {
   materialClaims     MaterialClaim[]
   searchOptimizationRuns SearchOptimizationRun[]
   searchProfileChanges   SearchProfileChange[]
+  slackThreadLinks        SlackThreadLink[]
 
   @@index([agentType, createdAt])
   @@index([status, createdAt])
@@ -2046,4 +2057,28 @@ model NotificationLog {
   sentAt    DateTime?
   createdAt DateTime         @default(now())
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SlackThreadLink {
+  id               String                @id @default(cuid())
+  userId           String
+  entityType       SlackThreadEntityType
+  entityId         String
+  channelId        String
+  rootMessageTs    String
+  threadTs         String
+  sourceAgentRunId String?
+  title            String?
+  summary          String?
+  status           String                @default("ACTIVE")
+  lastSyncedAt     DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  sourceAgentRun   AgentRun?             @relation(fields: [sourceAgentRunId], references: [id], onDelete: SetNull)
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, entityType, entityId])
+  @@index([channelId, threadTs])
+  @@index([userId, status, updatedAt])
+  @@index([sourceAgentRunId])
 }

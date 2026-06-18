@@ -9,6 +9,10 @@ describe("Slack app manifest", () => {
     expect(manifest).toContain("app_home:");
     expect(manifest).toContain("home_tab_enabled: true");
     expect(manifest).toContain("app_home_opened");
+    expect(manifest).toContain("message.channels");
+    expect(manifest).toContain("channels:history");
+    expect(manifest).toContain("opportunity <id>");
+    expect(manifest).toContain("coach summary");
     expect(manifest).toContain("run search-team");
     expect(manifest).toContain("commands");
     expect(manifest).toContain("chat:write");

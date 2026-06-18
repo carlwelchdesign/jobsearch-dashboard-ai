@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { controlGraphAgentRun, graphRunControlState } from "@/lib/agents/graph-run-controls";
 import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
 import { runSearchProfileManagerAgent } from "@/lib/agents/search-profile-manager";
 import { runRecruitingAgency } from "@/lib/applications/recruiting-agency";
@@ -22,6 +23,11 @@ vi.mock("@/lib/agents/duplicate-stale-job-detector", () => ({
   runDuplicateStaleJobDetectorAgent: vi.fn(),
 }));
 
+vi.mock("@/lib/agents/graph-run-controls", () => ({
+  controlGraphAgentRun: vi.fn(),
+  graphRunControlState: vi.fn(),
+}));
+
 vi.mock("@/lib/agents/job-fit-scorer", () => ({
   runJobFitScoringAgent: vi.fn(),
 }));
@@ -35,6 +41,8 @@ vi.mock("@/lib/agents/search-profile-manager", () => ({
 }));
 
 const runAgencyMock = vi.mocked(runRecruitingAgency);
+const controlGraphAgentRunMock = vi.mocked(controlGraphAgentRun);
+const graphRunControlStateMock = vi.mocked(graphRunControlState);
 const runMarketIntelligenceMock = vi.mocked(runMarketIntelligenceAgent);
 const runSearchProfileManagerMock = vi.mocked(runSearchProfileManagerAgent);
 const agentRunFindFirstMock = vi.mocked(prisma.agentRun.findFirst);
@@ -48,6 +56,8 @@ describe("autoRunAgencyAfterSearch", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     agentRunFindFirstMock.mockResolvedValue(null);
+    controlGraphAgentRunMock.mockResolvedValue({ runId: "agency_stale", status: "FAILED", currentNode: "stale_graph_run", message: "repaired", latestEvent: null });
+    graphRunControlStateMock.mockReturnValue({ supported: true, stale: false, canCancel: true, canRepair: false, canRetry: false, canResume: true });
     matchCountMock.mockResolvedValue(3);
     matchFindManyMock.mockResolvedValue(agencyMatches([
       "https://jobs.ashbyhq.com/acme/frontend-engineer/application",
@@ -227,6 +237,32 @@ describe("autoRunAgencyAfterSearch", () => {
               reason: "agency_already_running",
               agentRunId: "agency_active",
             }),
+          }),
+        ]),
+      }),
+    }));
+  });
+
+  it("repairs a stale active agency run before starting the next handoff", async () => {
+    agentRunFindFirstMock.mockResolvedValue({ id: "agency_stale", updatedAt: new Date(Date.now() - 15 * 60 * 1000), events: [] } as never);
+    graphRunControlStateMock.mockReturnValue({ supported: true, stale: true, canCancel: true, canRepair: true, canRetry: true, canResume: true });
+
+    const result = await autoRunAgencyAfterSearch({
+      runId: "search_1",
+      userId: "user_1",
+      status: "completed",
+      jobsSaved: 2,
+      stats: stats(),
+    });
+
+    expect(controlGraphAgentRunMock).toHaveBeenCalledWith("agency_stale", "repair");
+    expect(runAgencyMock).toHaveBeenCalledWith(expect.objectContaining({ minimumScore: 0, limit: 3, triggeredBy: "search_auto" }));
+    expect(result).toMatchObject({ started: true, agentRunId: "agency_1" });
+    expect(searchRunUpdateMock).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        progress: expect.arrayContaining([
+          expect.objectContaining({
+            message: "Repaired a stale recruiting agency run before starting the next handoff.",
           }),
         ]),
       }),

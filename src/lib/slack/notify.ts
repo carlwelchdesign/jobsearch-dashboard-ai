@@ -1,7 +1,10 @@
 import type { SearchOptimizationSummary } from "@/lib/agents/recruiting-search-optimization";
+import type { RecruitingAgencyRunResult } from "@/lib/applications/recruiting-agency";
 import type { JoleneChiefOutput } from "@/lib/jolene/chief-of-staff";
 import type { JoleneOperatingLoopOutput } from "@/lib/jolene/operating-loop";
 import {
+  buildRecruitingAgencyFailureMessage,
+  buildRecruitingAgencyOpsMessage,
   buildJoleneChiefApprovalMessage,
   buildJoleneChiefOpsMessage,
   buildOperatingLoopApprovalMessage,
@@ -118,4 +121,46 @@ export async function notifySlackSearchOptimization(input: {
       payload: { source: "recruiting_search_team", runId: input.summary.agentRunId, optimizationRunId: input.summary.optimizationRunId, approvals: true },
     });
   }
+}
+
+export async function notifySlackRecruitingAgency(input: {
+  userId: string;
+  result: RecruitingAgencyRunResult;
+}) {
+  const config = getSlackConfig();
+  if (!config.configured) return;
+
+  const opsMessage = buildRecruitingAgencyOpsMessage({
+    result: input.result,
+    appBaseUrl: config.config.appBaseUrl,
+  });
+  await postSlackMessage({
+    userId: input.userId,
+    channel: "ops",
+    text: opsMessage.text,
+    blocks: opsMessage.blocks,
+    payload: { source: "recruiting_agency", runId: input.result.agentRunId },
+  });
+}
+
+export async function notifySlackRecruitingAgencyFailure(input: {
+  userId: string;
+  runId: string;
+  message: string;
+}) {
+  const config = getSlackConfig();
+  if (!config.configured) return;
+
+  const opsMessage = buildRecruitingAgencyFailureMessage({
+    runId: input.runId,
+    message: input.message,
+    appBaseUrl: config.config.appBaseUrl,
+  });
+  await postSlackMessage({
+    userId: input.userId,
+    channel: "ops",
+    text: opsMessage.text,
+    blocks: opsMessage.blocks,
+    payload: { source: "recruiting_agency", runId: input.runId, failed: true },
+  });
 }

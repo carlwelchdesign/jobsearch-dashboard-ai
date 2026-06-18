@@ -1,5 +1,6 @@
 import type { Block, KnownBlock } from "@slack/types";
 import type { SearchOptimizationSummary } from "@/lib/agents/recruiting-search-optimization";
+import type { RecruitingAgencyRunResult } from "@/lib/applications/recruiting-agency";
 import type { JoleneChiefOutput } from "@/lib/jolene/chief-of-staff";
 import type { JoleneOperatingLoopOutput } from "@/lib/jolene/operating-loop";
 
@@ -8,6 +9,11 @@ export const SLACK_ACTIONS = {
   approveOperatingLoopProposal: "jso_approve_loop_proposal",
   applySearchProfileChange: "jso_apply_search_profile_change",
   rollbackSearchProfileChange: "jso_rollback_search_profile_change",
+  rejectRecommendation: "jso_reject_recommendation",
+  needsEvidence: "jso_needs_evidence",
+  discussInThread: "jso_discuss_in_thread",
+  markReviewed: "jso_mark_reviewed",
+  captureCoachNote: "jso_capture_coach_note",
   refreshHome: "jso_refresh_home",
   openRunModal: "jso_open_run_modal",
   openLink: "jso_open_link",
@@ -20,9 +26,22 @@ export type SlackActionPayload =
   | { kind: "operating_loop_proposal"; runId: string; proposalId: string }
   | { kind: "apply_search_profile_change"; changeId: string }
   | { kind: "rollback_search_profile_change"; changeId: string }
+  | SlackV3ActionPayload
   | { kind: "refresh_home" }
   | { kind: "open_run_modal"; command: SlackRunCommand }
   | { kind: "open_link"; href: string };
+
+export type SlackV3EntityType = "job" | "application" | "linkedin_draft" | "interview_prep" | "follow_up" | "search_optimization_run";
+
+export type SlackV3ActionPayload = {
+  kind: "reject_recommendation" | "needs_evidence" | "discuss_in_thread" | "mark_reviewed" | "capture_coach_note";
+  entityType: SlackV3EntityType;
+  entityId: string;
+  agentRunId?: string | null;
+  threadId?: string | null;
+  href?: string | null;
+  label?: string | null;
+};
 
 export type SlackBlock = KnownBlock | Block;
 
@@ -83,6 +102,22 @@ export function buildJoleneChiefApprovalMessage(input: {
             style: "primary",
           }),
           slackButton({
+            text: "Reject",
+            actionId: SLACK_ACTIONS.rejectRecommendation,
+            value: actionValue({ kind: "reject_recommendation", entityType: "search_optimization_run", entityId: request.proposalId, agentRunId: input.runId, label: request.label }),
+            style: "danger",
+          }),
+          slackButton({
+            text: "Needs evidence",
+            actionId: SLACK_ACTIONS.needsEvidence,
+            value: actionValue({ kind: "needs_evidence", entityType: "search_optimization_run", entityId: request.proposalId, agentRunId: input.runId, label: request.label }),
+          }),
+          slackButton({
+            text: "Discuss",
+            actionId: SLACK_ACTIONS.discussInThread,
+            value: actionValue({ kind: "discuss_in_thread", entityType: "search_optimization_run", entityId: request.proposalId, agentRunId: input.runId, href: input.appBaseUrl, label: request.label }),
+          }),
+          slackButton({
             text: "Open app",
             actionId: SLACK_ACTIONS.openLink,
             value: actionValue({ kind: "open_link", href: input.appBaseUrl }),
@@ -134,6 +169,22 @@ export function buildOperatingLoopApprovalMessage(input: {
             actionId: SLACK_ACTIONS.approveOperatingLoopProposal,
             value: actionValue({ kind: "operating_loop_proposal", runId: input.runId, proposalId: request.proposalId }),
             style: "primary",
+          }),
+          slackButton({
+            text: "Reject",
+            actionId: SLACK_ACTIONS.rejectRecommendation,
+            value: actionValue({ kind: "reject_recommendation", entityType: "search_optimization_run", entityId: request.proposalId, agentRunId: input.runId, label: request.label }),
+            style: "danger",
+          }),
+          slackButton({
+            text: "Needs evidence",
+            actionId: SLACK_ACTIONS.needsEvidence,
+            value: actionValue({ kind: "needs_evidence", entityType: "search_optimization_run", entityId: request.proposalId, agentRunId: input.runId, label: request.label }),
+          }),
+          slackButton({
+            text: "Discuss",
+            actionId: SLACK_ACTIONS.discussInThread,
+            value: actionValue({ kind: "discuss_in_thread", entityType: "search_optimization_run", entityId: request.proposalId, agentRunId: input.runId, href: input.appBaseUrl, label: request.label }),
           }),
           slackButton({
             text: "Open app",
@@ -195,6 +246,16 @@ export function buildSearchOptimizationApprovalMessage(input: {
                 style: "primary",
               }),
           slackButton({
+            text: "Needs evidence",
+            actionId: SLACK_ACTIONS.needsEvidence,
+            value: actionValue({ kind: "needs_evidence", entityType: "search_optimization_run", entityId: change.id, agentRunId: input.summary.agentRunId, label: change.profileName }),
+          }),
+          slackButton({
+            text: "Discuss",
+            actionId: SLACK_ACTIONS.discussInThread,
+            value: actionValue({ kind: "discuss_in_thread", entityType: "search_optimization_run", entityId: change.id, agentRunId: input.summary.agentRunId, href: `${input.appBaseUrl}/profiles`, label: change.profileName }),
+          }),
+          slackButton({
             text: "Open profiles",
             actionId: SLACK_ACTIONS.openLink,
             value: actionValue({ kind: "open_link", href: `${input.appBaseUrl}/profiles` }),
@@ -203,6 +264,47 @@ export function buildSearchOptimizationApprovalMessage(input: {
         ]),
       ]),
       context([link(`${input.appBaseUrl}/profiles`, "Open profiles"), `Optimization ${input.summary.optimizationRunId}`]),
+    ]),
+  };
+}
+
+export function buildRecruitingAgencyOpsMessage(input: {
+  result: RecruitingAgencyRunResult;
+  appBaseUrl: string;
+}): SlackMessage {
+  const topResults = input.result.results.slice(0, 6).map((result) => {
+    const status = result.status === "ready_to_apply" ? "ready" : result.status;
+    return `- ${sanitize(result.company)} - ${sanitize(result.title)} (${result.score}, ${status})`;
+  });
+  return {
+    text: input.result.message,
+    blocks: compactBlocks([
+      header("Recruiting Agency"),
+      section(`*Summary:* ${sanitize(input.result.message)}`),
+      section([
+        `*Approved:* ${input.result.approved}`,
+        `*Prepared:* ${input.result.prepared}`,
+        `*Failed:* ${input.result.failed}`,
+        `*Skipped:* ${input.result.skipped}`,
+      ].join("\n")),
+      input.result.candidateDiagnostics ? section(`*Candidate pool:* ${sanitize(input.result.candidateDiagnostics.summary)}`) : null,
+      topResults.length ? section(`*Recent decisions*\n${topResults.join("\n")}`) : null,
+      context([link(`${input.appBaseUrl}/applications`, "Open Apply Sprint"), `Run ${input.result.agentRunId}`]),
+    ]),
+  };
+}
+
+export function buildRecruitingAgencyFailureMessage(input: {
+  runId: string;
+  message: string;
+  appBaseUrl: string;
+}): SlackMessage {
+  return {
+    text: `Recruiting agency failed: ${input.message}`,
+    blocks: compactBlocks([
+      header("Recruiting Agency Failed"),
+      section(`*Failure:* ${sanitize(input.message)}`),
+      context([link(`${input.appBaseUrl}/runs`, "Open runs"), `Run ${input.runId}`]),
     ]),
   };
 }
