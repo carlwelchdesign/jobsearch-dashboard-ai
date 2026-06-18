@@ -218,8 +218,9 @@ function buildInterviewCoachingReply({
 
 function isCareerCoachingIntent(message: string) {
   const normalized = normalize(message);
+  if (/\b(how many|count|number of|total)\b/.test(normalized) && /\b(apply sprint|ready to apply|applications?|jobs?|pipeline)\b/.test(normalized)) return false;
   if (normalized.length > 700 && /\b(interview|success profile|during interviews|evaluating|come prepared|conversation)\b/.test(normalized)) return true;
-  if (/\b(how|what|why)\b.*\b(applies|apply|answer|say|position|frame|prepare|interview|observed|observations)\b/.test(normalized)) return true;
+  if (/\b(how|what|why)\b.*\b(applies|answer|say|position|frame|prepare|interview|observed|observations)\b/.test(normalized)) return true;
   if (/\b(socure|interview|success profiles?|ownership|real world impact|trade offs?|ai workflows?)\b/.test(normalized) && /\b(me|my|career|experience|skill|work|story|stories)\b/.test(normalized)) return true;
   return false;
 }

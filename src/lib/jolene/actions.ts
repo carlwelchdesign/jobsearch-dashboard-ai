@@ -1,7 +1,9 @@
 import { runDuplicateStaleJobDetectorAgent } from "@/lib/agents/duplicate-stale-job-detector";
 import { findReusableAnswerMemories, markAnswerMemoryUsed } from "@/lib/application-answer-memory";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
+import { validateJoleneAnswer } from "@/lib/jolene/answer-guard";
 import { executeJoleneAdkOperator, type JoleneOperatorAction } from "@/lib/jolene/adk-operator";
+import { executeJoleneCapabilityRouter } from "@/lib/jolene/capabilities";
 import { executeJoleneCareerCoaching, isLikelyPastedInterviewPrompt } from "@/lib/jolene/career-coach";
 import { buildCareerCeoBrief, formatCareerCeoBrief } from "@/lib/jolene/career-ceo";
 import { buildCareerStandup, formatCareerStandup } from "@/lib/jolene/career-standup";
@@ -14,6 +16,7 @@ import {
   synthesizeJoleneGroundedAnswer,
 } from "@/lib/jolene/knowledge";
 import { executeJoleneRetrieval, type JoleneResultLink } from "@/lib/jolene/retrieval";
+import { executeJoleneStateQuery } from "@/lib/jolene/state-query";
 
 export type JoleneClientAction =
   | { type: "navigate"; href: string; refresh?: boolean }
@@ -82,8 +85,23 @@ export async function executeJoleneAction(message: string, options: { userId?: s
     };
   }
 
+  if (!isLikelyPastedInterviewPrompt(message)) {
+    const capability = await executeJoleneCapabilityRouter(message, options);
+    if (capability.handled) return capability;
+  }
+
+  const stateQuery = await executeJoleneStateQuery(message, options);
+  if (stateQuery.handled) return stateQuery;
+
   const coaching = await executeJoleneCareerCoaching(message, options);
-  if (coaching.handled) return coaching;
+  if (coaching.handled) {
+    const guard = validateJoleneAnswer({
+      message,
+      reply: coaching.reply,
+      actionJson: coaching.actionJson,
+    });
+    if (guard.ok) return coaching;
+  }
 
   if (options.userId && isCareerStandupIntent(message)) {
     const chief = await runJoleneChiefOfStaffAgent({ userId: options.userId, source: "chat" });

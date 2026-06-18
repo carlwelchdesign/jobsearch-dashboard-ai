@@ -4,7 +4,7 @@ import type { SlackBlock } from "@/lib/slack/blocks";
 import { getSlackConfig, type SlackConfig } from "@/lib/slack/config";
 import { prisma } from "@/lib/prisma";
 
-type SlackChannel = "ops" | "approvals" | "decision_log";
+type SlackChannel = "ops" | "approvals" | "decision_log" | "jolene";
 
 export type PostSlackMessageInput = {
   userId: string;
@@ -112,6 +112,7 @@ function slackClient(config: SlackConfig): InstanceType<typeof WebClient> {
 function channelIdFor(channel: SlackChannel, config: SlackConfig) {
   if (channel === "ops") return config.opsChannelId;
   if (channel === "approvals") return config.approvalsChannelId;
+  if (channel === "jolene") return config.joleneChannelId;
   return config.decisionLogChannelId;
 }
 
