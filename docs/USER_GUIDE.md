@@ -131,6 +131,7 @@ LinkedIn publishing and analytics are optional. To use `/linkedin-content` as a 
    | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` for local | Yes |
    | `OPENAI_API_KEY` | Powers AI scoring, resume writing, and Jolene answers | Strongly recommended |
    | `OPENAI_MODEL` | Which OpenAI model to use for general app features. Default: `gpt-4.1-mini` | No |
+   | `SLACK_OPS_JOLENE_ID` | Optional dedicated Slack channel where every human message becomes a threaded Jolene prompt | No |
 
    > **Without an OpenAI key:** The app still works. Scoring, duplicate detection, and evidence matching use deterministic (rule-based) fallbacks. Jolene will answer with generic guidance instead of personalized context.
 
@@ -550,6 +551,7 @@ The MCP server always runs as a local process on your machine. When your app is 
 | **Python + Playwright** | Recommended | `npm run assistant:install` on your machine | Same — always runs locally even with production app | Apply Sprint won't auto-fill forms |
 | **Pushover** | Optional | Add keys to `.env` or Settings UI | Add to Vercel env vars or Settings UI | No phone push alerts |
 | **Resend or Postmark** | Optional | Add API key to `.env` | Add to Vercel env vars | No email digests |
+| **Slack Agent Ops** | Optional | Add Slack Socket Mode env vars, invite the bot to ops/approval/Jolene channels, then run `npm run slack:dev` | Run the worker where Socket Mode credentials are available | No Slack command center, approvals, opportunity rooms, or Jolene channel chat |
 | **GitHub token** | Optional | Add `GITHUB_TOKEN` to `.env` | Add to Vercel env vars | Rate limits with 25+ repos |
 | **Google ADK / Gemini** | Optional | Add `ADK_ENABLED=true` + key to `.env` | Add to Vercel env vars | Daily plan and Jolene operator use simpler logic |
 | **LangSmith** | Optional | Add keys to `.env` | Add to Vercel env vars | No agent traces |
@@ -1628,12 +1630,14 @@ Jolene is aware of where you are in the app and what data is relevant. She can:
 
 - Produce a Chief of Staff brief from recent agent runs, blockers, pipeline state, Email Operations, market signals, LinkedIn content/analytics, and your career mission
 - Run an Operating Loop pass that monitors system freshness, proposes the next internal agents to run, and records skipped/blocked work
+- Route natural-language questions through a whole-app capability registry covering Command Center, Apply Sprint, applications, jobs/search, profiles/evidence, agents, Email Ops, Market Intelligence, and generated materials
 - Show proactive priority cards on the Command Center with rationale, evidence, and links to the relevant page
 - Propose delegated work for other agents, then wait for your approval before launching it
 - Explain why a specific job scored the way it did
 - Show you the cover letter or packet for any application
 - Find an application by company name
 - Run Email Operations and summarize what changed in your inbox
+- Answer read-only app-state questions such as how many jobs are in Apply Sprint, what is blocking Apply Sprint, what failed recently, what Email Ops found, and whether profile health needs attention
 - Answer interview and positioning questions using your actual career evidence
 - Suggest what to do next on the current page
 - Explain what a setting or feature does
@@ -1646,9 +1650,35 @@ Just type your question naturally in the chat input. Examples:
 
 - "Why did this job only score 68?"
 - "Find the cover letter for my Stripe application"
+- "How many jobs are in Apply Sprint?"
+- "What is blocking Apply Sprint?"
+- "What is Email Ops status?"
+- "What's going on across Apply Sprint, search, agents, and Email Ops?"
+- "What APIs can Jolene access across the app?"
 - "What should I say if they ask about my experience with GraphQL?"
 - "What are my top 3 actions today?"
 - "Run a duplicate check"
+
+### Slack Jolene channel
+
+If Slack Agent Ops is configured, you can create a dedicated Jolene channel and set `SLACK_OPS_JOLENE_ID` to that channel ID. The installed Slack app must include the `channels:history` and `groups:history` scopes from `config/slack-app-manifest.example.yml`; reinstall the app after adding those scopes. Invite the Slack bot to the channel and run:
+
+```bash
+npm run slack:dev
+```
+
+Every human message in that channel becomes a Jolene prompt. Jolene replies in a thread so the channel stays readable. You can ask normal read-only app-state questions without adding custom Slack commands, or run safe internal commands such as:
+
+- "How many jobs are in Apply Sprint?"
+- "What failed recently?"
+- "What are my top 3 actions today?"
+- "Run email ops"
+- "Run a duplicate check"
+- "Refresh market intelligence"
+
+Slack channel prompts use the same Jolene conversation storage as the app and include Slack metadata for auditability. Safe internal actions can run directly from the channel, but Slack still will not submit applications, send recruiter emails, publish LinkedIn posts, write external calendars, or make destructive bulk changes. Set `SLACK_ALLOWED_USER_IDS` if you want only specific Slack users to chat with Jolene or start internal work.
+
+If `/jso` works but a plain message such as "hi jolene" does not produce a threaded reply, the installed app is usually missing the history scopes or has not been reinstalled since the manifest was updated.
 
 ### What Jolene looks up before answering
 
@@ -1656,6 +1686,7 @@ Before responding, Jolene searches your local data:
 
 - Generated cover letters and resumes
 - Application packets and job records
+- Apply Sprint, application, job-search, profile-health, Email Ops, Market Intelligence, and recent agent-run state
 - Approved candidate evidence (for career questions)
 - Recent outcomes and interview notes
 

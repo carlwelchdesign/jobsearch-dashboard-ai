@@ -4,6 +4,7 @@ import { runMarketIntelligenceAgent } from "@/lib/agents/market-intelligence";
 import { evaluateActionPolicy, type AgentActionPolicyKind } from "@/lib/agents/action-policy";
 import { getAdkJoleneOperatorRegistration, isAdkEnabled } from "@/lib/adk/registry";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
+import { isLikelyPastedInterviewPrompt } from "@/lib/jolene/career-coach";
 import { createJoleneConfirmationPlan, type JoleneConfirmableAction, type JoleneExecutionBoundary } from "@/lib/jolene/confirmation";
 import { runJoleneEmailOperationsAgent } from "@/lib/jolene/email-ops";
 import { prisma } from "@/lib/prisma";
@@ -60,7 +61,7 @@ export async function executeJoleneAdkOperator(message: string, options: { userI
     };
   }
 
-  const safeActions = safeWorkflowPlan(normalized);
+  const safeActions = safeWorkflowPlan(normalized, message);
   if (safeActions.length === 0 && isDuplicateApplicationDiagnostic(normalized)) {
     const diagnostics = await diagnoseApplicationVisibility(message, options.userId);
     return {
@@ -134,15 +135,19 @@ export async function executeJoleneAdkOperator(message: string, options: { userI
   };
 }
 
-function safeWorkflowPlan(normalized: string): JoleneOperatorAction[] {
+function safeWorkflowPlan(normalized: string, originalMessage: string): JoleneOperatorAction[] {
   const actions: JoleneOperatorAction[] = [];
   if (/\b(run|start|kick off|launch|begin)\b/.test(normalized) && /\b(new |fresh |another )?(job )?(search|discovery)\b/.test(normalized)) {
     actions.push(safeAction("run_job_search", "Run job search", "Start or reuse the current internal job-search run."));
   }
-  if (/\b(check|detect|find|scan|clean up|dedupe|deduplicate)\b/.test(normalized) && /\b(duplicate|duplicates|dedupe|deduplication)\b/.test(normalized)) {
+  if (/\b(run|start|check|detect|find|scan|clean up|dedupe|deduplicate)\b/.test(normalized) && /\b(duplicate|duplicates|dedupe|deduplication|stale)\b/.test(normalized)) {
     actions.push(safeAction("check_duplicates", "Check duplicates", "Run the duplicate/stale job detector."));
   }
-  if (/\b(check|scan|sync|fetch|poll)\b/.test(normalized) && /\b(email|emails|gmail|inbox|mail|messages|responses|replies)\b/.test(normalized)) {
+  if (
+    !isLikelyPastedInterviewPrompt(originalMessage)
+    && /\b(run|start|check|scan|sync|fetch|poll)\b/.test(normalized)
+    && /\b(email ops|email operations|email|emails|gmail|inbox|mail|messages|responses|replies)\b/.test(normalized)
+  ) {
     actions.push(safeAction("sync_email", "Run Email Operations", "Scan recent job-response email with Jolene's specialist email team."));
   }
   if (/\b(run|refresh|generate|update)\b/.test(normalized) && /\b(daily command|command center|daily plan|today s plan|todays plan)\b/.test(normalized)) {

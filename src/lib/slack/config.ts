@@ -5,6 +5,7 @@ export type SlackConfig = {
   opsChannelId: string;
   approvalsChannelId: string;
   decisionLogChannelId: string | null;
+  joleneChannelId: string | null;
   appBaseUrl: string;
   allowedUserIds: string[];
   coachUserIds: string[];
@@ -46,6 +47,7 @@ export function getSlackConfig(env: SlackEnv = process.env): SlackConfigResult {
       appBaseUrl: trimTrailingSlash(appBaseUrl),
       signingSecret: normalize(env.SLACK_SIGNING_SECRET) ?? DEFAULT_SIGNING_SECRET,
       decisionLogChannelId: normalize(env.SLACK_DECISION_LOG_CHANNEL_ID) ?? null,
+      joleneChannelId: normalize(env.SLACK_OPS_JOLENE_ID) ?? null,
       allowedUserIds: splitCsv(env.SLACK_ALLOWED_USER_IDS),
       coachUserIds: splitCsv(env.SLACK_COACH_USER_IDS),
     },

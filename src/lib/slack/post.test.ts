@@ -28,6 +28,7 @@ describe("Slack posting", () => {
     vi.stubEnv("SLACK_APP_TOKEN", "xapp-token");
     vi.stubEnv("SLACK_OPS_CHANNEL_ID", "COPS");
     vi.stubEnv("SLACK_APPROVALS_CHANNEL_ID", "CAPPROVALS");
+    vi.stubEnv("SLACK_OPS_JOLENE_ID", "CJOLENE");
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://localhost:3000");
     slackMocks.WebClient.mockImplementation(function WebClientMock() {
       return { chat: { postMessage: slackMocks.postMessage } };
@@ -93,6 +94,24 @@ describe("Slack posting", () => {
       data: expect.objectContaining({
         payload: expect.objectContaining({ threadTs: "123.000" }),
       }),
+    }));
+  });
+
+  it("posts dedicated Jolene channel replies", async () => {
+    slackMocks.postMessage.mockResolvedValue({ ok: true, ts: "125.000" });
+
+    const result = await postSlackMessage({
+      userId: "user_1",
+      channel: "jolene",
+      text: "Jolene reply",
+      blocks: [],
+      threadTs: "124.000",
+    });
+
+    expect(result).toEqual({ status: "sent", channelId: "CJOLENE", ts: "125.000" });
+    expect(slackMocks.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      channel: "CJOLENE",
+      thread_ts: "124.000",
     }));
   });
 });

@@ -7,6 +7,7 @@ import { assertSlackUserCanMutate, handleSlackAction } from "@/lib/slack/actions
 import { routeJsoCommand } from "@/lib/slack/commands";
 import { isSlackCoachUser, requireSlackConfig } from "@/lib/slack/config";
 import { buildSlackCommandCenterData, buildSlackHomeView } from "@/lib/slack/home";
+import { handleSlackJoleneChannelMessage, type SlackJoleneChannelResult } from "@/lib/slack/jolene-channel";
 import { captureSlackThreadReply } from "@/lib/slack/opportunity-room";
 import {
   buildRunAcceptedModal,
@@ -20,6 +21,18 @@ import {
 loadEnvConfig(process.cwd());
 
 const config = requireSlackConfig();
+const processedJoleneMessageTs = new Set<string>();
+const activeJoleneThreadTs = new Set<string>();
+
+type SlackMessageEvent = {
+  subtype?: string;
+  bot_id?: string;
+  channel?: string;
+  user?: string;
+  text?: string;
+  ts?: string;
+  thread_ts?: string;
+};
 
 const app = new App({
   token: config.botToken,
@@ -56,15 +69,16 @@ app.event("app_home_opened", async ({ event, client }) => {
 });
 
 app.event("message", async ({ event }) => {
-  const messageEvent = event as {
-    subtype?: string;
-    bot_id?: string;
-    channel?: string;
-    user?: string;
-    text?: string;
-    ts?: string;
-    thread_ts?: string;
-  };
+  const messageEvent = event as SlackMessageEvent;
+
+  try {
+    const joleneResult = await routeSlackJoleneChannelMessage(messageEvent, "socket");
+    if (joleneResult.handled) return;
+  } catch (error) {
+    console.error("[slack] failed to handle Jolene channel message", error);
+    return;
+  }
+
   if (messageEvent.subtype || messageEvent.bot_id || !messageEvent.user || !messageEvent.channel || !messageEvent.thread_ts || !messageEvent.ts) return;
   if (messageEvent.thread_ts === messageEvent.ts) return;
   if (!isSlackCoachUser(messageEvent.user, config)) return;
@@ -200,11 +214,178 @@ app.error(async (error) => {
 });
 
 app.start().then(() => {
-  console.log("[slack] Job Search OS Slack worker is running in Socket Mode.");
+  console.log(
+    `[slack] Job Search OS Slack worker is running in Socket Mode. Jolene channel: ${config.joleneChannelId ?? "not configured"}.`,
+  );
+  startJoleneChannelHistoryPolling();
 }).catch((error) => {
   console.error("[slack] failed to start", error);
   process.exit(1);
 });
+
+async function routeSlackJoleneChannelMessage(
+  messageEvent: SlackMessageEvent,
+  source: "socket" | "history_poll" | "history_poll_thread",
+): Promise<SlackJoleneChannelResult> {
+  const joleneMessageTs = config.joleneChannelId && messageEvent.channel === config.joleneChannelId ? messageEvent.ts : null;
+  if (joleneMessageTs) {
+    if (processedJoleneMessageTs.has(joleneMessageTs)) {
+      return { handled: true, posted: false, reason: "duplicate_message" };
+    }
+    rememberJoleneMessage(joleneMessageTs);
+  }
+
+  try {
+    const joleneResult = await handleSlackJoleneChannelMessage({ event: messageEvent });
+    if (joleneResult.handled) {
+      console.log(
+        `[slack] Jolene channel message ${joleneResult.posted ? "posted" : "handled"} via ${source} (${joleneResult.reason ?? "ok"}).`,
+      );
+    } else if (joleneMessageTs) {
+      processedJoleneMessageTs.delete(joleneMessageTs);
+    }
+    return joleneResult;
+  } catch (error) {
+    if (joleneMessageTs) processedJoleneMessageTs.delete(joleneMessageTs);
+    throw error;
+  }
+}
+
+function startJoleneChannelHistoryPolling() {
+  if (!config.joleneChannelId) return;
+
+  const pollIntervalMs = parsePositiveInteger(process.env.SLACK_JOLENE_POLL_INTERVAL_MS, 10_000);
+  const startedAtSeconds = Date.now() / 1000;
+  let inFlight = false;
+
+  const poll = async () => {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      const history = await app.client.conversations.history({
+        channel: config.joleneChannelId!,
+        limit: 15,
+      });
+      const messages = ((history.messages ?? []) as Array<{
+        subtype?: string;
+        bot_id?: string;
+        reply_count?: number;
+        latest_reply?: string;
+        user?: string;
+        text?: string;
+        ts?: string;
+        thread_ts?: string;
+      }>)
+        .filter((message) => {
+          if (message.subtype || message.bot_id || !message.user || !message.ts || !message.text?.trim()) return false;
+          const messageSeconds = Number.parseFloat(message.ts);
+          return Number.isFinite(messageSeconds) && messageSeconds >= startedAtSeconds - 1;
+        })
+        .sort((a, b) => Number.parseFloat(a.ts ?? "0") - Number.parseFloat(b.ts ?? "0"));
+
+      for (const message of messages) {
+        if (message.ts) rememberJoleneThread(message.thread_ts ?? message.ts);
+        await routeSlackJoleneChannelMessage({
+          channel: config.joleneChannelId!,
+          user: message.user,
+          text: message.text,
+          ts: message.ts,
+          thread_ts: message.thread_ts,
+        }, "history_poll");
+      }
+
+      const threadRoots = ((history.messages ?? []) as Array<{
+        subtype?: string;
+        bot_id?: string;
+        reply_count?: number;
+        latest_reply?: string;
+        user?: string;
+        text?: string;
+        ts?: string;
+        thread_ts?: string;
+      }>)
+        .filter((message) => {
+          if (!message.ts || message.subtype || message.bot_id || !message.user || !message.text?.trim()) return false;
+          const messageSeconds = Number.parseFloat(message.ts);
+          const latestReplySeconds = Number.parseFloat(message.latest_reply ?? "0");
+          return (
+            activeJoleneThreadTs.has(message.ts)
+            || (Number.isFinite(messageSeconds) && messageSeconds >= startedAtSeconds - 1)
+            || (Number.isFinite(latestReplySeconds) && latestReplySeconds >= startedAtSeconds - 1)
+            || (message.reply_count ?? 0) > 0
+          );
+        })
+        .map((message) => message.thread_ts ?? message.ts)
+        .filter((threadTs): threadTs is string => Boolean(threadTs))
+        .slice(0, 10);
+
+      for (const threadTs of threadRoots) {
+        rememberJoleneThread(threadTs);
+        await pollJoleneThreadReplies(threadTs, startedAtSeconds);
+      }
+    } catch (error) {
+      console.error("[slack] Jolene channel history polling failed", errorMessage(error));
+    } finally {
+      inFlight = false;
+    }
+  };
+
+  setTimeout(() => void poll(), 2_500);
+  setInterval(() => void poll(), pollIntervalMs);
+  console.log(`[slack] Jolene channel history polling enabled every ${pollIntervalMs}ms.`);
+}
+
+function rememberJoleneMessage(messageTs: string) {
+  processedJoleneMessageTs.add(messageTs);
+  if (processedJoleneMessageTs.size <= 500) return;
+  const oldest = processedJoleneMessageTs.values().next().value;
+  if (oldest) processedJoleneMessageTs.delete(oldest);
+}
+
+function rememberJoleneThread(threadTs: string) {
+  activeJoleneThreadTs.add(threadTs);
+  if (activeJoleneThreadTs.size <= 100) return;
+  const oldest = activeJoleneThreadTs.values().next().value;
+  if (oldest) activeJoleneThreadTs.delete(oldest);
+}
+
+async function pollJoleneThreadReplies(threadTs: string, startedAtSeconds: number) {
+  const replies = await app.client.conversations.replies({
+    channel: config.joleneChannelId!,
+    ts: threadTs,
+    limit: 20,
+  });
+  const messages = ((replies.messages ?? []) as Array<{
+    subtype?: string;
+    bot_id?: string;
+    user?: string;
+    text?: string;
+    ts?: string;
+    thread_ts?: string;
+  }>)
+    .filter((message) => {
+      if (message.subtype || message.bot_id || !message.user || !message.ts || !message.text?.trim()) return false;
+      if (message.ts === threadTs) return false;
+      const messageSeconds = Number.parseFloat(message.ts);
+      return Number.isFinite(messageSeconds) && messageSeconds >= startedAtSeconds - 1;
+    })
+    .sort((a, b) => Number.parseFloat(a.ts ?? "0") - Number.parseFloat(b.ts ?? "0"));
+
+  for (const message of messages) {
+    await routeSlackJoleneChannelMessage({
+      channel: config.joleneChannelId!,
+      user: message.user,
+      text: message.text,
+      ts: message.ts,
+      thread_ts: message.thread_ts ?? threadTs,
+    }, "history_poll_thread");
+  }
+}
+
+function parsePositiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Slack action failed.";

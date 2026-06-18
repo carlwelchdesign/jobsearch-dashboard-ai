@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runDailyCommandCenterAgent } from "@/lib/agents/daily-command-center";
 import { startJobSearchRun } from "@/lib/job-search/start-run";
 import { executeJoleneAction } from "@/lib/jolene/actions";
-import { runJoleneEmailOperationsAgent } from "@/lib/jolene/email-ops";
+import { getLatestEmailOpsSummary, runJoleneEmailOperationsAgent } from "@/lib/jolene/email-ops";
 
 vi.mock("@/lib/agents/daily-command-center", () => ({
   runDailyCommandCenterAgent: vi.fn(),
@@ -14,7 +14,7 @@ vi.mock("@/lib/agents/market-intelligence", () => ({
 
 vi.mock("@/lib/jolene/email-ops", () => ({
   runJoleneEmailOperationsAgent: vi.fn(),
-  getLatestEmailOpsSummary: vi.fn(() => Promise.resolve(null)),
+  getLatestEmailOpsSummary: vi.fn(),
 }));
 
 vi.mock("@/lib/job-search/start-run", () => ({
@@ -28,7 +28,8 @@ vi.mock("@/lib/agents/duplicate-stale-job-detector", () => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     generatedCoverLetter: { findMany: vi.fn() },
-    candidateEvidence: { findMany: vi.fn() },
+    calendarEventProposal: { findMany: vi.fn() },
+    candidateEvidence: { count: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
     experienceBullet: { findMany: vi.fn() },
     application: { count: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
     applicationAnswerMemory: { findMany: vi.fn(), update: vi.fn() },
@@ -44,6 +45,7 @@ vi.mock("@/lib/prisma", () => ({
     jobSearchProfile: { findMany: vi.fn() },
     jobSearchRun: { findFirst: vi.fn() },
     jobSuppression: { count: vi.fn() },
+    emailOpsFinding: { findMany: vi.fn() },
     linkedInPostDraft: { findFirst: vi.fn() },
     project: { findMany: vi.fn() },
     skillFeedback: { count: vi.fn(), findMany: vi.fn() },
@@ -53,15 +55,27 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 const runEmailOpsMock = vi.mocked(runJoleneEmailOperationsAgent);
+const getLatestEmailOpsSummaryMock = vi.mocked(getLatestEmailOpsSummary);
 const startJobSearchRunMock = vi.mocked(startJobSearchRun);
 const runDailyCommandCenterAgentMock = vi.mocked(runDailyCommandCenterAgent);
 
 describe("executeJoleneAction", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.stubEnv("SLACK_BOT_TOKEN", "");
+    vi.stubEnv("SLACK_APP_TOKEN", "");
+    vi.stubEnv("SLACK_OPS_CHANNEL_ID", "");
+    vi.stubEnv("SLACK_APPROVALS_CHANNEL_ID", "");
+    vi.stubEnv("SLACK_OPS_JOLENE_ID", "");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+    vi.stubEnv("JOB_SEARCH_OS_APP_URL", "");
+    vi.stubEnv("OPENAI_API_KEY", "");
     const { prisma } = await import("@/lib/prisma");
     vi.mocked(prisma.generatedCoverLetter.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.calendarEventProposal.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.candidateEvidence.count).mockResolvedValue(0 as never);
     vi.mocked(prisma.candidateEvidence.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.candidateEvidence.groupBy).mockResolvedValue([] as never);
     vi.mocked(prisma.experienceBullet.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.application.count).mockResolvedValue(0 as never);
     vi.mocked(prisma.application.findMany).mockResolvedValue([] as never);
@@ -141,6 +155,7 @@ describe("executeJoleneAction", () => {
     vi.mocked(prisma.jobSearchProfile.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.jobSearchRun.findFirst).mockResolvedValue(null as never);
     vi.mocked(prisma.jobSuppression.count).mockResolvedValue(0 as never);
+    vi.mocked(prisma.emailOpsFinding.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.linkedInPostDraft.findFirst).mockResolvedValue(null as never);
     vi.mocked(prisma.project.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.skillFeedback.count).mockResolvedValue(0 as never);
@@ -148,6 +163,7 @@ describe("executeJoleneAction", () => {
     vi.mocked(prisma.user.findFirst).mockResolvedValue(null as never);
     vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user_1", email: "user@example.com", name: "Carl" } as never);
     vi.mocked(prisma.workExperience.findMany).mockResolvedValue([] as never);
+    getLatestEmailOpsSummaryMock.mockResolvedValue(null as never);
   });
 
   it("checks email when the user asks Jolene to check Gmail", async () => {
@@ -161,6 +177,16 @@ describe("executeJoleneAction", () => {
     expect(result.actionJson).toMatchObject({ action: "jolene_adk_operator" });
     expect(result.executedActions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "sync_email" })]));
     expect(result.clientAction).toEqual({ type: "navigate", href: "/dashboard/email-ops", refresh: true });
+  });
+
+  it("runs Email Ops for direct Slack-style run phrasing", async () => {
+    runEmailOpsMock.mockResolvedValue(emailOpsResult());
+
+    const result = await executeJoleneAction("run email ops", { userId: "user_1" });
+
+    expect(runEmailOpsMock).toHaveBeenCalled();
+    expect(result.handled).toBe(true);
+    expect(result.executedActions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "sync_email" })]));
   });
 
   it("pulls a saved application answer before broad coaching", async () => {
@@ -317,6 +343,267 @@ describe("executeJoleneAction", () => {
     expect(result.reply).toContain("Socure");
     expect(result.reply).toContain("Interview-ready talking points");
     expect(result.reply).toContain("AI");
+  });
+
+  it("answers Apply Sprint count questions from application state instead of interview coaching", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.application.findMany).mockResolvedValue([
+      readyApplication({
+        id: "app_launchable",
+        company: "Acme AI",
+        title: "Staff Frontend Engineer",
+        applicationUrl: "https://jobs.ashbyhq.com/acme/staff-frontend",
+        materialLaunchable: true,
+      }),
+      readyApplication({
+        id: "app_material_blocked",
+        company: "Beta Systems",
+        title: "Senior Product Engineer",
+        applicationUrl: "https://jobs.lever.co/beta/senior-product-engineer",
+        materialLaunchable: false,
+      }),
+      readyApplication({
+        id: "app_url_blocked",
+        company: "Gamma",
+        title: "Frontend Engineer",
+        applicationUrl: "https://indeed.com/viewjob?jk=123",
+        materialLaunchable: true,
+      }),
+    ] as never);
+
+    const result = await executeJoleneAction("How many jobs are in the apply sprint?", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({
+      action: "jolene_state_query",
+      route: expect.objectContaining({
+        kind: "read_only_question",
+        questionKind: "count",
+        domains: expect.arrayContaining(["apply_sprint"]),
+      }),
+      data: expect.objectContaining({
+        applications: expect.objectContaining({
+          applySprint: expect.objectContaining({
+            visibleReady: 3,
+            launchableReady: 1,
+            canonicalReady: 3,
+            rawReady: 3,
+            urlBlocked: 1,
+            materialBlocked: 1,
+          }),
+        }),
+      }),
+    });
+    expect(result.reply).toContain("Apply Sprint has 3 ready jobs in the visible queue");
+    expect(result.reply).toContain("1 launchable in the browser-assistant subset");
+    expect(result.reply).not.toContain("Interview-ready talking points");
+    expect(result.clientAction).toEqual({ type: "navigate", href: "/applications/assistant", refresh: true });
+  });
+
+  it("answers Apply Sprint blocker questions through the general state query", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.agentUserRequest.count).mockResolvedValue(2 as never);
+    vi.mocked(prisma.application.findMany).mockResolvedValue([
+      readyApplication({
+        id: "app_url_blocked",
+        company: "Gamma",
+        title: "Frontend Engineer",
+        applicationUrl: "https://indeed.com/viewjob?jk=123",
+        materialLaunchable: true,
+      }),
+      readyApplication({
+        id: "app_material_blocked",
+        company: "Beta Systems",
+        title: "Senior Product Engineer",
+        applicationUrl: "https://jobs.lever.co/beta/senior-product-engineer",
+        materialLaunchable: false,
+      }),
+    ] as never);
+
+    const result = await executeJoleneAction("What is blocking Apply Sprint?", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({
+      action: "jolene_state_query",
+      blockers: expect.arrayContaining([
+        expect.stringContaining("open Needs Me blockers"),
+        expect.stringContaining("non-launchable application URLs"),
+        expect.stringContaining("material-quality blockers"),
+      ]),
+    });
+    expect(result.reply).toContain("Blocking or attention-needed items");
+    expect(result.reply).toContain("/needs-me");
+  });
+
+  it("answers recent failure questions through the general state query", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.agentRun.count).mockResolvedValue(3 as never);
+    vi.mocked(prisma.agentRun.findMany).mockResolvedValue([
+      {
+        id: "run_failed",
+        agentType: "MARKET_INTELLIGENCE",
+        status: "FAILED",
+        error: "Provider timeout",
+        updatedAt: new Date("2026-05-19T12:00:00.000Z"),
+      },
+    ] as never);
+
+    const result = await executeJoleneAction("What failed recently?", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({
+      action: "jolene_state_query",
+      checkedSources: expect.arrayContaining(["agents"]),
+      data: expect.objectContaining({
+        agents: expect.objectContaining({ recentFailures: 3 }),
+      }),
+    });
+    expect(result.reply).toContain("3 failed agent runs");
+    expect(result.reply).toContain("/agents");
+  });
+
+  it("answers Email Ops status questions through the general state query", async () => {
+    getLatestEmailOpsSummaryMock.mockResolvedValue({
+      latestRun: emailOpsResult().run,
+      summary: emailOpsResult().output,
+      findings: [
+        {
+          id: "finding_1",
+          status: "NEEDS_APPROVAL",
+          classification: "INTERVIEW_SCHEDULING",
+          confidenceScore: 85,
+          emailMessage: { subject: "Interview availability" },
+          matchedApplication: { jobPosting: { company: "Acme", title: "Frontend Engineer" } },
+          matchedJobPosting: null,
+        },
+      ],
+      pendingCalendarProposals: [{ id: "calendar_1" }],
+    } as never);
+
+    const result = await executeJoleneAction("What is Email Ops status?", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({
+      action: "jolene_state_query",
+      checkedSources: expect.arrayContaining(["email_ops"]),
+      data: expect.objectContaining({
+        emailOps: expect.objectContaining({
+          findingsCreated: 1,
+          needsApproval: 0,
+          pendingCalendarDrafts: 1,
+        }),
+      }),
+    });
+    expect(result.reply).toContain("Email Ops");
+  });
+
+  it("answers profile health questions through app state instead of career coaching", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.jobSearchProfile.findMany).mockResolvedValue([
+      {
+        id: "profile_1",
+        name: "AI Product Frontend",
+        enabled: true,
+        scheduleEnabled: true,
+        minimumMatchScore: 85,
+        salaryMin: 180000,
+        salaryMax: 260000,
+        salaryCurrency: "USD",
+      },
+    ] as never);
+    vi.mocked(prisma.jobSearchRun.findFirst).mockResolvedValue({
+      id: "run_1",
+      status: "completed",
+      jobsFetched: 100,
+      jobsAfterDedupe: 80,
+      jobsSaved: 0,
+      startedAt: new Date("2026-05-18T12:00:00.000Z"),
+      finishedAt: new Date("2026-05-18T12:05:00.000Z"),
+    } as never);
+    vi.mocked(prisma.jobProfileMatch.groupBy).mockResolvedValue([{ status: "needs_review", _count: { _all: 12 } }] as never);
+    vi.mocked(prisma.candidateEvidence.groupBy).mockResolvedValue([{ confidence: "VERIFIED", _count: { _all: 8 } }] as never);
+
+    const result = await executeJoleneAction("How is profile health looking?", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({
+      action: "jolene_state_query",
+      checkedSources: expect.arrayContaining(["profiles"]),
+    });
+    expect(result.reply).toContain("enabled profile");
+    expect(result.reply).not.toContain("Interview-ready talking points");
+  });
+
+  it("explains Jolene API capabilities from the governed registry", async () => {
+    const result = await executeJoleneAction("What APIs can Jolene access across the app?", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({
+      action: "jolene_state_query",
+      data: expect.objectContaining({
+        capabilities: expect.arrayContaining([
+          expect.objectContaining({
+            id: "applications.apply_sprint",
+            risk: "read_only",
+            apiSurfaces: expect.arrayContaining(["/api/applications/ready-for-extension"]),
+          }),
+          expect.objectContaining({
+            id: "safe_internal_workflows",
+            risk: "safe_internal",
+          }),
+        ]),
+      }),
+    });
+    expect(result.reply).toContain("capability registry");
+    expect(result.reply).toContain("Read-only questions can be answered directly");
+  });
+
+  it("routes broad natural-language app questions through composed capabilities", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.application.findMany).mockResolvedValue([
+      readyApplication({
+        id: "app_launchable",
+        company: "Acme AI",
+        title: "Staff Frontend Engineer",
+        applicationUrl: "https://jobs.ashbyhq.com/acme/staff-frontend",
+        materialLaunchable: true,
+      }),
+    ] as never);
+    vi.mocked(prisma.jobProfileMatch.groupBy).mockResolvedValue([{ status: "needs_review", _count: { _all: 4 } }] as never);
+    vi.mocked(prisma.agentRun.count).mockResolvedValue(1 as never);
+    vi.mocked(prisma.agentRun.findMany).mockResolvedValue([
+      {
+        id: "run_failed",
+        agentType: "DAILY_COMMAND_CENTER",
+        status: "FAILED",
+        error: "Timeout",
+        updatedAt: new Date("2026-05-19T12:00:00.000Z"),
+      },
+    ] as never);
+    getLatestEmailOpsSummaryMock.mockResolvedValue({
+      latestRun: emailOpsResult().run,
+      summary: emailOpsResult().output,
+      findings: [],
+      pendingCalendarProposals: [],
+    } as never);
+
+    const result = await executeJoleneAction("What's going on across Apply Sprint, search, agents, and Email Ops?", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({
+      action: "jolene_state_query",
+      checkedSources: expect.arrayContaining(["apply_sprint", "search", "agents", "email_ops"]),
+      data: expect.objectContaining({
+        capabilities: expect.arrayContaining([
+          expect.objectContaining({ id: "applications.apply_sprint" }),
+          expect.objectContaining({ id: "jobs.search_pipeline" }),
+          expect.objectContaining({ id: "agents.runs" }),
+          expect.objectContaining({ id: "email_ops" }),
+        ]),
+      }),
+    });
+    expect(result.reply).toContain("1 canonical ready_to_apply tracker");
+    expect(result.reply).toContain("Email Ops");
   });
 
   it("answers direct career story requests from local context", async () => {
@@ -480,9 +767,14 @@ describe("executeJoleneAction", () => {
 
     expect(result.handled).toBe(true);
     expect(result.actionJson).toMatchObject({
-      action: "jolene_grounded_answer",
-      checkedSources: expect.arrayContaining(["search_profiles", "search_runs", "jobs"]),
-      retrievedItems: expect.arrayContaining([expect.objectContaining({ type: "search_profiles", title: "AI Product Frontend" })]),
+      action: "jolene_state_query",
+      checkedSources: expect.arrayContaining(["search", "profiles"]),
+      data: expect.objectContaining({
+        jobs: expect.objectContaining({
+          profiles: expect.objectContaining({ enabled: 1 }),
+          latestSearchRun: expect.objectContaining({ jobsFetched: 100, jobsSaved: 0 }),
+        }),
+      }),
     });
     expect(result.reply).toContain("I checked");
     expect(result.reply).toContain("Latest search run completed");
@@ -652,6 +944,55 @@ async function mockCareerContext() {
       jobPosting: { company: "Socure", title: "Senior Software Engineer" },
     },
   ] as never);
+}
+
+function readyApplication(input: {
+  id: string;
+  company: string;
+  title: string;
+  applicationUrl: string;
+  materialLaunchable: boolean;
+}) {
+  return {
+    id: input.id,
+    userId: "user_1",
+    jobPostingId: `${input.id}_job`,
+    jobProfileMatchId: `${input.id}_match`,
+    status: "ready_to_apply",
+    approvedAt: new Date("2026-05-19T12:00:00.000Z"),
+    appliedAt: null,
+    resumeId: `${input.id}_resume`,
+    coverLetterId: `${input.id}_cover`,
+    notes: null,
+    followUpAt: null,
+    sourceContactId: null,
+    autoSubmitOverride: null,
+    version: 1,
+    createdAt: new Date("2026-05-19T12:00:00.000Z"),
+    updatedAt: new Date("2026-05-19T12:00:00.000Z"),
+    coverLetter: {
+      generationNotes: {
+        materialQuality: {
+          status: input.materialLaunchable ? "PASS" : "NEEDS_REVIEW",
+          launchable: input.materialLaunchable,
+          reason: input.materialLaunchable ? "Cover letter passed material quality review." : "Cover letter needs review.",
+          reasons: input.materialLaunchable ? [] : ["hiring_manager_needs_review"],
+          score: input.materialLaunchable ? 88 : 74,
+          generatedBy: "openai",
+          evidenceRefs: [],
+        },
+      },
+    },
+    jobPosting: {
+      id: `${input.id}_job`,
+      company: input.company,
+      title: input.title,
+      location: "Remote",
+      applicationUrl: input.applicationUrl,
+      lastSeenAt: new Date("2026-05-19T12:00:00.000Z"),
+      duplicateGroupId: null,
+    },
+  };
 }
 
 function emailOpsResult() {

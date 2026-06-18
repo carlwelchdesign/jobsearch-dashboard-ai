@@ -86,6 +86,33 @@ Jolene also has app-aware local retrieval tools. Before falling back to a genera
 
 When Jolene finds a match, she returns direct links to the relevant local pages and exports, including generated cover-letter text/PDF routes, generated materials, application detail, and job detail. She does not include full cover-letter bodies in default answers; she points to the stored material unless the user explicitly asks for content.
 
+Jolene also has a read-only state query layer for arbitrary operational questions. Before career coaching or generic chat runs, she can classify app-state prompts and answer from local Prisma state for areas such as Apply Sprint, applications, job search, profile health, Email Ops, Market Intelligence, recent agent runs, duplicate groups, suppressions, and evidence coverage. This supports questions like:
+
+- How many jobs are in Apply Sprint?
+- What is blocking Apply Sprint?
+- What failed recently?
+- What is Email Ops status?
+- How is profile health looking?
+
+An answer guard checks for obvious routing mistakes, such as app-state count questions being answered as interview coaching, and reroutes those prompts through the state query layer when possible.
+
+Jolene's broader app access is modeled through a governed capability registry rather than raw unrestricted endpoint calls. Each capability declares the natural-language examples it handles, app domains, relevant API/page surfaces, and risk level:
+
+- `read_only`: answer directly from local app state.
+- `safe_internal`: run existing internal services such as search, duplicate checks, Email Ops, Daily Command Center, or Market Intelligence.
+- `guarded_mutation`: create confirmation plans for app-local changes that need review.
+- `external_blocked`: explain the boundary and route the user to manual confirmation surfaces.
+
+This allows Jolene to understand broad prompts like "what's going on across Apply Sprint, search, agents, and Email Ops?" while preserving the same safety boundaries as the UI.
+
+## Slack Jolene Channel
+
+Slack Agent Ops can expose Jolene in a dedicated Slack channel with `SLACK_OPS_JOLENE_ID`. The Socket Mode worker listens only to that configured channel, ignores bot/subtype/blank messages, and answers every human prompt in a thread.
+
+Slack Jolene uses the same shared Jolene chat service as `/api/jolene`, so prompts and replies are stored in `JoleneConversation` and `JoleneMessage` with Slack source metadata. Outgoing Slack replies are logged through `NotificationLog`.
+
+The channel can answer the same read-only state questions as the in-app drawer, so normal questions usually do not require custom slash commands. It can also execute safe internal requests directly, including job search, duplicate/stale checks, Email Ops, Daily Command Center refresh, Market Intelligence refresh, Jolene Chief of Staff, Operating Loop, and Recruiting Search Team runs. Guarded or external requests are not executed from Slack: application submission, email/outreach sending, LinkedIn publishing, external calendar writes, and destructive bulk mutations remain blocked or app-confirmed. `SLACK_ALLOWED_USER_IDS` restricts who can chat with Jolene or start Slack-originated internal work.
+
 ## ADK App Operator
 
 Jolene has an ADK-backed app-operator layer for broader app operations. Exact lookups and career coaching still run through deterministic tools first, but operational requests can now be planned as ADK tool activity.
