@@ -111,6 +111,17 @@ export function techUsedLine(contextValue: unknown): string | null {
   return `Tech Used: ${tech.map((item) => [item.name, item.version].filter(Boolean).join(" ")).join(", ")}`;
 }
 
+export function roleSkillsLine(contextValue: unknown, fallbackSkills: unknown): string | null {
+  const approvedTech = approvedTechFromContext(contextValue)
+    .map((item) => [item.name, item.version].filter(Boolean).join(" "));
+  const fallback = Array.isArray(fallbackSkills)
+    ? fallbackSkills.filter((item): item is string => typeof item === "string")
+    : [];
+  const skills = approvedTech.length ? approvedTech : fallback;
+  const unique = Array.from(new Set(skills.map((skill) => skill.trim()).filter(Boolean)));
+  return unique.length ? `Skills: ${unique.join(", ")}` : null;
+}
+
 export function pendingVersionSuggestionsFromContexts(contexts: unknown[]) {
   return contexts.flatMap((value) => parseResumeExperienceContext(value).versionSuggestions)
     .filter((suggestion) => suggestion.status === "NEEDS_REVIEW");

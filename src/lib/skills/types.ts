@@ -37,6 +37,12 @@ export type SkillId =
   | "market_intelligence"
   | "linkedin_content"
   | "system_architecture"
+  | "recruiting_search_director"
+  | "search_yield_analyst"
+  | "search_profile_editor"
+  | "source_quality_analyst"
+  | "match_calibration_reviewer"
+  | "outcome_recruiter"
   | "prepare_application_packet"
   | "approve_agency_match";
 

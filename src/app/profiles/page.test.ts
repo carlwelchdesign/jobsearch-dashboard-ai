@@ -14,4 +14,12 @@ describe("Search Profiles recruiting search team", () => {
     expect(panelSource).toContain("/api/search-optimization/changes/");
     expect(panelSource).toContain("Rollback");
   });
+
+  it("surfaces the resume approval handoff state", () => {
+    const pageSource = readFileSync(resolve(process.cwd(), "src/app/profiles/page.tsx"), "utf8");
+
+    expect(pageSource).toContain("resumeApproved");
+    expect(pageSource).toContain("Candidate profile approved.");
+    expect(pageSource).toContain("AI opportunity scan");
+  });
 });

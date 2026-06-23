@@ -15,6 +15,7 @@ import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
 import PlayCircleOutlineOutlinedIcon from "@mui/icons-material/PlayCircleOutlineOutlined";
 import PsychologyOutlinedIcon from "@mui/icons-material/PsychologyOutlined";
 import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
+import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
@@ -353,6 +354,15 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                   <PortfolioMatchButton applicationId={application.id} />
                   <RecruiterOutreachButton applicationId={application.id} />
                   <InterviewPrepButton applicationId={application.id} />
+                  <ActionButton
+                    postTo={`/api/applications/${application.id}/regenerate-materials`}
+                    variant="outlined"
+                    color="warning"
+                    startIcon={<RefreshOutlinedIcon />}
+                    loadingLabel="Regenerating..."
+                  >
+                    Regenerate materials
+                  </ActionButton>
                   {approvalState?.canApprove ? <ApprovePacketButton applicationId={application.id} /> : null}
                   {application.status === "ready_to_apply" && application.resume && application.coverLetter ? (
                     <>

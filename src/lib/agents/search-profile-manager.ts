@@ -1,11 +1,15 @@
 import type { ApplicationOutcomeType, JobSearchProfile } from "@prisma/client";
 import { runAgent } from "@/lib/agents/run-agent";
+import { suggestSearchProfiles, type ProfileSuggestion } from "@/lib/ai/profile-suggestions";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import type { QualityProposalLearningRules } from "@/lib/skills/adjustments";
 
 export type SearchProfileManagerInput = {
   userId?: string;
+  mode?: "performance_review" | "resume_reonboarding";
+  resumeUploadId?: string;
+  candidateProfileId?: string;
   learningRules?: QualityProposalLearningRules;
 };
 
@@ -35,10 +39,15 @@ export type SearchProfileManagerOutput = {
     keywords: string[];
     rationale: string;
   }>;
+  suggestedProfiles?: ResumeReonboardingSuggestedProfile[];
   profilesToDelete: string[];
   rationale: string;
   confidence: number;
   appliedLearning?: string[];
+};
+
+export type ResumeReonboardingSuggestedProfile = ProfileSuggestion & {
+  alreadyExists: boolean;
 };
 
 export type SearchProfilePerformanceSummary = {
@@ -117,6 +126,9 @@ export async function runSearchProfileManagerAgent(input: SearchProfileManagerIn
       const recommendedChanges = buildRecommendations(profiles, profileHealthScores, overlaps, input.learningRules);
       const profilesToPause = recommendedChanges.filter((change) => change.action === "pause").map((change) => change.profileId);
       const profilesToCreate = suggestProfilesToCreate(profiles);
+      const suggestedProfiles = input.mode === "resume_reonboarding"
+        ? await buildResumeReonboardingSuggestions(input)
+        : undefined;
 
       return {
         profileHealthScores,
@@ -124,17 +136,81 @@ export async function runSearchProfileManagerAgent(input: SearchProfileManagerIn
         profilesToMerge: overlaps,
         profilesToPause,
         profilesToCreate,
+        suggestedProfiles,
         profilesToDelete: [],
         rationale: input.learningRules?.marketSearchAdaptation
           ? "Reviewed search profiles with accepted market-intelligence adaptation guidance. No destructive changes are applied automatically."
           : input.learningRules?.lowSavedYield
           ? "Reviewed search profiles with active low-yield learning, emphasizing source quality, query breadth, and profile specificity. No destructive changes are applied automatically."
+          : input.mode === "resume_reonboarding"
+          ? "Reviewed the newly approved resume source and proposed search profiles for user approval. No profiles were created or deleted automatically."
           : "Reviewed search profiles using match volume, approval rate, rejection rate, average score, specificity, and title/keyword overlap. No destructive changes are applied automatically.",
-        confidence: profiles.some((profile) => profile.matches.length >= 20) ? 0.82 : 0.62,
+        confidence: suggestedProfiles?.length ? 0.78 : profiles.some((profile) => profile.matches.length >= 20) ? 0.82 : 0.62,
         appliedLearning: input.learningRules?.appliedCategories?.length ? input.learningRules.appliedCategories : undefined,
       };
     },
   });
+}
+
+async function buildResumeReonboardingSuggestions(input: SearchProfileManagerInput): Promise<ResumeReonboardingSuggestedProfile[]> {
+  const profile = await prisma.userProfile.findFirst({
+    where: {
+      ...(input.candidateProfileId ? { id: input.candidateProfileId } : {}),
+      ...(input.userId ? { userId: input.userId } : {}),
+    },
+    include: {
+      experienceBullets: { where: { truthLevel: "verified" }, take: 160 },
+      workExperiences: {
+        where: input.resumeUploadId ? { OR: [{ sourceResumeUploadId: input.resumeUploadId }, { sourceResumeUploadId: null }] } : undefined,
+        take: 100,
+      },
+      projects: {
+        where: input.resumeUploadId ? { OR: [{ sourceResumeUploadId: input.resumeUploadId }, { sourceResumeUploadId: null }] } : undefined,
+        take: 60,
+      },
+      githubRepositories: { orderBy: [{ pushedAt: "desc" }, { stars: "desc" }], take: 80 },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!profile) return [];
+
+  const applicationHistory = await prisma.application.findMany({
+    where: input.userId ? { userId: input.userId } : undefined,
+    include: {
+      jobPosting: { select: { company: true, title: true } },
+      jobProfileMatch: { select: { overallScore: true } },
+      outcomes: { select: { outcome: true }, orderBy: { occurredAt: "desc" }, take: 3 },
+      emailMessages: { where: { classification: "AUTOMATED_CONFIRMATION" }, select: { id: true }, take: 1 },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 100,
+  });
+
+  const suggestions = await suggestSearchProfiles({
+    userProfile: profile,
+    bullets: profile.experienceBullets.filter((bullet) => !input.resumeUploadId || !bullet.sourceResumeUploadId || bullet.sourceResumeUploadId === input.resumeUploadId),
+    workExperiences: profile.workExperiences,
+    projects: profile.projects,
+    githubRepositories: profile.githubRepositories,
+    applicationHistory: applicationHistory.map((application) => ({
+      company: application.jobPosting.company,
+      title: application.jobPosting.title,
+      status: application.status,
+      outcomes: application.outcomes.map((outcome) => outcome.outcome),
+      matchScore: application.jobProfileMatch?.overallScore ?? null,
+      receivedConfirmation: application.emailMessages.length > 0,
+    })),
+  });
+
+  const existingProfiles = await prisma.jobSearchProfile.findMany({
+    where: input.userId ? { userId: input.userId } : undefined,
+    select: { name: true },
+  });
+  const existingNames = new Set(existingProfiles.map((item) => item.name.toLowerCase()));
+  return suggestions.map((suggestion) => ({
+    ...suggestion,
+    alreadyExists: existingNames.has(suggestion.name.toLowerCase()),
+  }));
 }
 
 function scoreProfileHealth(profile: ProfileWithStats) {
