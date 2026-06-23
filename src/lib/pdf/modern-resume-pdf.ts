@@ -28,28 +28,37 @@ type PageColumn = {
   widthChars: number;
 };
 
-export function createModernTwoColumnResumePdf(text: string): Uint8Array<ArrayBuffer> {
+type ResumePdfImage = {
+  bytes: Uint8Array;
+  mimeType: string;
+};
+
+export function createModernTwoColumnResumePdf(text: string, options: { profileImage?: ResumePdfImage | null } = {}): Uint8Array<ArrayBuffer> {
   const document = parseResumeDocument(text);
   const pages = layoutPages(document);
+  const profileImage = pdfImage(options.profileImage);
   const objects: string[] = [];
   objects.push("<< /Type /Catalog /Pages 2 0 R >>");
   objects.push("");
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
+  const imageObjectId = profileImage ? objects.length + 1 : null;
+  if (profileImage) objects.push(profileImage.object);
 
   const pageObjectIds: number[] = [];
   for (const [pageIndex, page] of pages.entries()) {
     const pageObjId = objects.length + 1;
     const contentObjId = pageObjId + 1;
     pageObjectIds.push(pageObjId);
-    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentObjId} 0 R >>`);
+    const xObjects = imageObjectId ? ` /XObject << /ProfileImage ${imageObjectId} 0 R >>` : "";
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${xObjects} >> /Contents ${contentObjId} 0 R >>`);
     const content = [
       "q 1 1 1 rg 0 0 612 792 re f Q",
-      pageIndex === 0 ? renderHeader(document) : renderContinuationHeader(document.name, pageIndex + 1),
+      pageIndex === 0 ? renderHeader(document, Boolean(profileImage)) : renderContinuationHeader(document.name, pageIndex + 1),
       renderColumn(page.left),
       renderColumn(page.right),
     ].filter(Boolean).join("\n");
-    objects.push(`<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`);
+    objects.push(`<< /Length ${byteLength(content)} >>\nstream\n${content}\nendstream`);
   }
 
   objects[1] = `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageObjectIds.length} >>`;
@@ -57,10 +66,10 @@ export function createModernTwoColumnResumePdf(text: string): Uint8Array<ArrayBu
   const chunks: string[] = ["%PDF-1.4\n"];
   const offsets = [0];
   for (const [index, object] of objects.entries()) {
-    offsets.push(Buffer.byteLength(chunks.join("")));
+    offsets.push(byteLength(chunks.join("")));
     chunks.push(`${index + 1} 0 obj\n${object}\nendobj\n`);
   }
-  const xrefOffset = Buffer.byteLength(chunks.join(""));
+  const xrefOffset = byteLength(chunks.join(""));
   chunks.push(`xref\n0 ${objects.length + 1}\n`);
   chunks.push("0000000000 65535 f \n");
   for (const offset of offsets.slice(1)) chunks.push(`${offset.toString().padStart(10, "0")} 00000 n \n`);
@@ -68,6 +77,10 @@ export function createModernTwoColumnResumePdf(text: string): Uint8Array<ArrayBu
 
   const buffer = Buffer.from(chunks.join(""), "latin1");
   return new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+}
+
+function byteLength(value: string) {
+  return Buffer.byteLength(value, "latin1");
 }
 
 function layoutPages(document: ResumeDocument) {
@@ -100,7 +113,7 @@ function layoutPages(document: ResumeDocument) {
   let leftIndex = 0;
   let rightIndex = 0;
   while (leftIndex < leftLines.length || rightIndex < rightLines.length || pages.length === 0) {
-    const top = pages.length === 0 ? 636 : 720;
+    const top = pages.length === 0 ? 692 : 720;
     const left = nextColumn(leftLines, leftIndex, LEFT, top, 340, 58);
     const right = nextColumn(rightLines, rightIndex, 392, top, 192, 34);
     leftIndex = left.nextIndex;
@@ -125,15 +138,23 @@ function nextColumn(lines: PdfLine[], startIndex: number, x: number, y: number, 
   return { nextIndex: index, column: { lines: selected, x, y, width, widthChars } };
 }
 
-function renderHeader(document: ResumeDocument) {
+function renderHeader(document: ResumeDocument, hasProfileImage: boolean) {
   const initials = document.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "CV";
   const contact = document.contactLine.split(/\s*\|\s*/).filter(Boolean).join("   ");
+  const badge = hasProfileImage
+    ? [
+      `q ${circlePath(558, 710, 25)} W n 50 0 0 50 533 685 cm /ProfileImage Do Q`,
+      `q ${BLUE} RG 1.2 w ${circlePath(558, 710, 25)} S Q`,
+    ].join("\n")
+    : [
+      `q ${BLUE} rg ${circlePath(558, 710, 25)} f Q`,
+      text(initials, 546, 704, 14.5, "bold", "0 0 0"),
+    ].join("\n");
   return [
     text(document.name.toUpperCase(), LEFT, TOP, 21, "bold", "0 0 0"),
     text(document.headline, LEFT, TOP - 18, 9.5, "bold", BLUE),
     text(contact, LEFT, TOP - 36, 7.2, "regular", MUTED),
-    `q ${BLUE} rg 536 690 44 44 re f Q`,
-    text(initials, 552, 707, 15, "bold", "0 0 0"),
+    badge,
   ].join("\n");
 }
 
@@ -216,6 +237,46 @@ function wrap(value: string, width: number) {
 
 function text(value: string, x: number, y: number, size: number, font: "regular" | "bold", color: string) {
   return `BT ${color} rg /${font === "bold" ? "F2" : "F1"} ${size} Tf 1 0 0 1 ${x} ${y} Tm (${escapePdfText(value)}) Tj ET`;
+}
+
+function circlePath(cx: number, cy: number, r: number) {
+  const c = r * 0.5522847498;
+  return [
+    `${cx + r} ${cy} m`,
+    `${cx + r} ${cy + c} ${cx + c} ${cy + r} ${cx} ${cy + r} c`,
+    `${cx - c} ${cy + r} ${cx - r} ${cy + c} ${cx - r} ${cy} c`,
+    `${cx - r} ${cy - c} ${cx - c} ${cy - r} ${cx} ${cy - r} c`,
+    `${cx + c} ${cy - r} ${cx + r} ${cy - c} ${cx + r} ${cy} c`,
+    "h",
+  ].join(" ");
+}
+
+function pdfImage(image: ResumePdfImage | null | undefined) {
+  if (!image || !/^image\/jpe?g$/i.test(image.mimeType)) return null;
+  const dimensions = jpegDimensions(image.bytes);
+  if (!dimensions) return null;
+  const binary = Buffer.from(image.bytes).toString("latin1");
+  return {
+    object: `<< /Type /XObject /Subtype /Image /Width ${dimensions.width} /Height ${dimensions.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.bytes.byteLength} >>\nstream\n${binary}\nendstream`,
+  };
+}
+
+function jpegDimensions(bytes: Uint8Array) {
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  let offset = 2;
+  while (offset < bytes.length) {
+    if (bytes[offset] !== 0xff) return null;
+    const marker = bytes[offset + 1];
+    const length = (bytes[offset + 2] << 8) + bytes[offset + 3];
+    if (marker >= 0xc0 && marker <= 0xc3) {
+      return {
+        height: (bytes[offset + 5] << 8) + bytes[offset + 6],
+        width: (bytes[offset + 7] << 8) + bytes[offset + 8],
+      };
+    }
+    offset += 2 + length;
+  }
+  return null;
 }
 
 function escapePdfText(value: string) {

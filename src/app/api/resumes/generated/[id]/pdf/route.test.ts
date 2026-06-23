@@ -25,6 +25,7 @@ const simplePdfMock = vi.mocked(createSimpleTextPdf);
 describe("GET /api/resumes/generated/[id]/pdf", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn());
     findUniqueMock.mockResolvedValue(resume({ resumeFormat: "modern_two_column" }) as never);
   });
 
@@ -32,8 +33,20 @@ describe("GET /api/resumes/generated/[id]/pdf", () => {
     const response = await GET(new Request("http://localhost/api/resumes/generated/resume_1/pdf"), { params: { id: "resume_1" } });
 
     expect(response.status).toBe(200);
-    expect(modernPdfMock).toHaveBeenCalledWith("Carl Welch\nSummary\nReact");
+    expect(modernPdfMock).toHaveBeenCalledWith("Carl Welch\nSummary\nReact", { profileImage: null });
     expect(simplePdfMock).not.toHaveBeenCalled();
+  });
+
+  it("passes a fetched LinkedIn profile image to the modern renderer", async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    findUniqueMock.mockResolvedValue(resume({ resumeFormat: "modern_two_column", linkedinPictureUrl: "https://media.licdn.com/photo.jpg" }) as never);
+    vi.mocked(fetch).mockResolvedValue(new Response(bytes, { headers: { "content-type": "image/jpeg" } }) as never);
+
+    await GET(new Request("http://localhost/api/resumes/generated/resume_1/pdf"), { params: { id: "resume_1" } });
+
+    expect(modernPdfMock).toHaveBeenCalledWith("Carl Welch\nSummary\nReact", {
+      profileImage: { bytes, mimeType: "image/jpeg" },
+    });
   });
 
   it("uses legacy presets when selected", async () => {
@@ -52,12 +65,12 @@ describe("GET /api/resumes/generated/[id]/pdf", () => {
   });
 });
 
-function resume({ resumeFormat }: { resumeFormat: string }) {
+function resume({ resumeFormat, linkedinPictureUrl = null }: { resumeFormat: string; linkedinPictureUrl?: string | null }) {
   return {
     id: "resume_1",
     plainText: "Carl Welch\nSummary\nReact",
     markdown: "# Carl Welch",
     jobPosting: { company: "Acme", title: "Senior Engineer" },
-    user: { name: "Carl Welch", profile: { resumeFormat } },
+    user: { name: "Carl Welch", profile: { resumeFormat, linkedinPictureUrl } },
   };
 }
