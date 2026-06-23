@@ -27,6 +27,7 @@ describe("system architecture agent", () => {
     ]));
     expect(report.workflows.map((workflow) => workflow.name)).toContain("Jolene operating layer");
     expect(report.risks.length).toBeGreaterThan(0);
+    expect(report.risks.map((risk) => risk.title)).not.toContain("Agent types without skill policy coverage");
     expect(report.recommendedDecisions.join(" ")).toContain("architecture report");
   });
 });
