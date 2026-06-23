@@ -9,10 +9,10 @@ export const dynamic = "force-dynamic";
 
 const draftRequestSchema = z.object({
   contentPillar: z.enum(["app_progress", "search_learning", "architecture", "workflow_design"]).optional(),
-  prompt: z.string().trim().max(2000).optional(),
+  prompt: z.string().trim().optional(),
   tone: z.enum(["bold_grounded", "practical", "experimental"]).optional(),
   format: z.enum(["build_log", "lesson", "decision_diary", "teardown", "before_after", "contrarian_take", "field_note", "visual_walkthrough", "product_thesis"]).optional(),
-  visualDirection: z.string().trim().max(1000).optional(),
+  visualDirection: z.string().trim().optional(),
 });
 
 export async function GET(request: Request) {

@@ -86,6 +86,30 @@ describe("/api/linkedin-content/drafts", () => {
     expect(runLinkedInContentAgentMock).toHaveBeenCalledWith({ contentPillar: "architecture", userId: "user_1" });
   });
 
+  it("accepts long prompt and visual direction briefs", async () => {
+    const prompt = `Write this as a field note. ${"Slack Jolene channel details. ".repeat(120)}`;
+    const visualDirection = `Show the Slack operations room and Jolene thread. ${"Keep it concrete. ".repeat(80)}`;
+
+    const response = await POST(new Request("http://localhost/api/linkedin-content/drafts", {
+      method: "POST",
+      body: JSON.stringify({
+        prompt,
+        visualDirection,
+        format: "field_note",
+      }),
+    }));
+
+    expect(prompt.length).toBeGreaterThan(2000);
+    expect(visualDirection.length).toBeGreaterThan(1000);
+    expect(response.status).toBe(201);
+    expect(runLinkedInContentAgentMock).toHaveBeenCalledWith({
+      prompt: prompt.trim(),
+      visualDirection: visualDirection.trim(),
+      format: "field_note",
+      userId: "user_1",
+    });
+  });
+
   it("lists active drafts for the first local user", async () => {
     const response = await GET(new Request("http://localhost/api/linkedin-content/drafts"));
 
