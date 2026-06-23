@@ -26,9 +26,16 @@ describe("Settings client source contract", () => {
 
   it("has an explicit save action for application profile links before LinkedIn reconnect", () => {
     expect(source).toContain("saveProfileLinks");
-    expect(source).toContain("Save profile links");
+    expect(source).toContain("Save profile links and format");
     expect(source).toContain("Application profile links saved.");
     expect(source).toContain("Save this URL before reconnecting LinkedIn.");
     expect(source).toContain("/api/settings/profile");
+  });
+
+  it("exposes the generated resume format selector in application settings", () => {
+    expect(source).toContain("Resume format");
+    expect(source).toContain("RESUME_FORMATS.map");
+    expect(source).toContain("Used for generated resume previews and PDF exports. Resume text remains ATS-readable.");
+    expect(contentSource).toContain("resumeFormat: normalizeResumeFormat");
   });
 });

@@ -27,6 +27,7 @@ import Typography from "@mui/material/Typography";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/app/app-shell";
 import { ActionButton } from "@/components/action-button";
+import { ResumePreview } from "@/components/resume-preview";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
@@ -432,19 +433,33 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
         <AtsResumeReviewCard review={atsResumeReview} />
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "1fr 1fr" }, gap: 2 }}>
-          <MaterialCard
-            title="Tailored resume"
-            icon={<ArticleOutlinedIcon />}
-            body={application.resume?.plainText ?? application.resume?.markdown ?? ""}
-            emptyTitle="No resume generated"
-            emptyBody="Prepare the package or generate a tailored resume from the job detail page."
-            actions={application.resume ? (
-              <>
-                <ActionButton href={`/api/resumes/generated/${application.resume.id}/plain-text`} size="small">Text</ActionButton>
-                <ActionButton href={`/api/resumes/generated/${application.resume.id}/pdf`} size="small">PDF</ActionButton>
-              </>
-            ) : null}
-          />
+          <Card>
+            <CardContent>
+              <Stack spacing={2}>
+                <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                    <ArticleOutlinedIcon />
+                    <Typography variant="h3">Tailored resume</Typography>
+                  </Stack>
+                  {application.resume ? (
+                    <Stack direction="row" spacing={0.5}>
+                      <ActionButton href={`/api/resumes/generated/${application.resume.id}/plain-text`} size="small">Text</ActionButton>
+                      <ActionButton href={`/api/resumes/generated/${application.resume.id}/pdf`} size="small">PDF</ActionButton>
+                    </Stack>
+                  ) : null}
+                </Stack>
+                <Divider />
+                {application.resume ? (
+                  <ResumePreview
+                    text={application.resume.plainText ?? application.resume.markdown}
+                    format={application.user.profile?.resumeFormat}
+                  />
+                ) : (
+                  <EmptyState title="No resume generated" body="Prepare the package or generate a tailored resume from the job detail page." />
+                )}
+              </Stack>
+            </CardContent>
+          </Card>
           <MaterialCard
             title="Cover letter"
             icon={<ContactPageOutlinedIcon />}
