@@ -6,7 +6,7 @@ const LEFT = 24;
 const RIGHT = 588;
 const TOP = 752;
 const BOTTOM = 42;
-const COLUMN_GAP = 18;
+const COLUMN_GAP = 24;
 const EXPERIENCE_WIDTH = 297;
 const SIDEBAR_X = LEFT + EXPERIENCE_WIDTH + COLUMN_GAP;
 const SIDEBAR_WIDTH = 194.4;
@@ -159,12 +159,12 @@ function renderHeader(document: ResumeDocument, hasProfileImage: boolean) {
   const contact = document.contactLine.split(/\s*\|\s*/).filter(Boolean).join("   ");
   const badge = hasProfileImage
     ? [
-      `q ${circlePath(556, 709, 24)} W n 48 0 0 48 532 685 cm /ProfileImage Do Q`,
-      `q ${BLUE} RG 1.2 w ${circlePath(556, 709, 24)} S Q`,
+      `q ${circlePath(556, 735, 28)} W n 56 0 0 56 528 707 cm /ProfileImage Do Q`,
+      `q ${BLUE} RG 1.2 w ${circlePath(556, 735, 28)} S Q`,
     ].join("\n")
     : [
-      `q ${BLUE} rg ${circlePath(556, 709, 24)} f Q`,
-      text(initials, 545, 703, 14, "bold", "0 0 0"),
+      `q ${BLUE} rg ${circlePath(556, 735, 28)} f Q`,
+      text(initials, 543, 728, 15.5, "bold", "0 0 0"),
     ].join("\n");
   return [
     text(document.name.toUpperCase(), LEFT, TOP, 18.5, "bold", "0 0 0"),
