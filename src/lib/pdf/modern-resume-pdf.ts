@@ -6,6 +6,12 @@ const LEFT = 28;
 const RIGHT = 584;
 const TOP = 752;
 const BOTTOM = 42;
+const EXPERIENCE_WIDTH = 370;
+const EXPERIENCE_WRAP = 64;
+const EXPERIENCE_BULLET_WRAP = 61;
+const SIDEBAR_X = 404;
+const SIDEBAR_WIDTH = RIGHT - SIDEBAR_X;
+const SIDEBAR_WRAP = 32;
 const BLUE = "0.02 0.46 0.93";
 const INK = "0.05 0.06 0.08";
 const MUTED = "0.30 0.34 0.40";
@@ -90,22 +96,22 @@ function layoutPages(document: ResumeDocument) {
       roleLine(item.role ?? item.title),
       ...(item.company ? [bodyLine(item.company, 7.8, "bold", BLUE)] : []),
       ...(item.dates ? [bodyLine(item.dates, 7.2)] : []),
-      ...(item.skills.length ? wrapBody(`Skills: ${item.skills.join(", ")}`, 57) : []),
-      ...item.bullets.slice(0, 5).flatMap((bullet) => bulletLines(bullet, 54)),
+      ...(item.skills.length ? wrapBody(`Skills: ${item.skills.join(", ")}`, EXPERIENCE_WRAP) : []),
+      ...item.bullets.slice(0, 5).flatMap((bullet) => bulletLines(bullet, EXPERIENCE_BULLET_WRAP)),
     ]),
   ];
   const rightLines = [
     section("Summary"),
-    ...document.summary.flatMap((line) => wrapBody(line, 34)),
+    ...document.summary.flatMap((line) => wrapBody(line, SIDEBAR_WRAP)),
     section("Education"),
-    ...document.education.flatMap((line) => wrapBody(line, 34, true)),
-    ...(document.certifications.length ? [section("Certifications"), ...document.certifications.flatMap((line) => wrapBody(line, 34, true))] : []),
+    ...document.education.flatMap((line) => wrapBody(line, SIDEBAR_WRAP, true)),
+    ...(document.certifications.length ? [section("Certifications"), ...document.certifications.flatMap((line) => wrapBody(line, SIDEBAR_WRAP, true))] : []),
     section("Skills"),
     ...skillLines(document.skills),
     section("Projects"),
     ...document.projects.slice(0, 4).flatMap((project) => [
       roleLine(project.name, 8.8),
-      ...wrapBody(project.description, 34),
+      ...wrapBody(project.description, SIDEBAR_WRAP),
     ]),
   ];
 
@@ -114,8 +120,8 @@ function layoutPages(document: ResumeDocument) {
   let rightIndex = 0;
   while (leftIndex < leftLines.length || rightIndex < rightLines.length || pages.length === 0) {
     const top = pages.length === 0 ? 692 : 720;
-    const left = nextColumn(leftLines, leftIndex, LEFT, top, 340, 58);
-    const right = nextColumn(rightLines, rightIndex, 392, top, 192, 34);
+    const left = nextColumn(leftLines, leftIndex, LEFT, top, EXPERIENCE_WIDTH, EXPERIENCE_WRAP);
+    const right = nextColumn(rightLines, rightIndex, SIDEBAR_X, top, SIDEBAR_WIDTH, SIDEBAR_WRAP);
     leftIndex = left.nextIndex;
     rightIndex = right.nextIndex;
     pages.push({ left: left.column, right: right.column });
