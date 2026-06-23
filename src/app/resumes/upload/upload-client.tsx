@@ -2,23 +2,20 @@
 
 import FileUploadOutlinedIcon from "@mui/icons-material/FileUploadOutlined";
 import Alert from "@mui/material/Alert";
-import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
-import Typography from "@mui/material/Typography";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AppShell } from "@/app/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
 
 export function ResumeUploadClient() {
+  const router = useRouter();
   const [status, setStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
   const [message, setMessage] = useState("");
-  const [extractedText, setExtractedText] = useState("");
-  const [uploadId, setUploadId] = useState("");
   const [file, setFile] = useState<File | null>(null);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -49,9 +46,8 @@ export function ResumeUploadClient() {
     }
 
     setStatus("done");
-    setUploadId(payload.upload.id);
-    setExtractedText(payload.extractedText);
     setMessage("Resume parsed and ready for review. Approve it before using this data for tailoring.");
+    router.push("/resumes/review");
   }
 
   return (
@@ -82,15 +78,6 @@ export function ResumeUploadClient() {
               </Button>
               {status === "uploading" ? <LinearProgress /> : null}
               {message ? <Alert severity={status === "error" ? "error" : "success"}>{message}</Alert> : null}
-              {uploadId ? <Alert severity="info">Upload ID: {uploadId}</Alert> : null}
-              <TextField
-                label="Extracted text preview"
-                value={extractedText}
-                multiline
-                minRows={14}
-                fullWidth
-                disabled
-              />
             </Stack>
           </CardContent>
         </Card>

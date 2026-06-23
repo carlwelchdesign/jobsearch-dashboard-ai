@@ -3,6 +3,7 @@
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutlineOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlineOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -79,6 +80,7 @@ type ReviewAction =
   | { type: "updateProject"; index: number; patch: Partial<ParsedResume["projects"][number]> }
   | { type: "updateStringList"; field: "education" | "certifications"; values: string[] }
   | { type: "editsSaved" }
+  | { type: "reparsed"; parsed: ParsedResume }
   | { type: "approved"; result: ApprovalResult }
   | { type: "removed" }
   | { type: "setCreatingProfile"; name: string }
@@ -146,6 +148,8 @@ function reviewReducer(state: ReviewState, action: ReviewAction): ReviewState {
       return { ...state, parsed: { ...state.parsed, [action.field]: action.values } };
     case "editsSaved":
       return { ...state, editing: false, notice: "Parsed profile edits saved.", error: "" };
+    case "reparsed":
+      return { ...state, parsed: action.parsed, editing: false, notice: "Resume text re-parsed for review.", error: "" };
     case "approved":
       return {
         ...state,
@@ -228,6 +232,20 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
     refresh();
   }
 
+  async function reparse() {
+    dispatch({ type: "requestStarted" });
+    const response = await fetch(`/api/resumes/uploads/${upload.id}/reparse`, { method: "POST" });
+    const body = await response.json();
+
+    if (!response.ok) {
+      dispatch({ type: "setError", error: body.error ?? "Unable to re-parse resume upload." });
+      return;
+    }
+
+    dispatch({ type: "reparsed", parsed: body.parsedJson as ParsedResume });
+    refresh();
+  }
+
   async function createProfile(suggestion: SuggestedProfile) {
     dispatch({ type: "requestStarted" });
     dispatch({ type: "setCreatingProfile", name: suggestion.name });
@@ -296,6 +314,7 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
               ) : (
                 <Button variant="outlined" startIcon={<EditOutlinedIcon />} onClick={() => dispatch({ type: "setEditing", editing: true })}>Edit</Button>
               )}
+              <Button variant="outlined" startIcon={<RefreshOutlinedIcon />} onClick={reparse}>Re-parse upload</Button>
               <Button variant="contained" color="success" startIcon={<CheckCircleOutlineIcon />} onClick={approve}>Approve candidate profile</Button>
               <Button variant="outlined" color="error" startIcon={<DeleteOutlineIcon />} onClick={remove}>Remove upload</Button>
             </Stack>
