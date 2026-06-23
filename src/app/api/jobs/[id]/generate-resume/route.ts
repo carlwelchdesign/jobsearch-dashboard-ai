@@ -70,6 +70,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
         userId: user.id,
         jobPostingId: job.id,
         jobProfileMatchId: match.id,
+        resumeUploadId: latestUploadId ?? null,
         markdown,
         plainText,
         html: `<pre>${escapeHtml(plainText)}</pre>`,

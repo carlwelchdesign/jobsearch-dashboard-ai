@@ -94,6 +94,7 @@ describe("tailorResumeForJob", () => {
           endDate: "Present",
           isCurrent: true,
           summary: "Built product workflows.",
+          skills: ["React", "TypeScript"],
           createdAt: now,
         }),
         workExperience({
@@ -109,6 +110,7 @@ describe("tailorResumeForJob", () => {
     });
 
     expect(tailored.markdownResume).toContain("### CurrentCo - Senior Engineer | 2022 - Present");
+    expect(tailored.markdownResume).toContain("Skills: React, TypeScript");
     expect(tailored.markdownResume).toContain("### EarlierCo - Frontend Engineer | 2018 - 2021");
     expect(tailored.markdownResume).toContain("- Built and maintained customer-facing web applications.");
   });
@@ -302,9 +304,8 @@ describe("tailorResumeForJob", () => {
     });
 
     expect(tailored.markdownResume).toContain("### Revenue.io - Senior Software Engineer | Mar 2020 - Sep 2022");
-    expect(tailored.markdownResume).toContain("\"Guided Selling Platform\"");
-    expect(tailored.markdownResume).toContain("Built sales engagement workflows for enterprise sales teams.");
-    expect(tailored.markdownResume).toContain("Tech Used: React 17");
+    expect(tailored.markdownResume).toContain("Skills: React 17");
+    expect(tailored.markdownResume).not.toContain("Tech Used:");
     expect(tailored.markdownResume).not.toContain("TypeScript 3.x-4.x");
     expect(tailored.markdownResume).not.toMatch(/likely|estimated|inferred|available at the time/i);
   });

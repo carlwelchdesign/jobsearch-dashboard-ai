@@ -300,7 +300,11 @@ describe("custom opportunity resumes", () => {
         projects: [],
         githubRepositories: [],
         resumeUploads: [{ id: "upload_1", parsedJson: {} }],
-        workExperiences: [{ id: "work_1", company: "Revenue.io", title: "Senior Software Engineer", sourceResumeUploadId: null }],
+        workExperiences: [
+          { id: "work_1", company: "Revenue.io", title: "Senior Software Engineer", sourceResumeUploadId: null },
+          { id: "work_latest", company: "Yubico", title: "Senior Software Engineer", sourceResumeUploadId: "upload_1" },
+          { id: "work_old", company: "Old Upload Co", title: "Engineer", sourceResumeUploadId: "upload_0" },
+        ],
       },
     } as unknown as Awaited<ReturnType<typeof prisma.user.findFirst>>);
     tailorResumeForJobMock.mockResolvedValue({
@@ -343,7 +347,11 @@ describe("custom opportunity resumes", () => {
       ]),
       workExperiences: expect.arrayContaining([
         expect.objectContaining({ company: "Revenue.io" }),
+        expect.objectContaining({ company: "Yubico" }),
       ]),
     }));
+    expect(tailorResumeForJobMock.mock.calls[0]?.[0].workExperiences).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ company: "Old Upload Co" }),
+    ]));
   });
 });

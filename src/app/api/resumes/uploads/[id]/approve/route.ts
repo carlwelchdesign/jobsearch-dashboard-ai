@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { apiError } from "@/lib/api";
+import { runCandidateIntelligenceAgent } from "@/lib/agents/candidate-intelligence";
+import { runSearchProfileManagerAgent } from "@/lib/agents/search-profile-manager";
 import { prisma } from "@/lib/prisma";
 import { toExperienceCategory } from "@/lib/resumes/db";
-import { parseUploadedResumeSchema } from "@/lib/resumes/schemas";
+import { parseUploadedResumeSchema, type ParsedResume } from "@/lib/resumes/schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -112,10 +114,101 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       });
     }
 
-    return NextResponse.json({ profileId: profile.id, uploadId: upload.id });
+    const agentReview = await runResumeReonboardingReview({
+      userId: upload.userId,
+      profileId: profile.id,
+      uploadId: upload.id,
+      parsed,
+    });
+
+    return NextResponse.json({
+      profileId: profile.id,
+      uploadId: upload.id,
+      activeResumeUploadId: upload.id,
+      activationStatus: "active_latest_approved_upload",
+      candidateReviewRunId: agentReview.candidateReviewRunId,
+      searchProfileRunId: agentReview.searchProfileRunId,
+      suggestedProfiles: agentReview.suggestedProfiles,
+      agentReviewErrors: agentReview.errors,
+    });
   } catch (error) {
     return apiError(error, 400);
   }
+}
+
+async function runResumeReonboardingReview({
+  userId,
+  profileId,
+  uploadId,
+  parsed,
+}: {
+  userId: string;
+  profileId: string;
+  uploadId: string;
+  parsed: ParsedResume;
+}) {
+  const errors: string[] = [];
+  let candidateReviewRunId: string | null = null;
+  let searchProfileRunId: string | null = null;
+  let suggestedProfiles: unknown[] = [];
+
+  try {
+    const candidateReview = await runCandidateIntelligenceAgent({
+      candidateProfileId: profileId,
+      userId,
+      sourceType: "RESUME_UPLOAD",
+      sourceRef: uploadId,
+      notes: candidateNotesFromParsedResume(parsed),
+    });
+    candidateReviewRunId = candidateReview.run.id;
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : "Candidate intelligence review failed.");
+  }
+
+  try {
+    const searchProfileReview = await runSearchProfileManagerAgent({
+      userId,
+      mode: "resume_reonboarding",
+      resumeUploadId: uploadId,
+      candidateProfileId: profileId,
+    });
+    searchProfileRunId = searchProfileReview.run.id;
+    suggestedProfiles = searchProfileReview.output.suggestedProfiles ?? [];
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : "Search profile review failed.");
+  }
+
+  return {
+    candidateReviewRunId,
+    searchProfileRunId,
+    suggestedProfiles,
+    errors,
+  };
+}
+
+function candidateNotesFromParsedResume(parsed: ParsedResume) {
+  const notes = [
+    parsed.professionalSummary ? { title: "Professional summary", content: parsed.professionalSummary } : null,
+    parsed.skills.technicalSkills.length ? { title: "Technical skills", content: parsed.skills.technicalSkills.join(", ") } : null,
+    ...parsed.workExperience.slice(0, 30).map((work) => ({
+      title: `${work.company} - ${work.title}`,
+      content: [
+        work.summary,
+        work.skills.length ? `Skills: ${work.skills.join(", ")}` : null,
+        ...work.achievements.slice(0, 8),
+      ].filter(Boolean).join("\n"),
+    })),
+    ...parsed.projects.slice(0, 12).map((project) => ({
+      title: `Project: ${project.name}`,
+      content: [
+        project.description,
+        project.technologies.length ? `Technologies: ${project.technologies.join(", ")}` : null,
+        ...project.highlights.slice(0, 6),
+      ].filter(Boolean).join("\n"),
+    })),
+  ].filter((note): note is { title: string; content: string } => Boolean(note?.content.trim()));
+
+  return notes.length ? notes : [{ title: "Resume upload", content: "Resume approved for profile re-onboarding." }];
 }
 
 function workKey(company: string, role: string) {

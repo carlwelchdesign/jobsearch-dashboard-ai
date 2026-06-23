@@ -118,12 +118,13 @@ Approval is the publishing gate. The user can edit the draft, review agent notes
 3. Evidence is labeled as verified, inferred, needs review, or rejected.
 4. User reviews uncertain items.
 5. Approved evidence becomes available for scoring and generated materials.
+6. Approving a new resume upload re-onboards the candidate profile: the latest approved upload becomes the active resume source, Candidate Intelligence records resume-upload evidence, and Search Profile Manager proposes reviewable search profiles without creating or deleting them automatically.
 
 ## Search Profile Optimization Workflow
 
 1. Search profiles define target roles, industries, locations, compensation, keywords, and exclusions.
 2. Search Profile Manager reviews profile definitions and performance.
-3. It identifies overlap, broadness, narrowness, stale profiles, and noisy searches.
+3. It identifies overlap, broadness, narrowness, stale profiles, noisy searches, and resume re-onboarding profile opportunities.
 4. Market Intelligence reviews recent pipeline data against sourced labor-market signals and produces review-only search, positioning, company-targeting, and outreach recommendations.
 5. Suggested edits are shown for user approval.
 6. Destructive actions are not applied automatically.

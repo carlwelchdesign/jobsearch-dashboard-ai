@@ -8,7 +8,7 @@ import { scoreJobForProfile } from "@/lib/job-search/scoring";
 import { captureManualJob } from "@/lib/jobs/manual-capture";
 import { prisma } from "@/lib/prisma";
 import { checkAtsReadability } from "@/lib/resumes/ats";
-import { selectResumeSourceBullets, summarizeResumeSourceBullets } from "@/lib/resumes/source-materials";
+import { selectResumeSourceBullets, selectResumeSourceWorkExperiences, summarizeResumeSourceBullets } from "@/lib/resumes/source-materials";
 import { syncMaterialClaimsForResume } from "@/lib/trust/material-claims";
 
 const sourceName = "Recruiter Opportunity";
@@ -197,6 +197,7 @@ async function createGeneratedResumeForMatch(jobPostingId: string, jobProfileMat
   const latestUploadId = user.profile.resumeUploads[0]?.id;
   const parsedUpload = user.profile.resumeUploads[0]?.parsedJson as { education?: string[]; certifications?: string[] } | undefined;
   const bullets = selectResumeSourceBullets(user.profile.experienceBullets, latestUploadId);
+  const workExperiences = selectResumeSourceWorkExperiences(user.profile.workExperiences, latestUploadId);
   const sourceMaterialSummary = summarizeResumeSourceBullets(bullets, latestUploadId);
   const emphasis = buildCustomOpportunityEmphasis({
     description: job.description,
@@ -208,7 +209,7 @@ async function createGeneratedResumeForMatch(jobPostingId: string, jobProfileMat
       user.profile.experienceBullets.map((bullet) => [bullet.text, bullet.keywords, bullet.sourceText].flat().join(" ")),
       user.profile.projects.map((project) => [project.name, project.description, project.technologies, project.highlights].flat().join(" ")),
       user.profile.githubRepositories.map((repo) => [repo.name, repo.fullName, repo.description, repo.language, repo.topics].flat().join(" ")),
-      user.profile.workExperiences.map((work) => [work.company, work.title, work.summary, work.skills, work.achievements].flat().join(" ")),
+      workExperiences.map((work) => [work.company, work.title, work.summary, work.skills, work.achievements].flat().join(" ")),
     ].flat().filter(Boolean).join(" "),
   });
   const tailored = await tailorResumeForJob({
@@ -216,7 +217,7 @@ async function createGeneratedResumeForMatch(jobPostingId: string, jobProfileMat
     job,
     bullets,
     projects: user.profile.projects,
-    workExperiences: user.profile.workExperiences,
+    workExperiences,
     githubRepositories: user.profile.githubRepositories,
     education: Array.isArray(parsedUpload?.education) ? parsedUpload.education : [],
     certifications: Array.isArray(parsedUpload?.certifications) ? parsedUpload.certifications : [],
