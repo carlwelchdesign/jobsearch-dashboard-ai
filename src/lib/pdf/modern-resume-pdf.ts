@@ -17,6 +17,7 @@ type PdfLine = {
   leading: number;
   gapBefore?: number;
   bullet?: boolean;
+  color?: string;
 };
 
 type PageColumn = {
@@ -73,8 +74,10 @@ function layoutPages(document: ResumeDocument) {
   const leftLines = [
     section("Experience"),
     ...document.experience.flatMap((item) => [
-      roleLine(item.title),
-      ...(item.skills.length ? [bodyLine(`Skills: ${item.skills.join(", ")}`, 7.6)] : []),
+      roleLine(item.role ?? item.title),
+      ...(item.company ? [bodyLine(item.company, 7.8, "bold", BLUE)] : []),
+      ...(item.dates ? [bodyLine(item.dates, 7.2)] : []),
+      ...(item.skills.length ? wrapBody(`Skills: ${item.skills.join(", ")}`, 57) : []),
       ...item.bullets.slice(0, 5).flatMap((bullet) => bulletLines(bullet, 54)),
     ]),
   ];
@@ -154,7 +157,7 @@ function renderColumn(column: PageColumn) {
       commands.push(text("-", column.x, y, line.size, "regular", INK));
       commands.push(text(line.text, column.x + 9, y, line.size, line.font, INK));
     } else {
-      commands.push(text(line.text, column.x, y, line.size, line.font, line.font === "bold" ? INK : MUTED));
+      commands.push(text(line.text, column.x, y, line.size, line.font, line.color ?? (line.font === "bold" ? INK : MUTED)));
     }
     y -= line.leading;
   }
@@ -169,8 +172,8 @@ function roleLine(textValue: string, size = 9.4): PdfLine {
   return { text: textValue, size, font: "bold", leading: 12, gapBefore: 7 };
 }
 
-function bodyLine(textValue: string, size = 8.2): PdfLine {
-  return { text: textValue, size, font: "regular", leading: 10.5, gapBefore: 2 };
+function bodyLine(textValue: string, size = 8.2, font: "regular" | "bold" = "regular", color?: string): PdfLine {
+  return { text: textValue, size, font, color, leading: 10.5, gapBefore: 2 };
 }
 
 function bulletLines(textValue: string, width: number) {

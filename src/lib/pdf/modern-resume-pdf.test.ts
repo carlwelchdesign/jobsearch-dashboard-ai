@@ -34,4 +34,22 @@ describe("createModernTwoColumnResumePdf", () => {
     expect(raw).not.toContain("Build an ATS-friendly Resume");
     expect(raw).not.toContain("Enhancv");
   });
+
+  it("wraps long role skills so they cannot bleed into the right column", () => {
+    const longSkills = "Skills: React, TypeScript, Node.js, AWS, Material UI, Storybook, Jest, Playwright, API Integrations, frontend architecture, component library, Test Automation";
+    const pdf = createModernTwoColumnResumePdf([
+      "Carl Welch",
+      "carl@example.com | https://www.linkedin.com/in/carlwelch",
+      "",
+      "Professional Experience",
+      "Yubico - Senior Software Engineer | 2022 - 2026",
+      longSkills,
+      "- Increased test automation by 50%.",
+    ].join("\n"));
+    const raw = Buffer.from(pdf).toString("latin1");
+
+    expect(raw).toContain("Yubico");
+    expect(raw).toContain("Senior Software Engineer");
+    expect(raw).not.toContain(longSkills);
+  });
 });
