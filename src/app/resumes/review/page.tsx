@@ -14,8 +14,16 @@ import { ResumeReviewClient } from "./review-client";
 export const dynamic = "force-dynamic";
 
 export default async function ResumeReviewPage() {
+  const latestApprovedUpload = await prisma.resumeUpload.findFirst({
+    where: { parsingStatus: "approved" },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
   const upload = await prisma.resumeUpload.findFirst({
-    where: { parsingStatus: "needs_review" },
+    where: {
+      parsingStatus: "needs_review",
+      ...(latestApprovedUpload ? { createdAt: { gt: latestApprovedUpload.createdAt } } : {}),
+    },
     orderBy: { createdAt: "desc" },
   });
 

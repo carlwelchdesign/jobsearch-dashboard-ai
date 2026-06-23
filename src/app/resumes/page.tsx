@@ -17,6 +17,7 @@ import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import type { Prisma } from "@prisma/client";
 import Link from "next/link";
 import { AppShell } from "@/app/app-shell";
 import { PageHeader } from "@/components/ui/page-header";
@@ -64,9 +65,18 @@ const sections = [
 export const dynamic = "force-dynamic";
 
 export default async function ResumesPage() {
+  const latestApprovedUpload = await prisma.resumeUpload.findFirst({
+    where: { parsingStatus: "approved" },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  const currentPendingUploadWhere: Prisma.ResumeUploadWhereInput = {
+    parsingStatus: { in: ["pending", "parsed", "needs_review"] },
+    ...(latestApprovedUpload ? { createdAt: { gt: latestApprovedUpload.createdAt } } : {}),
+  };
   const [uploadCount, pendingUploadCount, profileCount, variantCount, generatedCount] = await Promise.all([
     prisma.resumeUpload.count(),
-    prisma.resumeUpload.count({ where: { parsingStatus: { in: ["pending", "parsed", "needs_review"] } } }),
+    prisma.resumeUpload.count({ where: currentPendingUploadWhere }),
     prisma.userProfile.count(),
     prisma.resumeProfile.count({ where: { status: "ACTIVE" } }),
     prisma.generatedResume.count(),

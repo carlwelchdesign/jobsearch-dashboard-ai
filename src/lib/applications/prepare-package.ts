@@ -21,7 +21,7 @@ import {
 } from "@/lib/resumes/source-materials";
 import { syncMaterialClaimsForCoverLetter, syncMaterialClaimsForResume } from "@/lib/trust/material-claims";
 
-export async function prepareApplicationPackage(jobId: string, options: { regenerateCoverLetter?: boolean } = {}) {
+export async function prepareApplicationPackage(jobId: string, options: { regenerateResume?: boolean; regenerateCoverLetter?: boolean } = {}) {
   const job = await prisma.jobPosting.findUnique({
     where: { id: jobId },
     include: {
@@ -51,8 +51,8 @@ export async function prepareApplicationPackage(jobId: string, options: { regene
   requireLaunchableApplicationUrl(job.applicationUrl);
 
   const match = job.matches[0];
-  let resume = job.resumes[0] ?? null;
-  let coverLetter = options.regenerateCoverLetter ? null : job.coverLetters[0] ?? null;
+  let resume = options.regenerateResume ? null : job.resumes[0] ?? null;
+  let coverLetter = options.regenerateResume || options.regenerateCoverLetter ? null : job.coverLetters[0] ?? null;
   const latestUploadId = user.profile.resumeUploads[0]?.id;
   const sourceBullets = selectResumeSourceBullets(user.profile.experienceBullets, latestUploadId);
   const sourceWorkExperiences = selectResumeSourceWorkExperiences(user.profile.workExperiences, latestUploadId);
@@ -97,6 +97,7 @@ export async function prepareApplicationPackage(jobId: string, options: { regene
           resumeStrategy: strategy,
           sourceMaterialSummary,
           preparedApplicationPackage: true,
+          regeneratedMaterial: Boolean(options.regenerateResume),
         } as Prisma.InputJsonValue,
         atsChecks: atsChecks as Prisma.InputJsonValue,
       },
@@ -143,6 +144,7 @@ export async function prepareApplicationPackage(jobId: string, options: { regene
           rewriteAttempted: generated.rewriteAttempted,
           writingGuidance,
           preparedApplicationPackage: true,
+          regeneratedMaterial: Boolean(options.regenerateResume || options.regenerateCoverLetter),
         } as Prisma.InputJsonValue,
       },
     });

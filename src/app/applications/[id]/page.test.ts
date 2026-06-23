@@ -14,4 +14,12 @@ describe("ApplicationPacketPage", () => {
     expect(source).toContain("No job description saved");
     expect(source).toContain("application.jobPosting.source?.baseUrl");
   });
+
+  it("offers a regenerate materials control for reviewing fresh CV and cover letter output", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/app/applications/[id]/page.tsx"), "utf8");
+
+    expect(source).toContain("Regenerate materials");
+    expect(source).toContain("RefreshOutlinedIcon");
+    expect(source).toContain("/regenerate-materials");
+  });
 });

@@ -6,6 +6,7 @@ export const metadata = {
 import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
 import ExploreOutlinedIcon from "@mui/icons-material/ExploreOutlined";
 import RocketLaunchOutlinedIcon from "@mui/icons-material/RocketLaunchOutlined";
+import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
@@ -37,7 +38,7 @@ import { SearchOptimizationPanel, type SearchOptimizationPanelData } from "./sea
 
 export const dynamic = "force-dynamic";
 
-export default async function ProfilesPage() {
+export default async function ProfilesPage({ searchParams }: { searchParams?: { resumeApproved?: string } }) {
   const [profiles, latestOptimizerRun, latestExpansionRun, latestOptimizationRun] = await Promise.all([
     prisma.jobSearchProfile.findMany({
       include: {
@@ -88,6 +89,12 @@ export default async function ProfilesPage() {
           description="Manage reusable search strategies, target titles, filters, salary floors, and profile-health recommendations used by discovery and scoring agents."
           actions={<ProfileCreateForm />}
         />
+
+        {searchParams?.resumeApproved === "1" ? (
+          <Alert severity="success">
+            Candidate profile approved. Review search profiles next, or run the AI opportunity scan to create new campaigns from the approved resume.
+          </Alert>
+        ) : null}
 
         <Card sx={{ borderColor: "primary.main", bgcolor: "rgba(37, 99, 235, 0.08)" }}>
           <CardContent>

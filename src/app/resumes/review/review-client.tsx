@@ -15,7 +15,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useRouter } from "next/navigation";
-import { useReducer, type Dispatch } from "react";
+import { useEffect, useReducer, type Dispatch } from "react";
 import type { ParsedResume } from "@/lib/resumes/schemas";
 
 type ReviewClientProps = {
@@ -66,10 +66,14 @@ type ReviewState = {
   error: string;
   approvalResult: ApprovalResult | null;
   creatingProfile: string;
+  approving: boolean;
+  redirectingAfterApproval: boolean;
 };
 
 type ReviewAction =
   | { type: "requestStarted" }
+  | { type: "approveStarted" }
+  | { type: "approvalRedirectStarted" }
   | { type: "setError"; error: string }
   | { type: "setEditing"; editing: boolean }
   | { type: "updateContact"; field: keyof ParsedResume["contactInfo"]; value: string }
@@ -96,6 +100,8 @@ function initialReviewState(parsed: ParsedResume): ReviewState {
     error: "",
     approvalResult: null,
     creatingProfile: "",
+    approving: false,
+    redirectingAfterApproval: false,
   };
 }
 
@@ -103,8 +109,16 @@ function reviewReducer(state: ReviewState, action: ReviewAction): ReviewState {
   switch (action.type) {
     case "requestStarted":
       return { ...state, notice: "", error: "" };
+    case "approveStarted":
+      return { ...state, approving: true, redirectingAfterApproval: false, notice: "", error: "" };
+    case "approvalRedirectStarted":
+      return {
+        ...state,
+        redirectingAfterApproval: true,
+        notice: "Approval complete. Taking you to Search Profiles to review the next step.",
+      };
     case "setError":
-      return { ...state, error: action.error, notice: "" };
+      return { ...state, error: action.error, notice: "", approving: false, redirectingAfterApproval: false };
     case "setEditing":
       return { ...state, editing: action.editing };
     case "updateContact":
@@ -153,8 +167,10 @@ function reviewReducer(state: ReviewState, action: ReviewAction): ReviewState {
     case "approved":
       return {
         ...state,
+        approving: false,
+        redirectingAfterApproval: false,
         approvalResult: action.result,
-        notice: "Candidate profile approved, activated as the latest resume source, and reviewed by agents.",
+        notice: "Approval complete. Candidate profile is active and the agent review finished.",
         error: "",
       };
     case "removed":
@@ -182,9 +198,20 @@ function reviewReducer(state: ReviewState, action: ReviewAction): ReviewState {
 }
 
 export function ResumeReviewClient({ upload }: ReviewClientProps) {
-  const { refresh } = useRouter();
+  const { push, refresh } = useRouter();
   const [state, dispatch] = useReducer(reviewReducer, upload.parsedJson, initialReviewState);
-  const { parsed, editing, notice, error, approvalResult, creatingProfile } = state;
+  const { parsed, editing, notice, error, approvalResult, creatingProfile, approving, redirectingAfterApproval } = state;
+
+  useEffect(() => {
+    if (!approvalResult) return;
+
+    const redirectTimer = window.setTimeout(() => {
+      dispatch({ type: "approvalRedirectStarted" });
+      push("/profiles?resumeApproved=1");
+    }, 1800);
+
+    return () => window.clearTimeout(redirectTimer);
+  }, [approvalResult, push]);
 
   async function saveEdits() {
     dispatch({ type: "requestStarted" });
@@ -205,7 +232,7 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
   }
 
   async function approve() {
-    dispatch({ type: "requestStarted" });
+    dispatch({ type: "approveStarted" });
     const response = await fetch(`/api/resumes/uploads/${upload.id}/approve`, { method: "POST" });
     const body = await response.json();
 
@@ -215,7 +242,6 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
     }
 
     dispatch({ type: "approved", result: body as ApprovalResult });
-    refresh();
   }
 
   async function remove() {
@@ -315,7 +341,15 @@ export function ResumeReviewClient({ upload }: ReviewClientProps) {
                 <Button variant="outlined" startIcon={<EditOutlinedIcon />} onClick={() => dispatch({ type: "setEditing", editing: true })}>Edit</Button>
               )}
               <Button variant="outlined" startIcon={<RefreshOutlinedIcon />} onClick={reparse}>Re-parse upload</Button>
-              <Button variant="contained" color="success" startIcon={<CheckCircleOutlineIcon />} onClick={approve}>Approve candidate profile</Button>
+              <Button
+                variant="contained"
+                color="success"
+                startIcon={<CheckCircleOutlineIcon />}
+                disabled={approving || redirectingAfterApproval}
+                onClick={approve}
+              >
+                {approving ? "Approving..." : redirectingAfterApproval ? "Opening profiles..." : "Approve candidate profile"}
+              </Button>
               <Button variant="outlined" color="error" startIcon={<DeleteOutlineIcon />} onClick={remove}>Remove upload</Button>
             </Stack>
             {approvalResult ? (

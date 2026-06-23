@@ -53,7 +53,9 @@ export async function parseUploadedResume(extractedText: string): Promise<Parsed
 export async function tailorResumeForJob({ userProfile, job, bullets, projects, workExperiences = [], githubRepositories = [], education = [], certifications = [] }: TailorResumeInput) {
   // Deduplicate projects by name and strip placeholder descriptions before feeding to AI or fallback
   const cleanProjects = deduplicateByName(projects).filter((p) => !isPlaceholderDescription(p.description));
-  const fallback = buildFallbackTailoredResume({ userProfile, job, bullets, projects: cleanProjects, workExperiences, githubRepositories, education, certifications });
+  const cleanGithubRepositories = excludeProjectDuplicateRepositories(cleanProjects, githubRepositories);
+  const contactLine = buildResumeContactLine(userProfile, cleanGithubRepositories);
+  const fallback = buildFallbackTailoredResume({ userProfile, job, bullets, projects: cleanProjects, workExperiences, githubRepositories: cleanGithubRepositories, education, certifications });
 
   try {
     const tailored = await parseStructuredOutput({
@@ -72,7 +74,7 @@ export async function tailorResumeForJob({ userProfile, job, bullets, projects, 
         "Do not omit any supplied workExperiences from Professional Experience. If a role is less relevant, keep the entry compact with 1-2 truthful bullets rather than creating an employment-date gap. " +
         "Never write internal bookkeeping phrases such as verified role, employment-history continuity, included for continuity, or placeholder-style role notes in the resume. " +
         "Verified bullets marked as profile updates or role-description digest evidence are recently approved user profile data. Give them strong consideration when they align with the job, even if older uploaded-resume bullets also match. " +
-        "Keep the Summary to 2 polished sentences and the Skills section to a selective comma-separated list rather than a dense keyword dump. " +
+        "Keep the Summary to 2 polished sentences and the Skills section to a selective comma-separated list rather than a dense keyword dump. Do not name this specific job, company, or role in the Summary, and never write phrases like 'Selected strengths for', 'Relevant strengths include', or 'Selected for'. " +
         "In the contact line, list values only — no labels like 'Email:', 'Phone:', 'LinkedIn:'. Separate with ' | '. Use only the root GitHub profile URL (e.g. github.com/username) — never individual repository URLs. Include the LinkedIn URL if provided. " +
         "In the Projects section: write a concrete one-sentence description of what each project does, followed by the full technology stack (language, frameworks, libraries, services) drawn from the project's technologies, topics, and language fields — list every relevant technology, not just the primary language. Never copy placeholder text like 'Portfolio project referenced in uploaded resume.' " +
         "Do not list the same project twice. If a project appears in both the profile projects list and the GitHub repositories, include it only once using the richer of the two descriptions. " +
@@ -113,7 +115,7 @@ export async function tailorResumeForJob({ userProfile, job, bullets, projects, 
           technologies: project.technologies,
           highlights: project.highlights,
         })),
-        githubRepositories: githubRepositories.map((repo) => ({
+        githubRepositories: cleanGithubRepositories.map((repo) => ({
           name: repo.name,
           fullName: repo.fullName,
           url: repo.htmlUrl,
@@ -134,8 +136,8 @@ export async function tailorResumeForJob({ userProfile, job, bullets, projects, 
     });
 
     if (!tailored || !passesResumeQualityGate(tailored.plainTextResume)) return fallback;
-    tailored.plainTextResume = stripResumeMetadata(tailored.plainTextResume);
-    tailored.markdownResume = stripResumeMetadata(tailored.markdownResume);
+    tailored.plainTextResume = enforceResumeContactLine(sanitizeGeneratedResumeText(stripResumeMetadata(tailored.plainTextResume)), contactLine);
+    tailored.markdownResume = enforceResumeContactLine(sanitizeGeneratedResumeText(stripResumeMetadata(tailored.markdownResume)), contactLine);
     const continuity = enforceWorkHistoryContinuity(tailored.markdownResume, workExperiences, bullets);
     tailored.markdownResume = continuity.markdownResume;
     tailored.plainTextResume = continuity.markdownResume.replace(/^#+\s/gm, "");
@@ -350,10 +352,46 @@ function githubProfileUrl(url: string | null | undefined): string | null {
     const u = new URL(url);
     if (!u.hostname.includes("github.com")) return url;
     const username = u.pathname.split("/").filter(Boolean)[0];
-    return username ? `github.com/${username}` : null;
+    return username ? `https://github.com/${username}` : null;
   } catch {
     return url;
   }
+}
+
+function linkedinProfileUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes("linkedin.com")) return url;
+    const parts = u.pathname.split("/").filter(Boolean);
+    if (parts[0]?.toLowerCase() !== "in" || !parts[1]) return null;
+    return `https://www.linkedin.com/in/${parts[1].replace(/\/$/, "")}`;
+  } catch {
+    return /linkedin\.com\/in\/[^/\s]+/i.test(url) ? url : null;
+  }
+}
+
+function githubProfileUrlFromRepositories(repositories: GithubRepository[]): string | null {
+  for (const repo of repositories) {
+    const fromUrl = githubProfileUrl(repo.htmlUrl);
+    if (fromUrl) return fromUrl;
+    const owner = repo.fullName.split("/").filter(Boolean)[0];
+    if (owner) return `https://github.com/${owner}`;
+  }
+  return null;
+}
+
+function buildResumeContactLine(userProfile: UserProfile, githubRepositories: GithubRepository[] = []) {
+  return [
+    userProfile.email,
+    userProfile.phone,
+    userProfile.location,
+    linkedinProfileUrl(userProfile.linkedinUrl),
+    githubProfileUrl(userProfile.githubUrl) ?? githubProfileUrlFromRepositories(githubRepositories),
+    userProfile.portfolioUrl,
+  ]
+    .filter((value) => value && value !== "https://")
+    .join(" | ");
 }
 
 function buildFallbackTailoredResume({ userProfile, job, bullets, projects, workExperiences = [], githubRepositories = [], education = [], certifications = [] }: TailorResumeInput) {
@@ -377,23 +415,11 @@ function buildFallbackTailoredResume({ userProfile, job, bullets, projects, work
   const summaryBase = userProfile.professionalSummary ?? userProfile.masterSummary;
   const tailoredSummary = [
     summaryBase,
-    rankedSkills.length
-      ? `Selected strengths for ${job.company}'s ${job.title} role include ${rankedSkills.slice(0, 5).join(", ")}.`
-      : `Selected for ${job.company}'s ${job.title} role based on verified experience and project evidence.`,
   ]
     .filter(Boolean)
     .map((part) => part.trim())
     .join(" ");
-  const contactLine = [
-    userProfile.email,
-    userProfile.phone,
-    userProfile.location,
-    userProfile.linkedinUrl,
-    githubProfileUrl(userProfile.githubUrl),
-    userProfile.portfolioUrl,
-  ]
-    .filter((value) => value && value !== "https://")
-    .join(" | ");
+  const contactLine = buildResumeContactLine(userProfile, githubRepositories);
   const markdownResume = [
     `# ${userProfile.fullName}`,
     contactLine,
@@ -438,8 +464,8 @@ function buildFallbackTailoredResume({ userProfile, job, bullets, projects, work
       matchedTerms: rankedSkills.filter((skill) => scoreTerm(skill, jobTerms) > 0),
       method: "deterministic_keyword_overlap",
     },
-    markdownResume,
-    plainTextResume: markdownResume.replace(/^#+\s/gm, ""),
+    markdownResume: sanitizeGeneratedResumeText(markdownResume),
+    plainTextResume: sanitizeGeneratedResumeText(markdownResume.replace(/^#+\s/gm, "")),
     warnings: [],
     unsupportedClaimsDetected: [],
     validation: null,
@@ -464,6 +490,54 @@ function stripResumeMetadata(text: string): string {
   const lines = text.split("\n");
   const cutoff = lines.findIndex((line) => metadataMarkers.some((pattern) => pattern.test(line.trim())));
   return (cutoff === -1 ? lines : lines.slice(0, cutoff)).join("\n").trimEnd();
+}
+
+function sanitizeGeneratedResumeText(text: string): string {
+  return text
+    .replace(/\s*Selected strengths for [^.]+ role include [^.]+\.?/gi, "")
+    .replace(/\s*Selected for [^.]+ role based on verified experience and project evidence\.?/gi, "")
+    .replace(/\s*Relevant strengths include [^.]+\.?/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function enforceResumeContactLine(text: string, contactLine: string) {
+  if (!contactLine.trim()) return text;
+
+  const lines = text.split("\n");
+  const nameIndex = lines.findIndex((line) => line.trim());
+  if (nameIndex === -1) return text;
+
+  const nextContentIndex = lines.findIndex((line, index) => index > nameIndex && line.trim());
+  if (nextContentIndex !== -1 && isContactLine(lines[nextContentIndex])) {
+    lines[nextContentIndex] = mergeContactLines(lines[nextContentIndex], contactLine);
+    return lines.join("\n");
+  }
+
+  return [
+    ...lines.slice(0, nameIndex + 1),
+    contactLine,
+    "",
+    ...lines.slice(nameIndex + 1),
+  ].join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
+function isContactLine(line: string) {
+  return /@|https?:\/\/|\blinkedin\.com\b|\bgithub\.com\b|\|/.test(line);
+}
+
+function mergeContactLines(existing: string, required: string) {
+  const seen = new Set<string>();
+  return [...existing.split(/\s*\|\s*/), ...required.split(/\s*\|\s*/)]
+    .map((part) => part.trim())
+    .filter((part) => {
+      if (!part) return false;
+      const key = part.toLowerCase().replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(" | ");
 }
 
 function passesResumeQualityGate(plainText: string) {
@@ -688,6 +762,55 @@ function deduplicateByName<T extends { name: string }>(items: T[]): T[] {
     seen.add(key);
     return true;
   });
+}
+
+function excludeProjectDuplicateRepositories(projects: Project[], repositories: GithubRepository[]) {
+  const projectRepoKeys = new Set(projects.flatMap((project) => [
+    githubRepositoryKey(project.repoUrl),
+    githubRepositoryKey(project.url),
+  ]).filter((key): key is string => Boolean(key)));
+  const projectNameKeys = new Set(projects.map((project) => normalizedProjectName(project.name)));
+  const projectFingerprints = projects.map((project) => projectFingerprint(project.name, project.description, jsonStringArray(project.technologies)));
+
+  return repositories.filter((repo) => {
+    const repoKey = githubRepositoryKey(repo.htmlUrl) ?? githubRepositoryKey(repo.fullName);
+    if (repoKey && projectRepoKeys.has(repoKey)) return false;
+    if (projectNameKeys.has(normalizedProjectName(repo.name))) return false;
+
+    const repoFingerprint = projectFingerprint(repo.name, repo.description, [repo.language ?? "", ...jsonStringArray(repo.topics)]);
+    return !projectFingerprints.some((project) => hasStrongProjectOverlap(project, repoFingerprint));
+  });
+}
+
+function githubRepositoryKey(value: string | null | undefined) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  try {
+    const url = new URL(trimmed);
+    if (!url.hostname.includes("github.com")) return null;
+    const [owner, repo] = url.pathname.split("/").filter(Boolean);
+    return owner && repo ? `${owner}/${repo}`.toLowerCase() : null;
+  } catch {
+    const match = trimmed.match(/(?:github\.com\/)?([^/\s]+)\/([^/\s#?]+)/i);
+    return match ? `${match[1]}/${match[2]}`.toLowerCase() : null;
+  }
+}
+
+function normalizedProjectName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function projectFingerprint(name: string, description: string | null | undefined, terms: string[]) {
+  const stopwords = new Set(["ai", "app", "application", "project", "tool", "system", "dashboard"]);
+  return new Set([...tokenize([name, description ?? "", ...terms].join(" "))].filter((term) => !stopwords.has(term)));
+}
+
+function hasStrongProjectOverlap(left: Set<string>, right: Set<string>) {
+  if (!left.size || !right.size) return false;
+  const overlap = [...left].filter((term) => right.has(term)).length;
+  return overlap >= 3 && overlap / Math.min(left.size, right.size) >= 0.45;
 }
 
 function isPlaceholderDescription(description: string | null | undefined): boolean {
