@@ -23,4 +23,12 @@ describe("Settings client source contract", () => {
     expect(source).toContain("App-wide model");
     expect(source).toContain("value={aiSettings.model} disabled");
   });
+
+  it("has an explicit save action for application profile links before LinkedIn reconnect", () => {
+    expect(source).toContain("saveProfileLinks");
+    expect(source).toContain("Save profile links");
+    expect(source).toContain("Application profile links saved.");
+    expect(source).toContain("Save this URL before reconnecting LinkedIn.");
+    expect(source).toContain("/api/settings/profile");
+  });
 });

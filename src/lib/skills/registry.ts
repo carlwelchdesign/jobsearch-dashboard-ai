@@ -163,6 +163,20 @@ export const skillRegistry = {
     applyAdjustments: (input: any, adjustments: SkillAdjustment[]) => applyQualityProposalRuleAdjustments(input, adjustments),
     execute: async (input: any) => (await (await import("@/lib/agents/application-qa")).runApplicationQaAgent(input)).output,
   },
+  ats_resume_reviewer: {
+    id: "ats_resume_reviewer",
+    label: "ATS Resume Reviewer",
+    agentType: "ATS_RESUME_REVIEWER",
+    riskLevel: "LOW",
+    inputSchema: z.object({
+      jobPostingId: z.string(),
+      generatedResumeId: z.string(),
+      userId: z.string().optional(),
+    }),
+    outputSchema: anyOutput,
+    defaultPolicy: localMutationPolicy,
+    execute: async (input: any) => (await (await import("@/lib/agents/ats-resume-reviewer")).runAtsResumeReviewerAgent(input)).output,
+  },
   interview_prep: skillForApplication("interview_prep", "Interview Prep", "INTERVIEW_PREP", async (input) => (await import("@/lib/agents/interview-prep")).runInterviewPrepAgent(input)),
   outcome_learning: {
     id: "outcome_learning",

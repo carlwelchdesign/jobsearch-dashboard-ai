@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { tailorResumeForJob } from "@/lib/ai/resume";
 import { requireLaunchableApplicationUrl } from "@/lib/applications/application-url-quality";
 import { syncApplicationPacket } from "@/lib/applications/application-packets";
-import { attachCoverLetterQa, attachResumeQa, createResumeStrategy } from "@/lib/applications/material-agents";
+import { attachAtsResumeReview, attachCoverLetterQa, attachResumeQa, createResumeStrategy } from "@/lib/applications/material-agents";
 import { activeApplicationMaterialGuidance } from "@/lib/applications/material-guidance";
 import { generateReviewedCoverLetterForJob } from "@/lib/applications/cover-letter-materials";
 import {
@@ -107,6 +107,7 @@ export async function prepareApplicationPackage(jobId: string, options: { regene
       where: { id: resume.id },
       data: { generationNotes: resumeQa.notes },
     });
+    resume = (await attachAtsResumeReview({ resume, userId: user.id })).resume;
   }
   await syncMaterialClaimsForResume(resume.id);
 

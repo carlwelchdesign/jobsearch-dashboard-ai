@@ -184,6 +184,8 @@ export async function generateCoverLetterForJob({
   evidencePlan,
   rewriteInstructions,
 }: GenerateCoverLetterInput) {
+  const companyName = displayCompanyName(job);
+  const roleTitle = displayJobTitle(job);
   const fallback = buildFallbackCoverLetter({ userProfile, job, bullets, writingGuidance });
 
   try {
@@ -200,9 +202,9 @@ export async function generateCoverLetterForJob({
         "Keep the body between 180 and 260 words. Use 3-5 short paragraphs. " +
         (rewriteInstructions ? `Rewrite instructions from hiring-manager review: ${rewriteInstructions}` : ""),
       input: {
-        company: job.company,
+        company: companyName,
         job: {
-          title: job.title,
+          title: roleTitle,
           location: job.location,
           description: job.description,
           requirements: job.requirements,
@@ -402,7 +404,7 @@ function buildFallbackTailoredResume({ userProfile, job, bullets, projects, work
   const jobTerms = tokenize(`${job.title} ${job.description}`);
   const rankedSkills = uniqueStrings(skills).sort((a, b) => scoreTerm(b, jobTerms) - scoreTerm(a, jobTerms)).slice(0, 32);
   const rankedBullets = uniqueBullets(bullets)
-    .sort((a, b) => scoreTerm(b.text, jobTerms) - scoreTerm(a.text, jobTerms))
+    .sort((a, b) => scoreBulletForResume(b, jobTerms) - scoreBulletForResume(a, jobTerms))
     .slice(0, 28);
   const selectedProjects = [...projects]
     .sort((a, b) => scoreTerm(`${b.name} ${b.description ?? ""}`, jobTerms) - scoreTerm(`${a.name} ${a.description ?? ""}`, jobTerms))
@@ -592,7 +594,7 @@ function formatExperience(bullets: ExperienceBullet[], workExperiences: WorkExpe
     const work = workByKey.get(key);
     const [company, role] = work ? [work.company, work.title] : displayKeyParts(key);
     const dates = work?.startDate || work?.endDate ? ` | ${[work.startDate, work.endDate].filter(Boolean).join(" - ")}` : "";
-    const bulletsForRole = group.length ? group.map((bullet) => bullet.text) : fallbackWorkBullets(work);
+    const bulletsForRole = roleBulletTexts(group, work);
     return [
       `### ${company} - ${role}${dates}`,
       ...formatRoleSkills(work),
@@ -618,7 +620,7 @@ function enforceWorkHistoryContinuity(markdownResume: string, workExperiences: W
 
   const additions = missingWork.flatMap((work) => {
     const dates = work.startDate || work.endDate ? ` | ${[work.startDate, work.endDate].filter(Boolean).join(" - ")}` : "";
-    const roleBullets = sourceBulletsByKey.get(workKey(work.company, work.title))?.map((bullet) => bullet.text) ?? fallbackWorkBullets(work);
+    const roleBullets = roleBulletTexts(sourceBulletsByKey.get(workKey(work.company, work.title)) ?? [], work);
     return [
       `### ${work.company} - ${work.title}${dates}`,
       ...formatRoleSkills(work),
@@ -650,6 +652,34 @@ function fallbackWorkBullets(work: WorkExperience | undefined) {
   const skills = jsonStringArray(work.skills).slice(0, 6);
   if (skills.length) return [`Applied ${skills.join(", ")} across product, delivery, and cross-functional work.`];
   return [`Contributed to ${work.title} responsibilities across product delivery, execution, and cross-functional collaboration.`];
+}
+
+function roleBulletTexts(group: ExperienceBullet[], work: WorkExperience | undefined) {
+  const sourceTexts = group.map((bullet) => bullet.text);
+  const achievementTexts = work ? jsonStringArray(work.achievements).filter(Boolean) : [];
+  const combined = uniqueStrings([...sourceTexts, ...achievementTexts]);
+  if (!combined.length) return fallbackWorkBullets(work);
+
+  return combined
+    .sort((left, right) => scoreAchievementText(right) - scoreAchievementText(left))
+    .slice(0, 4);
+}
+
+function scoreBulletForResume(bullet: ExperienceBullet, jobTerms: Set<string>) {
+  return scoreTerm(bullet.text, jobTerms) + scoreAchievementText(bullet.text);
+}
+
+function scoreAchievementText(text: string) {
+  let score = hasQuantifiedAchievement(text) ? 8 : 0;
+  if (/\b(increased|reduced|improved|launched|delivered|led|managed|built|migrated|optimized|automated|recovered)\b/i.test(text)) score += 2;
+  if (/\b(revenue|efficiency|automation|coverage|qa|regression|support|performance|adoption|delivery|release)\b/i.test(text)) score += 2;
+  return score;
+}
+
+function hasQuantifiedAchievement(text: string) {
+  return /\b\d+(?:\.\d+)?\s*(?:%|x|k|m|users?|developers?|countries?|teams?|markets?|brands?|studios?|networks?|applications?|campaigns?|sites?|screens?|features?|workflows?)(?![a-z])/i.test(text)
+    || /\$\s?\d+(?:\.\d+)?\s?(?:k|m|b)?\b/i.test(text)
+    || /\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:developers?|countries?|teams?|markets?|brands?|studios?|networks?)\b/i.test(text);
 }
 
 function formatRoleSkills(work: WorkExperience | undefined) {
@@ -721,37 +751,55 @@ function titleCase(value: string) {
 }
 
 function buildFallbackCoverLetter({ userProfile, job, bullets }: Pick<GenerateCoverLetterInput, "userProfile" | "job" | "bullets" | "writingGuidance">) {
+  const companyName = displayCompanyName(job);
+  const roleTitle = displayJobTitle(job);
   const jobTerms = tokenize(`${job.title} ${job.description}`);
-  const strongestBullets = uniqueBullets(bullets)
-    .sort((a, b) => scoreTerm(b.text, jobTerms) - scoreTerm(a.text, jobTerms))
-    .slice(0, 2)
-    .map((bullet) => bullet.text);
   const skills = [
     ...jsonStringArray(userProfile.coreSkills),
     ...jsonStringArray(userProfile.technicalSkills),
-  ].sort((a, b) => scoreTerm(b, jobTerms) - scoreTerm(a, jobTerms)).slice(0, 6);
+  ].sort((a, b) => scoreTerm(b, jobTerms) - scoreTerm(a, jobTerms)).slice(0, 5);
+  const matchedSkills = skills.length ? ` Matched visible skills: ${skills.join(", ")}.` : "";
+  const approvedEvidenceCount = uniqueBullets(bullets)
+    .filter((bullet) => scoreTerm(bullet.text, jobTerms) > 0)
+    .length;
   const body = [
-    `Dear ${job.company} hiring team,`,
+    "Cover letter generation needs review",
     "",
-    `The ${job.title} role maps to my strongest verified experience in ${skills.join(", ") || "product engineering, frontend systems, and practical software delivery"}.`,
+    `The structured cover-letter writer was unavailable for ${companyName}'s ${roleTitle} role, so the app did not create a recruiter-facing draft.${matchedSkills}`,
     "",
-    strongestBullets.length
-      ? strongestBullets.map((bullet) => `- ${bullet}`).join("\n")
-      : userProfile.professionalSummary ?? userProfile.masterSummary,
+    `Approved evidence available for regeneration: ${approvedEvidenceCount} matching profile item${approvedEvidenceCount === 1 ? "" : "s"}. Regenerate the cover letter before using this application packet.`,
     "",
-    `This fallback draft is saved for review only because the structured cover-letter writer was unavailable.`,
-    "",
-    `Best,`,
-    userProfile.fullName,
+    `Candidate: ${userProfile.fullName}`,
   ].join("\n");
 
   return {
     body,
-    toneNotes: ["Concise deterministic fallback generated from approved profile data."],
-    warnings: [],
+    toneNotes: ["Blocked placeholder saved because structured cover-letter generation was unavailable."],
+    warnings: ["Structured cover-letter generation was unavailable; regenerate before using this application packet."],
     unsupportedClaimsDetected: [],
     generatedBy: "deterministic_fallback",
   };
+}
+
+function displayCompanyName(job: Pick<JobPosting, "company" | "title">) {
+  const company = job.company.trim();
+  const title = job.title.trim();
+  const titleAtCompany = company.match(/^(.*?)\s+@\s+(.+)$/);
+  if (titleAtCompany) {
+    const [beforeAt, afterAt] = [titleAtCompany[1].trim(), titleAtCompany[2].trim()];
+    if (normalizeWorkKey(beforeAt) === normalizeWorkKey(title) && afterAt) return afterAt;
+  }
+  return company;
+}
+
+function displayJobTitle(job: Pick<JobPosting, "company" | "title">) {
+  const companyName = displayCompanyName(job);
+  const title = job.title.trim();
+  const titleAtCompany = title.match(/^(.*?)\s+@\s+(.+)$/);
+  if (titleAtCompany && normalizeWorkKey(titleAtCompany[2]) === normalizeWorkKey(companyName)) {
+    return titleAtCompany[1].trim();
+  }
+  return title;
 }
 
 function deduplicateByName<T extends { name: string }>(items: T[]): T[] {

@@ -1146,6 +1146,8 @@ For each flag, you can:
 
 The app also stores claim-level provenance for generated resumes, cover letters, application answers, application packets, and LinkedIn drafts. Unsupported claims block **Approve Packet** and LinkedIn publishing. Exports still work, so you can download PDF or plain-text materials for manual review while fixing evidence gaps.
 
+Generated resumes also run through an **ATS Resume Review** on the application detail page. This reviewer checks ATS readability, recruiter red flags, keyword coverage, incomplete profile links, unsupported or inferred technology claims, and resume-specific formatting risks. When it finds a clear high-confidence issue, it may automatically replace the generated resume with a safer version while preserving the original resume and rationale in review metadata. It does not submit applications or contact employers.
+
 ### Packet statuses
 
 | Status | What it means |
