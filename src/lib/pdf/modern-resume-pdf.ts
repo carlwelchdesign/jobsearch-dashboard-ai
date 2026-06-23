@@ -2,16 +2,16 @@ import { parseResumeDocument, type ResumeDocument } from "@/lib/resumes/resume-d
 
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
-const LEFT = 20;
-const RIGHT = 592;
+const LEFT = 18;
+const RIGHT = 594;
 const TOP = 752;
 const BOTTOM = 42;
-const EXPERIENCE_WIDTH = 372;
-const EXPERIENCE_WRAP = 65;
-const EXPERIENCE_BULLET_WRAP = 62;
-const SIDEBAR_X = 402;
+const EXPERIENCE_WIDTH = 374;
+const EXPERIENCE_WRAP = 76;
+const EXPERIENCE_BULLET_WRAP = 73;
+const SIDEBAR_X = 398;
 const SIDEBAR_WIDTH = RIGHT - SIDEBAR_X;
-const SIDEBAR_WRAP = 34;
+const SIDEBAR_WRAP = 36;
 const BLUE = "0.02 0.46 0.93";
 const INK = "0.05 0.06 0.08";
 const MUTED = "0.30 0.34 0.40";
