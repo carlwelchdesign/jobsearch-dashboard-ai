@@ -31,6 +31,8 @@ describe("createModernTwoColumnResumePdf", () => {
     expect(raw).toContain("SUMMARY");
     expect(raw).toContain("React");
     expect(raw).toContain("Job Search OS");
+    expect(raw).toContain("0.95 0.96 0.97 rg");
+    expect(raw).toContain(" c h f Q");
     expect(raw).not.toContain("Build an ATS-friendly Resume");
     expect(raw).not.toContain("Enhancv");
   });

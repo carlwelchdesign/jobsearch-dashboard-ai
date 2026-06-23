@@ -15,6 +15,8 @@ const SIDEBAR_WRAP = 36;
 const BLUE = "0.02 0.46 0.93";
 const INK = "0.05 0.06 0.08";
 const MUTED = "0.30 0.34 0.40";
+const CHIP_FILL = "0.95 0.96 0.97";
+const DIVIDER = "0.86 0.88 0.91";
 
 type PdfLine = {
   text: string;
@@ -24,6 +26,8 @@ type PdfLine = {
   gapBefore?: number;
   bullet?: boolean;
   color?: string;
+  kind?: "section" | "role-separator" | "chip-row";
+  chips?: string[];
 };
 
 type PageColumn = {
@@ -98,6 +102,7 @@ function layoutPages(document: ResumeDocument) {
       ...(item.dates ? [bodyLine(item.dates, 7.2)] : []),
       ...(item.skills.length ? wrapBody(`Skills: ${item.skills.join(", ")}`, EXPERIENCE_WRAP) : []),
       ...item.bullets.slice(0, 5).flatMap((bullet) => bulletLines(bullet, EXPERIENCE_BULLET_WRAP)),
+      roleSeparator(),
     ]),
   ];
   const rightLines = [
@@ -107,7 +112,7 @@ function layoutPages(document: ResumeDocument) {
     ...document.education.flatMap((line) => wrapBody(line, SIDEBAR_WRAP, true)),
     ...(document.certifications.length ? [section("Certifications"), ...document.certifications.flatMap((line) => wrapBody(line, SIDEBAR_WRAP, true))] : []),
     section("Skills"),
-    ...skillLines(document.skills),
+    ...skillChipRows(document.skills),
     section("Projects"),
     ...document.projects.slice(0, 4).flatMap((project) => [
       roleLine(project.name, 8.8),
@@ -180,9 +185,13 @@ function renderColumn(column: PageColumn) {
     if (isSection(line)) {
       commands.push(text(line.text.toUpperCase(), column.x, y, line.size, "bold", "0 0 0"));
       commands.push(`q 0 0 0 RG 1 w ${column.x} ${y - 4} m ${column.x + column.width} ${y - 4} l S Q`);
+    } else if (line.kind === "role-separator") {
+      commands.push(`q ${DIVIDER} RG 0.45 w ${column.x} ${y} m ${column.x + column.width} ${y} l S Q`);
+    } else if (line.kind === "chip-row" && line.chips) {
+      commands.push(...renderChipRow(line.chips, column.x, y));
     } else if (line.bullet) {
-      commands.push(text("-", column.x, y, line.size, "regular", INK));
-      commands.push(text(line.text, column.x + 9, y, line.size, line.font, INK));
+      commands.push(`q 0 0 0 rg ${circlePath(column.x + 3.2, y + 3.1, 1.25)} f Q`);
+      commands.push(text(line.text, column.x + 10, y, line.size, line.font, INK));
     } else {
       commands.push(text(line.text, column.x, y, line.size, line.font, line.color ?? (line.font === "bold" ? INK : MUTED)));
     }
@@ -192,7 +201,7 @@ function renderColumn(column: PageColumn) {
 }
 
 function section(textValue: string): PdfLine {
-  return { text: textValue, size: 10.5, font: "bold", leading: 15, gapBefore: 12 };
+  return { text: textValue, size: 10.5, font: "bold", leading: 15, gapBefore: 10, kind: "section" };
 }
 
 function roleLine(textValue: string, size = 9.4): PdfLine {
@@ -211,16 +220,50 @@ function wrapBody(textValue: string, width: number, bold = false) {
   return wrap(textValue, width).map((line, index) => ({ ...bodyLine(line, 7.8), font: bold ? "bold" as const : "regular" as const, gapBefore: index === 0 ? 2 : 0 }));
 }
 
-function skillLines(skills: string[]) {
+function skillChipRows(skills: string[]) {
   const lines: PdfLine[] = [];
-  for (let index = 0; index < skills.length; index += 2) {
-    lines.push(bodyLine([skills[index], skills[index + 1]].filter(Boolean).join("     "), 7.6));
+  let row: string[] = [];
+  let rowWidth = 0;
+  for (const skill of skills.slice(0, 28)) {
+    const chipWidth = chipTextWidth(skill);
+    if (row.length && rowWidth + chipWidth + 4 > SIDEBAR_WIDTH) {
+      lines.push(chipRow(row));
+      row = [];
+      rowWidth = 0;
+    }
+    row.push(skill);
+    rowWidth += chipWidth + (row.length > 1 ? 4 : 0);
   }
+  if (row.length) lines.push(chipRow(row));
   return lines;
 }
 
 function isSection(line: PdfLine) {
-  return line.size >= 10;
+  return line.kind === "section";
+}
+
+function roleSeparator(): PdfLine {
+  return { text: "", size: 1, font: "regular", leading: 6, gapBefore: 5, kind: "role-separator" };
+}
+
+function chipRow(chips: string[]): PdfLine {
+  return { text: chips.join(" "), size: 7.2, font: "bold", leading: 13.2, gapBefore: 2, kind: "chip-row", chips };
+}
+
+function renderChipRow(chips: string[], x: number, y: number) {
+  const commands: string[] = [];
+  let cursorX = x;
+  for (const chip of chips) {
+    const width = chipTextWidth(chip);
+    commands.push(`q ${CHIP_FILL} rg ${roundedRectPath(cursorX, y - 2.3, width, 10.5, 2.1)} f Q`);
+    commands.push(text(chip, cursorX + 3.2, y + 0.3, 7.1, "bold", INK));
+    cursorX += width + 4;
+  }
+  return commands;
+}
+
+function chipTextWidth(value: string) {
+  return Math.max(18, value.length * 3.85 + 7);
 }
 
 function wrap(value: string, width: number) {
@@ -253,6 +296,25 @@ function circlePath(cx: number, cy: number, r: number) {
     `${cx - c} ${cy + r} ${cx - r} ${cy + c} ${cx - r} ${cy} c`,
     `${cx - r} ${cy - c} ${cx - c} ${cy - r} ${cx} ${cy - r} c`,
     `${cx + c} ${cy - r} ${cx + r} ${cy - c} ${cx + r} ${cy} c`,
+    "h",
+  ].join(" ");
+}
+
+function roundedRectPath(x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.min(radius, width / 2, height / 2);
+  const c = r * 0.5522847498;
+  const right = x + width;
+  const top = y + height;
+  return [
+    `${x + r} ${y} m`,
+    `${right - r} ${y} l`,
+    `${right - r + c} ${y} ${right} ${y + r - c} ${right} ${y + r} c`,
+    `${right} ${top - r} l`,
+    `${right} ${top - r + c} ${right - r + c} ${top} ${right - r} ${top} c`,
+    `${x + r} ${top} l`,
+    `${x + r - c} ${top} ${x} ${top - r + c} ${x} ${top - r} c`,
+    `${x} ${y + r} l`,
+    `${x} ${y + r - c} ${x + r - c} ${y} ${x + r} ${y} c`,
     "h",
   ].join(" ");
 }
