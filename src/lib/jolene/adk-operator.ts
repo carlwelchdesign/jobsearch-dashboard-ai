@@ -137,6 +137,7 @@ export async function executeJoleneAdkOperator(message: string, options: { userI
 
 function safeWorkflowPlan(normalized: string, originalMessage: string): JoleneOperatorAction[] {
   const actions: JoleneOperatorAction[] = [];
+  if (isReadOnlyQuestionShape(normalized)) return actions;
   if (/\b(run|start|kick off|launch|begin)\b/.test(normalized) && /\b(new |fresh |another )?(job )?(search|discovery)\b/.test(normalized)) {
     actions.push(safeAction("run_job_search", "Run job search", "Start or reuse the current internal job-search run."));
   }
@@ -157,6 +158,10 @@ function safeWorkflowPlan(normalized: string, originalMessage: string): JoleneOp
     actions.push(safeAction("run_market_intelligence", "Refresh Market Intelligence", "Generate a review-only market intelligence brief."));
   }
   return uniqueActions(actions);
+}
+
+function isReadOnlyQuestionShape(normalized: string) {
+  return /^(why|what|how|which|where|when|explain|tell me|can you explain)\b/.test(normalized.trim());
 }
 
 function guardedActionPlan(normalized: string): { reply: string; actions: JoleneConfirmableAction[] } | null {

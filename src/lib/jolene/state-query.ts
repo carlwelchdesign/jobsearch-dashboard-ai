@@ -1,6 +1,7 @@
 import { applicationMaterialQualityDetail } from "@/lib/applications/material-quality";
 import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { visibleCanonicalApplications } from "@/lib/applications/reconciliation";
+import { buildSearchRunAnalytics, type SearchRunAnalytics } from "@/lib/job-search/run-analytics";
 import { getLatestEmailOpsSummary } from "@/lib/jolene/email-ops";
 import { classifyJoleneReadOnlyQuestion, type JoleneReadOnlyDomain, type JoleneReadOnlyRoute } from "@/lib/jolene/router";
 import type { JoleneResultLink } from "@/lib/jolene/retrieval";
@@ -64,7 +65,7 @@ async function buildStateQueryContext(userId: string, domains: JoleneReadOnlyDom
     openBlockers,
     followUpsDue,
     matchCounts,
-    latestSearchRun,
+    recentSearchRuns,
     profiles,
     duplicateGroups,
     suppressions,
@@ -107,7 +108,24 @@ async function buildStateQueryContext(userId: string, domains: JoleneReadOnlyDom
       },
     }) : Promise.resolve(0),
     needsJobs ? prisma.jobProfileMatch.groupBy({ by: ["status"], where: { jobSearchProfile: { userId } }, _count: { _all: true } }) : Promise.resolve([]),
-    needsJobs ? prisma.jobSearchRun.findFirst({ orderBy: { startedAt: "desc" } }) : Promise.resolve(null),
+    needsJobs ? prisma.jobSearchRun.findMany({
+      select: {
+        id: true,
+        status: true,
+        triggeredBy: true,
+        profileIds: true,
+        jobsFetched: true,
+        jobsAfterDedupe: true,
+        jobsAfterFilters: true,
+        jobsSaved: true,
+        progress: true,
+        errors: true,
+        startedAt: true,
+        finishedAt: true,
+      },
+      orderBy: { startedAt: "desc" },
+      take: 8,
+    }) : Promise.resolve([]),
     needsJobs ? prisma.jobSearchProfile.findMany({
       where: { userId },
       select: {
@@ -149,6 +167,8 @@ async function buildStateQueryContext(userId: string, domains: JoleneReadOnlyDom
   const urlBlocked = canonicalReady.filter((application) => !assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable);
   const materialBlocked = canonicalReady.filter((application) => !applicationMaterialQualityDetail(application.coverLetter?.generationNotes).launchable);
   const visibleReady = canonicalReady;
+  const searchRuns = recentSearchRuns.map((run) => summarizeSearchRun(run));
+  const latestSearchRun = searchRuns[0] ?? null;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -177,17 +197,8 @@ async function buildStateQueryContext(userId: string, domains: JoleneReadOnlyDom
       byStatus: countsByKey(matchCounts, "status"),
       duplicateGroups: duplicateGroups.filter((group) => group._count._all > 1).length,
       suppressions,
-      latestSearchRun: latestSearchRun
-        ? {
-            id: latestSearchRun.id,
-            status: latestSearchRun.status,
-            jobsFetched: latestSearchRun.jobsFetched,
-            jobsAfterDedupe: latestSearchRun.jobsAfterDedupe,
-            jobsSaved: latestSearchRun.jobsSaved,
-            startedAt: latestSearchRun.startedAt.toISOString(),
-            finishedAt: latestSearchRun.finishedAt?.toISOString() ?? null,
-          }
-        : null,
+      latestSearchRun,
+      recentSearchRuns: searchRuns,
       profiles: {
         enabled: profiles.filter((profile) => profile.enabled).length,
         disabled: profiles.filter((profile) => !profile.enabled).length,
@@ -243,6 +254,9 @@ function synthesizeStateQueryAnswer(
   route: JoleneReadOnlyRoute,
   state: Awaited<ReturnType<typeof buildStateQueryContext>>,
 ) {
+  const searchWhyAnswer = synthesizeSearchRunWhyAnswer(message, route, state);
+  if (searchWhyAnswer) return searchWhyAnswer;
+
   const facts = stateFacts(route, state);
   const blockers = stateBlockers(route, state);
   const recommendedActions = stateRecommendations(route, state);
@@ -263,6 +277,216 @@ function synthesizeStateQueryAnswer(
     resultLinks,
     primaryLink: resultLinks[0] ?? null,
   };
+}
+
+function synthesizeSearchRunWhyAnswer(
+  message: string,
+  route: JoleneReadOnlyRoute,
+  state: Awaited<ReturnType<typeof buildStateQueryContext>>,
+) {
+  if (route.questionKind !== "why") return null;
+  if (!hasAny(new Set(route.domains), ["jobs", "search", "profiles"])) return null;
+  if (!isSearchCausalQuestion(message)) return null;
+
+  const latest = state.jobs.latestSearchRun;
+  if (!latest) return null;
+
+  const priorRuns = state.jobs.recentSearchRuns.slice(1);
+  const previous = priorRuns[0] ?? null;
+  const baseline = previous ?? averageSearchRunBaseline(priorRuns);
+  const comparison = baseline ? compareSearchRuns(latest, baseline) : null;
+  const fetchedToDedupe = rate(latest.jobsAfterDedupe, latest.jobsFetched);
+  const fetchedToQualified = rate(latest.jobsAfterFilters, latest.jobsFetched);
+  const fetchedToSaved = rate(latest.jobsSaved, latest.jobsFetched);
+  const usefulYieldLow = latest.jobsFetched > 0 && (
+    fetchedToSaved < 1
+    || fetchedToQualified < 1
+    || latest.jobsAfterDedupe < latest.jobsFetched * 0.02
+  );
+
+  const facts = [
+    usefulYieldLow
+      ? "The fetched count jumped, but the useful-yield counters did not grow proportionally."
+      : "The latest search run increased raw fetched volume; useful-yield counters need to be compared separately.",
+    `Current run: ${formatNumber(latest.jobsFetched)} fetched, ${formatNumber(latest.jobsAfterDedupe)} after dedupe, ${formatNumber(latest.jobsSaved)} saved.`,
+  ];
+  if (latest.jobsAfterFilters !== latest.jobsAfterDedupe) {
+    facts.push(`${formatNumber(latest.jobsAfterFilters)} passed filters/qualification before final dedupe and save handling.`);
+  }
+  if (comparison) {
+    facts.push(`Compared with ${comparison.label}, fetched changed by ${formatSignedNumber(comparison.deltaFetched)} (${formatSignedPercent(comparison.percentFetched)}), while saved changed by ${formatSignedNumber(comparison.deltaSaved)} and after-dedupe changed by ${formatSignedNumber(comparison.deltaDedupe)}.`);
+  } else {
+    facts.push("There is not enough prior search-run history to calculate a baseline, so this answer uses only the latest run counters and diagnostics.");
+  }
+  facts.push(`Useful-yield rates: ${formatPercent(fetchedToDedupe)} after dedupe, ${formatPercent(fetchedToQualified)} qualified, ${formatPercent(fetchedToSaved)} saved from fetched.`);
+
+  const evidence = rankedSearchRunCauses(latest);
+  const blockers = [
+    ...evidence,
+    ...(!latest.progressDiagnosticsAvailable
+      ? ["The latest run does not include source/profile progress diagnostics, so I can compare counters but cannot isolate the exact source or profile that caused the spike."]
+      : []),
+  ].slice(0, 5);
+  const recommendedActions = [
+    "Open /dashboard/search and inspect source yield for the latest run.",
+    "Open /profiles and compare profile yield, enabled/scheduled profile count, and max-result caps.",
+    "Open /runs and review query expansion, listing suppression, provider warnings, and below-threshold volume.",
+    "Run the Recruiting Search Team only if the problem is low qualified/saved yield, not simply high raw fetch volume.",
+  ];
+  const resultLinks: JoleneResultLink[] = [
+    { label: "Search diagnostics", href: "/dashboard/search?details=open", kind: "page" },
+    { label: "Profiles", href: "/profiles", kind: "page" },
+    { label: "Runs", href: "/runs", kind: "page" },
+  ];
+
+  const reply = [
+    facts.join(" "),
+    blockers.length ? `Likely causes, ranked by evidence: ${blockers.join(" ")}` : null,
+    `Next checks: ${recommendedActions.slice(0, 3).join(" ")}`,
+  ].filter(Boolean).join("\n\n");
+
+  return {
+    reply,
+    facts,
+    blockers,
+    recommendedActions,
+    resultLinks,
+    primaryLink: resultLinks[0],
+  };
+}
+
+type SearchRunRecord = {
+  id: string;
+  status: unknown;
+  triggeredBy: unknown;
+  profileIds: unknown;
+  jobsFetched: number;
+  jobsAfterDedupe: number;
+  jobsAfterFilters: number;
+  jobsSaved: number;
+  progress: unknown;
+  errors: unknown;
+  startedAt: Date;
+  finishedAt: Date | null;
+};
+
+type SearchRunSummary = ReturnType<typeof summarizeSearchRun>;
+
+function summarizeSearchRun(run: SearchRunRecord) {
+  const analytics = buildSearchRunAnalytics(run);
+  return {
+    id: run.id,
+    status: String(run.status),
+    triggeredBy: String(run.triggeredBy),
+    profileIds: arrayOfStrings(run.profileIds),
+    jobsFetched: run.jobsFetched ?? 0,
+    jobsAfterDedupe: run.jobsAfterDedupe ?? 0,
+    jobsAfterFilters: run.jobsAfterFilters ?? 0,
+    jobsSaved: run.jobsSaved ?? 0,
+    errors: arrayOfStrings(run.errors),
+    progressDiagnosticsAvailable: hasProgressStats(run.progress),
+    startedAt: run.startedAt.toISOString(),
+    finishedAt: run.finishedAt?.toISOString() ?? null,
+    analytics: compactSearchRunAnalytics(analytics),
+  };
+}
+
+function compactSearchRunAnalytics(analytics: SearchRunAnalytics) {
+  return {
+    stats: analytics.stats,
+    topBlocker: analytics.topBlocker,
+    bestSource: analytics.bestSource,
+    bestProfile: analytics.bestProfile,
+    runQuality: analytics.runQuality,
+    bySource: analytics.bySource,
+    byProfile: analytics.byProfile,
+    sourceYield: analytics.sourceYield,
+    profileYield: analytics.profileYield,
+    drops: analytics.drops.slice(0, 6),
+    explanations: analytics.explanations,
+  };
+}
+
+function hasProgressStats(progress: unknown) {
+  return Array.isArray(progress) && progress.some((event) => (
+    event && typeof event === "object" && !Array.isArray(event) && typeof (event as { stats?: unknown }).stats === "object"
+  ));
+}
+
+function isSearchCausalQuestion(message: string) {
+  const normalized = message.toLowerCase();
+  return /\b(search|runs?|fetched|fetching|jobs?|yield|source|sources|profiles?|dedupe|filters?|qualified|saved|scoring|threshold|increase|increased|jump|jumped|spike|spiked|change|changed|many|volume)\b/.test(normalized);
+}
+
+function averageSearchRunBaseline(runs: SearchRunSummary[]) {
+  if (!runs.length) return null;
+  return {
+    id: "recent_average",
+    label: `the recent average of ${runs.length} run${runs.length === 1 ? "" : "s"}`,
+    jobsFetched: average(runs.map((run) => run.jobsFetched)),
+    jobsAfterDedupe: average(runs.map((run) => run.jobsAfterDedupe)),
+    jobsAfterFilters: average(runs.map((run) => run.jobsAfterFilters)),
+    jobsSaved: average(runs.map((run) => run.jobsSaved)),
+  };
+}
+
+function compareSearchRuns(
+  latest: SearchRunSummary,
+  baseline: SearchRunSummary | NonNullable<ReturnType<typeof averageSearchRunBaseline>>,
+) {
+  const label = "label" in baseline ? baseline.label : "the previous run";
+  return {
+    label,
+    deltaFetched: latest.jobsFetched - baseline.jobsFetched,
+    deltaDedupe: latest.jobsAfterDedupe - baseline.jobsAfterDedupe,
+    deltaSaved: latest.jobsSaved - baseline.jobsSaved,
+    percentFetched: percentChange(latest.jobsFetched, baseline.jobsFetched),
+  };
+}
+
+function rankedSearchRunCauses(latest: SearchRunSummary) {
+  const causes: string[] = [];
+  const stats = latest.analytics.stats;
+  const fetchedToDedupe = rate(latest.jobsAfterDedupe, latest.jobsFetched);
+  const fetchedToSaved = rate(latest.jobsSaved, latest.jobsFetched);
+
+  if (latest.jobsFetched > 0 && (fetchedToDedupe < 2 || fetchedToSaved < 1)) {
+    causes.push(`Most of the spike looks like raw discovery noise or filtering pressure: only ${formatPercent(fetchedToDedupe)} reached after-dedupe and ${formatPercent(fetchedToSaved)} became saved matches.`);
+  }
+
+  const topFetchedSource = latest.analytics.bySource.slice().sort((left, right) => right.fetched - left.fetched)[0];
+  if (topFetchedSource) {
+    causes.push(`Source diagnostics point first to ${topFetchedSource.label}: ${formatNumber(topFetchedSource.fetched)} fetched, ${formatNumber(topFetchedSource.qualified)} qualified, ${formatNumber(topFetchedSource.saved)} saved.`);
+  }
+
+  const topFetchedProfile = latest.analytics.byProfile.slice().sort((left, right) => right.fetched - left.fetched)[0];
+  if (topFetchedProfile) {
+    causes.push(`Profile diagnostics point first to ${topFetchedProfile.label}: ${formatNumber(topFetchedProfile.fetched)} fetched, ${formatNumber(topFetchedProfile.qualified)} qualified, ${formatNumber(topFetchedProfile.saved)} saved${topFetchedProfile.capped ? `, with ${formatNumber(topFetchedProfile.capped)} cap hit${topFetchedProfile.capped === 1 ? "" : "s"}` : ""}.`);
+  }
+
+  if ((stats.searchQueryExpandedLinks ?? 0) > 0) {
+    causes.push(`Search-query expansion produced ${formatNumber(stats.searchQueryExpandedLinks ?? 0)} expanded link${stats.searchQueryExpandedLinks === 1 ? "" : "s"}, which can raise raw fetched volume before quality filters run.`);
+  }
+  if ((stats.listingPagesSuppressed ?? 0) > 0) {
+    causes.push(`${formatNumber(stats.listingPagesSuppressed ?? 0)} listing/search page result${stats.listingPagesSuppressed === 1 ? " was" : "s were"} suppressed, which suggests broad source coverage is bringing in listing-page noise.`);
+  }
+  if ((stats.providerMissingWarnings ?? 0) > 0) {
+    causes.push(`${formatNumber(stats.providerMissingWarnings ?? 0)} provider warning${stats.providerMissingWarnings === 1 ? "" : "s"} appeared; check whether provider configuration changed discovery behavior.`);
+  }
+  if ((stats.profileMaxResultsCapped ?? 0) > 0) {
+    causes.push(`${formatNumber(stats.profileMaxResultsCapped ?? 0)} profile max-result cap hit${stats.profileMaxResultsCapped === 1 ? "" : "s"} appeared, so profile breadth or cap settings affected the run.`);
+  }
+  if ((stats.jobsBelowThreshold ?? 0) > 0) {
+    causes.push(`${formatNumber(stats.jobsBelowThreshold ?? 0)} job${stats.jobsBelowThreshold === 1 ? "" : "s"} were below threshold, so the high fetch count is not translating into qualified yield.`);
+  }
+  if ((stats.existingJobDuplicates ?? 0) + (stats.existingProfileMatches ?? 0) > 0) {
+    causes.push(`${formatNumber((stats.existingJobDuplicates ?? 0) + (stats.existingProfileMatches ?? 0))} duplicate or existing match${((stats.existingJobDuplicates ?? 0) + (stats.existingProfileMatches ?? 0)) === 1 ? "" : "es"} were detected, which points to rediscovery rather than new opportunity.`);
+  }
+  if ((stats.reviewOnlyMatches ?? 0) > 0) {
+    causes.push(`${formatNumber(stats.reviewOnlyMatches ?? 0)} broad match${stats.reviewOnlyMatches === 1 ? " is" : "es are"} review-only, so useful yield may be waiting on manual triage rather than Apply Sprint.`);
+  }
+
+  return Array.from(new Set(causes));
 }
 
 function countLead(route: JoleneReadOnlyRoute, state: Awaited<ReturnType<typeof buildStateQueryContext>>) {
@@ -366,6 +590,48 @@ function formatCounts(counts: Record<string, number>) {
     .sort((left, right) => right[1] - left[1])
     .map(([status, count]) => `${status.replace(/_/g, " ")} ${count}`)
     .join(", ");
+}
+
+function arrayOfStrings(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function average(values: number[]) {
+  if (!values.length) return 0;
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+function rate(value: number, total: number) {
+  if (total <= 0) return 0;
+  return (value / total) * 100;
+}
+
+function percentChange(current: number, previous: number) {
+  if (previous <= 0) return null;
+  return ((current - previous) / previous) * 100;
+}
+
+function formatNumber(value: number) {
+  return Math.round(value).toLocaleString("en-US");
+}
+
+function formatSignedNumber(value: number) {
+  if (value > 0) return `+${formatNumber(value)}`;
+  if (value < 0) return `-${formatNumber(Math.abs(value))}`;
+  return "0";
+}
+
+function formatPercent(value: number) {
+  if (!Number.isFinite(value)) return "0%";
+  return `${value >= 10 ? Math.round(value) : Math.round(value * 10) / 10}%`;
+}
+
+function formatSignedPercent(value: number | null) {
+  if (value === null) return "no prior percentage baseline";
+  if (value > 0) return `+${formatPercent(value)}`;
+  if (value < 0) return `-${formatPercent(Math.abs(value))}`;
+  return "0%";
 }
 
 function summarizeMarketOutput(value: unknown) {

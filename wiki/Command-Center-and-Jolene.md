@@ -93,6 +93,11 @@ Jolene also has a read-only state query layer for arbitrary operational question
 - What failed recently?
 - What is Email Ops status?
 - How is profile health looking?
+- Why did fetched jobs jump?
+- Why did this run fetch so many jobs?
+- Why did search yield change?
+
+For causal search-run questions, Jolene uses recent `JobSearchRun` history plus `buildSearchRunAnalytics()` instead of the generic status summary. She compares the latest run with the previous baseline, shows fetched/after-dedupe/saved deltas, separates raw discovery volume from useful yield, and uses progress diagnostics such as source yield, profile yield, query-expanded links, listing-page suppression, provider warnings, profile caps, below-threshold volume, duplicates, and review-only matches when those fields are present. If progress JSON is missing or incomplete, Jolene says she can compare counters but cannot isolate the exact source/profile cause. This path is read-only; the next steps are inspection routes such as `/dashboard/search`, `/profiles`, and `/runs`.
 
 An answer guard checks for obvious routing mistakes, such as app-state count questions being answered as interview coaching, and reroutes those prompts through the state query layer when possible.
 

@@ -43,7 +43,7 @@ vi.mock("@/lib/prisma", () => ({
     jobProfileMatch: { count: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
     jobPosting: { findMany: vi.fn(), groupBy: vi.fn() },
     jobSearchProfile: { findMany: vi.fn() },
-    jobSearchRun: { findFirst: vi.fn() },
+    jobSearchRun: { findFirst: vi.fn(), findMany: vi.fn() },
     jobSuppression: { count: vi.fn() },
     emailOpsFinding: { findMany: vi.fn() },
     linkedInPostDraft: { findFirst: vi.fn() },
@@ -154,6 +154,7 @@ describe("executeJoleneAction", () => {
     vi.mocked(prisma.jobPosting.groupBy).mockResolvedValue([] as never);
     vi.mocked(prisma.jobSearchProfile.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.jobSearchRun.findFirst).mockResolvedValue(null as never);
+    vi.mocked(prisma.jobSearchRun.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.jobSuppression.count).mockResolvedValue(0 as never);
     vi.mocked(prisma.emailOpsFinding.findMany).mockResolvedValue([] as never);
     vi.mocked(prisma.linkedInPostDraft.findFirst).mockResolvedValue(null as never);
@@ -511,15 +512,15 @@ describe("executeJoleneAction", () => {
         salaryCurrency: "USD",
       },
     ] as never);
-    vi.mocked(prisma.jobSearchRun.findFirst).mockResolvedValue({
-      id: "run_1",
-      status: "completed",
-      jobsFetched: 100,
-      jobsAfterDedupe: 80,
-      jobsSaved: 0,
-      startedAt: new Date("2026-05-18T12:00:00.000Z"),
-      finishedAt: new Date("2026-05-18T12:05:00.000Z"),
-    } as never);
+    vi.mocked(prisma.jobSearchRun.findMany).mockResolvedValue([
+      searchRun({
+        id: "run_1",
+        jobsFetched: 100,
+        jobsAfterDedupe: 80,
+        jobsAfterFilters: 75,
+        jobsSaved: 0,
+      }),
+    ] as never);
     vi.mocked(prisma.jobProfileMatch.groupBy).mockResolvedValue([{ status: "needs_review", _count: { _all: 12 } }] as never);
     vi.mocked(prisma.candidateEvidence.groupBy).mockResolvedValue([{ confidence: "VERIFIED", _count: { _all: 8 } }] as never);
 
@@ -737,16 +738,15 @@ describe("executeJoleneAction", () => {
         remotePreference: "remote_us_only",
       },
     ] as never);
-    vi.mocked(prisma.jobSearchRun.findFirst).mockResolvedValue({
-      id: "run_1",
-      status: "completed",
-      jobsFetched: 100,
-      jobsAfterDedupe: 80,
-      jobsSaved: 0,
-      errors: [],
-      startedAt: new Date("2026-05-18T12:00:00.000Z"),
-      finishedAt: new Date("2026-05-18T12:05:00.000Z"),
-    } as never);
+    vi.mocked(prisma.jobSearchRun.findMany).mockResolvedValue([
+      searchRun({
+        id: "run_1",
+        jobsFetched: 100,
+        jobsAfterDedupe: 80,
+        jobsAfterFilters: 75,
+        jobsSaved: 0,
+      }),
+    ] as never);
     vi.mocked(prisma.jobPosting.groupBy).mockResolvedValue([{ duplicateGroupId: "dup_1", _count: { _all: 3 } }] as never);
     vi.mocked(prisma.jobSuppression.count).mockResolvedValue(0 as never);
     vi.mocked(prisma.jobProfileMatch.findMany).mockResolvedValue([
@@ -776,9 +776,157 @@ describe("executeJoleneAction", () => {
         }),
       }),
     });
-    expect(result.reply).toContain("I checked");
-    expect(result.reply).toContain("Latest search run completed");
+    expect(result.reply).toContain("The fetched count jumped");
+    expect(result.reply).toContain("Current run: 100 fetched, 80 after dedupe, 0 saved");
     expect(result.reply).toContain("/profiles");
+  });
+
+  it("answers fetched-job spike questions with causal search diagnostics", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.jobSearchRun.findMany).mockResolvedValue([
+      searchRun({
+        id: "run_latest",
+        jobsFetched: 32145,
+        jobsAfterDedupe: 28,
+        jobsAfterFilters: 47,
+        jobsSaved: 47,
+        progress: [
+          {
+            at: "2026-06-22T12:00:00.000Z",
+            message: "done",
+            stats: {
+              jobsFetched: 32145,
+              jobsAfterDedupe: 28,
+              jobsAfterFilters: 47,
+              jobsSaved: 47,
+              jobsBelowThreshold: 31000,
+              listingPagesSuppressed: 410,
+              searchQueryExpandedLinks: 1200,
+              profileMaxResultsCapped: 3,
+              bySource: {
+                "Search Query Backlog": { fetched: 28000, qualified: 41, saved: 41 },
+                "Company Career Pages": { fetched: 4145, qualified: 6, saved: 6 },
+              },
+              byProfile: {
+                "AI Product Frontend": { fetched: 21000, qualified: 35, saved: 35, capped: 2 },
+                "Staff Full Stack": { fetched: 11145, qualified: 12, saved: 12, capped: 1 },
+              },
+            },
+          },
+        ],
+      }),
+      searchRun({
+        id: "run_previous",
+        jobsFetched: 20145,
+        jobsAfterDedupe: 30,
+        jobsAfterFilters: 42,
+        jobsSaved: 43,
+        startedAt: "2026-06-21T12:00:00.000Z",
+      }),
+    ] as never);
+    vi.mocked(prisma.jobSearchProfile.findMany).mockResolvedValue([
+      {
+        id: "profile_1",
+        name: "AI Product Frontend",
+        enabled: true,
+        scheduleEnabled: true,
+        minimumMatchScore: 85,
+        salaryMin: 180000,
+        salaryMax: 260000,
+        salaryCurrency: "USD",
+      },
+    ] as never);
+
+    const result = await executeJoleneAction("We have increased our fetched jobs by 12k to 32145 jobs - why are we seeing such an increase in our search runs??", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({
+      action: "jolene_state_query",
+      checkedSources: expect.arrayContaining(["search", "profiles"]),
+      facts: expect.arrayContaining([
+        expect.stringContaining("useful-yield counters did not grow proportionally"),
+        expect.stringContaining("32,145 fetched, 28 after dedupe, 47 saved"),
+      ]),
+      data: expect.objectContaining({
+        jobs: expect.objectContaining({
+          latestSearchRun: expect.objectContaining({
+            jobsFetched: 32145,
+            progressDiagnosticsAvailable: true,
+            analytics: expect.objectContaining({
+              bySource: expect.arrayContaining([expect.objectContaining({ label: "Search Query Backlog", fetched: 28000 })]),
+              byProfile: expect.arrayContaining([expect.objectContaining({ label: "AI Product Frontend", fetched: 21000 })]),
+            }),
+          }),
+        }),
+      }),
+    });
+    expect(result.reply).toContain("The fetched count jumped, but the useful-yield counters did not grow proportionally.");
+    expect(result.reply).toContain("Current run: 32,145 fetched, 28 after dedupe, 47 saved.");
+    expect(result.reply).toContain("+12,000");
+    expect(result.reply).toContain("+60%");
+    expect(result.reply).toContain("Search Query Backlog");
+    expect(result.reply).toContain("AI Product Frontend");
+    expect(result.reply).toContain("Search-query expansion produced 1,200 expanded links");
+    expect(result.reply).toContain("Next checks");
+    expect(result.reply).not.toContain("I checked jobs, search, profiles");
+  });
+
+  it("falls back to persisted counters when search-run progress diagnostics are missing", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.jobSearchRun.findMany).mockResolvedValue([
+      searchRun({
+        id: "run_latest",
+        jobsFetched: 900,
+        jobsAfterDedupe: 5,
+        jobsAfterFilters: 8,
+        jobsSaved: 4,
+        progress: [],
+      }),
+      searchRun({
+        id: "run_previous",
+        jobsFetched: 300,
+        jobsAfterDedupe: 10,
+        jobsAfterFilters: 12,
+        jobsSaved: 5,
+        startedAt: "2026-06-21T12:00:00.000Z",
+      }),
+    ] as never);
+
+    const result = await executeJoleneAction("Why did this search run fetch so many jobs?", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.reply).toContain("Current run: 900 fetched, 5 after dedupe, 4 saved.");
+    expect(result.reply).toContain("+600");
+    expect(result.reply).toContain("+200%");
+    expect(result.reply).toContain("cannot isolate the exact source or profile");
+    expect(result.actionJson).toMatchObject({
+      action: "jolene_state_query",
+      data: expect.objectContaining({
+        jobs: expect.objectContaining({
+          latestSearchRun: expect.objectContaining({ progressDiagnosticsAvailable: false }),
+        }),
+      }),
+    });
+  });
+
+  it("keeps non-causal search status questions on the generic state summary", async () => {
+    const { prisma } = await import("@/lib/prisma");
+    vi.mocked(prisma.jobSearchRun.findMany).mockResolvedValue([
+      searchRun({
+        id: "run_latest",
+        jobsFetched: 100,
+        jobsAfterDedupe: 80,
+        jobsAfterFilters: 75,
+        jobsSaved: 20,
+      }),
+    ] as never);
+
+    const result = await executeJoleneAction("What is search status?", { userId: "user_1" });
+
+    expect(result.handled).toBe(true);
+    expect(result.actionJson).toMatchObject({ action: "jolene_state_query" });
+    expect(result.reply).toContain("Latest search run completed: 100 fetched, 80 after dedupe, 20 saved.");
+    expect(result.reply).not.toContain("The fetched count jumped");
   });
 
   it("returns a Career CEO brief for high-income sprint requests", async () => {
@@ -992,6 +1140,38 @@ function readyApplication(input: {
       lastSeenAt: new Date("2026-05-19T12:00:00.000Z"),
       duplicateGroupId: null,
     },
+  };
+}
+
+function searchRun(input: {
+  id: string;
+  jobsFetched: number;
+  jobsAfterDedupe: number;
+  jobsAfterFilters?: number;
+  jobsSaved: number;
+  status?: string;
+  triggeredBy?: string;
+  profileIds?: string[];
+  progress?: unknown[];
+  errors?: string[];
+  startedAt?: string;
+  finishedAt?: string;
+}) {
+  const startedAt = new Date(input.startedAt ?? "2026-06-22T12:00:00.000Z");
+  return {
+    id: input.id,
+    status: input.status ?? "completed",
+    triggeredBy: input.triggeredBy ?? "manual",
+    profileIds: input.profileIds ?? ["profile_1"],
+    jobsFetched: input.jobsFetched,
+    jobsAfterDedupe: input.jobsAfterDedupe,
+    jobsAfterFilters: input.jobsAfterFilters ?? input.jobsAfterDedupe,
+    jobsSaved: input.jobsSaved,
+    progress: input.progress ?? [],
+    errors: input.errors ?? [],
+    startedAt,
+    finishedAt: new Date(input.finishedAt ?? new Date(startedAt.getTime() + 5 * 60 * 1000).toISOString()),
+    createdAt: startedAt,
   };
 }
 
