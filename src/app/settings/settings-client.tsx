@@ -160,6 +160,7 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [savingProfileLinks, setSavingProfileLinks] = useState(false);
   const [testing, setTesting] = useState(false);
   const [syncingGithub, setSyncingGithub] = useState(false);
   const [reviewingGithub, setReviewingGithub] = useState(false);
@@ -272,6 +273,36 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
       }
     }
     setNotice("Settings saved.");
+  }
+
+  async function saveProfileLinks() {
+    setSavingProfileLinks(true);
+    setNotice("");
+    setError("");
+    const response = await fetch("/api/settings/profile", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        githubUrl: profile.githubUrl,
+        linkedinUrl: profile.linkedinUrl,
+      }),
+    });
+    const body = await response.json();
+    setSavingProfileLinks(false);
+
+    if (!response.ok) {
+      setError(body.error ?? "Unable to save profile links.");
+      return;
+    }
+
+    if (body.profile) {
+      setProfile((previous) => ({
+        ...previous,
+        githubUrl: body.profile.githubUrl ?? "",
+        linkedinUrl: body.profile.linkedinUrl ?? "",
+      }));
+    }
+    setNotice("Application profile links saved.");
   }
 
   async function syncGithub() {
@@ -918,7 +949,13 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
               placeholder="https://www.linkedin.com/in/your-profile"
               value={profile.linkedinUrl}
               onChange={(event) => setProfile((previous) => ({ ...previous, linkedinUrl: event.target.value }))}
+              helperText="Save this URL before reconnecting LinkedIn. Reconnect imports identity basics only."
             />
+            <Box>
+              <Button variant="contained" disabled={saving || savingProfileLinks} onClick={saveProfileLinks}>
+                {savingProfileLinks ? "Saving..." : "Save profile links"}
+              </Button>
+            </Box>
             <Stack
               direction={{ xs: "column", sm: "row" }}
               spacing={1.5}

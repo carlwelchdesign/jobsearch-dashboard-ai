@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { apiError } from "@/lib/api";
-import { attachResumeQa, createResumeStrategy } from "@/lib/applications/material-agents";
+import { attachAtsResumeReview, attachResumeQa, createResumeStrategy } from "@/lib/applications/material-agents";
 import { prisma } from "@/lib/prisma";
 import { tailorResumeForJob } from "@/lib/ai/resume";
 import { checkAtsReadability } from "@/lib/resumes/ats";
@@ -91,10 +91,11 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       },
     });
     const resumeQa = await attachResumeQa({ resume, userId: user.id, strategy });
-    const reviewedResume = await prisma.generatedResume.update({
+    let reviewedResume = await prisma.generatedResume.update({
       where: { id: resume.id },
       data: { generationNotes: resumeQa.notes },
     });
+    reviewedResume = (await attachAtsResumeReview({ resume: reviewedResume, userId: user.id })).resume;
     await syncMaterialClaimsForResume(reviewedResume.id);
     await prisma.jobProfileMatch.update({
       where: { id: match.id },

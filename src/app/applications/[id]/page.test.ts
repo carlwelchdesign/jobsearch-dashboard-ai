@@ -22,4 +22,14 @@ describe("ApplicationPacketPage", () => {
     expect(source).toContain("RefreshOutlinedIcon");
     expect(source).toContain("/regenerate-materials");
   });
+
+  it("shows ATS resume review output on the application detail page", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/app/applications/[id]/page.tsx"), "utf8");
+
+    expect(source).toContain("AtsResumeReviewCard");
+    expect(source).toContain("ATS resume review");
+    expect(source).toContain("Missing important keywords");
+    expect(source).toContain("Recruiter red flags");
+    expect(source).toContain("Format warnings");
+  });
 });

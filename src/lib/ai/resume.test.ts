@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseStructuredOutput } from "@/lib/ai/openai";
-import { tailorResumeForJob } from "./resume";
+import { generateCoverLetterForJob, tailorResumeForJob } from "./resume";
 import type { ExperienceBullet, GithubRepository, JobPosting, Project, UserProfile, WorkExperience } from "@prisma/client";
 
 vi.mock("@/lib/ai/openai", () => ({
@@ -435,6 +435,43 @@ describe("tailorResumeForJob", () => {
     expect(tailored.markdownResume.split("\n").slice(0, 3).join("\n")).toContain("https://github.com/carlwelchdesign");
   });
 
+  it("prefers approved quantified achievements in fallback role bullets", async () => {
+    parseStructuredOutputMock.mockResolvedValue(null);
+    const now = new Date("2026-06-04T12:00:00Z");
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now),
+      job: jobPosting(now),
+      bullets: [
+        experienceBullet({
+          id: "bullet_generic",
+          company: "Yubico",
+          role: "Senior Software Engineer",
+          text: "Built enterprise admin console features supporting YubiKey management and provisioning workflows.",
+          createdAt: now,
+        }),
+      ],
+      projects: [],
+      workExperiences: [
+        workExperience({
+          id: "work_yubico",
+          company: "Yubico",
+          title: "Senior Software Engineer",
+          startDate: "2022",
+          endDate: "2026",
+          achievements: [
+            "Built enterprise admin console features supporting YubiKey management and provisioning workflows.",
+            "Increased test automation by 50% using Jest and Playwright while reducing QA time, regressions, support issues, and release risk.",
+          ],
+          createdAt: now,
+        }),
+      ],
+    });
+
+    expect(tailored.markdownResume).toContain("Increased test automation by 50%");
+    expect(tailored.markdownResume.indexOf("Increased test automation by 50%")).toBeLessThan(tailored.markdownResume.indexOf("Built enterprise admin console features"));
+  });
+
   it("omits incomplete social profile roots and derives GitHub from repositories", async () => {
     parseStructuredOutputMock.mockResolvedValue(null);
     const now = new Date("2026-06-04T12:00:00Z");
@@ -464,6 +501,62 @@ describe("tailorResumeForJob", () => {
     expect(contactParts).not.toContain("https://www.linkedin.com/in/");
     expect(contactParts).not.toContain("https://github.com/");
     expect(contactLine).toContain("https://github.com/carlwelchdesign");
+  });
+});
+
+describe("generateCoverLetterForJob", () => {
+  it("uses a blocked placeholder instead of a fake recruiter-facing fallback letter", async () => {
+    parseStructuredOutputMock.mockResolvedValue(null);
+    const now = new Date("2026-06-04T12:00:00Z");
+
+    const draft = await generateCoverLetterForJob({
+      userProfile: userProfile(now),
+      job: {
+        ...jobPosting(now),
+        company: "Senior Software Engineer - Frontend/React (USA Only - 100% Remote) @ Close",
+        title: "Senior Software Engineer - Frontend/React (USA Only - 100% Remote)",
+        description: "React frontend architecture developer experience.",
+      },
+      bullets: [
+        experienceBullet({
+          id: "bullet_ar",
+          company: "Hughes",
+          role: "Program Manager",
+          text: "Received over $300K in funding from General Motors Defense Systems for VR and AR R&D projects.",
+          createdAt: now,
+        }),
+        experienceBullet({
+          id: "bullet_frontend",
+          company: "Yubico",
+          role: "Senior Software Engineer",
+          text: "Built React admin console workflows and frontend architecture for enterprise identity teams.",
+          createdAt: now,
+        }),
+      ],
+      projects: [],
+      workExperiences: [],
+      githubRepositories: [],
+    });
+
+    expect(draft.generatedBy).toBe("deterministic_fallback");
+    expect(draft.body).toContain("Cover letter generation needs review");
+    expect(draft.body).toContain("Close's Senior Software Engineer - Frontend/React (USA Only - 100% Remote) role");
+    expect(draft.body).not.toContain("@ Close role");
+    expect(draft.body).toContain("Regenerate the cover letter before using this application packet.");
+    expect(draft.body).not.toContain("Dear Senior Software Engineer");
+    expect(draft.body).not.toContain("maps to my strongest verified experience");
+    expect(draft.body).not.toContain("Received over $300K");
+    expect(draft.body).not.toMatch(/^- /m);
+    expect(draft.warnings).toContain("Structured cover-letter generation was unavailable; regenerate before using this application packet.");
+    expect(parseStructuredOutputMock).toHaveBeenCalledWith(expect.objectContaining({
+      schemaName: "generate_cover_letter",
+      input: expect.objectContaining({
+        company: "Close",
+        job: expect.objectContaining({
+          title: "Senior Software Engineer - Frontend/React (USA Only - 100% Remote)",
+        }),
+      }),
+    }));
   });
 });
 

@@ -61,6 +61,7 @@ type MaterialNotes = {
     suggestedEdits?: string[];
     evidenceRefs?: string[];
   };
+  atsResumeReview?: AtsResumeReview;
   resumeStrategy?: {
     recommendedResumeProfile?: string;
     positioningSummary?: string;
@@ -72,6 +73,29 @@ type MaterialNotes = {
   } | null;
   warnings?: string[];
   unsupportedClaimsDetected?: string[];
+};
+
+type AtsResumeReview = {
+  status?: "PASS" | "NEEDS_REVIEW" | "BLOCKED";
+  atsScore?: number;
+  recruiterScore?: number;
+  keywordCoverage?: {
+    matched?: string[];
+    missingImportant?: string[];
+    overused?: string[];
+  };
+  formatWarnings?: string[];
+  recruiterRedFlags?: string[];
+  evidenceRisks?: string[];
+  recommendedEdits?: string[];
+  rewriteDecision?: {
+    applied?: boolean;
+    reason?: string | null;
+    confidence?: number;
+  };
+  summaryReview?: string;
+  finalRecommendation?: string;
+  reviewedAt?: string;
 };
 
 type InterviewPrepOutput = {
@@ -211,6 +235,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
   const resumeNotes = materialNotes(application.resume?.generationNotes);
   const coverLetterNotes = materialNotes(application.coverLetter?.generationNotes);
   const qa = coverLetterNotes.applicationQa ?? resumeNotes.applicationQa;
+  const atsResumeReview = resumeNotes.atsResumeReview;
   const strategy = resumeNotes.resumeStrategy ?? coverLetterNotes.resumeStrategy;
   const evaluation = application.jobPosting.evaluations[0];
   const evidenceRefs = Array.from(new Set([...(strategy?.evidenceRefs ?? []), ...(qa?.evidenceRefs ?? [])]));
@@ -403,6 +428,8 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
             </Stack>
           </CardContent>
         </Card>
+
+        <AtsResumeReviewCard review={atsResumeReview} />
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "1fr 1fr" }, gap: 2 }}>
           <MaterialCard
@@ -790,6 +817,52 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
         </Card>
       </Stack>
     </AppShell>
+  );
+}
+
+function AtsResumeReviewCard({ review }: { review?: AtsResumeReview }) {
+  return (
+    <Card>
+      <CardContent>
+        <Stack spacing={2}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+            <Box>
+              <Typography variant="h3">ATS resume review</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Resume-specific checks for ATS readability, recruiter red flags, keyword coverage, and rewrite safety.
+              </Typography>
+            </Box>
+            {review?.status ? (
+              <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", justifyContent: { md: "flex-end" } }}>
+                <Chip color={review.status === "PASS" ? "success" : review.status === "BLOCKED" ? "error" : "warning"} label={review.status.replace(/_/g, " ")} />
+                {typeof review.atsScore === "number" ? <ScoreChip score={review.atsScore} label={`${review.atsScore} ATS`} /> : null}
+                {typeof review.recruiterScore === "number" ? <ScoreChip score={review.recruiterScore} label={`${review.recruiterScore} recruiter`} /> : null}
+              </Stack>
+            ) : null}
+          </Stack>
+          {review ? (
+            <>
+              {review.rewriteDecision?.applied ? (
+                <Alert severity="success">
+                  {review.rewriteDecision.reason ?? "The reviewer automatically improved the resume and preserved the original in review metadata."}
+                </Alert>
+              ) : null}
+              {review.finalRecommendation ? <Typography color="text.secondary">{review.finalRecommendation}</Typography> : null}
+              <SignalSection title="Missing important keywords" items={review.keywordCoverage?.missingImportant ?? []} color="warning" />
+              <SignalSection title="Recruiter red flags" items={review.recruiterRedFlags ?? []} color="warning" />
+              <SignalSection title="Format warnings" items={review.formatWarnings ?? []} color="warning" />
+              <SignalSection title="Evidence risks" items={review.evidenceRisks ?? []} color="warning" />
+              <PrepList title="Recommended edits" items={review.recommendedEdits ?? []} />
+              {review.reviewedAt ? (
+                <Typography variant="caption" color="text.secondary">Reviewed {new Date(review.reviewedAt).toLocaleString()}</Typography>
+              ) : null}
+            </>
+          ) : (
+            <EmptyState title="No ATS resume review yet" body="Regenerate materials to run the ATS resume reviewer on this resume." />
+          )}
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }
 

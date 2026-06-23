@@ -14,6 +14,7 @@ export type SkillId =
   | "portfolio_match"
   | "github_portfolio_review"
   | "application_qa"
+  | "ats_resume_reviewer"
   | "interview_prep"
   | "outcome_learning"
   | "compensation_opportunity"
