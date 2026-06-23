@@ -2,21 +2,27 @@ import { parseResumeDocument, type ResumeDocument } from "@/lib/resumes/resume-d
 
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
-const LEFT = 18;
-const RIGHT = 594;
+const LEFT = 24;
+const RIGHT = 588;
 const TOP = 752;
 const BOTTOM = 42;
-const EXPERIENCE_WIDTH = 374;
-const EXPERIENCE_WRAP = 76;
-const EXPERIENCE_BULLET_WRAP = 73;
-const SIDEBAR_X = 398;
+const COLUMN_GAP = 18;
+const EXPERIENCE_WIDTH = 330;
+const SIDEBAR_X = LEFT + EXPERIENCE_WIDTH + COLUMN_GAP;
 const SIDEBAR_WIDTH = RIGHT - SIDEBAR_X;
-const SIDEBAR_WRAP = 36;
 const BLUE = "0.02 0.46 0.93";
 const INK = "0.05 0.06 0.08";
 const MUTED = "0.30 0.34 0.40";
 const CHIP_FILL = "0.95 0.96 0.97";
 const DIVIDER = "0.86 0.88 0.91";
+const BODY_SIZE = 7.35;
+const BODY_LEADING = 9.5;
+const SMALL_SIZE = 6.85;
+const BULLET_INDENT = 10;
+const CHIP_FONT_SIZE = 6.35;
+const CHIP_HEIGHT = 9.2;
+const CHIP_X_PADDING = 3;
+const CHIP_GAP = 3.2;
 
 type PdfLine = {
   text: string;
@@ -35,7 +41,6 @@ type PageColumn = {
   x: number;
   y: number;
   width: number;
-  widthChars: number;
 };
 
 type ResumePdfImage = {
@@ -98,25 +103,25 @@ function layoutPages(document: ResumeDocument) {
     section("Experience"),
     ...document.experience.flatMap((item) => [
       roleLine(item.role ?? item.title),
-      ...(item.company ? [bodyLine(item.company, 7.8, "bold", BLUE)] : []),
-      ...(item.dates ? [bodyLine(item.dates, 7.2)] : []),
-      ...(item.skills.length ? wrapBody(`Skills: ${item.skills.join(", ")}`, EXPERIENCE_WRAP) : []),
-      ...item.bullets.slice(0, 5).flatMap((bullet) => bulletLines(bullet, EXPERIENCE_BULLET_WRAP)),
+      ...(item.company ? [bodyLine(item.company, 7.4, "bold", BLUE)] : []),
+      ...(item.dates ? [bodyLine(item.dates, SMALL_SIZE)] : []),
+      ...(item.skills.length ? wrapBody(`Skills: ${item.skills.join(", ")}`, EXPERIENCE_WIDTH, BODY_SIZE) : []),
+      ...item.bullets.slice(0, 5).flatMap((bullet) => bulletLines(bullet, EXPERIENCE_WIDTH - BULLET_INDENT)),
       roleSeparator(),
     ]),
   ];
   const rightLines = [
     section("Summary"),
-    ...document.summary.flatMap((line) => wrapBody(line, SIDEBAR_WRAP)),
+    ...document.summary.flatMap((line) => wrapBody(line, SIDEBAR_WIDTH, BODY_SIZE)),
     section("Education"),
-    ...document.education.flatMap((line) => wrapBody(line, SIDEBAR_WRAP, true)),
-    ...(document.certifications.length ? [section("Certifications"), ...document.certifications.flatMap((line) => wrapBody(line, SIDEBAR_WRAP, true))] : []),
+    ...document.education.flatMap((line) => wrapBody(line, SIDEBAR_WIDTH, BODY_SIZE, true)),
+    ...(document.certifications.length ? [section("Certifications"), ...document.certifications.flatMap((line) => wrapBody(line, SIDEBAR_WIDTH, BODY_SIZE, true))] : []),
     section("Skills"),
     ...skillChipRows(document.skills),
     section("Projects"),
     ...document.projects.slice(0, 4).flatMap((project) => [
-      roleLine(project.name, 8.8),
-      ...wrapBody(project.description, SIDEBAR_WRAP),
+      roleLine(project.name, 8.4),
+      ...wrapBody(project.description, SIDEBAR_WIDTH, BODY_SIZE),
     ]),
   ];
 
@@ -125,8 +130,8 @@ function layoutPages(document: ResumeDocument) {
   let rightIndex = 0;
   while (leftIndex < leftLines.length || rightIndex < rightLines.length || pages.length === 0) {
     const top = pages.length === 0 ? 692 : 720;
-    const left = nextColumn(leftLines, leftIndex, LEFT, top, EXPERIENCE_WIDTH, EXPERIENCE_WRAP);
-    const right = nextColumn(rightLines, rightIndex, SIDEBAR_X, top, SIDEBAR_WIDTH, SIDEBAR_WRAP);
+    const left = nextColumn(leftLines, leftIndex, LEFT, top, EXPERIENCE_WIDTH);
+    const right = nextColumn(rightLines, rightIndex, SIDEBAR_X, top, SIDEBAR_WIDTH);
     leftIndex = left.nextIndex;
     rightIndex = right.nextIndex;
     pages.push({ left: left.column, right: right.column });
@@ -134,7 +139,7 @@ function layoutPages(document: ResumeDocument) {
   return pages;
 }
 
-function nextColumn(lines: PdfLine[], startIndex: number, x: number, y: number, width: number, widthChars: number) {
+function nextColumn(lines: PdfLine[], startIndex: number, x: number, y: number, width: number) {
   const selected: PdfLine[] = [];
   let cursorY = y;
   let index = startIndex;
@@ -146,7 +151,7 @@ function nextColumn(lines: PdfLine[], startIndex: number, x: number, y: number, 
     cursorY = nextY;
     index += 1;
   }
-  return { nextIndex: index, column: { lines: selected, x, y, width, widthChars } };
+  return { nextIndex: index, column: { lines: selected, x, y, width } };
 }
 
 function renderHeader(document: ResumeDocument, hasProfileImage: boolean) {
@@ -154,17 +159,17 @@ function renderHeader(document: ResumeDocument, hasProfileImage: boolean) {
   const contact = document.contactLine.split(/\s*\|\s*/).filter(Boolean).join("   ");
   const badge = hasProfileImage
     ? [
-      `q ${circlePath(558, 710, 25)} W n 50 0 0 50 533 685 cm /ProfileImage Do Q`,
-      `q ${BLUE} RG 1.2 w ${circlePath(558, 710, 25)} S Q`,
+      `q ${circlePath(556, 709, 24)} W n 48 0 0 48 532 685 cm /ProfileImage Do Q`,
+      `q ${BLUE} RG 1.2 w ${circlePath(556, 709, 24)} S Q`,
     ].join("\n")
     : [
-      `q ${BLUE} rg ${circlePath(558, 710, 25)} f Q`,
-      text(initials, 546, 704, 14.5, "bold", "0 0 0"),
+      `q ${BLUE} rg ${circlePath(556, 709, 24)} f Q`,
+      text(initials, 545, 703, 14, "bold", "0 0 0"),
     ].join("\n");
   return [
-    text(document.name.toUpperCase(), LEFT, TOP, 21, "bold", "0 0 0"),
-    text(document.headline, LEFT, TOP - 18, 9.5, "bold", BLUE),
-    text(contact, LEFT, TOP - 36, 7.2, "regular", MUTED),
+    text(document.name.toUpperCase(), LEFT, TOP, 18.5, "bold", "0 0 0"),
+    text(document.headline, LEFT, TOP - 16, 9.1, "bold", BLUE),
+    text(contact, LEFT, TOP - 34, 6.9, "regular", MUTED),
     badge,
   ].join("\n");
 }
@@ -201,23 +206,24 @@ function renderColumn(column: PageColumn) {
 }
 
 function section(textValue: string): PdfLine {
-  return { text: textValue, size: 10.5, font: "bold", leading: 15, gapBefore: 10, kind: "section" };
+  return { text: textValue, size: 9.8, font: "bold", leading: 14, gapBefore: 10, kind: "section" };
 }
 
 function roleLine(textValue: string, size = 9.4): PdfLine {
-  return { text: textValue, size, font: "bold", leading: 12, gapBefore: 7 };
+  return { text: textValue, size, font: "bold", leading: 11, gapBefore: 7 };
 }
 
-function bodyLine(textValue: string, size = 8.2, font: "regular" | "bold" = "regular", color?: string): PdfLine {
-  return { text: textValue, size, font, color, leading: 10.5, gapBefore: 2 };
+function bodyLine(textValue: string, size = BODY_SIZE, font: "regular" | "bold" = "regular", color?: string): PdfLine {
+  return { text: textValue, size, font, color, leading: BODY_LEADING, gapBefore: 2 };
 }
 
 function bulletLines(textValue: string, width: number) {
-  return wrap(textValue, width).map((line, index) => ({ ...bodyLine(line, 7.7), bullet: index === 0, gapBefore: index === 0 ? 2.2 : 0 }));
+  return wrapPdfTextByWidth(textValue, width, BODY_SIZE, "regular").map((line, index) => ({ ...bodyLine(line, BODY_SIZE), bullet: index === 0, gapBefore: index === 0 ? 2.2 : 0 }));
 }
 
-function wrapBody(textValue: string, width: number, bold = false) {
-  return wrap(textValue, width).map((line, index) => ({ ...bodyLine(line, 7.8), font: bold ? "bold" as const : "regular" as const, gapBefore: index === 0 ? 2 : 0 }));
+function wrapBody(textValue: string, width: number, size = BODY_SIZE, bold = false) {
+  const font = bold ? "bold" as const : "regular" as const;
+  return wrapPdfTextByWidth(textValue, width, size, font).map((line, index) => ({ ...bodyLine(line, size), font, gapBefore: index === 0 ? 2 : 0 }));
 }
 
 function skillChipRows(skills: string[]) {
@@ -226,13 +232,13 @@ function skillChipRows(skills: string[]) {
   let rowWidth = 0;
   for (const skill of skills.slice(0, 28)) {
     const chipWidth = chipTextWidth(skill);
-    if (row.length && rowWidth + chipWidth + 4 > SIDEBAR_WIDTH) {
+    if (row.length && rowWidth + chipWidth + CHIP_GAP > SIDEBAR_WIDTH) {
       lines.push(chipRow(row));
       row = [];
       rowWidth = 0;
     }
     row.push(skill);
-    rowWidth += chipWidth + (row.length > 1 ? 4 : 0);
+    rowWidth += chipWidth + (row.length > 1 ? CHIP_GAP : 0);
   }
   if (row.length) lines.push(chipRow(row));
   return lines;
@@ -247,7 +253,7 @@ function roleSeparator(): PdfLine {
 }
 
 function chipRow(chips: string[]): PdfLine {
-  return { text: chips.join(" "), size: 7.2, font: "bold", leading: 13.2, gapBefore: 2, kind: "chip-row", chips };
+  return { text: chips.join(" "), size: CHIP_FONT_SIZE, font: "bold", leading: 11.2, gapBefore: 2, kind: "chip-row", chips };
 }
 
 function renderChipRow(chips: string[], x: number, y: number) {
@@ -255,25 +261,25 @@ function renderChipRow(chips: string[], x: number, y: number) {
   let cursorX = x;
   for (const chip of chips) {
     const width = chipTextWidth(chip);
-    commands.push(`q ${CHIP_FILL} rg ${roundedRectPath(cursorX, y - 2.3, width, 10.5, 2.1)} f Q`);
-    commands.push(text(chip, cursorX + 3.2, y + 0.3, 7.1, "bold", INK));
-    cursorX += width + 4;
+    commands.push(`q ${CHIP_FILL} rg ${roundedRectPath(cursorX, y - 2, width, CHIP_HEIGHT, 2)} f Q`);
+    commands.push(text(chip, cursorX + CHIP_X_PADDING, y + 0.1, CHIP_FONT_SIZE, "bold", INK));
+    cursorX += width + CHIP_GAP;
   }
   return commands;
 }
 
 function chipTextWidth(value: string) {
-  return Math.max(18, value.length * 3.85 + 7);
+  return Math.max(16, estimatePdfTextWidth(value, CHIP_FONT_SIZE, "bold") + CHIP_X_PADDING * 2);
 }
 
-function wrap(value: string, width: number) {
+export function wrapPdfTextByWidth(value: string, maxWidth: number, size = BODY_SIZE, font: "regular" | "bold" = "regular") {
   if (!value) return [];
   const words = value.split(/\s+/);
   const lines: string[] = [];
   let current = "";
   for (const word of words) {
     const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length > width) {
+    if (estimatePdfTextWidth(candidate, size, font) > maxWidth) {
       if (current) lines.push(current);
       current = word;
     } else {
@@ -282,6 +288,20 @@ function wrap(value: string, width: number) {
   }
   if (current) lines.push(current);
   return lines;
+}
+
+function estimatePdfTextWidth(value: string, size: number, font: "regular" | "bold") {
+  const fontWeight = font === "bold" ? 1.07 : 1;
+  let units = 0;
+  for (const char of value) {
+    if (char === " ") units += 0.28;
+    else if ("ilI.,'|".includes(char)) units += 0.22;
+    else if ("mwMW@".includes(char)) units += 0.82;
+    else if (/[A-Z]/.test(char)) units += 0.62;
+    else if (/[0-9]/.test(char)) units += 0.53;
+    else units += 0.48;
+  }
+  return units * size * fontWeight;
 }
 
 function text(value: string, x: number, y: number, size: number, font: "regular" | "bold", color: string) {

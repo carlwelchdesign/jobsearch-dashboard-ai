@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createModernTwoColumnResumePdf } from "@/lib/pdf/modern-resume-pdf";
+import { createModernTwoColumnResumePdf, wrapPdfTextByWidth } from "@/lib/pdf/modern-resume-pdf";
 
 describe("createModernTwoColumnResumePdf", () => {
   it("renders resume sections as PDF text without overlay branding", () => {
@@ -53,5 +53,15 @@ describe("createModernTwoColumnResumePdf", () => {
     expect(raw).toContain("Yubico");
     expect(raw).toContain("Senior Software Engineer");
     expect(raw).not.toContain(longSkills);
+  });
+
+  it("wraps text using available PDF width instead of fixed character counts", () => {
+    const sentence = "Built analytics dashboards and communication workflows for customer-facing SaaS interfaces with reporting views.";
+
+    const narrow = wrapPdfTextByWidth(sentence, 120, 7.35);
+    const wide = wrapPdfTextByWidth(sentence, 330, 7.35);
+
+    expect(narrow.length).toBeGreaterThan(wide.length);
+    expect(wide.join(" ")).toBe(sentence);
   });
 });
