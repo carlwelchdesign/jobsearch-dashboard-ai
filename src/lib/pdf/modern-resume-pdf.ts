@@ -159,12 +159,12 @@ function renderHeader(document: ResumeDocument, hasProfileImage: boolean) {
   const contact = document.contactLine.split(/\s*\|\s*/).filter(Boolean).join("   ");
   const badge = hasProfileImage
     ? [
-      `q ${circlePath(556, 735, 28)} W n 56 0 0 56 528 707 cm /ProfileImage Do Q`,
-      `q ${BLUE} RG 1.2 w ${circlePath(556, 735, 28)} S Q`,
+      `q ${circlePath(535.4, 735, 28)} W n 56 0 0 56 507.4 707 cm /ProfileImage Do Q`,
+      `q ${BLUE} RG 1.2 w ${circlePath(535.4, 735, 28)} S Q`,
     ].join("\n")
     : [
-      `q ${BLUE} rg ${circlePath(556, 735, 28)} f Q`,
-      text(initials, 543, 728, 15.5, "bold", "0 0 0"),
+      `q ${BLUE} rg ${circlePath(535.4, 735, 28)} f Q`,
+      text(initials, 522.4, 728, 15.5, "bold", "0 0 0"),
     ].join("\n");
   return [
     text(document.name.toUpperCase(), LEFT, TOP, 18.5, "bold", "0 0 0"),
