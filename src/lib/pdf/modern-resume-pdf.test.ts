@@ -5,7 +5,7 @@ describe("createModernTwoColumnResumePdf", () => {
   it("renders resume sections as PDF text without overlay branding", () => {
     const pdf = createModernTwoColumnResumePdf([
       "Carl Welch",
-      "carl@example.com | https://www.linkedin.com/in/carlwelch | https://github.com/carlwelchdesign",
+      "carl@example.com | 1-805-403-4819 | https://www.linkedin.com/in/carlwelch | https://github.com/carlwelchdesign",
       "",
       "Summary",
       "Senior Software Engineer building React systems.",
@@ -27,6 +27,10 @@ describe("createModernTwoColumnResumePdf", () => {
     const raw = Buffer.from(pdf).toString("latin1");
 
     expect(raw).toContain("CARL WELCH");
+    expect(raw).toContain("1-805-403-4819");
+    expect(raw).toContain("carl@example.com");
+    expect(raw).toContain("linkedin.com/in/carlwelch");
+    expect(raw).toContain("github.com/carlwelchdesign");
     expect(raw).toContain("EXPERIENCE");
     expect(raw).toContain("SUMMARY");
     expect(raw).toContain("React");

@@ -23,6 +23,7 @@ const CHIP_FONT_SIZE = 6.35;
 const CHIP_HEIGHT = 9.2;
 const CHIP_X_PADDING = 3;
 const CHIP_GAP = 3.2;
+const CONTACT_SIZE = 7.2;
 
 type PdfLine = {
   text: string;
@@ -32,8 +33,13 @@ type PdfLine = {
   gapBefore?: number;
   bullet?: boolean;
   color?: string;
-  kind?: "section" | "role-separator" | "chip-row";
+  kind?: "section" | "role-separator" | "chip-row" | "date-line";
   chips?: string[];
+};
+
+type ContactItem = {
+  kind: "phone" | "email" | "link";
+  label: string;
 };
 
 type PageColumn = {
@@ -104,7 +110,7 @@ function layoutPages(document: ResumeDocument) {
     ...document.experience.flatMap((item) => [
       roleLine(item.role ?? item.title),
       ...(item.company ? [bodyLine(item.company, 7.4, "bold", BLUE)] : []),
-      ...(item.dates ? [bodyLine(item.dates, SMALL_SIZE)] : []),
+      ...(item.dates ? [dateLine(item.dates)] : []),
       ...(item.skills.length ? wrapBody(`Skills: ${item.skills.join(", ")}`, EXPERIENCE_WIDTH, BODY_SIZE) : []),
       ...item.bullets.slice(0, 5).flatMap((bullet) => bulletLines(bullet, EXPERIENCE_WIDTH - BULLET_INDENT)),
       roleSeparator(),
@@ -156,7 +162,6 @@ function nextColumn(lines: PdfLine[], startIndex: number, x: number, y: number, 
 
 function renderHeader(document: ResumeDocument, hasProfileImage: boolean) {
   const initials = document.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "CV";
-  const contact = document.contactLine.split(/\s*\|\s*/).filter(Boolean).join("   ");
   const badge = hasProfileImage
     ? [
       `q ${circlePath(535.4, 735, 28)} W n 56 0 0 56 507.4 707 cm /ProfileImage Do Q`,
@@ -169,7 +174,7 @@ function renderHeader(document: ResumeDocument, hasProfileImage: boolean) {
   return [
     text(document.name.toUpperCase(), LEFT, TOP, 18.5, "bold", "0 0 0"),
     text(document.headline, LEFT, TOP - 16, 9.1, "bold", BLUE),
-    text(contact, LEFT, TOP - 34, 6.9, "regular", MUTED),
+    renderContactItems(contactItems(document.contactLine), LEFT, TOP - 34),
     badge,
   ].join("\n");
 }
@@ -194,6 +199,9 @@ function renderColumn(column: PageColumn) {
       commands.push(`q ${DIVIDER} RG 0.45 w ${column.x} ${y} m ${column.x + column.width} ${y} l S Q`);
     } else if (line.kind === "chip-row" && line.chips) {
       commands.push(...renderChipRow(line.chips, column.x, y));
+    } else if (line.kind === "date-line") {
+      commands.push(calendarIcon(column.x, y + 0.5, 7, MUTED));
+      commands.push(text(line.text, column.x + 12, y, line.size, line.font, line.color ?? MUTED));
     } else if (line.bullet) {
       commands.push(`q 0 0 0 rg ${circlePath(column.x + 3.2, y + 3.1, 1.25)} f Q`);
       commands.push(text(line.text, column.x + 10, y, line.size, line.font, INK));
@@ -215,6 +223,10 @@ function roleLine(textValue: string, size = 9.4): PdfLine {
 
 function bodyLine(textValue: string, size = BODY_SIZE, font: "regular" | "bold" = "regular", color?: string): PdfLine {
   return { text: textValue, size, font, color, leading: BODY_LEADING, gapBefore: 2 };
+}
+
+function dateLine(textValue: string): PdfLine {
+  return { text: textValue, size: SMALL_SIZE, font: "regular", color: MUTED, leading: 9.5, gapBefore: 2, kind: "date-line" };
 }
 
 function bulletLines(textValue: string, width: number) {
@@ -272,6 +284,41 @@ function chipTextWidth(value: string) {
   return Math.max(16, estimatePdfTextWidth(value, CHIP_FONT_SIZE, "bold") + CHIP_X_PADDING * 2);
 }
 
+function contactItems(contactLine: string): ContactItem[] {
+  return contactLine.split(/\s*\|\s*/).flatMap<ContactItem>((part) => {
+    const trimmed = part.trim();
+    if (!trimmed) return [];
+    const label = trimmed.replace(/^https?:\/\/(?:www\.)?/i, "");
+    if (/@/.test(trimmed)) return [{ kind: "email" as const, label }];
+    if (/github\.com|linkedin\.com|https?:\/\//i.test(trimmed)) return [{ kind: "link" as const, label }];
+    return [{ kind: "phone" as const, label }];
+  }).sort((a, b) => contactPriority(a) - contactPriority(b));
+}
+
+function contactPriority(item: ContactItem) {
+  if (item.kind === "phone") return 0;
+  if (item.kind === "email") return 1;
+  if (/linkedin\.com/i.test(item.label)) return 2;
+  if (/github\.com/i.test(item.label)) return 3;
+  return 4;
+}
+
+function renderContactItems(items: ContactItem[], x: number, y: number) {
+  const commands: string[] = [];
+  let cursorX = x;
+  for (const item of items) {
+    const iconSize = 7;
+    if (item.kind === "phone") commands.push(phoneIcon(cursorX, y + 0.2, iconSize, BLUE));
+    else if (item.kind === "email") commands.push(text("@", cursorX, y - 0.5, 8.2, "bold", BLUE));
+    else commands.push(linkIcon(cursorX, y + 0.1, iconSize, BLUE));
+
+    const labelX = cursorX + 11;
+    commands.push(text(item.label, labelX, y, CONTACT_SIZE, "bold", MUTED));
+    cursorX = labelX + estimatePdfTextWidth(item.label, CONTACT_SIZE, "bold") + 14;
+  }
+  return commands.join("\n");
+}
+
 export function wrapPdfTextByWidth(value: string, maxWidth: number, size = BODY_SIZE, font: "regular" | "bold" = "regular") {
   if (!value) return [];
   const words = value.split(/\s+/);
@@ -306,6 +353,54 @@ function estimatePdfTextWidth(value: string, size: number, font: "regular" | "bo
 
 function text(value: string, x: number, y: number, size: number, font: "regular" | "bold", color: string) {
   return `BT ${color} rg /${font === "bold" ? "F2" : "F1"} ${size} Tf 1 0 0 1 ${x} ${y} Tm (${escapePdfText(value)}) Tj ET`;
+}
+
+function phoneIcon(x: number, y: number, size: number, color: string) {
+  const s = size / 7;
+  return [
+    `q ${color} RG ${color} rg 1.2 w 1 J`,
+    `${x + 1 * s} ${y + 6 * s} m`,
+    `${x + 2.2 * s} ${y + 4.6 * s} l`,
+    `${x + 1.7 * s} ${y + 3.8 * s} l`,
+    `${x + 3.2 * s} ${y + 2.3 * s} l`,
+    `${x + 4.1 * s} ${y + 2.8 * s} l`,
+    `${x + 5.5 * s} ${y + 1.5 * s} l`,
+    `${x + 4.8 * s} ${y + 0.6 * s} l`,
+    `${x + 3.8 * s} ${y + 0.8 * s} ${x + 1.7 * s} ${y + 2.1 * s} ${x + 0.7 * s} ${y + 4.6 * s} c`,
+    `${x + 0.4 * s} ${y + 5.3 * s} ${x + 0.5 * s} ${y + 5.8 * s} ${x + 1 * s} ${y + 6 * s} c`,
+    "S Q",
+  ].join(" ");
+}
+
+function linkIcon(x: number, y: number, size: number, color: string) {
+  const s = size / 7;
+  return [
+    `q ${color} RG 1.1 w 1 J`,
+    `${x + 1 * s} ${y + 2.2 * s} m ${x + 2.6 * s} ${y + 0.6 * s} ${x + 4.2 * s} ${y + 0.6 * s} ${x + 5.1 * s} ${y + 1.5 * s} c`,
+    `${x + 3.6 * s} ${y + 3 * s} l`,
+    `${x + 1.8 * s} ${y + 4.8 * s} ${x + 0.4 * s} ${y + 3.4 * s} ${x + 1 * s} ${y + 2.2 * s} c`,
+    `${x + 3.1 * s} ${y + 5.2 * s} m ${x + 4.7 * s} ${y + 6.8 * s} ${x + 6.3 * s} ${y + 6.8 * s} ${x + 7.2 * s} ${y + 5.9 * s} c`,
+    `${x + 5.7 * s} ${y + 4.4 * s} l`,
+    `${x + 3.9 * s} ${y + 2.6 * s} ${x + 2.5 * s} ${y + 4 * s} ${x + 3.1 * s} ${y + 5.2 * s} c`,
+    "S Q",
+  ].join(" ");
+}
+
+function calendarIcon(x: number, y: number, size: number, color: string) {
+  const s = size / 7;
+  return [
+    `q ${color} RG ${color} rg 0.8 w`,
+    `${x + 0.5 * s} ${y + 0.2 * s} ${6 * s} ${5.5 * s} re S`,
+    `${x + 0.5 * s} ${y + 4.1 * s} m ${x + 6.5 * s} ${y + 4.1 * s} l S`,
+    `${x + 2 * s} ${y + 6.3 * s} m ${x + 2 * s} ${y + 5 * s} l S`,
+    `${x + 5 * s} ${y + 6.3 * s} m ${x + 5 * s} ${y + 5 * s} l S`,
+    `${x + 2 * s} ${y + 2.8 * s} ${0.7 * s} ${0.7 * s} re f`,
+    `${x + 3.6 * s} ${y + 2.8 * s} ${0.7 * s} ${0.7 * s} re f`,
+    `${x + 5.2 * s} ${y + 2.8 * s} ${0.7 * s} ${0.7 * s} re f`,
+    `${x + 2 * s} ${y + 1.4 * s} ${0.7 * s} ${0.7 * s} re f`,
+    `${x + 3.6 * s} ${y + 1.4 * s} ${0.7 * s} ${0.7 * s} re f`,
+    "Q",
+  ].join(" ");
 }
 
 function circlePath(cx: number, cy: number, r: number) {

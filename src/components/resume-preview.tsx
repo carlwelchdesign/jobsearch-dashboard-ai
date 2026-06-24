@@ -2,6 +2,10 @@ import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import AlternateEmailOutlinedIcon from "@mui/icons-material/AlternateEmailOutlined";
+import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
+import LinkOutlinedIcon from "@mui/icons-material/LinkOutlined";
+import PhoneOutlinedIcon from "@mui/icons-material/PhoneOutlined";
 import { parseResumeDocument } from "@/lib/resumes/resume-document";
 import { normalizeResumeFormat, resumeFormatLabel, type ResumeFormat } from "@/lib/resumes/resume-format";
 
@@ -34,11 +38,7 @@ function ModernResumePreview({ text }: { text: string }) {
               {document.name}
             </Typography>
             <Typography sx={{ color: "#0B84F3", fontWeight: 850, mt: 0.25 }}>{document.headline}</Typography>
-            {document.contactLine ? (
-              <Typography variant="caption" sx={{ color: "#374151", display: "block", mt: 0.75, overflowWrap: "anywhere" }}>
-                {document.contactLine}
-              </Typography>
-            ) : null}
+            <PreviewContactLine contactLine={document.contactLine} />
           </Box>
           <Box
             aria-hidden
@@ -65,7 +65,12 @@ function ModernResumePreview({ text }: { text: string }) {
               <Box key={`${item.title}-${item.dates ?? ""}`} sx={{ borderBottom: 1, borderColor: "divider", pb: 1 }}>
                 <Typography sx={{ fontWeight: 950, lineHeight: 1.2 }}>{item.role ?? item.title}</Typography>
                 {item.company ? <Typography sx={{ color: "#0B84F3", fontWeight: 850, fontSize: 13 }}>{item.company}</Typography> : null}
-                {item.dates ? <Typography variant="caption" sx={{ color: "#4B5563" }}>{item.dates}</Typography> : null}
+                {item.dates ? (
+                  <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", color: "#4B5563", mt: 0.25 }}>
+                    <CalendarMonthOutlinedIcon sx={{ fontSize: 14 }} />
+                    <Typography variant="caption" sx={{ color: "inherit" }}>{item.dates}</Typography>
+                  </Stack>
+                ) : null}
                 {item.skills.length ? <Typography variant="caption" sx={{ display: "block", color: "#374151", mt: 0.5 }}>Skills: {item.skills.join(", ")}</Typography> : null}
                 <Stack component="ul" spacing={0.35} sx={{ pl: 2, mt: 0.75, mb: 0 }}>
                   {item.bullets.slice(0, 5).map((bullet) => (
@@ -106,6 +111,49 @@ function ModernResumePreview({ text }: { text: string }) {
       </Stack>
     </Box>
   );
+}
+
+function PreviewContactLine({ contactLine }: { contactLine: string }) {
+  const items = contactItems(contactLine);
+  if (!items.length) return null;
+  return (
+    <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap", mt: 0.75, color: "#374151" }}>
+      {items.map((item) => (
+        <Stack key={`${item.kind}-${item.label}`} direction="row" spacing={0.5} sx={{ alignItems: "center", minWidth: 0 }}>
+          {item.kind === "phone" ? <PhoneOutlinedIcon sx={{ fontSize: 14, color: "#0B84F3" }} /> : null}
+          {item.kind === "email" ? <AlternateEmailOutlinedIcon sx={{ fontSize: 14, color: "#0B84F3" }} /> : null}
+          {item.kind === "link" ? <LinkOutlinedIcon sx={{ fontSize: 14, color: "#0B84F3" }} /> : null}
+          <Typography variant="caption" sx={{ color: "inherit", fontWeight: 850, overflowWrap: "anywhere" }}>
+            {item.label}
+          </Typography>
+        </Stack>
+      ))}
+    </Stack>
+  );
+}
+
+type ContactItem = {
+  kind: "phone" | "email" | "link";
+  label: string;
+};
+
+function contactItems(contactLine: string): ContactItem[] {
+  return contactLine.split(/\s*\|\s*/).flatMap<ContactItem>((part) => {
+    const trimmed = part.trim();
+    if (!trimmed) return [];
+    const label = trimmed.replace(/^https?:\/\/(?:www\.)?/i, "");
+    if (/@/.test(trimmed)) return [{ kind: "email" as const, label }];
+    if (/github\.com|linkedin\.com|https?:\/\//i.test(trimmed)) return [{ kind: "link" as const, label }];
+    return [{ kind: "phone" as const, label }];
+  }).sort((a, b) => contactPriority(a) - contactPriority(b));
+}
+
+function contactPriority(item: ContactItem) {
+  if (item.kind === "phone") return 0;
+  if (item.kind === "email") return 1;
+  if (/linkedin\.com/i.test(item.label)) return 2;
+  if (/github\.com/i.test(item.label)) return 3;
+  return 4;
 }
 
 function ClassicResumePreview({ text, format }: { text: string; format: ResumeFormat }) {
