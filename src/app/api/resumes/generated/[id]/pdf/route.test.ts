@@ -33,7 +33,10 @@ describe("GET /api/resumes/generated/[id]/pdf", () => {
     const response = await GET(new Request("http://localhost/api/resumes/generated/resume_1/pdf"), { params: { id: "resume_1" } });
 
     expect(response.status).toBe(200);
-    expect(modernPdfMock).toHaveBeenCalledWith("Carl Welch\nSummary\nReact", { profileImage: null });
+    expect(modernPdfMock).toHaveBeenCalledWith("Carl Welch\nSummary\nReact", {
+      profileImage: null,
+      skillTargetingContext: { jobText: "Senior Engineer Acme" },
+    });
     expect(simplePdfMock).not.toHaveBeenCalled();
   });
 
@@ -46,6 +49,7 @@ describe("GET /api/resumes/generated/[id]/pdf", () => {
 
     expect(modernPdfMock).toHaveBeenCalledWith("Carl Welch\nSummary\nReact", {
       profileImage: { bytes, mimeType: "image/jpeg" },
+      skillTargetingContext: { jobText: "Senior Engineer Acme" },
     });
   });
 

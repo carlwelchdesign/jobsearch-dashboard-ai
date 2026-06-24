@@ -1,4 +1,8 @@
 import { prisma } from "@/lib/prisma";
+import {
+  cleanResumeSkillsSection,
+  resumeSkillJobText,
+} from "@/lib/resumes/skill-targeting";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +14,11 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 
   if (!resume) return new Response("Resume not found", { status: 404 });
 
-  return new Response(resume.plainText ?? resume.markdown, {
+  const resumeText = cleanResumeSkillsSection(resume.plainText ?? resume.markdown, {
+    jobText: resumeSkillJobText(resume.jobPosting),
+  });
+
+  return new Response(resumeText, {
     headers: {
       "content-type": "text/plain; charset=utf-8",
       "content-disposition": `attachment; filename="${fileName(resume.user.name, resume.jobPosting.company, resume.jobPosting.title, "txt")}"`,

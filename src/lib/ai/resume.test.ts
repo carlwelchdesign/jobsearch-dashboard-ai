@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseStructuredOutput } from "@/lib/ai/openai";
 import { generateCoverLetterForJob, tailorResumeForJob } from "./resume";
-import type { ExperienceBullet, GithubRepository, JobPosting, Project, UserProfile, WorkExperience } from "@prisma/client";
+import type {
+  ExperienceBullet,
+  GithubRepository,
+  JobPosting,
+  Project,
+  UserProfile,
+  WorkExperience,
+} from "@prisma/client";
 
 vi.mock("@/lib/ai/openai", () => ({
   isOpenAiConfigured: vi.fn(() => true),
@@ -37,7 +44,8 @@ describe("tailorResumeForJob", () => {
         disabilityAnswer: null,
         resumeFormat: "modern_two_column",
         masterSummary: "Senior product engineer.",
-        professionalSummary: "Senior product engineer building React and TypeScript products.",
+        professionalSummary:
+          "Senior product engineer building React and TypeScript products.",
         yearsExperience: 20,
         primaryRoles: [],
         coreSkills: ["React", "TypeScript"],
@@ -110,10 +118,16 @@ describe("tailorResumeForJob", () => {
       ],
     });
 
-    expect(tailored.markdownResume).toContain("### CurrentCo - Senior Engineer | 2022 - Present");
+    expect(tailored.markdownResume).toContain(
+      "### CurrentCo - Senior Engineer | 2022 - Present",
+    );
     expect(tailored.markdownResume).toContain("Skills: React, TypeScript");
-    expect(tailored.markdownResume).toContain("### EarlierCo - Frontend Engineer | 2018 - 2021");
-    expect(tailored.markdownResume).toContain("- Built and maintained customer-facing web applications.");
+    expect(tailored.markdownResume).toContain(
+      "### EarlierCo - Frontend Engineer | 2018 - 2021",
+    );
+    expect(tailored.markdownResume).toContain(
+      "- Built and maintained customer-facing web applications.",
+    );
   });
 
   it("does not emit internal continuity placeholder bullets for roles without details", async () => {
@@ -142,7 +156,8 @@ describe("tailorResumeForJob", () => {
         disabilityAnswer: null,
         resumeFormat: "modern_two_column",
         masterSummary: "Senior product engineer.",
-        professionalSummary: "Senior product engineer building React and TypeScript products.",
+        professionalSummary:
+          "Senior product engineer building React and TypeScript products.",
         yearsExperience: 20,
         primaryRoles: [],
         coreSkills: ["React", "TypeScript"],
@@ -194,8 +209,12 @@ describe("tailorResumeForJob", () => {
       ],
     });
 
-    expect(tailored.markdownResume).toContain("### The David Allen Company - Art Director / Full Stack Developer | Jan 2004 - Feb 2009");
-    expect(tailored.markdownResume).not.toMatch(/verified role|employment-history continuity|included for continuity/i);
+    expect(tailored.markdownResume).toContain(
+      "### The David Allen Company - Art Director / Full Stack Developer | Jan 2004 - Feb 2009",
+    );
+    expect(tailored.markdownResume).not.toMatch(
+      /verified role|employment-history continuity|included for continuity/i,
+    );
     expect(tailored.markdownResume).toContain(
       "- Contributed to Art Director / Full Stack Developer responsibilities across product delivery, execution, and cross-functional collaboration.",
     );
@@ -227,7 +246,8 @@ describe("tailorResumeForJob", () => {
         disabilityAnswer: null,
         resumeFormat: "modern_two_column",
         masterSummary: "Senior product engineer.",
-        professionalSummary: "Senior product engineer building React and TypeScript products.",
+        professionalSummary:
+          "Senior product engineer building React and TypeScript products.",
         yearsExperience: 20,
         primaryRoles: [],
         coreSkills: ["React", "TypeScript"],
@@ -286,31 +306,41 @@ describe("tailorResumeForJob", () => {
           summary: "Built guided selling workflows.",
           resumeContext: {
             applicationTitle: "Guided Selling Platform",
-            applicationSummary: "Built sales engagement workflows for enterprise sales teams.",
-            users: "Sales teams used the platform to manage guided selling workflows.",
+            applicationSummary:
+              "Built sales engagement workflows for enterprise sales teams.",
+            users:
+              "Sales teams used the platform to manage guided selling workflows.",
             scaleImpact: "Supported enterprise sales operations.",
-            confirmedTech: [{ name: "React", version: "17", source: "user_confirmed" }],
-            versionSuggestions: [{
-              id: "typescript:3.x-4.x",
-              name: "TypeScript",
-              suggestedVersion: "3.x-4.x",
-              confidence: 0.56,
-              rationale: "Estimated from role dates.",
-              status: "NEEDS_REVIEW",
-              source: "date_window",
-              evidence: ["TypeScript"],
-            }],
+            confirmedTech: [
+              { name: "React", version: "17", source: "user_confirmed" },
+            ],
+            versionSuggestions: [
+              {
+                id: "typescript:3.x-4.x",
+                name: "TypeScript",
+                suggestedVersion: "3.x-4.x",
+                confidence: 0.56,
+                rationale: "Estimated from role dates.",
+                status: "NEEDS_REVIEW",
+                source: "date_window",
+                evidence: ["TypeScript"],
+              },
+            ],
           },
           createdAt: now,
         }),
       ],
     });
 
-    expect(tailored.markdownResume).toContain("### Revenue.io - Senior Software Engineer | Mar 2020 - Sep 2022");
+    expect(tailored.markdownResume).toContain(
+      "### Revenue.io - Senior Software Engineer | Mar 2020 - Sep 2022",
+    );
     expect(tailored.markdownResume).toContain("Skills: React 17");
     expect(tailored.markdownResume).not.toContain("Tech Used:");
     expect(tailored.markdownResume).not.toContain("TypeScript 3.x-4.x");
-    expect(tailored.markdownResume).not.toMatch(/likely|estimated|inferred|available at the time/i);
+    expect(tailored.markdownResume).not.toMatch(
+      /likely|estimated|inferred|available at the time/i,
+    );
   });
 
   it("does not carry ambiguous AR fallback skills into unrelated role skill lines", async () => {
@@ -339,8 +369,12 @@ describe("tailorResumeForJob", () => {
       ],
     });
 
-    expect(tailored.markdownResume).toContain("Skills: React, TypeScript, frontend architecture");
-    expect(tailored.markdownResume).not.toContain("Skills: React, TypeScript, AR");
+    expect(tailored.markdownResume).toContain(
+      "Skills: React, TypeScript, frontend architecture",
+    );
+    expect(tailored.markdownResume).not.toContain(
+      "Skills: React, TypeScript, AR",
+    );
   });
 
   it("keeps AR fallback skills when the role evidence supports augmented reality work", async () => {
@@ -368,7 +402,9 @@ describe("tailorResumeForJob", () => {
       ],
     });
 
-    expect(tailored.markdownResume).toContain("Skills: JavaScript, AR, analytics");
+    expect(tailored.markdownResume).toContain(
+      "Skills: JavaScript, AR, analytics",
+    );
   });
 
   it("does not duplicate a curated project with its backing GitHub repository", async () => {
@@ -384,8 +420,15 @@ describe("tailorResumeForJob", () => {
           id: "project_1",
           name: "Job Search OS",
           repoUrl: "https://github.com/carlwelchdesign/jobsearch-dashboard-ai",
-          description: "Local-first AI-powered job search operating system coordinating specialized agents and application workflows.",
-          technologies: ["Next.js", "TypeScript", "React", "Prisma", "PostgreSQL"],
+          description:
+            "Local-first AI-powered job search operating system coordinating specialized agents and application workflows.",
+          technologies: [
+            "Next.js",
+            "TypeScript",
+            "React",
+            "Prisma",
+            "PostgreSQL",
+          ],
           createdAt: now,
         }),
       ],
@@ -395,7 +438,8 @@ describe("tailorResumeForJob", () => {
           name: "jobsearch-dashboard-ai",
           fullName: "carlwelchdesign/jobsearch-dashboard-ai",
           htmlUrl: "https://github.com/carlwelchdesign/jobsearch-dashboard-ai",
-          description: "Local-first AI job search dashboard that discovers and scores roles.",
+          description:
+            "Local-first AI job search dashboard that discovers and scores roles.",
           language: "TypeScript",
           topics: ["job-search", "nextjs", "react", "postgresql"],
           createdAt: now,
@@ -409,7 +453,8 @@ describe("tailorResumeForJob", () => {
     expect(tailored.markdownResume).not.toContain("Selected strengths for");
     expect(tailored.markdownResume).not.toContain("Selected for");
 
-    const promptInput = parseStructuredOutputMock.mock.calls.at(-1)?.[0].input as {
+    const promptInput = parseStructuredOutputMock.mock.calls.at(-1)?.[0]
+      .input as {
       githubRepositories?: Array<{ name: string }>;
     };
     expect(promptInput.githubRepositories).toEqual([]);
@@ -426,15 +471,38 @@ describe("tailorResumeForJob", () => {
       }),
       job: {
         ...jobPosting(now),
-        description: "Frontend platform role using Next.js, Prisma, PostgreSQL, Redis, Docker, RAG, MCP, LangGraph, and Playwright.",
+        description:
+          "Frontend platform role using Next.js, Prisma, PostgreSQL, Redis, Docker, RAG, MCP, LangGraph, and Playwright.",
       },
       bullets: [],
       projects: [
         project({
           id: "project_1",
           name: "Job Search OS",
-          description: "Local-first AI-powered job search operating system coordinating specialized agents.",
-          technologies: ["Next.js", "TypeScript", "React", "Prisma", "PostgreSQL", "pgvector", "Redis", "Docker", "RAG", "MCP", "LangGraph", "Playwright", "Material UI", "Vitest"],
+          description:
+            "Local-first AI-powered job search operating system coordinating specialized agents.",
+          technologies: [
+            "Next.js",
+            "TypeScript",
+            "React",
+            "Prisma",
+            "PostgreSQL",
+            "pgvector",
+            "Redis",
+            "Docker",
+            "RAG",
+            "MCP",
+            "Model Context Protocol",
+            "LangGraph",
+            "Playwright",
+            "Server-Sent Events",
+            "Material UI",
+            "Vitest",
+            "guitar",
+            "guitarchords",
+            "music-theory",
+            "music-tools",
+          ],
           createdAt: now,
         }),
       ],
@@ -446,47 +514,118 @@ describe("tailorResumeForJob", () => {
     expect(tailored.markdownResume).toContain("Prisma");
     expect(tailored.markdownResume).toContain("PostgreSQL");
     expect(tailored.markdownResume).toContain("LangGraph");
+    expect(tailored.selectedSkills).toContain("MCP");
+    expect(tailored.selectedSkills).toContain("real-time event streaming");
+    expect(tailored.selectedSkills).not.toContain("Model Context Protocol");
+    expect(tailored.selectedSkills).not.toEqual(
+      expect.arrayContaining(["guitar", "guitarchords", "music-theory", "music-tools"]),
+    );
+    expect(tailored.markdownResume).toContain(
+      "## Skills\nNext.js, Prisma, PostgreSQL, Redis, Docker, RAG, MCP, LangGraph, React, TypeScript, JavaScript, pgvector, Playwright, real-time event streaming, Material UI, Vitest",
+    );
+  });
+
+  it("keeps Server-Sent Events when the job explicitly asks for it", async () => {
+    parseStructuredOutputMock.mockResolvedValue(null);
+    const now = new Date("2026-06-04T12:00:00Z");
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now, {
+        coreSkills: ["React", "TypeScript"],
+        technicalSkills: ["Server-Sent Events"],
+      }),
+      job: {
+        ...jobPosting(now),
+        description:
+          "Build live application dashboards using Server-Sent Events, EventSource, React, and TypeScript.",
+      },
+      bullets: [],
+      projects: [],
+      githubRepositories: [],
+      workExperiences: [],
+    });
+
+    expect(tailored.selectedSkills).toContain("Server-Sent Events");
+    expect(tailored.selectedSkills).not.toContain("real-time event streaming");
+  });
+
+  it("keeps music skills for music-related jobs", async () => {
+    parseStructuredOutputMock.mockResolvedValue(null);
+    const now = new Date("2026-06-04T12:00:00Z");
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now, {
+        coreSkills: ["React", "TypeScript"],
+        technicalSkills: ["guitar", "music-theory", "music-tools"],
+      }),
+      job: {
+        ...jobPosting(now),
+        title: "Frontend Engineer, Music Creator Tools",
+        description:
+          "Build guitar chord learning and music theory workflows for musicians.",
+      },
+      bullets: [],
+      projects: [],
+      githubRepositories: [],
+      workExperiences: [],
+    });
+
+    expect(tailored.selectedSkills).toEqual(
+      expect.arrayContaining(["guitar", "music-theory", "music-tools"]),
+    );
   });
 
   it("strips generated summary scaffold language from AI output", async () => {
     const now = new Date("2026-06-04T12:00:00Z");
-    parseStructuredOutputMock.mockResolvedValueOnce({
-      tailoredSummary: "Senior engineer.",
-      selectedSkills: ["React"],
-      selectedExperienceBullets: [],
-      projectSelections: [],
-      keywordAlignment: { matchedTerms: ["React"], method: "test" },
-      markdownResume: [
-        "# Carl Welch",
-        "",
-        "## Summary",
-        "Senior engineer building React systems. Selected strengths for Close's Senior Engineer role include React, frontend architecture.",
-        "",
-        "## Skills",
-        "React",
-        "",
-        "## Professional Experience",
-        ...Array.from({ length: 18 }, (_, index) => `- Built verified product workflow ${index + 1} with React, TypeScript, API integration, testing coverage, component architecture, and cross-functional delivery for enterprise users.`),
-      ].join("\n"),
-      plainTextResume: [
-        "Carl Welch",
-        "",
-        "Summary",
-        "Senior engineer building React systems. Selected strengths for Close's Senior Engineer role include React, frontend architecture.",
-        "",
-        "Skills",
-        "React",
-        "",
-        "Professional Experience",
-        ...Array.from({ length: 18 }, (_, index) => `- Built verified product workflow ${index + 1} with React, TypeScript, API integration, testing coverage, component architecture, and cross-functional delivery for enterprise users.`),
-      ].join("\n"),
-      warnings: [],
-      unsupportedClaimsDetected: [],
-      validation: null,
-    }).mockResolvedValueOnce(null);
+    parseStructuredOutputMock
+      .mockResolvedValueOnce({
+        tailoredSummary: "Senior engineer.",
+        selectedSkills: ["React"],
+        selectedExperienceBullets: [],
+        projectSelections: [],
+        keywordAlignment: { matchedTerms: ["React"], method: "test" },
+        markdownResume: [
+          "# Carl Welch",
+          "",
+          "## Summary",
+          "Senior engineer building React systems. Selected strengths for Close's Senior Engineer role include React, frontend architecture.",
+          "",
+          "## Skills",
+          "React",
+          "",
+          "## Professional Experience",
+          ...Array.from(
+            { length: 18 },
+            (_, index) =>
+              `- Built verified product workflow ${index + 1} with React, TypeScript, API integration, testing coverage, component architecture, and cross-functional delivery for enterprise users.`,
+          ),
+        ].join("\n"),
+        plainTextResume: [
+          "Carl Welch",
+          "",
+          "Summary",
+          "Senior engineer building React systems. Selected strengths for Close's Senior Engineer role include React, frontend architecture.",
+          "",
+          "Skills",
+          "React",
+          "",
+          "Professional Experience",
+          ...Array.from(
+            { length: 18 },
+            (_, index) =>
+              `- Built verified product workflow ${index + 1} with React, TypeScript, API integration, testing coverage, component architecture, and cross-functional delivery for enterprise users.`,
+          ),
+        ].join("\n"),
+        warnings: [],
+        unsupportedClaimsDetected: [],
+        validation: null,
+      })
+      .mockResolvedValueOnce(null);
 
     const tailored = await tailorResumeForJob({
-      userProfile: userProfile(now, { linkedinUrl: "https://www.linkedin.com/in/carlwelchdesign/" }),
+      userProfile: userProfile(now, {
+        linkedinUrl: "https://www.linkedin.com/in/carlwelchdesign/",
+      }),
       job: jobPosting(now),
       bullets: [],
       projects: [],
@@ -494,9 +633,15 @@ describe("tailorResumeForJob", () => {
       githubRepositories: [],
     });
 
-    expect(tailored.markdownResume).toContain("Senior engineer building React systems.");
-    expect(tailored.markdownResume).toContain("https://www.linkedin.com/in/carlwelchdesign");
-    expect(tailored.markdownResume).toContain("https://github.com/carlwelchdesign");
+    expect(tailored.markdownResume).toContain(
+      "Senior engineer building React systems.",
+    );
+    expect(tailored.markdownResume).toContain(
+      "https://www.linkedin.com/in/carlwelchdesign",
+    );
+    expect(tailored.markdownResume).toContain(
+      "https://github.com/carlwelchdesign",
+    );
     expect(tailored.markdownResume).not.toContain("Selected strengths for");
     expect(tailored.plainTextResume).not.toContain("Selected strengths for");
   });
@@ -525,8 +670,12 @@ describe("tailorResumeForJob", () => {
       ],
     });
 
-    expect(tailored.markdownResume.split("\n").slice(0, 3).join("\n")).toContain("https://www.linkedin.com/in/carlwelchdesign");
-    expect(tailored.markdownResume.split("\n").slice(0, 3).join("\n")).toContain("https://github.com/carlwelchdesign");
+    expect(
+      tailored.markdownResume.split("\n").slice(0, 3).join("\n"),
+    ).toContain("https://www.linkedin.com/in/carlwelchdesign");
+    expect(
+      tailored.markdownResume.split("\n").slice(0, 3).join("\n"),
+    ).toContain("https://github.com/carlwelchdesign");
   });
 
   it("prefers approved quantified achievements in fallback role bullets", async () => {
@@ -562,8 +711,16 @@ describe("tailorResumeForJob", () => {
       ],
     });
 
-    expect(tailored.markdownResume).toContain("Increased test automation by 50%");
-    expect(tailored.markdownResume.indexOf("Increased test automation by 50%")).toBeLessThan(tailored.markdownResume.indexOf("Built enterprise admin console features"));
+    expect(tailored.markdownResume).toContain(
+      "Increased test automation by 50%",
+    );
+    expect(
+      tailored.markdownResume.indexOf("Increased test automation by 50%"),
+    ).toBeLessThan(
+      tailored.markdownResume.indexOf(
+        "Built enterprise admin console features",
+      ),
+    );
   });
 
   it("omits incomplete social profile roots and derives GitHub from repositories", async () => {
@@ -607,8 +764,10 @@ describe("generateCoverLetterForJob", () => {
       userProfile: userProfile(now),
       job: {
         ...jobPosting(now),
-        company: "Senior Software Engineer - Frontend/React (USA Only - 100% Remote) @ Close",
-        title: "Senior Software Engineer - Frontend/React (USA Only - 100% Remote)",
+        company:
+          "Senior Software Engineer - Frontend/React (USA Only - 100% Remote) @ Close",
+        title:
+          "Senior Software Engineer - Frontend/React (USA Only - 100% Remote)",
         description: "React frontend architecture developer experience.",
       },
       bullets: [
@@ -634,23 +793,34 @@ describe("generateCoverLetterForJob", () => {
 
     expect(draft.generatedBy).toBe("deterministic_fallback");
     expect(draft.body).toContain("Cover letter generation needs review");
-    expect(draft.body).toContain("Close's Senior Software Engineer - Frontend/React (USA Only - 100% Remote) role");
+    expect(draft.body).toContain(
+      "Close's Senior Software Engineer - Frontend/React (USA Only - 100% Remote) role",
+    );
     expect(draft.body).not.toContain("@ Close role");
-    expect(draft.body).toContain("Regenerate the cover letter before using this application packet.");
+    expect(draft.body).toContain(
+      "Regenerate the cover letter before using this application packet.",
+    );
     expect(draft.body).not.toContain("Dear Senior Software Engineer");
-    expect(draft.body).not.toContain("maps to my strongest verified experience");
+    expect(draft.body).not.toContain(
+      "maps to my strongest verified experience",
+    );
     expect(draft.body).not.toContain("Received over $300K");
     expect(draft.body).not.toMatch(/^- /m);
-    expect(draft.warnings).toContain("Structured cover-letter generation was unavailable; regenerate before using this application packet.");
-    expect(parseStructuredOutputMock).toHaveBeenCalledWith(expect.objectContaining({
-      schemaName: "generate_cover_letter",
-      input: expect.objectContaining({
-        company: "Close",
-        job: expect.objectContaining({
-          title: "Senior Software Engineer - Frontend/React (USA Only - 100% Remote)",
+    expect(draft.warnings).toContain(
+      "Structured cover-letter generation was unavailable; regenerate before using this application packet.",
+    );
+    expect(parseStructuredOutputMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        schemaName: "generate_cover_letter",
+        input: expect.objectContaining({
+          company: "Close",
+          job: expect.objectContaining({
+            title:
+              "Senior Software Engineer - Frontend/React (USA Only - 100% Remote)",
+          }),
         }),
       }),
-    }));
+    );
   });
 });
 
@@ -676,7 +846,8 @@ function userProfile(now: Date, patch: Partial<UserProfile> = {}): UserProfile {
     disabilityAnswer: null,
     resumeFormat: "modern_two_column",
     masterSummary: "Senior product engineer.",
-    professionalSummary: "Senior product engineer building React and TypeScript products.",
+    professionalSummary:
+      "Senior product engineer building React and TypeScript products.",
     yearsExperience: 20,
     primaryRoles: [],
     coreSkills: ["React", "TypeScript"],
@@ -720,7 +891,10 @@ function jobPosting(now: Date): JobPosting {
   };
 }
 
-function experienceBullet(input: Partial<ExperienceBullet> & Pick<ExperienceBullet, "id" | "company" | "role" | "text" | "createdAt">): ExperienceBullet {
+function experienceBullet(
+  input: Partial<ExperienceBullet> &
+    Pick<ExperienceBullet, "id" | "company" | "role" | "text" | "createdAt">,
+): ExperienceBullet {
   return {
     userProfileId: "profile_1",
     workExperienceId: null,
@@ -735,7 +909,10 @@ function experienceBullet(input: Partial<ExperienceBullet> & Pick<ExperienceBull
   };
 }
 
-function workExperience(input: Partial<WorkExperience> & Pick<WorkExperience, "id" | "company" | "title" | "createdAt">): WorkExperience {
+function workExperience(
+  input: Partial<WorkExperience> &
+    Pick<WorkExperience, "id" | "company" | "title" | "createdAt">,
+): WorkExperience {
   return {
     userProfileId: "profile_1",
     location: null,
@@ -752,7 +929,9 @@ function workExperience(input: Partial<WorkExperience> & Pick<WorkExperience, "i
   };
 }
 
-function project(input: Partial<Project> & Pick<Project, "id" | "name" | "createdAt">): Project {
+function project(
+  input: Partial<Project> & Pick<Project, "id" | "name" | "createdAt">,
+): Project {
   return {
     userProfileId: "profile_1",
     description: null,
@@ -766,7 +945,13 @@ function project(input: Partial<Project> & Pick<Project, "id" | "name" | "create
   };
 }
 
-function githubRepository(input: Partial<GithubRepository> & Pick<GithubRepository, "id" | "name" | "fullName" | "htmlUrl" | "createdAt">): GithubRepository {
+function githubRepository(
+  input: Partial<GithubRepository> &
+    Pick<
+      GithubRepository,
+      "id" | "name" | "fullName" | "htmlUrl" | "createdAt"
+    >,
+): GithubRepository {
   return {
     userProfileId: "profile_1",
     githubId: input.fullName,

@@ -27,6 +27,7 @@ import Typography from "@mui/material/Typography";
 import { notFound } from "next/navigation";
 import { ActionButton } from "@/components/action-button";
 import { ResumePreview } from "@/components/resume-preview";
+import { resumeSkillJobText } from "@/lib/resumes/skill-targeting";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
@@ -452,6 +453,9 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                   <ResumePreview
                     text={application.resume.plainText ?? application.resume.markdown}
                     format={application.user.profile?.resumeFormat}
+                    skillTargetingContext={{
+                      jobText: resumeSkillJobText(application.jobPosting),
+                    }}
                   />
                 ) : (
                   <EmptyState title="No resume generated" body="Prepare the package or generate a tailored resume from the job detail page." />

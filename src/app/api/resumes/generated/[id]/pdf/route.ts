@@ -2,6 +2,10 @@ import { createSimpleTextPdf } from "@/lib/pdf/simple-resume-pdf";
 import { createModernTwoColumnResumePdf } from "@/lib/pdf/modern-resume-pdf";
 import { prisma } from "@/lib/prisma";
 import { isLegacyResumeFormat, normalizeResumeFormat } from "@/lib/resumes/resume-format";
+import {
+  cleanResumeSkillsSection,
+  resumeSkillJobText,
+} from "@/lib/resumes/skill-targeting";
 
 export const dynamic = "force-dynamic";
 
@@ -15,11 +19,18 @@ export async function GET(request: Request, { params }: { params: { id: string }
 
   const requestedFormat = new URL(request.url).searchParams.get("format");
   const format = normalizeResumeFormat(requestedFormat ?? resume.user.profile?.resumeFormat);
-  const resumeText = resume.plainText ?? resume.markdown;
+  const skillTargetingContext = {
+    jobText: resumeSkillJobText(resume.jobPosting),
+  };
+  const resumeText = cleanResumeSkillsSection(
+    resume.plainText ?? resume.markdown,
+    skillTargetingContext,
+  );
   const pdf = isLegacyResumeFormat(format)
     ? createSimpleTextPdf(resumeText, format)
     : await createModernTwoColumnResumePdf(resumeText, {
       profileImage: await fetchProfileImage(resume.user.profile?.linkedinPictureUrl),
+      skillTargetingContext,
     });
 
   return new Response(pdf, {

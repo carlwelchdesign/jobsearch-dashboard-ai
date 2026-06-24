@@ -7,16 +7,35 @@ import LinkOutlinedIcon from "@mui/icons-material/LinkOutlined";
 import PhoneOutlinedIcon from "@mui/icons-material/PhoneOutlined";
 import { parseResumeDocument } from "@/lib/resumes/resume-document";
 import { normalizeResumeFormat, resumeFormatLabel, type ResumeFormat } from "@/lib/resumes/resume-format";
+import {
+  cleanResumeSkillsSection,
+  type ResumeSkillTargetingContext,
+} from "@/lib/resumes/skill-targeting";
 
-export function ResumePreview({ text, format }: { text: string; format?: string | null }) {
+export function ResumePreview({
+  text,
+  format,
+  skillTargetingContext,
+}: {
+  text: string;
+  format?: string | null;
+  skillTargetingContext?: ResumeSkillTargetingContext;
+}) {
   const selectedFormat = normalizeResumeFormat(format);
+  const cleanedText = cleanPreviewSkills(text, skillTargetingContext);
   return selectedFormat === "modern_two_column"
-    ? <ModernResumePreview text={text} />
-    : <ClassicResumePreview text={text} format={selectedFormat} />;
+    ? <ModernResumePreview text={cleanedText} skillTargetingContext={skillTargetingContext} />
+    : <ClassicResumePreview text={cleanedText} format={selectedFormat} />;
 }
 
-function ModernResumePreview({ text }: { text: string }) {
-  const document = parseResumeDocument(text);
+function ModernResumePreview({
+  text,
+  skillTargetingContext,
+}: {
+  text: string;
+  skillTargetingContext?: ResumeSkillTargetingContext;
+}) {
+  const document = parseResumeDocument(text, skillTargetingContext);
   const initials = document.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "CV";
   return (
     <Box
@@ -195,6 +214,14 @@ function ClassicResumePreview({ text, format }: { text: string; format: ResumeFo
       </Typography>
     </Box>
   );
+}
+
+function cleanPreviewSkills(
+  text: string,
+  skillTargetingContext: ResumeSkillTargetingContext | undefined,
+) {
+  if (!skillTargetingContext) return text;
+  return cleanResumeSkillsSection(text, skillTargetingContext);
 }
 
 function PreviewSection({ title }: { title: string }) {

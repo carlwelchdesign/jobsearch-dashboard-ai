@@ -1,6 +1,7 @@
 import path from "node:path";
 import PDFDocument from "pdfkit";
 import { parseResumeDocument, type ResumeDocument } from "@/lib/resumes/resume-document";
+import type { ResumeSkillTargetingContext } from "@/lib/resumes/skill-targeting";
 
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
@@ -73,12 +74,17 @@ type ResumePdfImage = {
   mimeType: string;
 };
 
+type ResumePdfOptions = {
+  profileImage?: ResumePdfImage | null;
+  skillTargetingContext?: ResumeSkillTargetingContext;
+};
+
 type PdfMetrics = {
   widthOfString: (value: string, size: number, font: PdfFont) => number;
 };
 
-export async function createModernTwoColumnResumePdf(text: string, options: { profileImage?: ResumePdfImage | null } = {}): Promise<Uint8Array<ArrayBuffer>> {
-  const document = parseResumeDocument(text);
+export async function createModernTwoColumnResumePdf(text: string, options: ResumePdfOptions = {}): Promise<Uint8Array<ArrayBuffer>> {
+  const document = parseResumeDocument(text, options.skillTargetingContext);
   const pdf = new PDFDocument({ autoFirstPage: false, compress: false, margin: 0, size: [PAGE_WIDTH, PAGE_HEIGHT] });
   registerResumeFonts(pdf);
   const pages = layoutPages(document, pdfMetrics(pdf));

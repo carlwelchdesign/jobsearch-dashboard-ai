@@ -1,3 +1,8 @@
+import {
+  normalizeTargetedResumeSkills,
+  type ResumeSkillTargetingContext,
+} from "@/lib/resumes/skill-targeting";
+
 export type ResumeDocument = {
   name: string;
   contactLine: string;
@@ -26,7 +31,15 @@ export type ResumeProject = {
   technologies: string[];
 };
 
-type ResumeSectionKey = keyof Pick<ResumeDocument, "summary" | "skills" | "experience" | "projects" | "education" | "certifications">;
+type ResumeSectionKey = keyof Pick<
+  ResumeDocument,
+  | "summary"
+  | "skills"
+  | "experience"
+  | "projects"
+  | "education"
+  | "certifications"
+>;
 
 const SECTION_ALIASES: Partial<Record<string, ResumeSectionKey>> = {
   summary: "summary",
@@ -39,21 +52,34 @@ const SECTION_ALIASES: Partial<Record<string, ResumeSectionKey>> = {
   certifications: "certifications",
 };
 
-export function parseResumeDocument(text: string): ResumeDocument {
+export function parseResumeDocument(
+  text: string,
+  skillTargetingContext: ResumeSkillTargetingContext = {},
+): ResumeDocument {
   const lines = text.replace(/\r/g, "").split("\n");
   const firstLineIndex = lines.findIndex((line) => line.trim());
-  const name = firstLineIndex === -1 ? "" : stripMarkdown(lines[firstLineIndex]).trim();
+  const name =
+    firstLineIndex === -1 ? "" : stripMarkdown(lines[firstLineIndex]).trim();
   let bodyStart = firstLineIndex === -1 ? 0 : firstLineIndex + 1;
   const contactParts: string[] = [];
 
-  for (let index = bodyStart; index < Math.min(lines.length, bodyStart + 5); index += 1) {
+  for (
+    let index = bodyStart;
+    index < Math.min(lines.length, bodyStart + 5);
+    index += 1
+  ) {
     const trimmed = stripMarkdown(lines[index]).trim();
     if (!trimmed) {
       bodyStart = index + 1;
       continue;
     }
     if (/@|https?:\/\/|\blinkedin\.com\b|\bgithub\.com\b|\|/.test(trimmed)) {
-      contactParts.push(...trimmed.split(/\s*\|\s*/).map((part) => part.trim()).filter(Boolean));
+      contactParts.push(
+        ...trimmed
+          .split(/\s*\|\s*/)
+          .map((part) => part.trim())
+          .filter(Boolean),
+      );
       bodyStart = index + 1;
       continue;
     }
@@ -63,7 +89,8 @@ export function parseResumeDocument(text: string): ResumeDocument {
   const sections = collectSections(lines.slice(bodyStart));
   const experience = parseExperience(sections.experience ?? []);
   const projects = parseProjects(sections.projects ?? []);
-  const headline = firstExperienceRole(experience) ?? "Senior Software Engineer";
+  const headline =
+    firstExperienceRole(experience) ?? "Senior Software Engineer";
   const sectionSkills = parseSkills(sections.skills ?? []);
 
   return {
@@ -71,7 +98,7 @@ export function parseResumeDocument(text: string): ResumeDocument {
     contactLine: contactParts.join(" | "),
     headline,
     summary: cleanBodyLines(sections.summary ?? []),
-    skills: mergeResumeSkills(sectionSkills, projects.flatMap((project) => project.technologies)),
+    skills: mergeResumeSkills(sectionSkills, projects, skillTargetingContext),
     experience,
     projects,
     education: cleanBodyLines(sections.education ?? []),
@@ -81,7 +108,9 @@ export function parseResumeDocument(text: string): ResumeDocument {
 }
 
 function collectSections(lines: string[]) {
-  const sections: Partial<Record<ResumeSectionKey, string[]>> & { otherSections: Array<{ title: string; lines: string[] }> } = {
+  const sections: Partial<Record<ResumeSectionKey, string[]>> & {
+    otherSections: Array<{ title: string; lines: string[] }>;
+  } = {
     otherSections: [],
   };
   let currentTitle = "";
@@ -90,7 +119,10 @@ function collectSections(lines: string[]) {
 
   const flushOther = () => {
     if (currentKey === "other" && currentTitle && otherLines.length) {
-      sections.otherSections.push({ title: currentTitle, lines: cleanBodyLines(otherLines) });
+      sections.otherSections.push({
+        title: currentTitle,
+        lines: cleanBodyLines(otherLines),
+      });
       otherLines = [];
     }
   };
@@ -102,7 +134,8 @@ function collectSections(lines: string[]) {
       flushOther();
       currentTitle = line;
       currentKey = SECTION_ALIASES[heading] ?? "other";
-      if (currentKey !== "other" && !Array.isArray(sections[currentKey])) sections[currentKey] = [];
+      if (currentKey !== "other" && !Array.isArray(sections[currentKey]))
+        sections[currentKey] = [];
       continue;
     }
     if (currentKey === "other") otherLines.push(rawLine);
@@ -137,10 +170,17 @@ function parseExperience(lines: string[]): ResumeExperience[] {
       continue;
     }
     if (/^skills\s*:/i.test(line)) {
-      current.skills.push(...line.replace(/^skills\s*:/i, "").split(",").map((skill) => skill.trim()).filter(Boolean));
+      current.skills.push(
+        ...line
+          .replace(/^skills\s*:/i, "")
+          .split(",")
+          .map((skill) => skill.trim())
+          .filter(Boolean),
+      );
       continue;
     }
-    if (/^[-*]\s+/.test(line)) current.bullets.push(line.replace(/^[-*]\s+/, ""));
+    if (/^[-*]\s+/.test(line))
+      current.bullets.push(line.replace(/^[-*]\s+/, ""));
     else current.bullets.push(line);
   }
   pushCurrent();
@@ -175,11 +215,19 @@ function parseProjects(lines: string[]): ResumeProject[] {
     if (colon > 1 && colon < 72) {
       const parsed = parseProjectDescription(bullet.slice(colon + 1).trim());
       projects.push({ name: bullet.slice(0, colon).trim(), ...parsed });
-    } else if (projects.length && projects[projects.length - 1].description.length < 600) {
+    } else if (
+      projects.length &&
+      projects[projects.length - 1].description.length < 600
+    ) {
       const project = projects[projects.length - 1];
-      const parsed = parseProjectDescription(`${project.description} ${bullet}`.trim());
+      const parsed = parseProjectDescription(
+        `${project.description} ${bullet}`.trim(),
+      );
       project.description = parsed.description;
-      project.technologies = uniqueSkills([...project.technologies, ...parsed.technologies]);
+      project.technologies = uniqueSkills([
+        ...project.technologies,
+        ...parsed.technologies,
+      ]);
     } else {
       projects.push({ name: bullet, description: "", technologies: [] });
     }
@@ -187,9 +235,12 @@ function parseProjects(lines: string[]): ResumeProject[] {
   return projects;
 }
 
-function parseProjectDescription(value: string): Pick<ResumeProject, "description" | "technologies"> {
+function parseProjectDescription(
+  value: string,
+): Pick<ResumeProject, "description" | "technologies"> {
   const [description, stack] = splitLast(value, " | ");
-  const technologies = stack && looksLikeTechnologyStack(stack) ? parseSkills([stack]) : [];
+  const technologies =
+    stack && looksLikeTechnologyStack(stack) ? parseSkills([stack]) : [];
   return {
     description: technologies.length ? description : value,
     technologies,
@@ -199,13 +250,33 @@ function parseProjectDescription(value: string): Pick<ResumeProject, "descriptio
 function looksLikeTechnologyStack(value: string) {
   const terms = parseSkills([value]);
   if (terms.length < 2) return false;
-  return terms.some((term) => /react|typescript|next\.?js|node\.?js|prisma|postgres|redis|docker|openai|rag|mcp|langgraph|langchain|playwright|material ui|vitest|pgvector/i.test(term));
+  return terms.some((term) =>
+    /react|typescript|next\.?js|node\.?js|prisma|postgres|redis|docker|openai|rag|mcp|langgraph|langchain|playwright|material ui|vitest|pgvector/i.test(
+      term,
+    ),
+  );
 }
 
-function mergeResumeSkills(sectionSkills: string[], projectSkills: string[]) {
+function mergeResumeSkills(
+  sectionSkills: string[],
+  projects: ResumeProject[],
+  skillTargetingContext: ResumeSkillTargetingContext,
+) {
   const prioritySectionSkills = sectionSkills.slice(0, 8);
   const remainingSectionSkills = sectionSkills.slice(8);
-  return uniqueSkills([...prioritySectionSkills, ...projectSkills, ...remainingSectionSkills]);
+  const projectSkills = projects.flatMap((project) => project.technologies);
+  const evidenceText = projects
+    .map((project) => [project.name, project.description].join(" "))
+    .join(" ");
+  return normalizeTargetedResumeSkills(
+    [...prioritySectionSkills, ...projectSkills, ...remainingSectionSkills],
+    {
+      ...skillTargetingContext,
+      evidenceText: [skillTargetingContext.evidenceText, evidenceText]
+        .filter(Boolean)
+        .join(" "),
+    },
+  );
 }
 
 function uniqueSkills(skills: string[]) {
@@ -214,7 +285,11 @@ function uniqueSkills(skills: string[]) {
     .map((skill) => skill.trim())
     .filter(Boolean)
     .filter((skill) => {
-      const key = skill.toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").trim().replace(/\s+/g, " ");
+      const key = skill
+        .toLowerCase()
+        .replace(/[^a-z0-9+#.]+/g, " ")
+        .trim()
+        .replace(/\s+/g, " ");
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -235,15 +310,28 @@ function stripMarkdown(line: string) {
 
 function normalizedHeading(line: string) {
   const normalized = line.replace(/:$/, "").toLowerCase();
-  return SECTION_ALIASES[normalized] ? normalized : /^[A-Z][A-Z /&-]{2,}$/.test(line) ? normalized : null;
+  return SECTION_ALIASES[normalized]
+    ? normalized
+    : /^[A-Z][A-Z /&-]{2,}$/.test(line)
+      ? normalized
+      : null;
 }
 
 function isRoleLine(line: string) {
-  return /^[A-Z0-9][A-Za-z0-9 .&'/(),-]+ - .+/.test(line) || /\s\|\s(?:present|current|now|[a-z]{3,9}\s+\d{4}|\d{4})/i.test(line);
+  return (
+    /^[A-Z0-9][A-Za-z0-9 .&'/(),-]+ - .+/.test(line) ||
+    /\s\|\s(?:present|current|now|[a-z]{3,9}\s+\d{4}|\d{4})/i.test(line)
+  );
 }
 
-function splitLast(value: string, separator: string): [string, string | undefined] {
+function splitLast(
+  value: string,
+  separator: string,
+): [string, string | undefined] {
   const index = value.lastIndexOf(separator);
   if (index === -1) return [value.trim(), undefined];
-  return [value.slice(0, index).trim(), value.slice(index + separator.length).trim()];
+  return [
+    value.slice(0, index).trim(),
+    value.slice(index + separator.length).trim(),
+  ];
 }
