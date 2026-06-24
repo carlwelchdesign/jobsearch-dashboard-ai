@@ -12,11 +12,14 @@ describe("/applications page agency workflow", () => {
     expect(pageSource).toContain("Application operations");
     expect(pageSource).toContain("Prepare approved applications for Apply");
     expect(pageSource).toContain("Approved to Ready");
-    expect(pageSource).toContain("Approved means the job passed review. Ready means it has a direct application URL plus launchable resume and cover-letter materials.");
-    expect(pageSource).toContain("Prepare approved for Apply");
+    expect(pageSource).toContain("Ready to apply means it has a direct application URL plus launchable resume and cover-letter materials.");
+    expect(pageSource).toContain("Prepare approved for Ready to apply");
+    expect(pageSource).toContain("This also archives approved items without direct URLs.");
+    expect(pageSource).toContain("material-blocked");
+    expect(pageSource).toContain("Archives on prep: no direct employer/ATS URL");
+    expect(pageSource).toContain("classifyApplicationPrepReadiness");
     expect(pageSource).toContain("Add direct URLs first");
     expect(pageSource).toContain("ApplicationPrepChecklist");
-    expect(pageSource).toContain("Needs direct employer/ATS URL");
     expect(pageSource).toContain("Prepare eligible saved matches directly for Apply Sprint.");
     expect(pageSource).toContain("/api/applications/agency/run");
     expect(pageSource).toContain("minimumScore: 0");

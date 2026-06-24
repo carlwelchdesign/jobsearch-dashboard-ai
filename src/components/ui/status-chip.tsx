@@ -22,5 +22,6 @@ export function StatusChip({ status, size = "small" }: { status: string; size?: 
 }
 
 export function formatStatus(status: string) {
+  if (status === "ready_to_apply") return "Ready to apply";
   return status.replace(/_/g, " ");
 }

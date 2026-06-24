@@ -26,6 +26,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip, formatStatus } from "@/components/ui/status-chip";
 import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
+import { classifyApplicationPrepReadiness, type ApplicationPrepReadiness } from "@/lib/applications/prep-readiness";
 import { visibleCanonicalApplications } from "@/lib/applications/reconciliation";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
@@ -72,7 +73,7 @@ export default async function ApplicationsPage() {
           },
         },
         resume: { select: { id: true } },
-        coverLetter: { select: { id: true } },
+        coverLetter: { select: { id: true, generationNotes: true } },
         applicationPackets: { select: { id: true }, take: 1 },
         emailMessages: {
           where: { classification: "AUTOMATED_CONFIRMATION" },
@@ -98,9 +99,11 @@ export default async function ApplicationsPage() {
   ]);
   const visibleApplications = visibleCanonicalApplications(applications);
   const approvedApplications = visibleApplications.filter((application) => application.status === "approved");
-  const approvedLaunchableCount = approvedApplications.filter((application) => assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable).length;
-  const approvedMissingUrlCount = approvedApplications.length - approvedLaunchableCount;
-  const approvedMissingMaterialsCount = approvedApplications.filter((application) => !application.resume || !application.coverLetter).length;
+  const approvedReadiness = approvedApplications.map((application) => classifyVisibleApplicationReadiness(application));
+  const approvedLaunchableCount = approvedReadiness.filter((readiness) => readiness.kind !== "no_direct_url").length;
+  const approvedMissingUrlCount = approvedReadiness.filter((readiness) => readiness.kind === "no_direct_url").length;
+  const approvedMissingMaterialsCount = approvedReadiness.filter((readiness) => readiness.kind === "needs_materials").length;
+  const approvedMaterialBlockedCount = approvedReadiness.filter((readiness) => readiness.kind === "material_blocked").length;
   const readyLaunchableCount = visibleApplications.filter((application) => (
     application.status === "ready_to_apply"
     && assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable
@@ -142,6 +145,7 @@ export default async function ApplicationsPage() {
             launchableCount={approvedLaunchableCount}
             missingUrlCount={approvedMissingUrlCount}
             missingMaterialsCount={approvedMissingMaterialsCount}
+            materialBlockedCount={approvedMaterialBlockedCount}
           />
         ) : null}
         <Card sx={{ borderColor: nextAction.color === "success" ? "success.main" : "primary.main", bgcolor: nextAction.color === "success" ? "rgba(16, 185, 129, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
@@ -261,7 +265,7 @@ export default async function ApplicationsPage() {
                       <StatusChip status={status} />
                       {status === "approved" ? (
                         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
-                          Prepare packets here. Items move to Ready after materials pass review and a direct employer URL exists.
+                          Prepare packets here. Items move to Ready to apply after materials pass review and a direct employer URL exists.
                         </Typography>
                       ) : null}
                       {isReadyColumn ? (
@@ -317,7 +321,7 @@ export default async function ApplicationsPage() {
                               hasResume={Boolean(application.resume)}
                               hasCoverLetter={Boolean(application.coverLetter)}
                               hasPacket={Boolean(application.applicationPackets.length)}
-                              launchableUrl={assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable}
+                              readiness={classifyVisibleApplicationReadiness(application)}
                             />
                           ) : null}
                           <Box sx={{ mt: 1 }}>
@@ -413,8 +417,8 @@ function applicationsNextAction({
 }) {
   if (readyCount > 0) {
     return {
-      title: "Work Apply Sprint",
-      detail: "Ready applications have resume and cover letter materials. Open the sprint console to launch the assistant and track submission.",
+      title: "Work Ready to apply",
+      detail: "Ready to apply applications have a direct URL plus launchable resume and cover letter materials. Open the sprint console to launch the assistant and track submission.",
       label: "Open sprint console",
       href: "/applications/assistant",
       color: "success" as const,
@@ -437,7 +441,7 @@ function applicationsNextAction({
     return {
       title: "Prepare approved applications",
       detail: "Generate or validate packets, regenerate blocked letters if needed, then move launchable applications into Ready to apply.",
-      label: "Prepare approved for Apply",
+      label: "Prepare approved for Ready to apply",
       postTo: "/api/applications/bulk-move-to-sprint",
       body: { limit: Math.min(Math.max(approvedLaunchableCount, 1), 250), regenerateBlockedMaterials: true },
       runInBackground: true,
@@ -476,11 +480,13 @@ function ApprovedToReadyPanel({
   launchableCount,
   missingUrlCount,
   missingMaterialsCount,
+  materialBlockedCount,
 }: {
   approvedCount: number;
   launchableCount: number;
   missingUrlCount: number;
   missingMaterialsCount: number;
+  materialBlockedCount: number;
 }) {
   return (
     <Card id="approved" sx={{ borderColor: "primary.main" }}>
@@ -492,16 +498,17 @@ function ApprovedToReadyPanel({
                 <Chip size="small" color="primary" label={`${approvedCount} approved`} />
                 <Chip size="small" color={launchableCount ? "success" : "warning"} variant="outlined" label={`${launchableCount} with direct URL`} />
                 {missingMaterialsCount ? <Chip size="small" color="warning" variant="outlined" label={`${missingMaterialsCount} need materials`} /> : null}
+                {materialBlockedCount ? <Chip size="small" color="warning" variant="outlined" label={`${materialBlockedCount} material-blocked`} /> : null}
                 {missingUrlCount ? <Chip size="small" color="warning" variant="outlined" label={`${missingUrlCount} need URL`} /> : null}
               </Stack>
               <Typography variant="h3">Approved to Ready</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 760 }}>
-                Approved means the job passed review. Ready means it has a direct application URL plus launchable resume and cover-letter materials. Use this control to do that prep work in one pass.
+                Approved means the job passed review. Ready to apply means it has a direct application URL plus launchable resume and cover-letter materials. This also archives approved items without direct URLs.
               </Typography>
             </Box>
             {launchableCount ? (
               <BulkMoveToSprintControl
-                label="Prepare approved for Apply"
+                label="Prepare approved for Ready to apply"
                 loadingLabel="Preparing..."
                 buttonSx={{ minHeight: 44, px: 2.25 }}
               />
@@ -514,7 +521,7 @@ function ApprovedToReadyPanel({
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" }, gap: 1 }}>
             <ReadinessStep complete={launchableCount > 0} title="1. Direct employer URL" detail="Board, auth, paywall, or listing URLs cannot launch the assistant." />
             <ReadinessStep complete={missingMaterialsCount === 0} title="2. Resume and cover letter" detail="The prep action generates missing materials and regenerates blocked cover letters." />
-            <ReadinessStep complete={false} title="3. Ready to apply" detail="Passing applications move to Ready. Anything blocked stays approved with its reason." />
+            <ReadinessStep complete={false} title="3. Ready to apply" detail="Passing applications move to Ready to apply. No-URL items archive; material-blocked items stay approved with their reason." />
           </Box>
         </Stack>
       </CardContent>
@@ -526,17 +533,19 @@ function ApplicationPrepChecklist({
   hasResume,
   hasCoverLetter,
   hasPacket,
-  launchableUrl,
+  readiness,
 }: {
   hasResume: boolean;
   hasCoverLetter: boolean;
   hasPacket: boolean;
-  launchableUrl: boolean;
+  readiness: ApplicationPrepReadiness;
 }) {
+  const launchableUrl = readiness.kind !== "no_direct_url";
   const blockers = [
-    launchableUrl ? null : "Needs direct employer/ATS URL",
+    launchableUrl ? null : "Archives on prep: no direct employer/ATS URL",
     hasResume ? null : "Needs resume",
     hasCoverLetter ? null : "Needs cover letter",
+    readiness.kind === "material_blocked" ? readiness.reason : null,
   ].filter((item): item is string => Boolean(item));
 
   return (
@@ -556,6 +565,19 @@ function ApplicationPrepChecklist({
       </Stack>
     </Box>
   );
+}
+
+function classifyVisibleApplicationReadiness(application: {
+  resume: { id: string } | null;
+  coverLetter: { id: string; generationNotes: unknown } | null;
+  jobPosting: { applicationUrl: string | null };
+}) {
+  return classifyApplicationPrepReadiness({
+    resumeId: application.resume?.id ?? null,
+    coverLetterId: application.coverLetter?.id ?? null,
+    coverLetter: application.coverLetter,
+    jobPosting: application.jobPosting,
+  });
 }
 
 function PrepChip({ complete, label }: { complete: boolean; label: string }) {

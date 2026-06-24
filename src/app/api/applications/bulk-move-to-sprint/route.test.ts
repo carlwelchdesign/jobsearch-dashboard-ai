@@ -96,7 +96,59 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     reconcileMock.mockResolvedValue(undefined as never);
   });
 
-  it("regenerates blocked existing cover letters before moving approved applications into Apply Sprint", async () => {
+  it("archives approved applications without direct URLs before preparing the queue", async () => {
+    findApplicationsMock.mockResolvedValue([
+      application({
+        id: "app_no_url",
+        jobPostingId: "job_no_url",
+        resumeId: "resume_old",
+        coverLetterId: "letter_old",
+        applicationUrl: null,
+        generationNotes: {
+          materialQuality: {
+            status: "PASS",
+            launchable: true,
+            reason: "Cover letter passed material quality review.",
+            reasons: [],
+            score: 92,
+            generatedBy: "openai_structured_outputs",
+            evidenceRefs: [],
+          },
+        },
+      }),
+    ] as never);
+
+    const response = await POST(new Request("http://localhost/api/applications/bulk-move-to-sprint", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ limit: 10 }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(transitionMock).toHaveBeenCalledWith(expect.objectContaining({
+      applicationId: "app_no_url",
+      toStatus: "archived",
+      source: "bulk_move_to_apply_sprint_no_direct_url",
+      metadata: expect.objectContaining({
+        applicationUrl: null,
+        applicationUrlQuality: expect.objectContaining({ kind: "missing", launchable: false }),
+      }),
+    }));
+    await expect(response.json()).resolves.toMatchObject({
+      archivedNoDirectUrl: 1,
+      moved: 0,
+      prepared: 0,
+      results: [
+        expect.objectContaining({
+          ok: true,
+          action: "archived_no_direct_url",
+          reason: expect.stringContaining("No application URL is saved"),
+        }),
+      ],
+    });
+  });
+
+  it("reports blocked existing cover letters instead of letting them monopolize the batch", async () => {
     findApplicationsMock.mockResolvedValue([
       application({
         id: "app_blocked",
@@ -128,20 +180,21 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(preparePackageMock).toHaveBeenCalledWith("job_blocked", { regenerateCoverLetter: true });
+    expect(preparePackageMock).not.toHaveBeenCalled();
     expect(transitionMock).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toMatchObject({
       moved: 0,
-      prepared: 1,
-      regenerated: 1,
+      prepared: 0,
+      regenerated: 0,
+      materialBlocked: 1,
       failed: 0,
       results: [
         expect.objectContaining({
-          ok: true,
+          ok: false,
           applicationId: "app_blocked",
           jobId: "job_blocked",
-          action: "prepared",
-          regeneratedCoverLetter: true,
+          action: "material_blocked",
+          reason: expect.stringContaining("deterministic fallback"),
         }),
       ],
     });
@@ -180,11 +233,12 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
       moved: 0,
       prepared: 0,
       regenerated: 0,
-      failed: 1,
+      materialBlocked: 1,
+      failed: 0,
       results: [
         expect.objectContaining({
           ok: false,
-          action: "failed",
+          action: "material_blocked",
           error: "material_quality_needs_review: Needs review.",
         }),
       ],
@@ -232,7 +286,7 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     });
   });
 
-  it("reports OpenAI quota blocks when regenerated materials still cannot launch", async () => {
+  it("reports OpenAI quota blocks without retrying blocked material first", async () => {
     findApplicationsMock.mockResolvedValue([
       application({
         id: "app_blocked",
@@ -243,11 +297,17 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
           materialQuality: {
             status: "BLOCKED",
             launchable: false,
-            reason: "Needs regeneration.",
-            reasons: ["deterministic_fallback"],
-            score: 0,
+            reason: "OpenAI quota is exhausted, so the structured cover-letter writer could not run. Regeneration is required before launch.",
+            reasons: ["deterministic_fallback", "openai_insufficient_quota"],
+            score: 32,
             generatedBy: "deterministic_fallback",
             evidenceRefs: [],
+            generationFailure: {
+              provider: "openai",
+              code: "openai_insufficient_quota",
+              message: "OpenAI quota is exhausted; structured cover-letter generation could not run.",
+              retryable: false,
+            },
           },
         },
       }),
@@ -279,18 +339,19 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     }));
 
     expect(response.status).toBe(200);
+    expect(preparePackageMock).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toMatchObject({
       moved: 0,
       prepared: 0,
       regenerated: 0,
-      failed: 1,
+      failed: 0,
       materialBlocked: 1,
       quotaBlocked: 1,
       message: expect.stringContaining("OpenAI quota blocked cover-letter regeneration"),
       results: [
         expect.objectContaining({
           ok: false,
-          regeneratedCoverLetter: true,
+          action: "material_blocked",
           materialQuality: expect.objectContaining({
             reasons: expect.arrayContaining(["openai_insufficient_quota"]),
           }),
@@ -299,63 +360,61 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     });
   });
 
-  it("reassesses existing structured cover letters before spending a regeneration call", async () => {
+  it("does not let no-URL or blocked applications prevent older launchable applications from moving", async () => {
     findApplicationsMock.mockResolvedValue([
       application({
-        id: "app_structured",
-        jobPostingId: "job_structured",
-        resumeId: "resume_structured",
-        coverLetterId: "letter_structured",
+        id: "app_no_url",
+        jobPostingId: "job_no_url",
+        resumeId: "resume_no_url",
+        coverLetterId: "letter_no_url",
+        applicationUrl: null,
         generationNotes: {
-          generatedBy: "openai_structured_outputs",
-          applicationEvidencePlan: {
-            status: "READY",
-            jobSignals: ["react", "typescript", "product"],
-            proofPoints: [],
-            evidenceRefs: ["evidence_1"],
-            avoidedSignals: [],
-            warnings: [],
-            rationale: "Use verified frontend evidence.",
-            confidence: 0.86,
-          },
-          hiringManagerReview: {
-            status: "PASS",
-            score: 88,
-            strengths: ["Specific and relevant."],
-            concerns: [],
-            missingSignals: [],
-            unsupportedClaims: [],
-            genericSignals: [],
-            rewriteRecommended: false,
-            reasoningSummary: "Specific and evidence-backed.",
-            confidence: 0.86,
-          },
           materialQuality: {
-            status: "NEEDS_REVIEW",
+            status: "PASS",
+            launchable: true,
+            reason: "Cover letter passed material quality review.",
+            reasons: [],
+            score: 90,
+            generatedBy: "openai_structured_outputs",
+            evidenceRefs: [],
+          },
+        },
+      }),
+      application({
+        id: "app_blocked",
+        jobPostingId: "job_blocked",
+        resumeId: "resume_blocked",
+        coverLetterId: "letter_blocked",
+        generationNotes: {
+          materialQuality: {
+            status: "BLOCKED",
             launchable: false,
             reason: "Application QA marked the generated materials as needing review.",
-            reasons: ["application_qa_needs_review", "application_qa_score_below_pass"],
-            score: 82,
+            reasons: ["application_qa_needs_review"],
+            score: 72,
             generatedBy: "openai_structured_outputs",
-            evidenceRefs: ["evidence_1"],
+            evidenceRefs: [],
+          },
+        },
+      }),
+      application({
+        id: "app_pass",
+        jobPostingId: "job_pass",
+        resumeId: "resume_pass",
+        coverLetterId: "letter_pass",
+        generationNotes: {
+          materialQuality: {
+            status: "PASS",
+            launchable: true,
+            reason: "Cover letter passed material quality review.",
+            reasons: [],
+            score: 92,
+            generatedBy: "openai_structured_outputs",
+            evidenceRefs: [],
           },
         },
       }),
     ] as never);
-    runApplicationQaMock.mockResolvedValue({
-      run: { id: "agent_run_qa" },
-      output: {
-        status: "PASS",
-        score: 82,
-        warnings: [],
-        unsupportedClaims: [],
-        styleViolations: [],
-        suggestedEdits: [],
-        evidenceRefs: ["evidence_1"],
-        reasoningSummary: "QA passed after scoped reassessment.",
-        confidence: 0.84,
-      },
-    } as unknown as Awaited<ReturnType<typeof runApplicationQaAgent>>);
 
     const response = await POST(new Request("http://localhost/api/applications/bulk-move-to-sprint", {
       method: "POST",
@@ -364,72 +423,36 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(runApplicationQaMock).toHaveBeenCalledWith(expect.objectContaining({
-      jobPostingId: "job_structured",
-      coverLetterBody: expect.stringContaining("Frontend Engineer"),
-    }));
-    expect(runHiringManagerReviewMock).not.toHaveBeenCalled();
-    expect(updateCoverLetterMock).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "letter_structured" },
-      data: expect.objectContaining({
-        generationNotes: expect.objectContaining({
-          materialQuality: expect.objectContaining({ launchable: true, status: "PASS" }),
-        }),
-      }),
-    }));
-    expect(syncClaimsMock).toHaveBeenCalledWith("letter_structured");
     expect(preparePackageMock).not.toHaveBeenCalled();
-    expect(transitionMock).toHaveBeenCalledWith(expect.objectContaining({
-      applicationId: "app_structured",
-      toStatus: "ready_to_apply",
-      source: "bulk_move_to_apply_sprint",
-    }));
+    expect(transitionMock).toHaveBeenCalledWith(expect.objectContaining({ applicationId: "app_no_url", toStatus: "archived" }));
+    expect(transitionMock).toHaveBeenCalledWith(expect.objectContaining({ applicationId: "app_pass", toStatus: "ready_to_apply" }));
     await expect(response.json()).resolves.toMatchObject({
       moved: 1,
+      archivedNoDirectUrl: 1,
       prepared: 0,
-      regenerated: 0,
-      reassessed: 1,
+      materialBlocked: 1,
       failed: 0,
-      results: [
-        expect.objectContaining({
-          ok: true,
-          action: "moved",
-          reassessedMaterialQuality: true,
-        }),
-      ],
     });
   });
 
-  it("creates a missing hiring-manager review during structured cover-letter reassessment", async () => {
+  it("prepares missing materials when direct URLs are available", async () => {
     findApplicationsMock.mockResolvedValue([
-      application({
-        id: "app_missing_review",
-        jobPostingId: "job_missing_review",
-        resumeId: "resume_missing_review",
-        coverLetterId: "letter_missing_review",
-        generationNotes: {
-          generatedBy: "openai_structured_outputs",
-          applicationEvidencePlan: {
-            status: "READY",
-            jobSignals: ["react", "typescript", "product"],
-            proofPoints: [],
-            evidenceRefs: ["evidence_1"],
-            avoidedSignals: [],
-            warnings: [],
-            rationale: "Use verified frontend evidence.",
-            confidence: 0.86,
-          },
-          materialQuality: {
-            status: "NEEDS_REVIEW",
-            launchable: false,
-            reason: "Cover letter needs material quality review before launch.",
-            reasons: ["missing_hiring_manager_review"],
-            score: 90,
-            generatedBy: "openai_structured_outputs",
-            evidenceRefs: ["evidence_1"],
-          },
+      {
+        id: "app_missing_materials",
+        userId: "user_1",
+        jobPostingId: "job_missing_materials",
+        resumeId: null,
+        coverLetterId: null,
+        notes: null,
+        jobPosting: {
+          id: "job_missing_materials",
+          company: "Acme",
+          title: "Frontend Engineer",
+          applicationUrl: "https://jobs.ashbyhq.com/acme/frontend-engineer/application",
         },
-      }),
+        resume: null,
+        coverLetter: null,
+      },
     ] as never);
 
     const response = await POST(new Request("http://localhost/api/applications/bulk-move-to-sprint", {
@@ -439,24 +462,10 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(runHiringManagerReviewMock).toHaveBeenCalledWith(expect.objectContaining({
-      jobPostingId: "job_missing_review",
-      coverLetterBody: expect.stringContaining("Frontend Engineer"),
-      generatedBy: "openai_structured_outputs",
-    }));
-    expect(updateCoverLetterMock).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: "letter_missing_review" },
-      data: expect.objectContaining({
-        generationNotes: expect.objectContaining({
-          hiringManagerReview: expect.objectContaining({ status: "PASS" }),
-          materialQuality: expect.objectContaining({ launchable: true, status: "PASS" }),
-        }),
-      }),
-    }));
-    expect(preparePackageMock).not.toHaveBeenCalled();
+    expect(preparePackageMock).toHaveBeenCalledWith("job_missing_materials");
     await expect(response.json()).resolves.toMatchObject({
-      moved: 1,
-      reassessed: 1,
+      moved: 0,
+      prepared: 1,
       failed: 0,
     });
   });
@@ -564,6 +573,7 @@ function application(input: {
   coverLetterId: string;
   company?: string;
   title?: string;
+  applicationUrl?: string | null;
   generationNotes: Record<string, unknown>;
 }) {
   return {
@@ -577,7 +587,7 @@ function application(input: {
       id: input.jobPostingId,
       company: input.company ?? "Acme",
       title: input.title ?? "Frontend Engineer",
-      applicationUrl: "https://jobs.ashbyhq.com/acme/frontend-engineer/application",
+      applicationUrl: input.applicationUrl === undefined ? "https://jobs.ashbyhq.com/acme/frontend-engineer/application" : input.applicationUrl,
     },
     resume: {
       markdown: "Senior frontend engineer with React, TypeScript, and product workflow experience.".repeat(30),
