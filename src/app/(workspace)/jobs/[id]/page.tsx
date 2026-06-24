@@ -9,7 +9,6 @@ import ContactPageOutlinedIcon from "@mui/icons-material/ContactPageOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import PlayCircleOutlineOutlinedIcon from "@mui/icons-material/PlayCircleOutlineOutlined";
 import RestartAltOutlinedIcon from "@mui/icons-material/RestartAltOutlined";
 import RuleOutlinedIcon from "@mui/icons-material/RuleOutlined";
 import Alert from "@mui/material/Alert";
@@ -20,13 +19,14 @@ import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ActionButton } from "@/components/action-button";
 import { JobDescription } from "@/components/job-description";
 import { JobRejectButton } from "@/components/job-reject-button";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { jsonArray } from "@/lib/json";
+import { selectCanonicalApplicationForJob } from "@/lib/applications/apply-workspace";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -51,19 +51,26 @@ export default async function JobDetailPage({ params }: { params: { id: string }
       coverLetters: { orderBy: { createdAt: "desc" }, take: 1 },
       resumes: { orderBy: { createdAt: "desc" }, take: 1 },
       applications: {
-        where: { status: "ready_to_apply" },
-        include: { coverLetter: true, resume: true },
+        include: {
+          applicationPackets: { orderBy: { updatedAt: "desc" }, take: 1 },
+          events: { orderBy: { createdAt: "desc" }, take: 1 },
+          outcomes: { orderBy: { occurredAt: "desc" }, take: 1 },
+        },
         orderBy: { updatedAt: "desc" },
-        take: 1,
+        take: 10,
       },
     },
   });
 
   if (!job) notFound();
 
+  const canonicalApplication = selectCanonicalApplicationForJob(job.applications);
+  if (canonicalApplication) {
+    redirect(`/applications/${canonicalApplication.id}`);
+  }
+
   const topMatch = job.matches[0];
   const topEvaluation = job.evaluations[0];
-  const readyApplication = job.applications.find((application) => application.resume && application.coverLetter);
 
   return (
     <>
@@ -187,17 +194,6 @@ export default async function JobDetailPage({ params }: { params: { id: string }
                   </ActionButton>
                   <ActionButton href="/resumes/generated" variant="outlined" startIcon={<RuleOutlinedIcon />}>Rationale</ActionButton>
                   {job.applicationUrl ? <ActionButton href={job.applicationUrl} variant="outlined" startIcon={<OpenInNewIcon />}>Open application</ActionButton> : null}
-                  {readyApplication ? (
-                    <ActionButton
-                      postTo={`/api/applications/${readyApplication.id}/launch-assistant`}
-                      message="Local assistant launched. Review the browser window and submit manually."
-                      variant="contained"
-                      color="success"
-                      startIcon={<PlayCircleOutlineOutlinedIcon />}
-                    >
-                      Launch assistant
-                    </ActionButton>
-                  ) : null}
                   <ActionButton href="/resumes/generated" variant="outlined" startIcon={<EditOutlinedIcon />}>Edit</ActionButton>
                 </Stack>
               </Stack>
