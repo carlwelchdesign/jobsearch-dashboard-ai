@@ -206,7 +206,7 @@ function renderColumn(column: PageColumn) {
     } else if (line.kind === "chip-row" && line.chips) {
       commands.push(...renderChipRow(line.chips, column.x, y));
     } else if (line.kind === "date-line") {
-      commands.push(calendarIcon(column.x, y + 0.5, 7, MUTED));
+      commands.push(calendarIcon(column.x, y, 7, MUTED));
       commands.push(text(line.text, column.x + 12, y, line.size, line.font, line.color ?? MUTED));
     } else if (line.bullet) {
       commands.push(`q 0 0 0 rg ${circlePath(column.x + 3.2, y + 3.1, 1.25)} f Q`);
@@ -314,9 +314,9 @@ function renderContactItems(items: ContactItem[], x: number, y: number) {
   let cursorX = x;
   for (const item of items) {
     const iconSize = 7.8;
-    if (item.kind === "phone") commands.push(muiIcon(MUI_ICON_PATHS.phone, cursorX, y - 0.7, iconSize, BLUE));
-    else if (item.kind === "email") commands.push(muiIcon(MUI_ICON_PATHS.email, cursorX, y - 0.7, iconSize, BLUE));
-    else commands.push(muiIcon(MUI_ICON_PATHS.link, cursorX, y - 0.7, iconSize, BLUE));
+    if (item.kind === "phone") commands.push(muiIcon(MUI_ICON_PATHS.phone, cursorX, y - 1.4, iconSize, BLUE));
+    else if (item.kind === "email") commands.push(muiIcon(MUI_ICON_PATHS.email, cursorX, y - 1.4, iconSize, BLUE));
+    else commands.push(muiIcon(MUI_ICON_PATHS.link, cursorX, y - 1.4, iconSize, BLUE));
 
     const labelX = cursorX + 11;
     commands.push(text(item.label, labelX, y, CONTACT_SIZE, "bold", MUTED));
@@ -362,7 +362,7 @@ function text(value: string, x: number, y: number, size: number, font: "regular"
 }
 
 function calendarIcon(x: number, y: number, size: number, color: string) {
-  return muiIcon(MUI_ICON_PATHS.calendar, x, y - 0.5, size + 1, color);
+  return muiIcon(MUI_ICON_PATHS.calendar, x, y - 1.6, size + 1, color);
 }
 
 function muiIcon(path: string, x: number, y: number, size: number, color: string) {
