@@ -31,7 +31,7 @@ function ModernResumePreview({ text }: { text: string }) {
       }}
     >
       <Stack spacing={2}>
-        <Stack direction="row" spacing={2} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+        <Stack direction="row" spacing={2} sx={{ justifyContent: "space-between", alignItems: "center" }}>
           <Box sx={{ minWidth: 0 }}>
             <Typography sx={{ fontSize: 24, lineHeight: 1.05, fontWeight: 950, letterSpacing: 0, textTransform: "uppercase" }}>
               {document.name}

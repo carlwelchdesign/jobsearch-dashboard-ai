@@ -181,9 +181,9 @@ function nextColumn(lines: PdfLine[], startIndex: number, x: number, y: number, 
 }
 
 function renderHeader(pdf: PDFKit.PDFDocument, document: ResumeDocument, profileImage: ResumePdfImage | null | undefined) {
-  drawText(pdf, document.name.toUpperCase(), LEFT, 31, 18.5, "bold", "#000000");
-  drawText(pdf, document.headline, LEFT, 55, 9.1, "bold", BLUE);
-  renderContactItems(pdf, contactItems(document.contactLine), LEFT, 82);
+  drawText(pdf, document.name.toUpperCase(), LEFT, 43, 18.5, "bold", "#000000");
+  drawText(pdf, document.headline, LEFT, 67, 9.1, "bold", BLUE);
+  renderContactItems(pdf, contactItems(document.contactLine), LEFT, 94);
   renderBadge(pdf, document, profileImage);
 }
 
