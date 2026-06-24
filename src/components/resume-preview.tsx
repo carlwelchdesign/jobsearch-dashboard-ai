@@ -1,5 +1,4 @@
 import Box from "@mui/material/Box";
-import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import AlternateEmailOutlinedIcon from "@mui/icons-material/AlternateEmailOutlined";
@@ -92,26 +91,26 @@ function ModernResumePreview({ text }: { text: string }) {
             <PreviewSection title="Skills" />
             <Stack direction="row" spacing={0.6} useFlexGap sx={{ flexWrap: "wrap" }}>
               {document.skills.slice(0, 28).map((skill) => (
-                <Chip
+                <Box
                   key={skill}
-                  size="small"
-                  label={skill}
+                  component="span"
                   sx={{
-                    height: 22,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    height: 24,
+                    px: 1,
                     borderRadius: 0.75,
                     bgcolor: "#DCEBFF",
                     color: "#035FBF",
-                    "& .MuiChip-label": {
-                      display: "flex",
-                      alignItems: "center",
-                      height: "100%",
-                      px: 1,
-                      py: 0,
-                      fontWeight: 750,
-                      lineHeight: "22px",
-                    },
+                    fontSize: 13,
+                    fontWeight: 750,
+                    lineHeight: 1,
+                    whiteSpace: "nowrap",
                   }}
-                />
+                >
+                  {skill}
+                </Box>
               ))}
             </Stack>
             {document.projects.length ? (
