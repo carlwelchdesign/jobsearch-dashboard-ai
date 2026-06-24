@@ -27,14 +27,48 @@ const requestSchema = z.object({
   regenerateBlockedMaterials: z.boolean().default(true),
   queue: z.enum(["approved", "material_blocked"]).default("approved"),
 });
+type BulkMoveInput = z.infer<typeof requestSchema>;
 
 const movableStatuses = ["approved", "resume_generated", "cover_letter_generated"] as const;
 type BulkMoveAction = "moved" | "prepared" | "archived_no_direct_url" | "material_blocked" | "failed";
+const backgroundBulkMoveKeys = new Set<string>();
 
 export async function POST(request: Request) {
   try {
     const body = request.headers.get("content-type")?.includes("application/json") ? await request.json() : {};
     const input = requestSchema.parse(body);
+    const runInBackground = request.headers.get("x-run-in-background") === "1";
+    if (runInBackground && input.queue === "material_blocked" && input.regenerateBlockedMaterials) {
+      const key = input.queue;
+      const alreadyRunning = backgroundBulkMoveKeys.has(key);
+      if (!alreadyRunning) {
+        backgroundBulkMoveKeys.add(key);
+        setTimeout(() => {
+          void runBulkMove(input)
+            .catch((error) => {
+              console.error("Material review regeneration failed", error);
+            })
+            .finally(() => {
+              backgroundBulkMoveKeys.delete(key);
+            });
+        }, 0);
+      }
+      return NextResponse.json({
+        accepted: true,
+        alreadyRunning,
+        requested: input,
+        message: alreadyRunning
+          ? "Material regeneration is already running."
+          : `Regeneration is running for up to ${input.limit} material-blocked application${input.limit === 1 ? "" : "s"}. Refresh this page in a few minutes to see which moved to Ready to apply.`,
+      }, { status: 202 });
+    }
+    return await runBulkMove(input);
+  } catch (error) {
+    return apiError(error, 400);
+  }
+}
+
+async function runBulkMove(input: BulkMoveInput) {
     const applications = await loadApplicationsForBulkMove(input.limit);
     const classified = applications.map((application) => ({
       application,
@@ -340,9 +374,6 @@ export async function POST(request: Request) {
           ? `No applications moved into Ready to apply. ${failed} failed.`
           : "No approved applications are waiting to move into Ready to apply.",
     });
-  } catch (error) {
-    return apiError(error, 400);
-  }
 }
 
 async function loadApplicationsForBulkMove(limit: number) {

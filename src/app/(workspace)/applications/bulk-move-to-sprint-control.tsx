@@ -12,6 +12,8 @@ import TextField from "@mui/material/TextField";
 import { useReducer } from "react";
 
 type BulkMoveResponse = {
+  accepted?: boolean;
+  alreadyRunning?: boolean;
   error?: string;
   message?: string;
   archivedNoDirectUrl?: number;
@@ -154,8 +156,10 @@ export function BulkMoveToSprintControl({
         </Button>
       </Stack>
       {state.latestResult ? (
-        <Alert severity={(state.latestResult.failed ?? 0) || (state.latestResult.materialBlocked ?? 0) ? "warning" : "success"} sx={{ mt: 1 }}>
-          Prepared {(state.latestResult.moved ?? 0) + (state.latestResult.prepared ?? 0)} for Ready to apply. Archived {state.latestResult.archivedNoDirectUrl ?? 0} without direct URLs. {state.latestResult.materialBlocked ?? 0} material-blocked. {state.latestResult.failed ?? 0} failed.
+        <Alert severity={state.latestResult.accepted ? "info" : (state.latestResult.failed ?? 0) || (state.latestResult.materialBlocked ?? 0) ? "warning" : "success"} sx={{ mt: 1 }}>
+          {state.latestResult.accepted
+            ? state.latestResult.message ?? "Regeneration is running in the background."
+            : `Prepared ${(state.latestResult.moved ?? 0) + (state.latestResult.prepared ?? 0)} for Ready to apply. Archived ${state.latestResult.archivedNoDirectUrl ?? 0} without direct URLs. ${state.latestResult.materialBlocked ?? 0} material-blocked. ${state.latestResult.failed ?? 0} failed.`}
           {state.latestResult.blockedExamples?.length ? (
             <Stack component="span" spacing={0.5} sx={{ display: "block", mt: 1 }}>
               {state.latestResult.blockedExamples.slice(0, 3).map((item) => (

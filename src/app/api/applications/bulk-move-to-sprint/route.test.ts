@@ -256,6 +256,49 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     });
   });
 
+  it("acknowledges material-blocked regeneration in the background without blocking the response", async () => {
+    vi.useFakeTimers();
+    try {
+      findApplicationsMock.mockResolvedValue([
+        application({
+          id: "app_blocked",
+          jobPostingId: "job_blocked",
+          resumeId: "resume_old",
+          coverLetterId: "letter_old",
+          generationNotes: {
+            materialQuality: {
+              status: "BLOCKED",
+              launchable: false,
+              reason: "Needs regenerated materials.",
+              reasons: ["deterministic_fallback"],
+              score: 0,
+              generatedBy: "deterministic_fallback",
+              evidenceRefs: [],
+            },
+          },
+        }),
+      ] as never);
+
+      const response = await POST(new Request("http://localhost/api/applications/bulk-move-to-sprint", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-run-in-background": "1" },
+        body: JSON.stringify({ limit: 10, queue: "material_blocked", regenerateBlockedMaterials: true }),
+      }));
+
+      expect(response.status).toBe(202);
+      expect(preparePackageMock).not.toHaveBeenCalled();
+      await expect(response.json()).resolves.toMatchObject({
+        accepted: true,
+        alreadyRunning: false,
+        requested: expect.objectContaining({ queue: "material_blocked" }),
+        message: expect.stringContaining("Regeneration is running"),
+      });
+      vi.clearAllTimers();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("can still fail blocked existing cover letters when regeneration is explicitly disabled", async () => {
     findApplicationsMock.mockResolvedValue([
       application({
