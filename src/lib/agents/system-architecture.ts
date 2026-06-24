@@ -62,9 +62,15 @@ type RepoEvidence = {
   agentFiles: string[];
   skillIds: string[];
   docs: string[];
+  docContents: DocEvidence[];
   plans: string[];
   adkEnabled: boolean;
   langGraphMentions: string[];
+};
+
+type DocEvidence = {
+  path: string;
+  content: string;
 };
 
 export async function runSystemArchitectureAgent(input: SystemArchitectureInput = {}) {
@@ -83,7 +89,7 @@ export async function runSystemArchitectureAgent(input: SystemArchitectureInput 
 export async function buildSystemArchitectureReport(rootDir = process.cwd()): Promise<SystemArchitectureOutput> {
   const evidence = await collectSystemArchitectureEvidence(rootDir);
   const skillCoverageGap = evidence.agentTypes.filter((agentType) => !evidence.skillIds.includes(toSkillId(agentType)));
-  const apiWithoutDocs = evidence.apiRoutes.filter((route) => !hasDocMention(route, evidence.docs)).slice(0, 8);
+  const apiWithoutDocs = evidence.apiRoutes.filter((route) => !hasDocMention(route, evidence.docContents)).slice(0, 8);
   const nodes = buildNodes(evidence);
   const risks = buildRisks(evidence, skillCoverageGap, apiWithoutDocs);
 
@@ -110,7 +116,7 @@ export async function buildSystemArchitectureReport(rootDir = process.cwd()): Pr
 }
 
 export async function collectSystemArchitectureEvidence(rootDir = process.cwd()): Promise<RepoEvidence> {
-  const [appFiles, apiFiles, agentFiles, docs, plans, schema, skillTypes, adkRegistry, packageJson] = await Promise.all([
+  const [appFiles, apiFiles, agentFiles, docFiles, plans, schema, skillTypes, adkRegistry, packageJson] = await Promise.all([
     listFiles(path.join(rootDir, "src/app"), (file) => file.endsWith("/page.tsx")),
     listFiles(path.join(rootDir, "src/app/api"), (file) => file.endsWith("/route.ts")),
     listFiles(path.join(rootDir, "src/lib/agents"), (file) => file.endsWith(".ts")),
@@ -124,6 +130,10 @@ export async function collectSystemArchitectureEvidence(rootDir = process.cwd())
 
   const appRoutes = appFiles.map((file) => routeFromPage(rootDir, file)).sort();
   const apiRoutes = apiFiles.map((file) => routeFromApi(rootDir, file)).sort();
+  const docContents = await Promise.all(docFiles.map(async (file) => {
+    const docPath = relative(rootDir, file);
+    return { path: docPath, content: await readOptional(file) };
+  }));
   const prismaModels = matches(schema, /^model\s+(\w+)/gm);
   const prismaEnums = matches(schema, /^enum\s+(\w+)/gm);
   const agentTypes = enumValues(schema, "AgentType");
@@ -138,7 +148,8 @@ export async function collectSystemArchitectureEvidence(rootDir = process.cwd())
     agentTypes,
     agentFiles: agentFiles.map((file) => relative(rootDir, file)).sort(),
     skillIds,
-    docs: docs.map((file) => relative(rootDir, file)).sort(),
+    docs: docContents.map((doc) => doc.path).sort(),
+    docContents: docContents.sort((a, b) => a.path.localeCompare(b.path)),
     plans: plans.map((file) => relative(rootDir, file)).sort(),
     adkEnabled: adkRegistry.includes("adkManagedAgents"),
     langGraphMentions,
@@ -323,9 +334,54 @@ function humanize(value: string) {
   return value.toLowerCase().split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
 
-function hasDocMention(route: string, docs: string[]) {
-  const normalized = route.replace(/^\/api\//, "").split("/")[0];
-  return docs.some((doc) => doc.toLowerCase().includes(normalized.toLowerCase()));
+function hasDocMention(route: string, docs: DocEvidence[]) {
+  const routeMentions = routeMentionVariants(route);
+  const familyMentions = routeFamilyMentionVariants(route);
+  return docs.some((doc) => {
+    const content = normalizeDocContent(doc.content);
+    if (routeMentions.some((mention) => content.includes(mention))) return true;
+    if (familyMentions.some((mention) => content.includes(mention))) return true;
+    return routeFamilyParagraphs(route).some((family) => paragraphDocumentsFamily(content, family));
+  });
+}
+
+function normalizeDocContent(content: string) {
+  return content.toLowerCase().replaceAll("`", "");
+}
+
+function routeMentionVariants(route: string) {
+  const variants = new Set<string>([
+    route,
+    route.replace(/\[[^\]]+\]/g, "[id]"),
+    route.replace(/\[[^\]]+\]/g, ":id"),
+    route.replace(/\[[^\]]+\]/g, "{id}"),
+  ]);
+  return Array.from(variants).map((variant) => variant.toLowerCase());
+}
+
+function routeFamilyMentionVariants(route: string) {
+  const parts = route.split("/").filter(Boolean);
+  if (parts.length < 3 || parts[0] !== "api") return [];
+  const family = `/${parts.slice(0, 2).join("/")}`;
+  return [
+    `${family} route family`,
+    `${family} route families`,
+    `${family} routes`,
+    `${family} api family`,
+    `${family} api routes`,
+  ].map((variant) => variant.toLowerCase());
+}
+
+function routeFamilyParagraphs(route: string) {
+  const parts = route.split("/").filter(Boolean);
+  if (parts.length < 3 || parts[0] !== "api") return [];
+  return [`/${parts.slice(0, 2).join("/")}`.toLowerCase()];
+}
+
+function paragraphDocumentsFamily(content: string, family: string) {
+  return content
+    .split(/\n{2,}/)
+    .some((paragraph) => paragraph.includes(family) && /\b(route famil|api route)/.test(paragraph));
 }
 
 function documentationSummary(doc: string) {

@@ -11,6 +11,7 @@ describe("system architecture agent", () => {
     expect(evidence.agentTypes).toContain("SYSTEM_ARCHITECTURE");
     expect(evidence.skillIds).toContain("system_architecture");
     expect(evidence.docs).toEqual(expect.arrayContaining(["README.md", "wiki/Agents-and-Workflows.md"]));
+    expect(evidence.docContents.some((doc) => doc.path === "wiki/Agents-and-Workflows.md" && doc.content.includes("/api/application-field-memory/bulk"))).toBe(true);
   });
 
   it("builds a report with connected nodes, risks, workflows, and decisions", async () => {
@@ -28,6 +29,7 @@ describe("system architecture agent", () => {
     expect(report.workflows.map((workflow) => workflow.name)).toContain("Jolene operating layer");
     expect(report.risks.length).toBeGreaterThan(0);
     expect(report.risks.map((risk) => risk.title)).not.toContain("Agent types without skill policy coverage");
+    expect(report.risks.map((risk) => risk.title)).not.toContain("API surfaces need clearer architecture documentation");
     expect(report.recommendedDecisions.join(" ")).toContain("architecture report");
   });
 });
