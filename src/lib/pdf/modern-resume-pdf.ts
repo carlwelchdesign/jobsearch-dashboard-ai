@@ -289,7 +289,7 @@ function renderChipRow(pdf: PDFKit.PDFDocument, chips: string[], x: number, y: n
   for (const chip of chips) {
     const width = chipTextWidth(chip, metrics);
     pdf.roundedRect(cursorX, y - 1, width, CHIP_HEIGHT, 2).fill(CHIP_FILL);
-    drawText(pdf, chip, cursorX + CHIP_X_PADDING, y + 1.1, CHIP_FONT_SIZE, "bold", CHIP_TEXT);
+    drawText(pdf, chip, cursorX + CHIP_X_PADDING, y + 1.7, CHIP_FONT_SIZE, "bold", CHIP_TEXT);
     cursorX += width + CHIP_GAP;
   }
 }
