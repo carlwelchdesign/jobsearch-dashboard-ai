@@ -118,8 +118,21 @@ export function roleSkillsLine(contextValue: unknown, fallbackSkills: unknown): 
     ? fallbackSkills.filter((item): item is string => typeof item === "string")
     : [];
   const skills = approvedTech.length ? approvedTech : fallback;
-  const unique = Array.from(new Set(skills.map((skill) => skill.trim()).filter(Boolean)));
+  const unique = uniqueSkillLabels(skills);
   return unique.length ? `Skills: ${unique.join(", ")}` : null;
+}
+
+export function uniqueSkillLabels(skills: string[]) {
+  const seen = new Set<string>();
+  return skills
+    .map((skill) => skill.trim())
+    .filter(Boolean)
+    .filter((skill) => {
+      const key = skillKey(skill);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 export function pendingVersionSuggestionsFromContexts(contexts: unknown[]) {
@@ -145,7 +158,7 @@ export function dedupeTechItems(items: ResumeTechItem[]) {
     }))
     .filter((item) => item.name)
     .filter((item) => {
-      const key = `${item.name.toLowerCase()}|${item.version?.toLowerCase() ?? ""}`;
+      const key = `${skillKey(item.name)}|${item.version?.toLowerCase() ?? ""}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -165,11 +178,15 @@ export function dedupeVersionSuggestions(items: ResumeVersionSuggestion[]) {
     }))
     .filter((item) => item.name && item.suggestedVersion)
     .filter((item) => {
-      const key = `${item.name.toLowerCase()}|${item.suggestedVersion.toLowerCase()}`;
+      const key = `${skillKey(item.name)}|${item.suggestedVersion.toLowerCase()}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
+}
+
+function skillKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").trim().replace(/\s+/g, " ");
 }
 
 function definedStringFields(patch: Partial<ResumeExperienceContext>) {
