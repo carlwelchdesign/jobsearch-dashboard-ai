@@ -1188,6 +1188,8 @@ From any generated resume or cover letter:
 - Click **Download PDF** for a formatted PDF
 - Click **Plain Text** for an ATS-friendly plain text version
 
+Generated resume previews and resume PDF exports use the selected **Resume format** from **Settings → Application**. The default is a modern two-column format; classic single-column presets are also available. This changes the visual presentation only — the underlying resume text and plain-text export stay ATS-readable.
+
 > [PART_COMPLETE:10]
 >
 > **Your materials are ready. Let the Recruiting Agency process your matches automatically so you don't have to handle every job by hand.** Continue to Part 11 — The Recruiting Agency.

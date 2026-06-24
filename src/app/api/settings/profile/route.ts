@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
+import { RESUME_FORMATS } from "@/lib/resumes/resume-format";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ const profileSettingsSchema = z.object({
   genderAnswer: z.string().max(200).optional().or(z.literal("")),
   veteranStatusAnswer: z.string().max(200).optional().or(z.literal("")),
   disabilityAnswer: z.string().max(200).optional().or(z.literal("")),
+  resumeFormat: z.enum(RESUME_FORMATS).optional(),
 });
 
 export async function PATCH(request: Request) {
@@ -32,6 +34,7 @@ export async function PATCH(request: Request) {
         data[key] = body[key] || null;
       }
     }
+    if (body.resumeFormat) data.resumeFormat = body.resumeFormat;
 
     const profile = await prisma.userProfile.update({
       where: { id: user.profile.id },

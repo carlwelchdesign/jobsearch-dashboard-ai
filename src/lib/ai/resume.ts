@@ -400,6 +400,8 @@ function buildFallbackTailoredResume({ userProfile, job, bullets, projects, work
   const skills = [
     ...jsonStringArray(userProfile.coreSkills),
     ...jsonStringArray(userProfile.technicalSkills),
+    ...projects.flatMap((project) => jsonStringArray(project.technologies)),
+    ...githubRepositories.flatMap((repo) => [repo.language, ...jsonStringArray(repo.topics)].filter((value): value is string => Boolean(value))),
   ];
   const jobTerms = tokenize(`${job.title} ${job.description}`);
   const rankedSkills = uniqueStrings(skills).sort((a, b) => scoreTerm(b, jobTerms) - scoreTerm(a, jobTerms)).slice(0, 32);
@@ -684,8 +686,28 @@ function hasQuantifiedAchievement(text: string) {
 
 function formatRoleSkills(work: WorkExperience | undefined) {
   if (!work) return [];
-  const line = roleSkillsLine(work.resumeContext, work.skills);
+  const line = roleSkillsLine(work.resumeContext, roleFallbackSkills(work));
   return line ? [line] : [];
+}
+
+function roleFallbackSkills(work: WorkExperience) {
+  return jsonStringArray(work.skills).filter((skill) => roleSupportsSkill(work, skill));
+}
+
+function roleSupportsSkill(work: WorkExperience, skill: string) {
+  const normalizedSkill = skill.trim().toLowerCase();
+  if (normalizedSkill === "ar") return /\bAR\b|augmented reality/i.test(roleEvidenceText(work));
+  if (normalizedSkill === "vr") return /\bVR\b|virtual reality/i.test(roleEvidenceText(work));
+  return true;
+}
+
+function roleEvidenceText(work: WorkExperience) {
+  return [
+    work.company,
+    work.title,
+    work.summary,
+    ...jsonStringArray(work.achievements),
+  ].filter(Boolean).join(" ");
 }
 
 function sortWorkExperiences(workExperiences: WorkExperience[]) {

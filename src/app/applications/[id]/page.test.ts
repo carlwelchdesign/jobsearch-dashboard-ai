@@ -32,4 +32,12 @@ describe("ApplicationPacketPage", () => {
     expect(source).toContain("Recruiter red flags");
     expect(source).toContain("Format warnings");
   });
+
+  it("renders generated resumes through the selected resume preview format", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/app/applications/[id]/page.tsx"), "utf8");
+
+    expect(source).toContain("ResumePreview");
+    expect(source).toContain("format={application.user.profile?.resumeFormat}");
+    expect(source).toContain("application.resume.plainText ?? application.resume.markdown");
+  });
 });

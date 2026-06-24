@@ -658,6 +658,7 @@ model UserProfile {
   genderAnswer          String?
   veteranStatusAnswer   String?
   disabilityAnswer      String?
+  resumeFormat          String              @default("modern_two_column")
   masterSummary         String
   professionalSummary   String?
   yearsExperience       Int?

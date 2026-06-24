@@ -35,6 +35,7 @@ describe("tailorResumeForJob", () => {
         genderAnswer: null,
         veteranStatusAnswer: null,
         disabilityAnswer: null,
+        resumeFormat: "modern_two_column",
         masterSummary: "Senior product engineer.",
         professionalSummary: "Senior product engineer building React and TypeScript products.",
         yearsExperience: 20,
@@ -139,6 +140,7 @@ describe("tailorResumeForJob", () => {
         genderAnswer: null,
         veteranStatusAnswer: null,
         disabilityAnswer: null,
+        resumeFormat: "modern_two_column",
         masterSummary: "Senior product engineer.",
         professionalSummary: "Senior product engineer building React and TypeScript products.",
         yearsExperience: 20,
@@ -223,6 +225,7 @@ describe("tailorResumeForJob", () => {
         genderAnswer: null,
         veteranStatusAnswer: null,
         disabilityAnswer: null,
+        resumeFormat: "modern_two_column",
         masterSummary: "Senior product engineer.",
         professionalSummary: "Senior product engineer building React and TypeScript products.",
         yearsExperience: 20,
@@ -310,6 +313,64 @@ describe("tailorResumeForJob", () => {
     expect(tailored.markdownResume).not.toMatch(/likely|estimated|inferred|available at the time/i);
   });
 
+  it("does not carry ambiguous AR fallback skills into unrelated role skill lines", async () => {
+    parseStructuredOutputMock.mockResolvedValue(null);
+    const now = new Date("2026-06-04T12:00:00Z");
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now),
+      job: jobPosting(now),
+      bullets: [],
+      projects: [],
+      workExperiences: [
+        workExperience({
+          id: "work_1",
+          company: "Yubico",
+          title: "Senior Software Engineer",
+          startDate: "Jul 2022",
+          endDate: "Mar 2026",
+          skills: ["React", "TypeScript", "AR", "frontend architecture"],
+          achievements: [
+            "Built enterprise admin console features supporting YubiKey management, provisioning flows, inventory workflows, and device lifecycle management.",
+            "Partnered with backend and product teams on API contracts, frontend architecture, rollout planning, and enterprise workflow design.",
+          ],
+          createdAt: now,
+        }),
+      ],
+    });
+
+    expect(tailored.markdownResume).toContain("Skills: React, TypeScript, frontend architecture");
+    expect(tailored.markdownResume).not.toContain("Skills: React, TypeScript, AR");
+  });
+
+  it("keeps AR fallback skills when the role evidence supports augmented reality work", async () => {
+    parseStructuredOutputMock.mockResolvedValue(null);
+    const now = new Date("2026-06-04T12:00:00Z");
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now),
+      job: jobPosting(now),
+      bullets: [],
+      projects: [],
+      workExperiences: [
+        workExperience({
+          id: "work_1",
+          company: "Grindr",
+          title: "Senior Web Developer / Manager",
+          startDate: "Apr 2016",
+          endDate: "Aug 2017",
+          skills: ["JavaScript", "AR", "analytics"],
+          achievements: [
+            "Created an augmented reality campaign experience where users triggered animated emoji from physical advertisements.",
+          ],
+          createdAt: now,
+        }),
+      ],
+    });
+
+    expect(tailored.markdownResume).toContain("Skills: JavaScript, AR, analytics");
+  });
+
   it("does not duplicate a curated project with its backing GitHub repository", async () => {
     parseStructuredOutputMock.mockResolvedValue(null);
     const now = new Date("2026-06-04T12:00:00Z");
@@ -352,6 +413,39 @@ describe("tailorResumeForJob", () => {
       githubRepositories?: Array<{ name: string }>;
     };
     expect(promptInput.githubRepositories).toEqual([]);
+  });
+
+  it("includes selected project technologies in deterministic skills", async () => {
+    parseStructuredOutputMock.mockResolvedValue(null);
+    const now = new Date("2026-06-04T12:00:00Z");
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now, {
+        coreSkills: ["React", "TypeScript"],
+        technicalSkills: ["JavaScript"],
+      }),
+      job: {
+        ...jobPosting(now),
+        description: "Frontend platform role using Next.js, Prisma, PostgreSQL, Redis, Docker, RAG, MCP, LangGraph, and Playwright.",
+      },
+      bullets: [],
+      projects: [
+        project({
+          id: "project_1",
+          name: "Job Search OS",
+          description: "Local-first AI-powered job search operating system coordinating specialized agents.",
+          technologies: ["Next.js", "TypeScript", "React", "Prisma", "PostgreSQL", "pgvector", "Redis", "Docker", "RAG", "MCP", "LangGraph", "Playwright", "Material UI", "Vitest"],
+          createdAt: now,
+        }),
+      ],
+      githubRepositories: [],
+      workExperiences: [],
+    });
+
+    expect(tailored.markdownResume).toContain("Next.js");
+    expect(tailored.markdownResume).toContain("Prisma");
+    expect(tailored.markdownResume).toContain("PostgreSQL");
+    expect(tailored.markdownResume).toContain("LangGraph");
   });
 
   it("strips generated summary scaffold language from AI output", async () => {
@@ -580,6 +674,7 @@ function userProfile(now: Date, patch: Partial<UserProfile> = {}): UserProfile {
     genderAnswer: null,
     veteranStatusAnswer: null,
     disabilityAnswer: null,
+    resumeFormat: "modern_two_column",
     masterSummary: "Senior product engineer.",
     professionalSummary: "Senior product engineer building React and TypeScript products.",
     yearsExperience: 20,

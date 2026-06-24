@@ -25,6 +25,7 @@ import { getOutcomeCalibration, getOutcomeCalibrationTrends, getOutcomeRegressio
 import { getLearningRollbackAudit } from "@/lib/observability/rollback-audit";
 import { normalizeLinkedInScopes } from "@/lib/linkedin/share";
 import { prisma } from "@/lib/prisma";
+import { normalizeResumeFormat } from "@/lib/resumes/resume-format";
 import { DEFAULT_LINKEDIN_CONTENT_MODEL, DEFAULT_LINKEDIN_DIAGRAM_IMAGE_MODEL } from "@/lib/settings/ai-settings";
 import { SettingsClient } from "./settings-client";
 import type { ServiceHealthSettings, ServiceStatus } from "./service-health-panel";
@@ -1058,6 +1059,7 @@ export async function SettingsRouteContent({
             genderAnswer: user?.profile?.genderAnswer ?? "",
             veteranStatusAnswer: user?.profile?.veteranStatusAnswer ?? "",
             disabilityAnswer: user?.profile?.disabilityAnswer ?? "",
+            resumeFormat: normalizeResumeFormat(user?.profile?.resumeFormat),
             githubRepositoryCount: githubRepoCount,
             latestGithubSync: latestGithubSyncDate?.toLocaleString() ?? null,
           }}

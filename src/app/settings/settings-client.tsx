@@ -25,6 +25,7 @@ import Typography from "@mui/material/Typography";
 import { useState } from "react";
 import { ScoreChip } from "@/components/ui/score-chip";
 import { StatusChip } from "@/components/ui/status-chip";
+import { RESUME_FORMATS, resumeFormatLabel, type ResumeFormat } from "@/lib/resumes/resume-format";
 
 type SettingsClientProps = {
   group: "system" | "search" | "application" | "admin";
@@ -95,6 +96,7 @@ type SettingsClientProps = {
     genderAnswer: string;
     veteranStatusAnswer: string;
     disabilityAnswer: string;
+    resumeFormat: ResumeFormat;
     githubRepositoryCount: number;
     latestGithubSync: string | null;
   };
@@ -185,6 +187,7 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
           genderAnswer: profile.genderAnswer,
           veteranStatusAnswer: profile.veteranStatusAnswer,
           disabilityAnswer: profile.disabilityAnswer,
+          resumeFormat: profile.resumeFormat,
         }),
       }),
       );
@@ -285,6 +288,7 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
       body: JSON.stringify({
         githubUrl: profile.githubUrl,
         linkedinUrl: profile.linkedinUrl,
+        resumeFormat: profile.resumeFormat,
       }),
     });
     const body = await response.json();
@@ -300,6 +304,7 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
         ...previous,
         githubUrl: body.profile.githubUrl ?? "",
         linkedinUrl: body.profile.linkedinUrl ?? "",
+        resumeFormat: body.profile.resumeFormat ?? previous.resumeFormat,
       }));
     }
     setNotice("Application profile links saved.");
@@ -944,6 +949,18 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
               These URLs are used by the local application assistant when it fills employer forms. LinkedIn connection imports identity basics only; it does not grant job-search, saved-jobs, or auto-apply access.
             </Typography>
             <TextField
+              select
+              fullWidth
+              label="Resume format"
+              value={profile.resumeFormat}
+              onChange={(event) => setProfile((previous) => ({ ...previous, resumeFormat: event.target.value as ResumeFormat }))}
+              helperText="Used for generated resume previews and PDF exports. Resume text remains ATS-readable."
+            >
+              {RESUME_FORMATS.map((format) => (
+                <MenuItem key={format} value={format}>{resumeFormatLabel(format)}</MenuItem>
+              ))}
+            </TextField>
+            <TextField
               fullWidth
               label="LinkedIn profile URL"
               placeholder="https://www.linkedin.com/in/your-profile"
@@ -953,7 +970,7 @@ export function SettingsClient({ group, initialSettings, aiSettings, langSmithSe
             />
             <Box>
               <Button variant="contained" disabled={saving || savingProfileLinks} onClick={saveProfileLinks}>
-                {savingProfileLinks ? "Saving..." : "Save profile links"}
+                {savingProfileLinks ? "Saving..." : "Save profile links and format"}
               </Button>
             </Box>
             <Stack
