@@ -42,15 +42,15 @@ function ModernResumePreview({ text }: { text: string }) {
           <Box
             aria-hidden
             sx={{
-              width: 66,
-              height: 66,
+              width: 99,
+              height: 99,
               borderRadius: "50%",
               bgcolor: "#0B84F3",
               color: "common.black",
               display: { xs: "none", sm: "grid" },
               placeItems: "center",
               fontWeight: 950,
-              fontSize: 21,
+              fontSize: 31,
               flex: "0 0 auto",
             }}
           >

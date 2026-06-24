@@ -189,7 +189,7 @@ function renderHeader(pdf: PDFKit.PDFDocument, document: ResumeDocument, profile
 
 function renderBadge(pdf: PDFKit.PDFDocument, document: ResumeDocument, image: ResumePdfImage | null | undefined) {
   const initials = document.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "CV";
-  const radius = 28;
+  const radius = 42;
   const cx = SIDEBAR_X + SIDEBAR_WIDTH - radius;
   const cy = 72;
   if (image && /^image\/(?:jpe?g|png)$/i.test(image.mimeType)) {
