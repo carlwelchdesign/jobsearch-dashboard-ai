@@ -415,6 +415,39 @@ describe("tailorResumeForJob", () => {
     expect(promptInput.githubRepositories).toEqual([]);
   });
 
+  it("includes selected project technologies in deterministic skills", async () => {
+    parseStructuredOutputMock.mockResolvedValue(null);
+    const now = new Date("2026-06-04T12:00:00Z");
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now, {
+        coreSkills: ["React", "TypeScript"],
+        technicalSkills: ["JavaScript"],
+      }),
+      job: {
+        ...jobPosting(now),
+        description: "Frontend platform role using Next.js, Prisma, PostgreSQL, Redis, Docker, RAG, MCP, LangGraph, and Playwright.",
+      },
+      bullets: [],
+      projects: [
+        project({
+          id: "project_1",
+          name: "Job Search OS",
+          description: "Local-first AI-powered job search operating system coordinating specialized agents.",
+          technologies: ["Next.js", "TypeScript", "React", "Prisma", "PostgreSQL", "pgvector", "Redis", "Docker", "RAG", "MCP", "LangGraph", "Playwright", "Material UI", "Vitest"],
+          createdAt: now,
+        }),
+      ],
+      githubRepositories: [],
+      workExperiences: [],
+    });
+
+    expect(tailored.markdownResume).toContain("Next.js");
+    expect(tailored.markdownResume).toContain("Prisma");
+    expect(tailored.markdownResume).toContain("PostgreSQL");
+    expect(tailored.markdownResume).toContain("LangGraph");
+  });
+
   it("strips generated summary scaffold language from AI output", async () => {
     const now = new Date("2026-06-04T12:00:00Z");
     parseStructuredOutputMock.mockResolvedValueOnce({

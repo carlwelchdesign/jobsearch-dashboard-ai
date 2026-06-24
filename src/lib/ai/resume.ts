@@ -400,6 +400,8 @@ function buildFallbackTailoredResume({ userProfile, job, bullets, projects, work
   const skills = [
     ...jsonStringArray(userProfile.coreSkills),
     ...jsonStringArray(userProfile.technicalSkills),
+    ...projects.flatMap((project) => jsonStringArray(project.technologies)),
+    ...githubRepositories.flatMap((repo) => [repo.language, ...jsonStringArray(repo.topics)].filter((value): value is string => Boolean(value))),
   ];
   const jobTerms = tokenize(`${job.title} ${job.description}`);
   const rankedSkills = uniqueStrings(skills).sort((a, b) => scoreTerm(b, jobTerms) - scoreTerm(a, jobTerms)).slice(0, 32);

@@ -23,6 +23,7 @@ export type ResumeExperience = {
 export type ResumeProject = {
   name: string;
   description: string;
+  technologies: string[];
 };
 
 type ResumeSectionKey = keyof Pick<ResumeDocument, "summary" | "skills" | "experience" | "projects" | "education" | "certifications">;
@@ -61,16 +62,18 @@ export function parseResumeDocument(text: string): ResumeDocument {
 
   const sections = collectSections(lines.slice(bodyStart));
   const experience = parseExperience(sections.experience ?? []);
+  const projects = parseProjects(sections.projects ?? []);
   const headline = firstExperienceRole(experience) ?? "Senior Software Engineer";
+  const sectionSkills = parseSkills(sections.skills ?? []);
 
   return {
     name,
     contactLine: contactParts.join(" | "),
     headline,
     summary: cleanBodyLines(sections.summary ?? []),
-    skills: parseSkills(sections.skills ?? []),
+    skills: mergeResumeSkills(sectionSkills, projects.flatMap((project) => project.technologies)),
     experience,
-    projects: parseProjects(sections.projects ?? []),
+    projects,
     education: cleanBodyLines(sections.education ?? []),
     certifications: cleanBodyLines(sections.certifications ?? []),
     otherSections: sections.otherSections,
@@ -170,14 +173,52 @@ function parseProjects(lines: string[]): ResumeProject[] {
     const bullet = line.replace(/^[-*]\s+/, "");
     const colon = bullet.indexOf(":");
     if (colon > 1 && colon < 72) {
-      projects.push({ name: bullet.slice(0, colon).trim(), description: bullet.slice(colon + 1).trim() });
+      const parsed = parseProjectDescription(bullet.slice(colon + 1).trim());
+      projects.push({ name: bullet.slice(0, colon).trim(), ...parsed });
     } else if (projects.length && projects[projects.length - 1].description.length < 600) {
-      projects[projects.length - 1].description = `${projects[projects.length - 1].description} ${bullet}`.trim();
+      const project = projects[projects.length - 1];
+      const parsed = parseProjectDescription(`${project.description} ${bullet}`.trim());
+      project.description = parsed.description;
+      project.technologies = uniqueSkills([...project.technologies, ...parsed.technologies]);
     } else {
-      projects.push({ name: bullet, description: "" });
+      projects.push({ name: bullet, description: "", technologies: [] });
     }
   }
   return projects;
+}
+
+function parseProjectDescription(value: string): Pick<ResumeProject, "description" | "technologies"> {
+  const [description, stack] = splitLast(value, " | ");
+  const technologies = stack && looksLikeTechnologyStack(stack) ? parseSkills([stack]) : [];
+  return {
+    description: technologies.length ? description : value,
+    technologies,
+  };
+}
+
+function looksLikeTechnologyStack(value: string) {
+  const terms = parseSkills([value]);
+  if (terms.length < 2) return false;
+  return terms.some((term) => /react|typescript|next\.?js|node\.?js|prisma|postgres|redis|docker|openai|rag|mcp|langgraph|langchain|playwright|material ui|vitest|pgvector/i.test(term));
+}
+
+function mergeResumeSkills(sectionSkills: string[], projectSkills: string[]) {
+  const prioritySectionSkills = sectionSkills.slice(0, 8);
+  const remainingSectionSkills = sectionSkills.slice(8);
+  return uniqueSkills([...prioritySectionSkills, ...projectSkills, ...remainingSectionSkills]);
+}
+
+function uniqueSkills(skills: string[]) {
+  const seen = new Set<string>();
+  return skills
+    .map((skill) => skill.trim())
+    .filter(Boolean)
+    .filter((skill) => {
+      const key = skill.toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").trim().replace(/\s+/g, " ");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function firstExperienceRole(experience: ResumeExperience[]) {
