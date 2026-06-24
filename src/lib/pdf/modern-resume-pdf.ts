@@ -24,6 +24,12 @@ const CHIP_HEIGHT = 9.2;
 const CHIP_X_PADDING = 3;
 const CHIP_GAP = 3.2;
 const CONTACT_SIZE = 7.2;
+const MUI_ICON_PATHS = {
+  phone: "M6.54 5c.06.89.21 1.76.45 2.59l-1.2 1.2c-.41-1.2-.67-2.47-.76-3.79zm9.86 12.02c.85.24 1.72.39 2.6.45v1.49c-1.32-.09-2.59-.35-3.8-.75zM7.5 3H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.49c0-.55-.45-1-1-1-1.24 0-2.45-.2-3.57-.57-.1-.04-.21-.05-.31-.05-.26 0-.51.1-.71.29l-2.2 2.2c-2.83-1.45-5.15-3.76-6.59-6.59l2.2-2.2c.28-.28.36-.67.25-1.02C8.7 6.45 8.5 5.25 8.5 4c0-.55-.45-1-1-1",
+  email: "M12 1.95c-5.52 0-10 4.48-10 10s4.48 10 10 10h5v-2h-5c-4.34 0-8-3.66-8-8s3.66-8 8-8 8 3.66 8 8v1.43c0 .79-.71 1.57-1.5 1.57s-1.5-.78-1.5-1.57v-1.43c0-2.76-2.24-5-5-5s-5 2.24-5 5 2.24 5 5 5c1.38 0 2.64-.56 3.54-1.47.65.89 1.77 1.47 2.96 1.47 1.97 0 3.5-1.6 3.5-3.57v-1.43c0-5.52-4.48-10-10-10m0 13c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3",
+  link: "M17 7h-4v2h4c1.65 0 3 1.35 3 3s-1.35 3-3 3h-4v2h4c2.76 0 5-2.24 5-5s-2.24-5-5-5m-6 8H7c-1.65 0-3-1.35-3-3s1.35-3 3-3h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4zm-3-4h8v2H8z",
+  calendar: "M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2m0 16H5V10h14zm0-12H5V6h14zM9 14H7v-2h2zm4 0h-2v-2h2zm4 0h-2v-2h2zm-8 4H7v-2h2zm4 0h-2v-2h2zm4 0h-2v-2h2z",
+} as const;
 
 type PdfLine = {
   text: string;
@@ -230,7 +236,7 @@ function dateLine(textValue: string): PdfLine {
 }
 
 function bulletLines(textValue: string, width: number) {
-  return wrapPdfTextByWidth(textValue, width, BODY_SIZE, "regular").map((line, index) => ({ ...bodyLine(line, BODY_SIZE), bullet: index === 0, gapBefore: index === 0 ? 2.2 : 0 }));
+  return wrapPdfTextByWidth(textValue, width, BODY_SIZE, "regular").map((line, index) => ({ ...bodyLine(line, BODY_SIZE, "regular", INK), bullet: index === 0, gapBefore: index === 0 ? 2.2 : 0 }));
 }
 
 function wrapBody(textValue: string, width: number, size = BODY_SIZE, bold = false) {
@@ -307,10 +313,10 @@ function renderContactItems(items: ContactItem[], x: number, y: number) {
   const commands: string[] = [];
   let cursorX = x;
   for (const item of items) {
-    const iconSize = 7;
-    if (item.kind === "phone") commands.push(phoneIcon(cursorX, y + 0.2, iconSize, BLUE));
-    else if (item.kind === "email") commands.push(text("@", cursorX, y - 0.5, 8.2, "bold", BLUE));
-    else commands.push(linkIcon(cursorX, y + 0.1, iconSize, BLUE));
+    const iconSize = 7.8;
+    if (item.kind === "phone") commands.push(muiIcon(MUI_ICON_PATHS.phone, cursorX, y - 0.7, iconSize, BLUE));
+    else if (item.kind === "email") commands.push(muiIcon(MUI_ICON_PATHS.email, cursorX, y - 0.7, iconSize, BLUE));
+    else commands.push(muiIcon(MUI_ICON_PATHS.link, cursorX, y - 0.7, iconSize, BLUE));
 
     const labelX = cursorX + 11;
     commands.push(text(item.label, labelX, y, CONTACT_SIZE, "bold", MUTED));
@@ -355,52 +361,130 @@ function text(value: string, x: number, y: number, size: number, font: "regular"
   return `BT ${color} rg /${font === "bold" ? "F2" : "F1"} ${size} Tf 1 0 0 1 ${x} ${y} Tm (${escapePdfText(value)}) Tj ET`;
 }
 
-function phoneIcon(x: number, y: number, size: number, color: string) {
-  const s = size / 7;
-  return [
-    `q ${color} RG ${color} rg 1.2 w 1 J`,
-    `${x + 1 * s} ${y + 6 * s} m`,
-    `${x + 2.2 * s} ${y + 4.6 * s} l`,
-    `${x + 1.7 * s} ${y + 3.8 * s} l`,
-    `${x + 3.2 * s} ${y + 2.3 * s} l`,
-    `${x + 4.1 * s} ${y + 2.8 * s} l`,
-    `${x + 5.5 * s} ${y + 1.5 * s} l`,
-    `${x + 4.8 * s} ${y + 0.6 * s} l`,
-    `${x + 3.8 * s} ${y + 0.8 * s} ${x + 1.7 * s} ${y + 2.1 * s} ${x + 0.7 * s} ${y + 4.6 * s} c`,
-    `${x + 0.4 * s} ${y + 5.3 * s} ${x + 0.5 * s} ${y + 5.8 * s} ${x + 1 * s} ${y + 6 * s} c`,
-    "S Q",
-  ].join(" ");
-}
-
-function linkIcon(x: number, y: number, size: number, color: string) {
-  const s = size / 7;
-  return [
-    `q ${color} RG 1.1 w 1 J`,
-    `${x + 1 * s} ${y + 2.2 * s} m ${x + 2.6 * s} ${y + 0.6 * s} ${x + 4.2 * s} ${y + 0.6 * s} ${x + 5.1 * s} ${y + 1.5 * s} c`,
-    `${x + 3.6 * s} ${y + 3 * s} l`,
-    `${x + 1.8 * s} ${y + 4.8 * s} ${x + 0.4 * s} ${y + 3.4 * s} ${x + 1 * s} ${y + 2.2 * s} c`,
-    `${x + 3.1 * s} ${y + 5.2 * s} m ${x + 4.7 * s} ${y + 6.8 * s} ${x + 6.3 * s} ${y + 6.8 * s} ${x + 7.2 * s} ${y + 5.9 * s} c`,
-    `${x + 5.7 * s} ${y + 4.4 * s} l`,
-    `${x + 3.9 * s} ${y + 2.6 * s} ${x + 2.5 * s} ${y + 4 * s} ${x + 3.1 * s} ${y + 5.2 * s} c`,
-    "S Q",
-  ].join(" ");
-}
-
 function calendarIcon(x: number, y: number, size: number, color: string) {
-  const s = size / 7;
-  return [
-    `q ${color} RG ${color} rg 0.8 w`,
-    `${x + 0.5 * s} ${y + 0.2 * s} ${6 * s} ${5.5 * s} re S`,
-    `${x + 0.5 * s} ${y + 4.1 * s} m ${x + 6.5 * s} ${y + 4.1 * s} l S`,
-    `${x + 2 * s} ${y + 6.3 * s} m ${x + 2 * s} ${y + 5 * s} l S`,
-    `${x + 5 * s} ${y + 6.3 * s} m ${x + 5 * s} ${y + 5 * s} l S`,
-    `${x + 2 * s} ${y + 2.8 * s} ${0.7 * s} ${0.7 * s} re f`,
-    `${x + 3.6 * s} ${y + 2.8 * s} ${0.7 * s} ${0.7 * s} re f`,
-    `${x + 5.2 * s} ${y + 2.8 * s} ${0.7 * s} ${0.7 * s} re f`,
-    `${x + 2 * s} ${y + 1.4 * s} ${0.7 * s} ${0.7 * s} re f`,
-    `${x + 3.6 * s} ${y + 1.4 * s} ${0.7 * s} ${0.7 * s} re f`,
-    "Q",
-  ].join(" ");
+  return muiIcon(MUI_ICON_PATHS.calendar, x, y - 0.5, size + 1, color);
+}
+
+function muiIcon(path: string, x: number, y: number, size: number, color: string) {
+  const scale = size / 24;
+  const commands = svgPathToPdf(path, x, y, scale);
+  return `q ${color} rg ${commands} f Q`;
+}
+
+function svgPathToPdf(path: string, x: number, y: number, scale: number) {
+  const tokens = path.match(/[a-zA-Z]|-?(?:\d*\.)?\d+/g) ?? [];
+  const commands: string[] = [];
+  let index = 0;
+  let command = "";
+  let currentX = 0;
+  let currentY = 0;
+  let startX = 0;
+  let startY = 0;
+  let lastControlX = 0;
+  let lastControlY = 0;
+  let previousCommand = "";
+
+  const hasNumber = () => index < tokens.length && !/^[a-zA-Z]$/.test(tokens[index]);
+  const number = () => Number(tokens[index++]);
+  const point = (svgX: number, svgY: number) => `${formatPoint(x + svgX * scale)} ${formatPoint(y + (24 - svgY) * scale)}`;
+  const lineTo = (svgX: number, svgY: number) => {
+    commands.push(`${point(svgX, svgY)} l`);
+    currentX = svgX;
+    currentY = svgY;
+  };
+  const curveTo = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number) => {
+    commands.push(`${point(x1, y1)} ${point(x2, y2)} ${point(x3, y3)} c`);
+    currentX = x3;
+    currentY = y3;
+    lastControlX = x2;
+    lastControlY = y2;
+  };
+
+  while (index < tokens.length) {
+    if (/^[a-zA-Z]$/.test(tokens[index])) command = tokens[index++];
+    const relative = command === command.toLowerCase();
+    const type = command.toUpperCase();
+
+    if (type === "Z") {
+      commands.push("h");
+      currentX = startX;
+      currentY = startY;
+      previousCommand = command;
+      continue;
+    }
+
+    if (type === "M") {
+      const nextX = number();
+      const nextY = number();
+      currentX = relative ? currentX + nextX : nextX;
+      currentY = relative ? currentY + nextY : nextY;
+      startX = currentX;
+      startY = currentY;
+      commands.push(`${point(currentX, currentY)} m`);
+      while (hasNumber()) {
+        const lineX = number();
+        const lineY = number();
+        lineTo(relative ? currentX + lineX : lineX, relative ? currentY + lineY : lineY);
+      }
+    } else if (type === "L") {
+      while (hasNumber()) {
+        const nextX = number();
+        const nextY = number();
+        lineTo(relative ? currentX + nextX : nextX, relative ? currentY + nextY : nextY);
+      }
+    } else if (type === "H") {
+      while (hasNumber()) {
+        const nextX = number();
+        lineTo(relative ? currentX + nextX : nextX, currentY);
+      }
+    } else if (type === "V") {
+      while (hasNumber()) {
+        const nextY = number();
+        lineTo(currentX, relative ? currentY + nextY : nextY);
+      }
+    } else if (type === "C") {
+      while (hasNumber()) {
+        const x1 = number();
+        const y1 = number();
+        const x2 = number();
+        const y2 = number();
+        const x3 = number();
+        const y3 = number();
+        curveTo(
+          relative ? currentX + x1 : x1,
+          relative ? currentY + y1 : y1,
+          relative ? currentX + x2 : x2,
+          relative ? currentY + y2 : y2,
+          relative ? currentX + x3 : x3,
+          relative ? currentY + y3 : y3,
+        );
+      }
+    } else if (type === "S") {
+      while (hasNumber()) {
+        const reflectedX = previousCommand.toUpperCase() === "C" || previousCommand.toUpperCase() === "S" ? currentX * 2 - lastControlX : currentX;
+        const reflectedY = previousCommand.toUpperCase() === "C" || previousCommand.toUpperCase() === "S" ? currentY * 2 - lastControlY : currentY;
+        const x2 = number();
+        const y2 = number();
+        const x3 = number();
+        const y3 = number();
+        curveTo(
+          reflectedX,
+          reflectedY,
+          relative ? currentX + x2 : x2,
+          relative ? currentY + y2 : y2,
+          relative ? currentX + x3 : x3,
+          relative ? currentY + y3 : y3,
+        );
+      }
+    }
+    previousCommand = command;
+  }
+
+  return commands.join(" ");
+}
+
+function formatPoint(value: number) {
+  return Number(value.toFixed(3));
 }
 
 function circlePath(cx: number, cy: number, r: number) {
