@@ -22,7 +22,15 @@ type BulkMoveResponse = {
   quotaBlocked?: number;
 };
 
-export function BulkMoveToSprintControl({ buttonSx }: { buttonSx?: SxProps<Theme> }) {
+export function BulkMoveToSprintControl({
+  buttonSx,
+  label = "Prepare approved for Apply",
+  loadingLabel = "Preparing...",
+}: {
+  buttonSx?: SxProps<Theme>;
+  label?: string;
+  loadingLabel?: string;
+}) {
   const { refresh } = useRouter();
   const [limit, setLimit] = useState(25);
   const [loading, setLoading] = useState(false);
@@ -88,7 +96,7 @@ export function BulkMoveToSprintControl({ buttonSx }: { buttonSx?: SxProps<Theme
           onClick={moveToSprint}
           sx={buttonSx}
         >
-          {loading ? "Moving..." : "Bulk move to sprint"}
+          {loading ? loadingLabel : label}
         </Button>
       </Stack>
       <Snackbar open={Boolean(notice)} autoHideDuration={6000} onClose={() => setNotice("")}>

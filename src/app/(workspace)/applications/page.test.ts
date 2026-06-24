@@ -10,7 +10,13 @@ describe("/applications page agency workflow", () => {
     expect(pageSource).toContain("Agency command center");
     expect(pageSource).toContain("Primary workflow");
     expect(pageSource).toContain("Application operations");
-    expect(pageSource).toContain("Recover approved applications into Apply Sprint");
+    expect(pageSource).toContain("Prepare approved applications for Apply");
+    expect(pageSource).toContain("Approved to Ready");
+    expect(pageSource).toContain("Approved means the job passed review. Ready means it has a direct application URL plus launchable resume and cover-letter materials.");
+    expect(pageSource).toContain("Prepare approved for Apply");
+    expect(pageSource).toContain("Add direct URLs first");
+    expect(pageSource).toContain("ApplicationPrepChecklist");
+    expect(pageSource).toContain("Needs direct employer/ATS URL");
     expect(pageSource).toContain("Prepare eligible saved matches directly for Apply Sprint.");
     expect(pageSource).toContain("/api/applications/agency/run");
     expect(pageSource).toContain("minimumScore: 0");
@@ -19,6 +25,7 @@ describe("/applications page agency workflow", () => {
     expect(pageSource).toContain("These applications are already in Apply Sprint.");
     expect(pageSource).toContain("Open {items.length} in Apply Sprint");
     expect(pageSource).toContain("No applications are currently in Apply Sprint.");
+    expect(pageSource.indexOf("if (approvedCount > 0)")).toBeLessThan(pageSource.indexOf("if (agencyCandidateCount > 0)"));
     expect(pageSource).not.toContain("Review jobs first");
     expect(pageSource).not.toContain("ApplicationCreateForm");
   });
