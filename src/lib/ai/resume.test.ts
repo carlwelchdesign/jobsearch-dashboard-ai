@@ -313,6 +313,64 @@ describe("tailorResumeForJob", () => {
     expect(tailored.markdownResume).not.toMatch(/likely|estimated|inferred|available at the time/i);
   });
 
+  it("does not carry ambiguous AR fallback skills into unrelated role skill lines", async () => {
+    parseStructuredOutputMock.mockResolvedValue(null);
+    const now = new Date("2026-06-04T12:00:00Z");
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now),
+      job: jobPosting(now),
+      bullets: [],
+      projects: [],
+      workExperiences: [
+        workExperience({
+          id: "work_1",
+          company: "Yubico",
+          title: "Senior Software Engineer",
+          startDate: "Jul 2022",
+          endDate: "Mar 2026",
+          skills: ["React", "TypeScript", "AR", "frontend architecture"],
+          achievements: [
+            "Built enterprise admin console features supporting YubiKey management, provisioning flows, inventory workflows, and device lifecycle management.",
+            "Partnered with backend and product teams on API contracts, frontend architecture, rollout planning, and enterprise workflow design.",
+          ],
+          createdAt: now,
+        }),
+      ],
+    });
+
+    expect(tailored.markdownResume).toContain("Skills: React, TypeScript, frontend architecture");
+    expect(tailored.markdownResume).not.toContain("Skills: React, TypeScript, AR");
+  });
+
+  it("keeps AR fallback skills when the role evidence supports augmented reality work", async () => {
+    parseStructuredOutputMock.mockResolvedValue(null);
+    const now = new Date("2026-06-04T12:00:00Z");
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now),
+      job: jobPosting(now),
+      bullets: [],
+      projects: [],
+      workExperiences: [
+        workExperience({
+          id: "work_1",
+          company: "Grindr",
+          title: "Senior Web Developer / Manager",
+          startDate: "Apr 2016",
+          endDate: "Aug 2017",
+          skills: ["JavaScript", "AR", "analytics"],
+          achievements: [
+            "Created an augmented reality campaign experience where users triggered animated emoji from physical advertisements.",
+          ],
+          createdAt: now,
+        }),
+      ],
+    });
+
+    expect(tailored.markdownResume).toContain("Skills: JavaScript, AR, analytics");
+  });
+
   it("does not duplicate a curated project with its backing GitHub repository", async () => {
     parseStructuredOutputMock.mockResolvedValue(null);
     const now = new Date("2026-06-04T12:00:00Z");
