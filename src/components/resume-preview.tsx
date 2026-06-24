@@ -70,7 +70,7 @@ function ModernResumePreview({ text }: { text: string }) {
                     <Typography variant="caption" sx={{ color: "inherit" }}>{item.dates}</Typography>
                   </Stack>
                 ) : null}
-                {item.skills.length ? <Typography variant="caption" sx={{ display: "block", color: "#374151", mt: 0.5 }}>Skills: {item.skills.join(", ")}</Typography> : null}
+                {item.skills.length ? <Typography variant="caption" sx={{ display: "block", color: "#374151", mt: 0.5, fontStyle: "italic" }}>Skills: {item.skills.join(", ")}</Typography> : null}
                 <Stack component="ul" spacing={0.35} sx={{ pl: 2, mt: 0.75, mb: 0 }}>
                   {item.bullets.slice(0, 5).map((bullet) => (
                     <Typography key={bullet} component="li" variant="caption" sx={{ color: "#111827", lineHeight: 1.35 }}>{bullet}</Typography>
@@ -104,6 +104,7 @@ function ModernResumePreview({ text }: { text: string }) {
                     bgcolor: "#DCEBFF",
                     color: "#035FBF",
                     fontSize: 13,
+                    fontStyle: "italic",
                     fontWeight: 750,
                     lineHeight: 1,
                     whiteSpace: "nowrap",

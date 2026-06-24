@@ -29,8 +29,12 @@ const CHIP_GAP = 3.2;
 const CONTACT_SIZE = 7.2;
 const FONT_REGULAR = "Roboto";
 const FONT_BOLD = "RobotoBold";
+const FONT_ITALIC = "RobotoItalic";
+const FONT_BOLD_ITALIC = "RobotoBoldItalic";
 const ROBOTO_REGULAR_PATH = fontAssetPath("roboto-latin-400-normal.woff");
 const ROBOTO_BOLD_PATH = fontAssetPath("roboto-latin-700-normal.woff");
+const ROBOTO_ITALIC_PATH = fontAssetPath("roboto-latin-400-italic.woff");
+const ROBOTO_BOLD_ITALIC_PATH = fontAssetPath("roboto-latin-700-italic.woff");
 const MUI_ICON_PATHS = {
   phone: "M6.54 5c.06.89.21 1.76.45 2.59l-1.2 1.2c-.41-1.2-.67-2.47-.76-3.79zm9.86 12.02c.85.24 1.72.39 2.6.45v1.49c-1.32-.09-2.59-.35-3.8-.75zM7.5 3H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.49c0-.55-.45-1-1-1-1.24 0-2.45-.2-3.57-.57-.1-.04-.21-.05-.31-.05-.26 0-.51.1-.71.29l-2.2 2.2c-2.83-1.45-5.15-3.76-6.59-6.59l2.2-2.2c.28-.28.36-.67.25-1.02C8.7 6.45 8.5 5.25 8.5 4c0-.55-.45-1-1-1",
   email: "M12 1.95c-5.52 0-10 4.48-10 10s4.48 10 10 10h5v-2h-5c-4.34 0-8-3.66-8-8s3.66-8 8-8 8 3.66 8 8v1.43c0 .79-.71 1.57-1.5 1.57s-1.5-.78-1.5-1.57v-1.43c0-2.76-2.24-5-5-5s-5 2.24-5 5 2.24 5 5 5c1.38 0 2.64-.56 3.54-1.47.65.89 1.77 1.47 2.96 1.47 1.97 0 3.5-1.6 3.5-3.57v-1.43c0-5.52-4.48-10-10-10m0 13c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3",
@@ -38,7 +42,7 @@ const MUI_ICON_PATHS = {
   calendar: "M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2m0 16H5V10h14zm0-12H5V6h14zM9 14H7v-2h2zm4 0h-2v-2h2zm4 0h-2v-2h2zm-8 4H7v-2h2zm4 0h-2v-2h2zm4 0h-2v-2h2z",
 } as const;
 
-type PdfFont = "regular" | "bold";
+type PdfFont = "regular" | "bold" | "italic" | "boldItalic";
 
 type PdfLine = {
   text: string;
@@ -104,6 +108,8 @@ export async function createModernTwoColumnResumePdf(text: string, options: { pr
 function registerResumeFonts(pdf: PDFKit.PDFDocument) {
   pdf.registerFont(FONT_REGULAR, ROBOTO_REGULAR_PATH);
   pdf.registerFont(FONT_BOLD, ROBOTO_BOLD_PATH);
+  pdf.registerFont(FONT_ITALIC, ROBOTO_ITALIC_PATH);
+  pdf.registerFont(FONT_BOLD_ITALIC, ROBOTO_BOLD_ITALIC_PATH);
 }
 
 function fontAssetPath(fileName: string) {
@@ -125,7 +131,7 @@ function layoutPages(document: ResumeDocument, metrics: PdfMetrics) {
       roleLine(item.role ?? item.title),
       ...(item.company ? [bodyLine(item.company, 7.4, "bold", BLUE)] : []),
       ...(item.dates ? [dateLine(item.dates)] : []),
-      ...(item.skills.length ? wrapBody(`Skills: ${item.skills.join(", ")}`, EXPERIENCE_WIDTH, metrics, BODY_SIZE) : []),
+      ...(item.skills.length ? wrapBody(`Skills: ${item.skills.join(", ")}`, EXPERIENCE_WIDTH, metrics, BODY_SIZE, "italic") : []),
       ...item.bullets.slice(0, 5).flatMap((bullet) => bulletLines(bullet, EXPERIENCE_WIDTH - BULLET_INDENT, metrics)),
       roleSeparator(),
     ]),
@@ -248,8 +254,8 @@ function bulletLines(textValue: string, width: number, metrics: PdfMetrics) {
   return wrapPdfTextByWidth(textValue, width, BODY_SIZE, "regular", metrics).map((line, index) => ({ ...bodyLine(line, BODY_SIZE, "regular", INK), bullet: index === 0, gapBefore: index === 0 ? 2.2 : 0 }));
 }
 
-function wrapBody(textValue: string, width: number, metrics: PdfMetrics, size = BODY_SIZE, bold = false) {
-  const font = bold ? "bold" as const : "regular" as const;
+function wrapBody(textValue: string, width: number, metrics: PdfMetrics, size = BODY_SIZE, fontOrBold: PdfFont | boolean = false) {
+  const font = fontOrBold === true ? "bold" : fontOrBold || "regular";
   return wrapPdfTextByWidth(textValue, width, size, font, metrics).map((line, index) => ({ ...bodyLine(line, size), font, gapBefore: index === 0 ? 2 : 0 }));
 }
 
@@ -280,7 +286,7 @@ function roleSeparator(): PdfLine {
 }
 
 function chipRow(chips: string[]): PdfLine {
-  return { text: chips.join(" "), size: CHIP_FONT_SIZE, font: "bold", leading: 11.2, gapBefore: 2, kind: "chip-row", chips };
+  return { text: chips.join(" "), size: CHIP_FONT_SIZE, font: "boldItalic", leading: 11.2, gapBefore: 2, kind: "chip-row", chips };
 }
 
 function renderChipRow(pdf: PDFKit.PDFDocument, chips: string[], x: number, y: number) {
@@ -289,13 +295,13 @@ function renderChipRow(pdf: PDFKit.PDFDocument, chips: string[], x: number, y: n
   for (const chip of chips) {
     const width = chipTextWidth(chip, metrics);
     pdf.roundedRect(cursorX, y - 1, width, CHIP_HEIGHT, 2).fill(CHIP_FILL);
-    drawText(pdf, chip, cursorX + CHIP_X_PADDING, y + 0.7, CHIP_FONT_SIZE, "bold", CHIP_TEXT);
+    drawText(pdf, chip, cursorX + CHIP_X_PADDING, y + 0.7, CHIP_FONT_SIZE, "boldItalic", CHIP_TEXT);
     cursorX += width + CHIP_GAP;
   }
 }
 
 function chipTextWidth(value: string, metrics: PdfMetrics) {
-  return Math.max(16, metrics.widthOfString(value, CHIP_FONT_SIZE, "bold") + CHIP_X_PADDING * 2);
+  return Math.max(16, metrics.widthOfString(value, CHIP_FONT_SIZE, "boldItalic") + CHIP_X_PADDING * 2);
 }
 
 function contactItems(contactLine: string): ContactItem[] {
@@ -352,7 +358,7 @@ export function wrapPdfTextByWidth(value: string, maxWidth: number, size = BODY_
 
 const approximateMetrics: PdfMetrics = {
   widthOfString(value, size, font) {
-    const fontWeight = font === "bold" ? 1.07 : 1;
+    const fontWeight = font === "bold" || font === "boldItalic" ? 1.07 : 1;
     let units = 0;
     for (const char of value) {
       if (char === " ") units += 0.28;
@@ -371,7 +377,10 @@ function drawText(pdf: PDFKit.PDFDocument, value: string, x: number, y: number, 
 }
 
 function fontName(font: PdfFont) {
-  return font === "bold" ? FONT_BOLD : FONT_REGULAR;
+  if (font === "bold") return FONT_BOLD;
+  if (font === "italic") return FONT_ITALIC;
+  if (font === "boldItalic") return FONT_BOLD_ITALIC;
+  return FONT_REGULAR;
 }
 
 function muiIcon(pdf: PDFKit.PDFDocument, path: string, x: number, y: number, size: number, color: string) {
