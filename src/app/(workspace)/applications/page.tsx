@@ -40,7 +40,7 @@ import { MarkAppliedButton } from "./mark-applied-button";
 
 export const dynamic = "force-dynamic";
 
-const columns = ["approved", "ready_to_apply", "applied", "follow_up_due", "screening", "interviewing", "offer", "archived"];
+const columns = ["approved", "material_blocked", "ready_to_apply", "applied", "follow_up_due", "screening", "interviewing", "offer", "archived"];
 const commandButtonSx = {
   minHeight: 42,
   width: "100%",
@@ -255,17 +255,23 @@ export default async function ApplicationsPage() {
         </Card>
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)", xl: "repeat(4, 1fr)" }, gap: 2 }}>
           {columns.map((status) => {
-            const items = visibleApplications.filter((application) => application.status === status);
+            const items = visibleApplications.filter((application) => applicationBoardColumn(application) === status);
             const isReadyColumn = status === "ready_to_apply";
+            const isMaterialBlockedColumn = status === "material_blocked";
             return (
-              <Card key={status} sx={{ minHeight: 220, borderColor: isReadyColumn && items.length ? "success.main" : "divider" }}>
+              <Card key={status} sx={{ minHeight: 220, borderColor: isReadyColumn && items.length ? "success.main" : isMaterialBlockedColumn && items.length ? "warning.main" : "divider" }}>
                 <CardContent>
                   <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
                     <Box>
                       <StatusChip status={status} />
                       {status === "approved" ? (
                         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
-                          Prepare packets here. Items move to Ready to apply after materials pass review and a direct employer URL exists.
+                          These are approved and still eligible for packet prep.
+                        </Typography>
+                      ) : null}
+                      {isMaterialBlockedColumn ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
+                          These passed job review, but their generated materials failed QA or generation.
                         </Typography>
                       ) : null}
                       {isReadyColumn ? (
@@ -293,7 +299,7 @@ export default async function ApplicationsPage() {
                     <Box sx={{ mt: 1.5 }}>
                       <BulkMoveToSprintControl
                         buttonSx={{ width: "100%", justifyContent: "flex-start" }}
-                        label="Prepare approved"
+                        label="Prepare approved for Ready to apply"
                         loadingLabel="Preparing..."
                       />
                     </Box>
@@ -303,6 +309,8 @@ export default async function ApplicationsPage() {
                       <Typography variant="body2" color="text.secondary">
                         {isReadyColumn
                           ? "No applications are currently in Apply Sprint."
+                          : isMaterialBlockedColumn
+                            ? "No applications are waiting on material review."
                           : `No ${formatStatus(status)} applications.`}
                       </Typography>
                     ) : (
@@ -326,7 +334,7 @@ export default async function ApplicationsPage() {
                           ) : null}
                           <Box sx={{ mt: 1 }}>
                             <ActionButton href={`/applications/${application.id}`} size="small" variant="outlined" startIcon={<FactCheckOutlinedIcon />}>
-                              Review packet
+                              {isMaterialBlockedColumn ? "Review material issue" : "Review packet"}
                             </ActionButton>
                           </Box>
                           {application.status === "ready_to_apply" && application.resume && application.coverLetter && assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable ? (
@@ -578,6 +586,18 @@ function classifyVisibleApplicationReadiness(application: {
     coverLetter: application.coverLetter,
     jobPosting: application.jobPosting,
   });
+}
+
+function applicationBoardColumn(application: {
+  status: string;
+  resume: { id: string } | null;
+  coverLetter: { id: string; generationNotes: unknown } | null;
+  jobPosting: { applicationUrl: string | null };
+}) {
+  if (application.status === "approved" && classifyVisibleApplicationReadiness(application).kind === "material_blocked") {
+    return "material_blocked";
+  }
+  return application.status;
 }
 
 function PrepChip({ complete, label }: { complete: boolean; label: string }) {

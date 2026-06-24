@@ -16,6 +16,11 @@ describe("/applications page agency workflow", () => {
     expect(pageSource).toContain("Prepare approved for Ready to apply");
     expect(pageSource).toContain("This also archives approved items without direct URLs.");
     expect(pageSource).toContain("material-blocked");
+    expect(pageSource).toContain('"material_blocked"');
+    expect(pageSource).toContain("applicationBoardColumn");
+    expect(pageSource).toContain("These are approved and still eligible for packet prep.");
+    expect(pageSource).toContain("These passed job review, but their generated materials failed QA or generation.");
+    expect(pageSource).toContain("Review material issue");
     expect(pageSource).toContain("Archives on prep: no direct employer/ATS URL");
     expect(pageSource).toContain("classifyApplicationPrepReadiness");
     expect(pageSource).toContain("Add direct URLs first");
