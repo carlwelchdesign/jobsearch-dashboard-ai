@@ -92,7 +92,7 @@ function ModernResumePreview({ text }: { text: string }) {
             <PreviewSection title="Skills" />
             <Stack direction="row" spacing={0.6} useFlexGap sx={{ flexWrap: "wrap" }}>
               {document.skills.slice(0, 28).map((skill) => (
-                <Chip key={skill} size="small" label={skill} sx={{ borderRadius: 0.5, fontWeight: 750, bgcolor: "#F3F4F6" }} />
+                <Chip key={skill} size="small" label={skill} sx={{ borderRadius: 0.5, fontWeight: 750, bgcolor: "#DCEBFF", color: "#035FBF" }} />
               ))}
             </Stack>
             {document.projects.length ? (

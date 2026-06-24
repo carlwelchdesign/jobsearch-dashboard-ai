@@ -15,7 +15,8 @@ const SIDEBAR_WIDTH = 194.4;
 const BLUE = "#0475ee";
 const INK = "#0d0f14";
 const MUTED = "#4d5663";
-const CHIP_FILL = "#f2f4f6";
+const CHIP_FILL = "#dcebff";
+const CHIP_TEXT = "#035fbf";
 const DIVIDER = "#dbdfe6";
 const BODY_SIZE = 7.35;
 const BODY_LEADING = 9.5;
@@ -288,7 +289,7 @@ function renderChipRow(pdf: PDFKit.PDFDocument, chips: string[], x: number, y: n
   for (const chip of chips) {
     const width = chipTextWidth(chip, metrics);
     pdf.roundedRect(cursorX, y - 1, width, CHIP_HEIGHT, 2).fill(CHIP_FILL);
-    drawText(pdf, chip, cursorX + CHIP_X_PADDING, y + 1.1, CHIP_FONT_SIZE, "bold", INK);
+    drawText(pdf, chip, cursorX + CHIP_X_PADDING, y + 1.1, CHIP_FONT_SIZE, "bold", CHIP_TEXT);
     cursorX += width + CHIP_GAP;
   }
 }
