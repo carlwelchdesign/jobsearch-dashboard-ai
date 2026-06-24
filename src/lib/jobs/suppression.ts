@@ -74,6 +74,8 @@ export async function loadJobSuppressionState(userId: string): Promise<JobSuppre
 
 export async function loadJobSuppressionStatesByUserIds(userIds: string[]) {
   const uniqueUserIds = Array.from(new Set(userIds));
+  if (!uniqueUserIds.length) return new Map<string, JobSuppressionState>();
+
   const entries = await Promise.all(uniqueUserIds.map(async (userId) => {
     const now = new Date();
     const [suppressions, applications, rejectedMatches] = await Promise.all([

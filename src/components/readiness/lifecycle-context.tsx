@@ -1,11 +1,10 @@
 import { LifecycleContextPanel } from "@/components/readiness/readiness-cockpit";
-import { prisma } from "@/lib/prisma";
-import { buildLifecycleReadiness, type LifecycleReadinessStage } from "@/lib/readiness/lifecycle";
+import { getLifecycleReadinessForDefaultUser } from "@/lib/readiness/default-user";
+import type { LifecycleReadinessStage } from "@/lib/readiness/lifecycle";
 
 export async function LifecycleReadinessContext({ stages, title }: { stages?: LifecycleReadinessStage[]; title?: string }) {
-  const user = await prisma.user.findFirst({ select: { id: true }, orderBy: { createdAt: "asc" } });
-  if (!user) return null;
+  const result = await getLifecycleReadinessForDefaultUser();
+  if (!result) return null;
 
-  const readiness = await buildLifecycleReadiness({ userId: user.id });
-  return <LifecycleContextPanel readiness={readiness} stages={stages} title={title} />;
+  return <LifecycleContextPanel readiness={result.readiness} stages={stages} title={title} />;
 }
