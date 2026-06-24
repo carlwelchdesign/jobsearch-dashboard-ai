@@ -104,7 +104,6 @@ function ModernResumePreview({ text }: { text: string }) {
                     bgcolor: "#DCEBFF",
                     color: "#035FBF",
                     fontSize: 13,
-                    fontStyle: "italic",
                     fontWeight: 750,
                     lineHeight: 1,
                     whiteSpace: "nowrap",

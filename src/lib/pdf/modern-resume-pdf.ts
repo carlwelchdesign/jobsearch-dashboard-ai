@@ -286,7 +286,7 @@ function roleSeparator(): PdfLine {
 }
 
 function chipRow(chips: string[]): PdfLine {
-  return { text: chips.join(" "), size: CHIP_FONT_SIZE, font: "boldItalic", leading: 11.2, gapBefore: 2, kind: "chip-row", chips };
+  return { text: chips.join(" "), size: CHIP_FONT_SIZE, font: "bold", leading: 11.2, gapBefore: 2, kind: "chip-row", chips };
 }
 
 function renderChipRow(pdf: PDFKit.PDFDocument, chips: string[], x: number, y: number) {
@@ -295,13 +295,13 @@ function renderChipRow(pdf: PDFKit.PDFDocument, chips: string[], x: number, y: n
   for (const chip of chips) {
     const width = chipTextWidth(chip, metrics);
     pdf.roundedRect(cursorX, y - 1, width, CHIP_HEIGHT, 2).fill(CHIP_FILL);
-    drawText(pdf, chip, cursorX + CHIP_X_PADDING, y + 0.7, CHIP_FONT_SIZE, "boldItalic", CHIP_TEXT);
+    drawText(pdf, chip, cursorX + CHIP_X_PADDING, y + 0.7, CHIP_FONT_SIZE, "bold", CHIP_TEXT);
     cursorX += width + CHIP_GAP;
   }
 }
 
 function chipTextWidth(value: string, metrics: PdfMetrics) {
-  return Math.max(16, metrics.widthOfString(value, CHIP_FONT_SIZE, "boldItalic") + CHIP_X_PADDING * 2);
+  return Math.max(16, metrics.widthOfString(value, CHIP_FONT_SIZE, "bold") + CHIP_X_PADDING * 2);
 }
 
 function contactItems(contactLine: string): ContactItem[] {
