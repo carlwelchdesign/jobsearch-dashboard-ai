@@ -21,6 +21,9 @@ describe("/applications page agency workflow", () => {
     expect(pageSource).toContain("These are approved and still eligible for packet prep.");
     expect(pageSource).toContain("These passed job review, but their generated materials failed QA or generation.");
     expect(pageSource).toContain("Review material issue");
+    expect(pageSource).toContain("Regenerate blocked materials");
+    expect(pageSource).toContain('queue="material_blocked"');
+    expect(pageSource).toContain("Regenerating blocked resumes and cover letters.");
     expect(pageSource).toContain("Archives on prep: no direct employer/ATS URL");
     expect(pageSource).toContain("classifyApplicationPrepReadiness");
     expect(pageSource).toContain("Add direct URLs first");

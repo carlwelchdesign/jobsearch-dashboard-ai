@@ -304,6 +304,18 @@ export default async function ApplicationsPage() {
                       />
                     </Box>
                   ) : null}
+                  {isMaterialBlockedColumn && items.length ? (
+                    <Box sx={{ mt: 1.5 }}>
+                      <BulkMoveToSprintControl
+                        buttonSx={{ width: "100%", justifyContent: "flex-start" }}
+                        buttonColor="warning"
+                        queue="material_blocked"
+                        label="Regenerate blocked materials"
+                        loadingLabel="Regenerating..."
+                        startNotice="Regenerating blocked resumes and cover letters. Passing applications will move to Ready to apply."
+                      />
+                    </Box>
+                  ) : null}
                   <Stack spacing={1.5} sx={{ mt: 2 }}>
                     {items.length === 0 ? (
                       <Typography variant="body2" color="text.secondary">

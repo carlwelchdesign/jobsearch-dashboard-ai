@@ -25,6 +25,7 @@ export const dynamic = "force-dynamic";
 const requestSchema = z.object({
   limit: z.number().int().min(1).max(250).default(25),
   regenerateBlockedMaterials: z.boolean().default(true),
+  queue: z.enum(["approved", "material_blocked"]).default("approved"),
 });
 
 const movableStatuses = ["approved", "resume_generated", "cover_letter_generated"] as const;
@@ -43,10 +44,15 @@ export async function POST(request: Request) {
     const readyToMoveApplications = classified.filter((item) => item.readiness.kind === "ready_to_move");
     const needsMaterialsApplications = classified.filter((item) => item.readiness.kind === "needs_materials");
     const materialBlockedApplications = classified.filter((item) => item.readiness.kind === "material_blocked");
-    const directApplications = [
-      ...readyToMoveApplications,
-      ...needsMaterialsApplications,
-    ].slice(0, input.limit);
+    const materialBlockedToRegenerate = input.queue === "material_blocked" && input.regenerateBlockedMaterials
+      ? materialBlockedApplications.slice(0, input.limit)
+      : [];
+    const directApplications = input.queue === "material_blocked"
+      ? []
+      : [
+          ...readyToMoveApplications,
+          ...needsMaterialsApplications,
+        ].slice(0, input.limit);
 
     const results: Array<{
       ok: boolean;
@@ -91,7 +97,7 @@ export async function POST(request: Request) {
       }
     }
 
-    for (const { application } of materialBlockedApplications) {
+    for (const { application } of materialBlockedApplications.filter((item) => !materialBlockedToRegenerate.includes(item))) {
       const materialQuality = applicationMaterialQualityDetail(application.coverLetter?.generationNotes);
       results.push({
         ok: false,
@@ -105,6 +111,53 @@ export async function POST(request: Request) {
         reason: materialQuality.reason,
         error: `material_quality_needs_review: ${materialQuality.reason}`,
       });
+    }
+
+    for (const { application } of materialBlockedToRegenerate) {
+      try {
+        const prepared = await prepareApplicationPackage(application.jobPostingId, {
+          regenerateResume: true,
+          regenerateCoverLetter: true,
+        });
+        if (prepared.readyToApply === false) {
+          results.push({
+            ok: false,
+            applicationId: prepared.application.id,
+            jobId: application.jobPostingId,
+            company: application.jobPosting.company,
+            title: application.jobPosting.title,
+            action: "material_blocked",
+            readiness: "material_blocked",
+            regeneratedCoverLetter: true,
+            materialQuality: prepared.materialQuality,
+            reason: prepared.materialQuality.reason,
+            error: `material_quality_needs_review: ${prepared.materialQuality.reason}`,
+          });
+          continue;
+        }
+        results.push({
+          ok: true,
+          applicationId: prepared.application.id,
+          jobId: application.jobPostingId,
+          company: application.jobPosting.company,
+          title: application.jobPosting.title,
+          action: "prepared",
+          regeneratedCoverLetter: true,
+          materialQuality: prepared.materialQuality,
+        });
+      } catch (error) {
+        results.push({
+          ok: false,
+          applicationId: application.id,
+          jobId: application.jobPostingId,
+          company: application.jobPosting.company,
+          title: application.jobPosting.title,
+          action: "failed",
+          readiness: "material_blocked",
+          reason: error instanceof Error ? error.message : "Unknown material regeneration failure",
+          error: error instanceof Error ? error.message : "Unknown material regeneration failure",
+        });
+      }
     }
 
     for (const { application } of directApplications) {
@@ -242,12 +295,14 @@ export async function POST(request: Request) {
     const moved = results.filter((result) => result.ok && result.action === "moved").length;
     const prepared = results.filter((result) => result.ok && result.action === "prepared").length;
     const archivedNoDirectUrl = results.filter((result) => result.ok && result.action === "archived_no_direct_url").length;
-    const regenerated = results.filter((result) => result.ok && result.regeneratedCoverLetter).length;
+    const regenerated = results.filter((result) => result.regeneratedCoverLetter).length;
     const reassessed = results.filter((result) => result.ok && result.reassessedMaterialQuality).length;
     const failed = results.filter((result) => !result.ok && result.action !== "material_blocked").length;
     const quotaBlocked = results.filter((result) => result.materialQuality?.reasons.includes("openai_insufficient_quota")).length;
     const materialBlocked = results.filter((result) => result.action === "material_blocked" || result.materialQuality?.reasons.includes("deterministic_fallback") || result.materialQuality?.reasons.includes("material_quality_needs_review") || result.error?.startsWith("material_quality_needs_review")).length;
-    const remainingEligible = Math.max(0, readyToMoveApplications.length + needsMaterialsApplications.length - directApplications.length);
+    const remainingEligible = input.queue === "material_blocked"
+      ? Math.max(0, materialBlockedApplications.length - materialBlockedToRegenerate.length)
+      : Math.max(0, readyToMoveApplications.length + needsMaterialsApplications.length - directApplications.length);
     const totalMoved = moved + prepared;
     const blockedExamples = results
       .filter((result) => result.action === "material_blocked" || result.action === "archived_no_direct_url" || result.action === "failed")

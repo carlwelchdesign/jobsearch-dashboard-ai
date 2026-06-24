@@ -68,10 +68,16 @@ export function BulkMoveToSprintControl({
   buttonSx,
   label = "Prepare approved for Ready to apply",
   loadingLabel = "Preparing...",
+  queue = "approved",
+  startNotice,
+  buttonColor = "success",
 }: {
   buttonSx?: SxProps<Theme>;
   label?: string;
   loadingLabel?: string;
+  queue?: "approved" | "material_blocked";
+  startNotice?: string;
+  buttonColor?: "success" | "warning";
 }) {
   const { refresh } = useRouter();
   const [state, dispatch] = useReducer(bulkMoveReducer, {
@@ -88,11 +94,15 @@ export function BulkMoveToSprintControl({
       const request = fetch("/api/applications/bulk-move-to-sprint", {
         method: "POST",
         headers: { "content-type": "application/json", "x-run-in-background": "1" },
-        body: JSON.stringify({ limit: state.limit, regenerateBlockedMaterials: true }),
+        body: JSON.stringify({ limit: state.limit, regenerateBlockedMaterials: true, queue }),
         keepalive: true,
       });
 
-      dispatch({ type: "notice", severity: "info", notice: "Preparing approved applications for Ready to apply. No-direct-URL items will be archived." });
+      dispatch({
+        type: "notice",
+        severity: "info",
+        notice: startNotice ?? "Preparing approved applications for Ready to apply. No-direct-URL items will be archived.",
+      });
 
       request
         .then(async (response) => {
@@ -134,7 +144,7 @@ export function BulkMoveToSprintControl({
         </TextField>
         <Button
           variant="contained"
-          color="success"
+          color={buttonColor}
           startIcon={<BoltOutlinedIcon />}
           disabled={state.loading}
           onClick={moveToSprint}

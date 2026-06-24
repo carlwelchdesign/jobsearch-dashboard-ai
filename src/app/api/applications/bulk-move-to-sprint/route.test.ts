@@ -200,6 +200,62 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     });
   });
 
+  it("regenerates material-blocked applications when the material review queue is requested", async () => {
+    findApplicationsMock.mockResolvedValue([
+      application({
+        id: "app_blocked",
+        jobPostingId: "job_blocked",
+        resumeId: "resume_old",
+        coverLetterId: "letter_old",
+        company: "Linear",
+        title: "Product Engineer",
+        generationNotes: {
+          generatedBy: "deterministic_fallback",
+          materialQuality: {
+            status: "BLOCKED",
+            launchable: false,
+            reason: "Cover letter used deterministic fallback output and must be regenerated or reviewed before launch.",
+            reasons: ["deterministic_fallback"],
+            score: 0,
+            generatedBy: "deterministic_fallback",
+            evidenceRefs: [],
+          },
+        },
+      }),
+    ] as never);
+    preparePackageMock.mockResolvedValue(readyPackage("app_blocked", "resume_new", "letter_new"));
+
+    const response = await POST(new Request("http://localhost/api/applications/bulk-move-to-sprint", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ limit: 10, queue: "material_blocked", regenerateBlockedMaterials: true }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(preparePackageMock).toHaveBeenCalledWith("job_blocked", {
+      regenerateResume: true,
+      regenerateCoverLetter: true,
+    });
+    expect(transitionMock).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      moved: 0,
+      prepared: 1,
+      regenerated: 1,
+      materialBlocked: 0,
+      failed: 0,
+      requested: expect.objectContaining({ queue: "material_blocked" }),
+      results: [
+        expect.objectContaining({
+          ok: true,
+          applicationId: "app_blocked",
+          jobId: "job_blocked",
+          action: "prepared",
+          regeneratedCoverLetter: true,
+        }),
+      ],
+    });
+  });
+
   it("can still fail blocked existing cover letters when regeneration is explicitly disabled", async () => {
     findApplicationsMock.mockResolvedValue([
       application({
