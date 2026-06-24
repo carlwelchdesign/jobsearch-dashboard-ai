@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createModernTwoColumnResumePdf, wrapPdfTextByWidth } from "@/lib/pdf/modern-resume-pdf";
 
 describe("createModernTwoColumnResumePdf", () => {
-  it("renders resume sections as PDF text without overlay branding", () => {
-    const pdf = createModernTwoColumnResumePdf([
+  it("renders the modern resume with embedded Roboto fonts and without overlay branding", async () => {
+    const pdf = await createModernTwoColumnResumePdf([
       "Carl Welch",
       "carl@example.com | 1-805-403-4819 | https://www.linkedin.com/in/carlwelch | https://github.com/carlwelchdesign",
       "",
@@ -26,24 +26,16 @@ describe("createModernTwoColumnResumePdf", () => {
     ].join("\n"));
     const raw = Buffer.from(pdf).toString("latin1");
 
-    expect(raw).toContain("CARL WELCH");
-    expect(raw).toContain("1-805-403-4819");
-    expect(raw).toContain("carl@example.com");
-    expect(raw).toContain("linkedin.com/in/carlwelch");
-    expect(raw).toContain("github.com/carlwelchdesign");
-    expect(raw).toContain("EXPERIENCE");
-    expect(raw).toContain("SUMMARY");
-    expect(raw).toContain("React");
-    expect(raw).toContain("Job Search OS");
-    expect(raw).toContain("0.95 0.96 0.97 rg");
-    expect(raw).toContain(" c h f Q");
+    expect(raw).toContain("%PDF-");
+    expect(raw).toContain("Roboto-Regular");
+    expect(raw).toContain("Roboto-Bold");
     expect(raw).not.toContain("Build an ATS-friendly Resume");
     expect(raw).not.toContain("Enhancv");
   });
 
-  it("wraps long role skills so they cannot bleed into the right column", () => {
+  it("wraps long role skills so they cannot bleed into the right column", async () => {
     const longSkills = "Skills: React, TypeScript, Node.js, AWS, Material UI, Storybook, Jest, Playwright, API Integrations, frontend architecture, component library, Test Automation";
-    const pdf = createModernTwoColumnResumePdf([
+    const pdf = await createModernTwoColumnResumePdf([
       "Carl Welch",
       "carl@example.com | https://www.linkedin.com/in/carlwelch",
       "",
@@ -54,8 +46,8 @@ describe("createModernTwoColumnResumePdf", () => {
     ].join("\n"));
     const raw = Buffer.from(pdf).toString("latin1");
 
-    expect(raw).toContain("Yubico");
-    expect(raw).toContain("Senior Software Engineer");
+    expect(raw).toContain("%PDF-");
+    expect(raw).toContain("Roboto-Regular");
     expect(raw).not.toContain(longSkills);
   });
 

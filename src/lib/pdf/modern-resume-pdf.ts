@@ -1,29 +1,35 @@
+import path from "node:path";
+import PDFDocument from "pdfkit";
 import { parseResumeDocument, type ResumeDocument } from "@/lib/resumes/resume-document";
 
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
 const LEFT = 24;
 const RIGHT = 588;
-const TOP = 752;
-const BOTTOM = 42;
+const CONTENT_TOP = 138;
+const BOTTOM = 750;
 const COLUMN_GAP = 48;
 const EXPERIENCE_WIDTH = 297;
 const SIDEBAR_X = LEFT + EXPERIENCE_WIDTH + COLUMN_GAP;
 const SIDEBAR_WIDTH = 194.4;
-const BLUE = "0.02 0.46 0.93";
-const INK = "0.05 0.06 0.08";
-const MUTED = "0.30 0.34 0.40";
-const CHIP_FILL = "0.95 0.96 0.97";
-const DIVIDER = "0.86 0.88 0.91";
+const BLUE = "#0475ee";
+const INK = "#0d0f14";
+const MUTED = "#4d5663";
+const CHIP_FILL = "#f2f4f6";
+const DIVIDER = "#dbdfe6";
 const BODY_SIZE = 7.35;
 const BODY_LEADING = 9.5;
 const SMALL_SIZE = 6.85;
 const BULLET_INDENT = 10;
-const CHIP_FONT_SIZE = 6.35;
+const CHIP_FONT_SIZE = 6.1;
 const CHIP_HEIGHT = 9.2;
 const CHIP_X_PADDING = 3;
 const CHIP_GAP = 3.2;
 const CONTACT_SIZE = 7.2;
+const FONT_REGULAR = "Roboto";
+const FONT_BOLD = "RobotoBold";
+const ROBOTO_REGULAR_PATH = fontAssetPath("roboto-latin-400-normal.woff");
+const ROBOTO_BOLD_PATH = fontAssetPath("roboto-latin-700-normal.woff");
 const MUI_ICON_PATHS = {
   phone: "M6.54 5c.06.89.21 1.76.45 2.59l-1.2 1.2c-.41-1.2-.67-2.47-.76-3.79zm9.86 12.02c.85.24 1.72.39 2.6.45v1.49c-1.32-.09-2.59-.35-3.8-.75zM7.5 3H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.49c0-.55-.45-1-1-1-1.24 0-2.45-.2-3.57-.57-.1-.04-.21-.05-.31-.05-.26 0-.51.1-.71.29l-2.2 2.2c-2.83-1.45-5.15-3.76-6.59-6.59l2.2-2.2c.28-.28.36-.67.25-1.02C8.7 6.45 8.5 5.25 8.5 4c0-.55-.45-1-1-1",
   email: "M12 1.95c-5.52 0-10 4.48-10 10s4.48 10 10 10h5v-2h-5c-4.34 0-8-3.66-8-8s3.66-8 8-8 8 3.66 8 8v1.43c0 .79-.71 1.57-1.5 1.57s-1.5-.78-1.5-1.57v-1.43c0-2.76-2.24-5-5-5s-5 2.24-5 5 2.24 5 5 5c1.38 0 2.64-.56 3.54-1.47.65.89 1.77 1.47 2.96 1.47 1.97 0 3.5-1.6 3.5-3.57v-1.43c0-5.52-4.48-10-10-10m0 13c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3",
@@ -31,10 +37,12 @@ const MUI_ICON_PATHS = {
   calendar: "M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2m0 16H5V10h14zm0-12H5V6h14zM9 14H7v-2h2zm4 0h-2v-2h2zm4 0h-2v-2h2zm-8 4H7v-2h2zm4 0h-2v-2h2zm4 0h-2v-2h2z",
 } as const;
 
+type PdfFont = "regular" | "bold";
+
 type PdfLine = {
   text: string;
   size: number;
-  font: "regular" | "bold";
+  font: PdfFont;
   leading: number;
   gapBefore?: number;
   bullet?: boolean;
@@ -60,80 +68,79 @@ type ResumePdfImage = {
   mimeType: string;
 };
 
-export function createModernTwoColumnResumePdf(text: string, options: { profileImage?: ResumePdfImage | null } = {}): Uint8Array<ArrayBuffer> {
+type PdfMetrics = {
+  widthOfString: (value: string, size: number, font: PdfFont) => number;
+};
+
+export async function createModernTwoColumnResumePdf(text: string, options: { profileImage?: ResumePdfImage | null } = {}): Promise<Uint8Array<ArrayBuffer>> {
   const document = parseResumeDocument(text);
-  const pages = layoutPages(document);
-  const profileImage = pdfImage(options.profileImage);
-  const objects: string[] = [];
-  objects.push("<< /Type /Catalog /Pages 2 0 R >>");
-  objects.push("");
-  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
-  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
-  const imageObjectId = profileImage ? objects.length + 1 : null;
-  if (profileImage) objects.push(profileImage.object);
+  const pdf = new PDFDocument({ autoFirstPage: false, compress: false, margin: 0, size: [PAGE_WIDTH, PAGE_HEIGHT] });
+  registerResumeFonts(pdf);
+  const pages = layoutPages(document, pdfMetrics(pdf));
+  const chunks: Buffer[] = [];
+  const done = new Promise<Buffer>((resolve, reject) => {
+    pdf.on("data", (chunk: Buffer) => chunks.push(chunk));
+    pdf.on("end", () => resolve(Buffer.concat(chunks)));
+    pdf.on("error", reject);
+  });
 
-  const pageObjectIds: number[] = [];
   for (const [pageIndex, page] of pages.entries()) {
-    const pageObjId = objects.length + 1;
-    const contentObjId = pageObjId + 1;
-    pageObjectIds.push(pageObjId);
-    const xObjects = imageObjectId ? ` /XObject << /ProfileImage ${imageObjectId} 0 R >>` : "";
-    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${xObjects} >> /Contents ${contentObjId} 0 R >>`);
-    const content = [
-      "q 1 1 1 rg 0 0 612 792 re f Q",
-      pageIndex === 0 ? renderHeader(document, Boolean(profileImage)) : renderContinuationHeader(document.name, pageIndex + 1),
-      renderColumn(page.left),
-      renderColumn(page.right),
-    ].filter(Boolean).join("\n");
-    objects.push(`<< /Length ${byteLength(content)} >>\nstream\n${content}\nendstream`);
+    pdf.addPage({ margin: 0, size: [PAGE_WIDTH, PAGE_HEIGHT] });
+    pdf.rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT).fill("#ffffff");
+    if (pageIndex === 0) renderHeader(pdf, document, options.profileImage);
+    else renderContinuationHeader(pdf, document.name, pageIndex + 1);
+    renderColumn(pdf, page.left);
+    renderColumn(pdf, page.right);
   }
 
-  objects[1] = `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageObjectIds.length} >>`;
-
-  const chunks: string[] = ["%PDF-1.4\n"];
-  const offsets = [0];
-  for (const [index, object] of objects.entries()) {
-    offsets.push(byteLength(chunks.join("")));
-    chunks.push(`${index + 1} 0 obj\n${object}\nendobj\n`);
-  }
-  const xrefOffset = byteLength(chunks.join(""));
-  chunks.push(`xref\n0 ${objects.length + 1}\n`);
-  chunks.push("0000000000 65535 f \n");
-  for (const offset of offsets.slice(1)) chunks.push(`${offset.toString().padStart(10, "0")} 00000 n \n`);
-  chunks.push(`trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
-
-  const buffer = Buffer.from(chunks.join(""), "latin1");
-  return new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+  pdf.end();
+  const buffer = await done;
+  const output = new Uint8Array(buffer.byteLength);
+  output.set(buffer);
+  return output;
 }
 
-function byteLength(value: string) {
-  return Buffer.byteLength(value, "latin1");
+function registerResumeFonts(pdf: PDFKit.PDFDocument) {
+  pdf.registerFont(FONT_REGULAR, ROBOTO_REGULAR_PATH);
+  pdf.registerFont(FONT_BOLD, ROBOTO_BOLD_PATH);
 }
 
-function layoutPages(document: ResumeDocument) {
+function fontAssetPath(fileName: string) {
+  return path.join(process.cwd(), "node_modules", "@fontsource", "roboto", "files", fileName);
+}
+
+function pdfMetrics(pdf: PDFKit.PDFDocument): PdfMetrics {
+  return {
+    widthOfString(value, size, font) {
+      return pdf.font(fontName(font)).fontSize(size).widthOfString(value);
+    },
+  };
+}
+
+function layoutPages(document: ResumeDocument, metrics: PdfMetrics) {
   const leftLines = [
     section("Experience"),
     ...document.experience.flatMap((item) => [
       roleLine(item.role ?? item.title),
       ...(item.company ? [bodyLine(item.company, 7.4, "bold", BLUE)] : []),
       ...(item.dates ? [dateLine(item.dates)] : []),
-      ...(item.skills.length ? wrapBody(`Skills: ${item.skills.join(", ")}`, EXPERIENCE_WIDTH, BODY_SIZE) : []),
-      ...item.bullets.slice(0, 5).flatMap((bullet) => bulletLines(bullet, EXPERIENCE_WIDTH - BULLET_INDENT)),
+      ...(item.skills.length ? wrapBody(`Skills: ${item.skills.join(", ")}`, EXPERIENCE_WIDTH, metrics, BODY_SIZE) : []),
+      ...item.bullets.slice(0, 5).flatMap((bullet) => bulletLines(bullet, EXPERIENCE_WIDTH - BULLET_INDENT, metrics)),
       roleSeparator(),
     ]),
   ];
   const rightLines = [
     section("Summary"),
-    ...document.summary.flatMap((line) => wrapBody(line, SIDEBAR_WIDTH, BODY_SIZE)),
+    ...document.summary.flatMap((line) => wrapBody(line, SIDEBAR_WIDTH, metrics, BODY_SIZE)),
     section("Education"),
-    ...document.education.flatMap((line) => wrapBody(line, SIDEBAR_WIDTH, BODY_SIZE, true)),
-    ...(document.certifications.length ? [section("Certifications"), ...document.certifications.flatMap((line) => wrapBody(line, SIDEBAR_WIDTH, BODY_SIZE, true))] : []),
+    ...document.education.flatMap((line) => wrapBody(line, SIDEBAR_WIDTH, metrics, BODY_SIZE, true)),
+    ...(document.certifications.length ? [section("Certifications"), ...document.certifications.flatMap((line) => wrapBody(line, SIDEBAR_WIDTH, metrics, BODY_SIZE, true))] : []),
     section("Skills"),
-    ...skillChipRows(document.skills),
+    ...skillChipRows(document.skills, metrics),
     section("Projects"),
     ...document.projects.slice(0, 4).flatMap((project) => [
       roleLine(project.name, 8.4),
-      ...wrapBody(project.description, SIDEBAR_WIDTH, BODY_SIZE),
+      ...wrapBody(project.description, SIDEBAR_WIDTH, metrics, BODY_SIZE),
     ]),
   ];
 
@@ -141,7 +148,7 @@ function layoutPages(document: ResumeDocument) {
   let leftIndex = 0;
   let rightIndex = 0;
   while (leftIndex < leftLines.length || rightIndex < rightLines.length || pages.length === 0) {
-    const top = pages.length === 0 ? 692 : 720;
+    const top = pages.length === 0 ? CONTENT_TOP : 52;
     const left = nextColumn(leftLines, leftIndex, LEFT, top, EXPERIENCE_WIDTH);
     const right = nextColumn(rightLines, rightIndex, SIDEBAR_X, top, SIDEBAR_WIDTH);
     leftIndex = left.nextIndex;
@@ -157,8 +164,8 @@ function nextColumn(lines: PdfLine[], startIndex: number, x: number, y: number, 
   let index = startIndex;
   while (index < lines.length) {
     const line = lines[index];
-    const nextY = cursorY - (line.gapBefore ?? 0) - line.leading;
-    if (nextY < BOTTOM && selected.length) break;
+    const nextY = cursorY + (line.gapBefore ?? 0) + line.leading;
+    if (nextY > BOTTOM && selected.length) break;
     selected.push(line);
     cursorY = nextY;
     index += 1;
@@ -166,57 +173,58 @@ function nextColumn(lines: PdfLine[], startIndex: number, x: number, y: number, 
   return { nextIndex: index, column: { lines: selected, x, y, width } };
 }
 
-function renderHeader(document: ResumeDocument, hasProfileImage: boolean) {
+function renderHeader(pdf: PDFKit.PDFDocument, document: ResumeDocument, profileImage: ResumePdfImage | null | undefined) {
+  drawText(pdf, document.name.toUpperCase(), LEFT, 31, 18.5, "bold", "#000000");
+  drawText(pdf, document.headline, LEFT, 55, 9.1, "bold", BLUE);
+  renderContactItems(pdf, contactItems(document.contactLine), LEFT, 82);
+  renderBadge(pdf, document, profileImage);
+}
+
+function renderBadge(pdf: PDFKit.PDFDocument, document: ResumeDocument, image: ResumePdfImage | null | undefined) {
   const initials = document.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "CV";
-  const badge = hasProfileImage
-    ? [
-      `q ${circlePath(535.4, 735, 28)} W n 56 0 0 56 507.4 707 cm /ProfileImage Do Q`,
-      `q ${BLUE} RG 1.2 w ${circlePath(535.4, 735, 28)} S Q`,
-    ].join("\n")
-    : [
-      `q ${BLUE} rg ${circlePath(535.4, 735, 28)} f Q`,
-      text(initials, 522.4, 728, 15.5, "bold", "0 0 0"),
-    ].join("\n");
-  return [
-    text(document.name.toUpperCase(), LEFT, TOP, 18.5, "bold", "0 0 0"),
-    text(document.headline, LEFT, TOP - 16, 9.1, "bold", BLUE),
-    renderContactItems(contactItems(document.contactLine), LEFT, TOP - 34),
-    badge,
-  ].join("\n");
+  const radius = 28;
+  const cx = RIGHT - radius;
+  const cy = 72;
+  if (image && /^image\/(?:jpe?g|png)$/i.test(image.mimeType)) {
+    pdf.save();
+    pdf.circle(cx, cy, radius).clip();
+    pdf.image(Buffer.from(image.bytes), cx - radius, cy - radius, { width: radius * 2, height: radius * 2 });
+    pdf.restore();
+    pdf.circle(cx, cy, radius).lineWidth(1.2).stroke(BLUE);
+    return;
+  }
+  pdf.circle(cx, cy, radius).fill(BLUE);
+  drawText(pdf, initials, cx - 13, cy - 7, 15.5, "bold", "#000000");
 }
 
-function renderContinuationHeader(name: string, page: number) {
-  return [
-    text(`${name} - resume continued`, LEFT, 748, 8.5, "bold", MUTED),
-    text(`Page ${page}`, 552, 748, 8, "regular", MUTED),
-    `q 0.86 0.88 0.91 RG 0.5 w ${LEFT} 736 m ${RIGHT} 736 l S Q`,
-  ].join("\n");
+function renderContinuationHeader(pdf: PDFKit.PDFDocument, name: string, page: number) {
+  drawText(pdf, `${name} - resume continued`, LEFT, 36, 8.5, "bold", MUTED);
+  drawText(pdf, `Page ${page}`, 552, 36, 8, "regular", MUTED);
+  pdf.moveTo(LEFT, 54).lineTo(RIGHT, 54).lineWidth(0.5).stroke(DIVIDER);
 }
 
-function renderColumn(column: PageColumn) {
-  const commands: string[] = [];
+function renderColumn(pdf: PDFKit.PDFDocument, column: PageColumn) {
   let y = column.y;
   for (const line of column.lines) {
-    y -= line.gapBefore ?? 0;
+    y += line.gapBefore ?? 0;
     if (isSection(line)) {
-      commands.push(text(line.text.toUpperCase(), column.x, y, line.size, "bold", "0 0 0"));
-      commands.push(`q 0 0 0 RG 1 w ${column.x} ${y - 4} m ${column.x + column.width} ${y - 4} l S Q`);
+      drawText(pdf, line.text.toUpperCase(), column.x, y, line.size, "bold", "#000000");
+      pdf.moveTo(column.x, y + 12).lineTo(column.x + column.width, y + 12).lineWidth(1).stroke("#000000");
     } else if (line.kind === "role-separator") {
-      commands.push(`q ${DIVIDER} RG 0.45 w ${column.x} ${y} m ${column.x + column.width} ${y} l S Q`);
+      pdf.moveTo(column.x, y + 1).lineTo(column.x + column.width, y + 1).lineWidth(0.45).stroke(DIVIDER);
     } else if (line.kind === "chip-row" && line.chips) {
-      commands.push(...renderChipRow(line.chips, column.x, y));
+      renderChipRow(pdf, line.chips, column.x, y);
     } else if (line.kind === "date-line") {
-      commands.push(calendarIcon(column.x, y, 7, MUTED));
-      commands.push(text(line.text, column.x + 12, y, line.size, line.font, line.color ?? MUTED));
+      muiIcon(pdf, MUI_ICON_PATHS.calendar, column.x, y - 1.3, 7.8, MUTED);
+      drawText(pdf, line.text, column.x + 12, y, line.size, line.font, line.color ?? MUTED);
     } else if (line.bullet) {
-      commands.push(`q 0 0 0 rg ${circlePath(column.x + 3.2, y + 3.1, 1.25)} f Q`);
-      commands.push(text(line.text, column.x + 10, y, line.size, line.font, INK));
+      pdf.circle(column.x + 3.2, y + 4.1, 1.25).fill("#000000");
+      drawText(pdf, line.text, column.x + 10, y, line.size, line.font, INK);
     } else {
-      commands.push(text(line.text, column.x, y, line.size, line.font, line.color ?? (line.font === "bold" ? INK : MUTED)));
+      drawText(pdf, line.text, column.x, y, line.size, line.font, line.color ?? (line.font === "bold" ? INK : MUTED));
     }
-    y -= line.leading;
+    y += line.leading;
   }
-  return commands.join("\n");
 }
 
 function section(textValue: string): PdfLine {
@@ -227,29 +235,29 @@ function roleLine(textValue: string, size = 9.4): PdfLine {
   return { text: textValue, size, font: "bold", leading: 11, gapBefore: 7 };
 }
 
-function bodyLine(textValue: string, size = BODY_SIZE, font: "regular" | "bold" = "regular", color?: string): PdfLine {
+function bodyLine(textValue: string, size = BODY_SIZE, font: PdfFont = "regular", color?: string): PdfLine {
   return { text: textValue, size, font, color, leading: BODY_LEADING, gapBefore: 2 };
 }
 
 function dateLine(textValue: string): PdfLine {
-  return { text: textValue, size: SMALL_SIZE, font: "regular", color: MUTED, leading: 9.5, gapBefore: 2, kind: "date-line" };
+  return { text: normalizeDateRange(textValue), size: SMALL_SIZE, font: "regular", color: MUTED, leading: 9.5, gapBefore: 2, kind: "date-line" };
 }
 
-function bulletLines(textValue: string, width: number) {
-  return wrapPdfTextByWidth(textValue, width, BODY_SIZE, "regular").map((line, index) => ({ ...bodyLine(line, BODY_SIZE, "regular", INK), bullet: index === 0, gapBefore: index === 0 ? 2.2 : 0 }));
+function bulletLines(textValue: string, width: number, metrics: PdfMetrics) {
+  return wrapPdfTextByWidth(textValue, width, BODY_SIZE, "regular", metrics).map((line, index) => ({ ...bodyLine(line, BODY_SIZE, "regular", INK), bullet: index === 0, gapBefore: index === 0 ? 2.2 : 0 }));
 }
 
-function wrapBody(textValue: string, width: number, size = BODY_SIZE, bold = false) {
+function wrapBody(textValue: string, width: number, metrics: PdfMetrics, size = BODY_SIZE, bold = false) {
   const font = bold ? "bold" as const : "regular" as const;
-  return wrapPdfTextByWidth(textValue, width, size, font).map((line, index) => ({ ...bodyLine(line, size), font, gapBefore: index === 0 ? 2 : 0 }));
+  return wrapPdfTextByWidth(textValue, width, size, font, metrics).map((line, index) => ({ ...bodyLine(line, size), font, gapBefore: index === 0 ? 2 : 0 }));
 }
 
-function skillChipRows(skills: string[]) {
+function skillChipRows(skills: string[], metrics: PdfMetrics) {
   const lines: PdfLine[] = [];
   let row: string[] = [];
   let rowWidth = 0;
   for (const skill of skills.slice(0, 28)) {
-    const chipWidth = chipTextWidth(skill);
+    const chipWidth = chipTextWidth(skill, metrics);
     if (row.length && rowWidth + chipWidth + CHIP_GAP > SIDEBAR_WIDTH) {
       lines.push(chipRow(row));
       row = [];
@@ -274,20 +282,19 @@ function chipRow(chips: string[]): PdfLine {
   return { text: chips.join(" "), size: CHIP_FONT_SIZE, font: "bold", leading: 11.2, gapBefore: 2, kind: "chip-row", chips };
 }
 
-function renderChipRow(chips: string[], x: number, y: number) {
-  const commands: string[] = [];
+function renderChipRow(pdf: PDFKit.PDFDocument, chips: string[], x: number, y: number) {
   let cursorX = x;
+  const metrics = pdfMetrics(pdf);
   for (const chip of chips) {
-    const width = chipTextWidth(chip);
-    commands.push(`q ${CHIP_FILL} rg ${roundedRectPath(cursorX, y - 2, width, CHIP_HEIGHT, 2)} f Q`);
-    commands.push(text(chip, cursorX + CHIP_X_PADDING, y + 0.1, CHIP_FONT_SIZE, "bold", INK));
+    const width = chipTextWidth(chip, metrics);
+    pdf.roundedRect(cursorX, y - 1, width, CHIP_HEIGHT, 2).fill(CHIP_FILL);
+    drawText(pdf, chip, cursorX + CHIP_X_PADDING, y + 1.1, CHIP_FONT_SIZE, "bold", INK);
     cursorX += width + CHIP_GAP;
   }
-  return commands;
 }
 
-function chipTextWidth(value: string) {
-  return Math.max(16, estimatePdfTextWidth(value, CHIP_FONT_SIZE, "bold") + CHIP_X_PADDING * 2);
+function chipTextWidth(value: string, metrics: PdfMetrics) {
+  return Math.max(16, metrics.widthOfString(value, CHIP_FONT_SIZE, "bold") + CHIP_X_PADDING * 2);
 }
 
 function contactItems(contactLine: string): ContactItem[] {
@@ -309,30 +316,29 @@ function contactPriority(item: ContactItem) {
   return 4;
 }
 
-function renderContactItems(items: ContactItem[], x: number, y: number) {
-  const commands: string[] = [];
+function renderContactItems(pdf: PDFKit.PDFDocument, items: ContactItem[], x: number, y: number) {
   let cursorX = x;
+  const metrics = pdfMetrics(pdf);
   for (const item of items) {
     const iconSize = 7.8;
-    if (item.kind === "phone") commands.push(muiIcon(MUI_ICON_PATHS.phone, cursorX, y - 1.4, iconSize, BLUE));
-    else if (item.kind === "email") commands.push(muiIcon(MUI_ICON_PATHS.email, cursorX, y - 1.4, iconSize, BLUE));
-    else commands.push(muiIcon(MUI_ICON_PATHS.link, cursorX, y - 1.4, iconSize, BLUE));
+    if (item.kind === "phone") muiIcon(pdf, MUI_ICON_PATHS.phone, cursorX, y + 0.3, iconSize, BLUE);
+    else if (item.kind === "email") muiIcon(pdf, MUI_ICON_PATHS.email, cursorX, y + 0.3, iconSize, BLUE);
+    else muiIcon(pdf, MUI_ICON_PATHS.link, cursorX, y + 0.3, iconSize, BLUE);
 
     const labelX = cursorX + 11;
-    commands.push(text(item.label, labelX, y, CONTACT_SIZE, "bold", MUTED));
-    cursorX = labelX + estimatePdfTextWidth(item.label, CONTACT_SIZE, "bold") + 14;
+    drawText(pdf, item.label, labelX, y, CONTACT_SIZE, "bold", MUTED);
+    cursorX = labelX + metrics.widthOfString(item.label, CONTACT_SIZE, "bold") + 14;
   }
-  return commands.join("\n");
 }
 
-export function wrapPdfTextByWidth(value: string, maxWidth: number, size = BODY_SIZE, font: "regular" | "bold" = "regular") {
+export function wrapPdfTextByWidth(value: string, maxWidth: number, size = BODY_SIZE, font: PdfFont = "regular", metrics = approximateMetrics): string[] {
   if (!value) return [];
   const words = value.split(/\s+/);
   const lines: string[] = [];
   let current = "";
   for (const word of words) {
     const candidate = current ? `${current} ${word}` : word;
-    if (estimatePdfTextWidth(candidate, size, font) > maxWidth) {
+    if (metrics.widthOfString(candidate, size, font) > maxWidth) {
       if (current) lines.push(current);
       current = word;
     } else {
@@ -343,218 +349,50 @@ export function wrapPdfTextByWidth(value: string, maxWidth: number, size = BODY_
   return lines;
 }
 
-function estimatePdfTextWidth(value: string, size: number, font: "regular" | "bold") {
-  const fontWeight = font === "bold" ? 1.07 : 1;
-  let units = 0;
-  for (const char of value) {
-    if (char === " ") units += 0.28;
-    else if ("ilI.,'|".includes(char)) units += 0.22;
-    else if ("mwMW@".includes(char)) units += 0.82;
-    else if (/[A-Z]/.test(char)) units += 0.62;
-    else if (/[0-9]/.test(char)) units += 0.53;
-    else units += 0.48;
-  }
-  return units * size * fontWeight;
+const approximateMetrics: PdfMetrics = {
+  widthOfString(value, size, font) {
+    const fontWeight = font === "bold" ? 1.07 : 1;
+    let units = 0;
+    for (const char of value) {
+      if (char === " ") units += 0.28;
+      else if ("ilI.,'|".includes(char)) units += 0.22;
+      else if ("mwMW@".includes(char)) units += 0.82;
+      else if (/[A-Z]/.test(char)) units += 0.62;
+      else if (/[0-9]/.test(char)) units += 0.53;
+      else units += 0.48;
+    }
+    return units * size * fontWeight;
+  },
+};
+
+function drawText(pdf: PDFKit.PDFDocument, value: string, x: number, y: number, size: number, font: PdfFont, color: string) {
+  pdf.fillColor(color).font(fontName(font)).fontSize(size).text(cleanPdfText(value), x, y, { lineBreak: false });
 }
 
-function text(value: string, x: number, y: number, size: number, font: "regular" | "bold", color: string) {
-  return `BT ${color} rg /${font === "bold" ? "F2" : "F1"} ${size} Tf 1 0 0 1 ${x} ${y} Tm (${escapePdfText(value)}) Tj ET`;
+function fontName(font: PdfFont) {
+  return font === "bold" ? FONT_BOLD : FONT_REGULAR;
 }
 
-function calendarIcon(x: number, y: number, size: number, color: string) {
-  return muiIcon(MUI_ICON_PATHS.calendar, x, y - 1.6, size + 1, color);
-}
-
-function muiIcon(path: string, x: number, y: number, size: number, color: string) {
+function muiIcon(pdf: PDFKit.PDFDocument, path: string, x: number, y: number, size: number, color: string) {
   const scale = size / 24;
-  const commands = svgPathToPdf(path, x, y, scale);
-  return `q ${color} rg ${commands} f Q`;
+  pdf.save();
+  pdf.translate(x, y + size);
+  pdf.scale(scale, -scale);
+  pdf.path(path).fill(color);
+  pdf.restore();
 }
 
-function svgPathToPdf(path: string, x: number, y: number, scale: number) {
-  const tokens = path.match(/[a-zA-Z]|-?(?:\d*\.)?\d+/g) ?? [];
-  const commands: string[] = [];
-  let index = 0;
-  let command = "";
-  let currentX = 0;
-  let currentY = 0;
-  let startX = 0;
-  let startY = 0;
-  let lastControlX = 0;
-  let lastControlY = 0;
-  let previousCommand = "";
-
-  const hasNumber = () => index < tokens.length && !/^[a-zA-Z]$/.test(tokens[index]);
-  const number = () => Number(tokens[index++]);
-  const point = (svgX: number, svgY: number) => `${formatPoint(x + svgX * scale)} ${formatPoint(y + (24 - svgY) * scale)}`;
-  const lineTo = (svgX: number, svgY: number) => {
-    commands.push(`${point(svgX, svgY)} l`);
-    currentX = svgX;
-    currentY = svgY;
-  };
-  const curveTo = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number) => {
-    commands.push(`${point(x1, y1)} ${point(x2, y2)} ${point(x3, y3)} c`);
-    currentX = x3;
-    currentY = y3;
-    lastControlX = x2;
-    lastControlY = y2;
-  };
-
-  while (index < tokens.length) {
-    if (/^[a-zA-Z]$/.test(tokens[index])) command = tokens[index++];
-    const relative = command === command.toLowerCase();
-    const type = command.toUpperCase();
-
-    if (type === "Z") {
-      commands.push("h");
-      currentX = startX;
-      currentY = startY;
-      previousCommand = command;
-      continue;
-    }
-
-    if (type === "M") {
-      const nextX = number();
-      const nextY = number();
-      currentX = relative ? currentX + nextX : nextX;
-      currentY = relative ? currentY + nextY : nextY;
-      startX = currentX;
-      startY = currentY;
-      commands.push(`${point(currentX, currentY)} m`);
-      while (hasNumber()) {
-        const lineX = number();
-        const lineY = number();
-        lineTo(relative ? currentX + lineX : lineX, relative ? currentY + lineY : lineY);
-      }
-    } else if (type === "L") {
-      while (hasNumber()) {
-        const nextX = number();
-        const nextY = number();
-        lineTo(relative ? currentX + nextX : nextX, relative ? currentY + nextY : nextY);
-      }
-    } else if (type === "H") {
-      while (hasNumber()) {
-        const nextX = number();
-        lineTo(relative ? currentX + nextX : nextX, currentY);
-      }
-    } else if (type === "V") {
-      while (hasNumber()) {
-        const nextY = number();
-        lineTo(currentX, relative ? currentY + nextY : nextY);
-      }
-    } else if (type === "C") {
-      while (hasNumber()) {
-        const x1 = number();
-        const y1 = number();
-        const x2 = number();
-        const y2 = number();
-        const x3 = number();
-        const y3 = number();
-        curveTo(
-          relative ? currentX + x1 : x1,
-          relative ? currentY + y1 : y1,
-          relative ? currentX + x2 : x2,
-          relative ? currentY + y2 : y2,
-          relative ? currentX + x3 : x3,
-          relative ? currentY + y3 : y3,
-        );
-      }
-    } else if (type === "S") {
-      while (hasNumber()) {
-        const reflectedX = previousCommand.toUpperCase() === "C" || previousCommand.toUpperCase() === "S" ? currentX * 2 - lastControlX : currentX;
-        const reflectedY = previousCommand.toUpperCase() === "C" || previousCommand.toUpperCase() === "S" ? currentY * 2 - lastControlY : currentY;
-        const x2 = number();
-        const y2 = number();
-        const x3 = number();
-        const y3 = number();
-        curveTo(
-          reflectedX,
-          reflectedY,
-          relative ? currentX + x2 : x2,
-          relative ? currentY + y2 : y2,
-          relative ? currentX + x3 : x3,
-          relative ? currentY + y3 : y3,
-        );
-      }
-    }
-    previousCommand = command;
-  }
-
-  return commands.join(" ");
+function normalizeDateRange(value: string) {
+  return value
+    .replace(/\b(\d{4})-(\d{2})\b/g, "$1/$2")
+    .replace(/\b(\d{1,2})\/(\d{4})\b/g, (_match, month: string, year: string) => `${month.padStart(2, "0")}/${year}`);
 }
 
-function formatPoint(value: number) {
-  return Number(value.toFixed(3));
-}
-
-function circlePath(cx: number, cy: number, r: number) {
-  const c = r * 0.5522847498;
-  return [
-    `${cx + r} ${cy} m`,
-    `${cx + r} ${cy + c} ${cx + c} ${cy + r} ${cx} ${cy + r} c`,
-    `${cx - c} ${cy + r} ${cx - r} ${cy + c} ${cx - r} ${cy} c`,
-    `${cx - r} ${cy - c} ${cx - c} ${cy - r} ${cx} ${cy - r} c`,
-    `${cx + c} ${cy - r} ${cx + r} ${cy - c} ${cx + r} ${cy} c`,
-    "h",
-  ].join(" ");
-}
-
-function roundedRectPath(x: number, y: number, width: number, height: number, radius: number) {
-  const r = Math.min(radius, width / 2, height / 2);
-  const c = r * 0.5522847498;
-  const right = x + width;
-  const top = y + height;
-  return [
-    `${x + r} ${y} m`,
-    `${right - r} ${y} l`,
-    `${right - r + c} ${y} ${right} ${y + r - c} ${right} ${y + r} c`,
-    `${right} ${top - r} l`,
-    `${right} ${top - r + c} ${right - r + c} ${top} ${right - r} ${top} c`,
-    `${x + r} ${top} l`,
-    `${x + r - c} ${top} ${x} ${top - r + c} ${x} ${top - r} c`,
-    `${x} ${y + r} l`,
-    `${x} ${y + r - c} ${x + r - c} ${y} ${x + r} ${y} c`,
-    "h",
-  ].join(" ");
-}
-
-function pdfImage(image: ResumePdfImage | null | undefined) {
-  if (!image || !/^image\/jpe?g$/i.test(image.mimeType)) return null;
-  const dimensions = jpegDimensions(image.bytes);
-  if (!dimensions) return null;
-  const binary = Buffer.from(image.bytes).toString("latin1");
-  return {
-    object: `<< /Type /XObject /Subtype /Image /Width ${dimensions.width} /Height ${dimensions.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.bytes.byteLength} >>\nstream\n${binary}\nendstream`,
-  };
-}
-
-function jpegDimensions(bytes: Uint8Array) {
-  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
-  let offset = 2;
-  while (offset < bytes.length) {
-    if (bytes[offset] !== 0xff) return null;
-    const marker = bytes[offset + 1];
-    const length = (bytes[offset + 2] << 8) + bytes[offset + 3];
-    if (marker >= 0xc0 && marker <= 0xc3) {
-      return {
-        height: (bytes[offset + 5] << 8) + bytes[offset + 6],
-        width: (bytes[offset + 7] << 8) + bytes[offset + 8],
-      };
-    }
-    offset += 2 + length;
-  }
-  return null;
-}
-
-function escapePdfText(value: string) {
+function cleanPdfText(value: string) {
   return value
     .replace(/[–—‒―]/g, "-")
     .replace(/[''‚]/g, "'")
     .replace(/[""„]/g, '"')
-    .replace(/[•·]/g, "-")
     .replace(/…/g, "...")
-    .replace(/[^\x00-\x7F]/g, "")
-    .replace(/\\/g, "\\\\")
-    .replace(/\(/g, "\\(")
-    .replace(/\)/g, "\\)");
+    .replace(/[^\x00-\x7F]/g, "");
 }

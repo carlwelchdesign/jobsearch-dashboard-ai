@@ -18,7 +18,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
   const resumeText = resume.plainText ?? resume.markdown;
   const pdf = isLegacyResumeFormat(format)
     ? createSimpleTextPdf(resumeText, format)
-    : createModernTwoColumnResumePdf(resumeText, {
+    : await createModernTwoColumnResumePdf(resumeText, {
       profileImage: await fetchProfileImage(resume.user.profile?.linkedinPictureUrl),
     });
 
