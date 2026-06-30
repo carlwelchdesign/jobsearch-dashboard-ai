@@ -262,14 +262,12 @@ function mergeResumeSkills(
   projects: ResumeProject[],
   skillTargetingContext: ResumeSkillTargetingContext,
 ) {
-  const prioritySectionSkills = sectionSkills.slice(0, 8);
-  const remainingSectionSkills = sectionSkills.slice(8);
   const projectSkills = projects.flatMap((project) => project.technologies);
   const evidenceText = projects
     .map((project) => [project.name, project.description].join(" "))
     .join(" ");
   return normalizeTargetedResumeSkills(
-    [...prioritySectionSkills, ...projectSkills, ...remainingSectionSkills],
+    [...sectionSkills, ...projectSkills],
     {
       ...skillTargetingContext,
       evidenceText: [skillTargetingContext.evidenceText, evidenceText]

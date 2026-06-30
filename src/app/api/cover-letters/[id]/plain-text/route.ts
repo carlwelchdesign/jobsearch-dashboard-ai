@@ -1,3 +1,4 @@
+import { buildCoverLetterDocumentText } from "@/lib/cover-letters/document";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -5,17 +6,23 @@ export const dynamic = "force-dynamic";
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const coverLetter = await prisma.generatedCoverLetter.findUnique({
     where: { id: params.id },
-    include: { jobPosting: true, user: true },
+    include: {
+      jobPosting: true,
+      user: {
+        include: {
+          profile: {
+            include: {
+              githubRepositories: { orderBy: [{ pushedAt: "desc" }, { stars: "desc" }], take: 30 },
+            },
+          },
+        },
+      },
+    },
   });
 
   if (!coverLetter) return new Response("Cover letter not found", { status: 404 });
 
-  const text = [
-    coverLetter.user.name ?? "Candidate",
-    `${coverLetter.jobPosting.company} | ${coverLetter.jobPosting.title}`,
-    "",
-    coverLetter.body,
-  ].join("\n");
+  const text = buildCoverLetterDocumentText(coverLetter);
 
   return new Response(text, {
     headers: {

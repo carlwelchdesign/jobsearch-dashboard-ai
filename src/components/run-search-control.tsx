@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import Alert from "@mui/material/Alert";
@@ -10,8 +11,12 @@ import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useEffect, useState } from "react";
-import { SearchRunAnalyticsCharts } from "@/components/search-run-analytics-charts";
 import { StatusChip } from "@/components/ui/status-chip";
+
+const SearchRunAnalyticsCharts = dynamic(
+  () => import("@/components/search-run-analytics-charts").then((module) => module.SearchRunAnalyticsCharts),
+  { ssr: false, loading: () => <Alert severity="info">Loading search analytics...</Alert> },
+);
 
 type ProgressEvent = {
   at: string;

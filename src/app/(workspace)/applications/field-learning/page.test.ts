@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 describe("ApplicationFieldLearningPage", () => {
   it("redirects filtered review links to Learning settings", () => {
-    const pageSource = readFileSync(resolve(process.cwd(), "src/app/applications/field-learning/page.tsx"), "utf8");
+    const pageSource = readFileSync(resolve(process.cwd(), "src/app/(workspace)/applications/field-learning/page.tsx"), "utf8");
 
     expect(pageSource).toContain("searchParams");
     expect(pageSource).toContain("host");
@@ -15,8 +15,8 @@ describe("ApplicationFieldLearningPage", () => {
   });
 
   it("moves the full review and bulk approval UI into Learning settings", () => {
-    const settingsSource = readFileSync(resolve(process.cwd(), "src/app/settings/settings-content.tsx"), "utf8");
-    const bulkSource = readFileSync(resolve(process.cwd(), "src/app/applications/field-learning/field-memory-bulk-actions.tsx"), "utf8");
+    const settingsSource = readFileSync(resolve(process.cwd(), "src/app/(workspace)/settings/settings-content.tsx"), "utf8");
+    const bulkSource = readFileSync(resolve(process.cwd(), "src/app/(workspace)/applications/field-learning/field-memory-bulk-actions.tsx"), "utf8");
 
     expect(settingsSource).toContain("settings-field-learning");
     expect(settingsSource).toContain("FieldMemoryBulkActions");

@@ -37,7 +37,7 @@ export async function findReadyApplicationByUrl(url: string) {
   });
   return applications.find((application) => (
     assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable
-    && applicationMaterialQualityDetail(application.coverLetter?.generationNotes).launchable
+    && Boolean(application.resume && application.coverLetter)
     && canonicalUrl(application.jobPosting.applicationUrl) === target
   )) ?? null;
 }
@@ -89,15 +89,6 @@ export async function buildApplicationAssistantPackage(application: AssistantPac
     };
   }
   const materialQuality = applicationMaterialQualityDetail(application.coverLetter.generationNotes);
-  if (!materialQuality.launchable) {
-    return {
-      status: 400,
-      body: {
-        error: `Application material quality needs review. ${materialQuality.reason}`,
-        materialQuality,
-      },
-    };
-  }
 
   const profile = application.user.profile;
   const fullName = profile?.fullName ?? application.user.name ?? "";

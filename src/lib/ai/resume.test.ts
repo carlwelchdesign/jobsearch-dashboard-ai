@@ -220,6 +220,128 @@ describe("tailorResumeForJob", () => {
     );
   });
 
+  it("restores missing role skills when AI output includes the role headings", async () => {
+    const now = new Date("2026-06-04T12:00:00Z");
+    const markdownResume = generatedResumeWithoutRoleSkills([
+      "### Yubico - Senior Software Engineer | Jul 2022 - Mar 2026",
+      ...longResumeBullets("Built identity admin console workflows"),
+      "",
+      "### Revenue.io - Senior Software Engineer | Mar 2020 - Jul 2022",
+      ...longResumeBullets("Built sales engagement dashboards"),
+    ]);
+    parseStructuredOutputMock
+      .mockResolvedValueOnce({
+        tailoredSummary: "Senior engineer.",
+        selectedSkills: ["React", "TypeScript", "Redux"],
+        selectedExperienceBullets: [],
+        projectSelections: [],
+        keywordAlignment: {
+          matchedTerms: ["React", "TypeScript", "Redux"],
+          method: "test",
+        },
+        markdownResume,
+        plainTextResume: markdownResume.replace(/^#+\s/gm, ""),
+        warnings: [],
+        unsupportedClaimsDetected: [],
+        validation: null,
+      })
+      .mockResolvedValueOnce(null);
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now),
+      job: jobPosting(now),
+      bullets: [],
+      projects: [],
+      workExperiences: [
+        workExperience({
+          id: "work_yubico",
+          company: "Yubico",
+          title: "Senior Software Engineer",
+          startDate: "Jul 2022",
+          endDate: "Mar 2026",
+          skills: ["React", "TypeScript", "Redux", "Jest"],
+          createdAt: now,
+        }),
+        workExperience({
+          id: "work_revenue",
+          company: "Revenue.io",
+          title: "Senior Software Engineer",
+          startDate: "Mar 2020",
+          endDate: "Jul 2022",
+          skills: ["React", "TypeScript", "Redux", "Backbone"],
+          createdAt: now,
+        }),
+      ],
+    });
+
+    expect(tailored.markdownResume).toContain(
+      [
+        "### Yubico - Senior Software Engineer | Jul 2022 - Mar 2026",
+        "Skills: React, TypeScript, Redux, Jest",
+      ].join("\n"),
+    );
+    expect(tailored.markdownResume).toContain(
+      [
+        "### Revenue.io - Senior Software Engineer | Mar 2020 - Jul 2022",
+        "Skills: React, TypeScript, Redux, Backbone",
+      ].join("\n"),
+    );
+    expect(tailored.plainTextResume).toContain(
+      [
+        "Yubico - Senior Software Engineer | Jul 2022 - Mar 2026",
+        "Skills: React, TypeScript, Redux, Jest",
+      ].join("\n"),
+    );
+  });
+
+  it("does not duplicate existing role skills when restoring missing lines", async () => {
+    const now = new Date("2026-06-04T12:00:00Z");
+    const markdownResume = generatedResumeWithoutRoleSkills([
+      "### Yubico - Senior Software Engineer | Jul 2022 - Mar 2026",
+      "Skills: React, TypeScript, Redux, Jest",
+      ...longResumeBullets("Built identity admin console workflows"),
+    ]);
+    parseStructuredOutputMock
+      .mockResolvedValueOnce({
+        tailoredSummary: "Senior engineer.",
+        selectedSkills: ["React", "TypeScript", "Redux"],
+        selectedExperienceBullets: [],
+        projectSelections: [],
+        keywordAlignment: {
+          matchedTerms: ["React", "TypeScript", "Redux"],
+          method: "test",
+        },
+        markdownResume,
+        plainTextResume: markdownResume.replace(/^#+\s/gm, ""),
+        warnings: [],
+        unsupportedClaimsDetected: [],
+        validation: null,
+      })
+      .mockResolvedValueOnce(null);
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now),
+      job: jobPosting(now),
+      bullets: [],
+      projects: [],
+      workExperiences: [
+        workExperience({
+          id: "work_yubico",
+          company: "Yubico",
+          title: "Senior Software Engineer",
+          startDate: "Jul 2022",
+          endDate: "Mar 2026",
+          skills: ["React", "TypeScript", "Redux", "Jest"],
+          createdAt: now,
+        }),
+      ],
+    });
+
+    expect(
+      tailored.markdownResume.match(/Skills: React, TypeScript, Redux, Jest/g),
+    ).toHaveLength(1);
+  });
+
   it("renders recruiter-format app context and approved tech without needs-review versions", async () => {
     parseStructuredOutputMock.mockResolvedValue(null);
     const now = new Date("2026-06-04T12:00:00Z");
@@ -646,6 +768,254 @@ describe("tailorResumeForJob", () => {
     expect(tailored.plainTextResume).not.toContain("Selected strengths for");
   });
 
+  it("promotes verified project stack skills into the AI-generated main Skills section", async () => {
+    const now = new Date("2026-06-04T12:00:00Z");
+    const fillerBullets = Array.from(
+      { length: 12 },
+      (_, index) =>
+        `- Built verified product workflow ${index + 1} with React, TypeScript, agent orchestration, workflow automation, data modeling, testing, and cross-functional delivery for high-trust users.`,
+    );
+    parseStructuredOutputMock.mockResolvedValueOnce({
+      tailoredSummary: "Senior engineer.",
+      selectedSkills: ["React", "TypeScript"],
+      selectedExperienceBullets: [],
+      projectSelections: [],
+      keywordAlignment: { matchedTerms: ["React"], method: "test" },
+      markdownResume: [
+        "# Carl Welch",
+        "",
+        "## Summary",
+        "Senior engineer building React and TypeScript product systems for complex workflows.",
+        "",
+        "## Skills",
+        "React, TypeScript",
+        "",
+        "## Professional Experience",
+        ...fillerBullets,
+        "",
+        "## Projects",
+        "- Job Search OS: Local-first AI-powered job search operating system coordinating specialized agents. | Next.js, TypeScript, React, Prisma, PostgreSQL, pgvector, Redis, Docker, OpenAI structured outputs, RAG, MCP, Model Context Protocol, LangGraph, LangChain, Playwright, Server-Sent Events, Material UI, Vitest",
+      ].join("\n"),
+      plainTextResume: [
+        "Carl Welch",
+        "",
+        "Summary",
+        "Senior engineer building React and TypeScript product systems for complex workflows.",
+        "",
+        "Skills",
+        "React, TypeScript",
+        "",
+        "Professional Experience",
+        ...fillerBullets,
+        "",
+        "Projects",
+        "Job Search OS: Local-first AI-powered job search operating system coordinating specialized agents. | Next.js, TypeScript, React, Prisma, PostgreSQL, pgvector, Redis, Docker, OpenAI structured outputs, RAG, MCP, Model Context Protocol, LangGraph, LangChain, Playwright, Server-Sent Events, Material UI, Vitest",
+      ].join("\n"),
+      warnings: [],
+      unsupportedClaimsDetected: [],
+      validation: null,
+    });
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now),
+      job: jobPosting(now),
+      bullets: [],
+      projects: [
+        project({
+          id: "project_1",
+          name: "Job Search OS",
+          description:
+            "Local-first AI-powered job search operating system coordinating specialized agents.",
+          technologies: [
+            "Next.js",
+            "TypeScript",
+            "React",
+            "Prisma",
+            "PostgreSQL",
+            "pgvector",
+            "Redis",
+            "Docker",
+            "OpenAI structured outputs",
+            "RAG",
+            "MCP",
+            "Model Context Protocol",
+            "LangGraph",
+            "LangChain",
+            "Playwright",
+            "Server-Sent Events",
+            "Material UI",
+            "Vitest",
+          ],
+          createdAt: now,
+        }),
+      ],
+      workExperiences: [],
+      githubRepositories: [],
+    });
+
+    expect(tailored.markdownResume).toContain(
+      "## Skills\nReact, TypeScript, Next.js, Prisma, PostgreSQL, pgvector, Redis, Docker, OpenAI structured outputs, RAG, MCP, LangGraph, LangChain, Playwright, real-time event streaming, Material UI, Vitest",
+    );
+    const plainTextSkills = tailored.plainTextResume.match(/Skills\n([\s\S]*?)\nProfessional Experience/)?.[1] ?? "";
+    expect(tailored.plainTextResume).toContain("LangGraph");
+    expect(tailored.plainTextResume).toContain("real-time event streaming");
+    expect(plainTextSkills).not.toContain("Model Context Protocol");
+  });
+
+  it("does not append a continuity duplicate when AI output already includes a role alias", async () => {
+    const now = new Date("2026-06-04T12:00:00Z");
+    const roleBullets = Array.from(
+      { length: 12 },
+      (_, index) =>
+        `- Built verified public-safety workflow ${index + 1} with JavaScript, evidence review tooling, video playback, GPS mapping, secure case preparation, and cross-functional delivery.`,
+    );
+    parseStructuredOutputMock
+      .mockResolvedValueOnce({
+        tailoredSummary: "Senior engineer.",
+        selectedSkills: ["JavaScript"],
+        selectedExperienceBullets: [],
+        projectSelections: [],
+        keywordAlignment: { matchedTerms: ["JavaScript"], method: "test" },
+        markdownResume: [
+          "# Carl Welch",
+          "",
+          "## Summary",
+          "Senior engineer building public-safety and frontend systems with JavaScript, secure workflow tooling, video review interfaces, GPS mapping, and evidence preparation experience.",
+          "",
+          "## Skills",
+          "JavaScript, frontend architecture, video tooling",
+          "",
+          "## Professional Experience",
+          "### TASER International / AXON - Front End Developer | Apr 2009 - Oct 2011",
+          ...roleBullets,
+        ].join("\n"),
+        plainTextResume: [
+          "Carl Welch",
+          "",
+          "Summary",
+          "Senior engineer building public-safety and frontend systems with JavaScript, secure workflow tooling, video review interfaces, GPS mapping, and evidence preparation experience.",
+          "",
+          "Skills",
+          "JavaScript, frontend architecture, video tooling",
+          "",
+          "Professional Experience",
+          "TASER International / AXON - Front End Developer | Apr 2009 - Oct 2011",
+          ...roleBullets,
+        ].join("\n"),
+        warnings: [],
+        unsupportedClaimsDetected: [],
+        validation: null,
+      })
+      .mockResolvedValueOnce(null);
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now),
+      job: jobPosting(now),
+      bullets: [],
+      projects: [],
+      workExperiences: [
+        workExperience({
+          id: "work_taser_profile",
+          company: "Taser International",
+          title: "Front End Developer",
+          achievements: [
+            "Contributed to early front-end development of Axon's public safety technology platform, including wearable recording device interfaces and Evidence.com.",
+          ],
+          createdAt: now,
+        }),
+      ],
+      githubRepositories: [],
+    });
+
+    expect(tailored.markdownResume).toContain(
+      "### TASER International / AXON - Front End Developer | Apr 2009 - Oct 2011",
+    );
+    expect(tailored.markdownResume).not.toContain(
+      "### Taser International - Front End Developer",
+    );
+  });
+
+  it("deduplicates near-identical VFMED and TACFIRE bullets in generated military experience", async () => {
+    const now = new Date("2026-06-04T12:00:00Z");
+    const fillerBullets = Array.from(
+      { length: 10 },
+      (_, index) =>
+        `- Delivered verified frontend product workflow ${index + 1} with React, TypeScript, application architecture, test coverage, customer workflows, performance tuning, and cross-functional release execution.`,
+    );
+    parseStructuredOutputMock
+      .mockResolvedValueOnce({
+        tailoredSummary: "Senior engineer.",
+        selectedSkills: ["React", "TypeScript"],
+        selectedExperienceBullets: [],
+        projectSelections: [],
+        keywordAlignment: { matchedTerms: ["React"], method: "test" },
+        markdownResume: [
+          "# Carl Welch",
+          "",
+          "## Summary",
+          "Senior engineer building frontend systems with React, TypeScript, operational tooling, communication workflows, and high-trust delivery experience.",
+          "",
+          "## Skills",
+          "React, TypeScript, frontend architecture",
+          "",
+          "## Professional Experience",
+          "### U.S. Army - 13F Fire Support Specialist | 1990 - 1991",
+          "- Operated early digital fire support communication tools, including the VFMED device for transmitting targeting data into TACFIRE",
+          "- Served as a 13F Fire Support Specialist during Operation Desert Storm, supporting infantry and maneuver units through target identification, fire support coordination, map reading, coordinate calculation, and communication with Tactical Operations Centers.",
+          "- Worked with early digital fire support communication tools including the VFMED, a rugged field-portable device used to transmit targeting data into TACFIRE.",
+          "- Acted as liaison between U.S. troops and foreign allied forces to coordinate communication and operational alignment in a high-pressure environment",
+          "",
+          "### CurrentCo - Senior Engineer | 2022 - Present",
+          ...fillerBullets,
+        ].join("\n"),
+        plainTextResume: [
+          "Carl Welch",
+          "",
+          "Summary",
+          "Senior engineer building frontend systems with React, TypeScript, operational tooling, communication workflows, and high-trust delivery experience.",
+          "",
+          "Skills",
+          "React, TypeScript, frontend architecture",
+          "",
+          "Professional Experience",
+          "U.S. Army - 13F Fire Support Specialist | 1990 - 1991",
+          "- Operated early digital fire support communication tools, including the VFMED device for transmitting targeting data into TACFIRE",
+          "- Served as a 13F Fire Support Specialist during Operation Desert Storm, supporting infantry and maneuver units through target identification, fire support coordination, map reading, coordinate calculation, and communication with Tactical Operations Centers.",
+          "- Worked with early digital fire support communication tools including the VFMED, a rugged field-portable device used to transmit targeting data into TACFIRE.",
+          "- Acted as liaison between U.S. troops and foreign allied forces to coordinate communication and operational alignment in a high-pressure environment",
+          "CurrentCo - Senior Engineer | 2022 - Present",
+          ...fillerBullets,
+        ].join("\n"),
+        warnings: [],
+        unsupportedClaimsDetected: [],
+        validation: null,
+      })
+      .mockResolvedValueOnce(null);
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now),
+      job: jobPosting(now),
+      bullets: [],
+      projects: [],
+      workExperiences: [
+        workExperience({
+          id: "work_army",
+          company: "U.S. Army",
+          title: "13F Fire Support Specialist",
+          startDate: "1990",
+          endDate: "1991",
+          createdAt: now,
+        }),
+      ],
+      githubRepositories: [],
+    });
+
+    expect(tailored.markdownResume.match(/VFMED/g)?.length).toBe(1);
+    expect(tailored.markdownResume.match(/TACFIRE/g)?.length).toBe(1);
+    expect(tailored.markdownResume).toContain("Served as a 13F Fire Support Specialist during Operation Desert Storm");
+    expect(tailored.markdownResume).toContain("Acted as liaison between U.S. troops and foreign allied forces");
+  });
+
   it("derives the GitHub profile link from synced repositories when profile github is missing", async () => {
     parseStructuredOutputMock.mockResolvedValue(null);
     const now = new Date("2026-06-04T12:00:00Z");
@@ -720,6 +1090,157 @@ describe("tailorResumeForJob", () => {
       tailored.markdownResume.indexOf(
         "Built enterprise admin console features",
       ),
+    );
+  });
+
+  it("merges TASER and AXON role aliases into the dated upload role", async () => {
+    parseStructuredOutputMock.mockResolvedValue(null);
+    const now = new Date("2026-06-04T12:00:00Z");
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now),
+      job: jobPosting(now),
+      bullets: [
+        experienceBullet({
+          id: "bullet_taser_profile",
+          company: "Taser International",
+          role: "Front End Developer",
+          text: "Contributed to early front-end development of Axon's public safety technology platform, including wearable recording device interfaces and Evidence.com.",
+          workExperienceId: "work_taser_profile",
+          createdAt: now,
+        }),
+      ],
+      projects: [],
+      workExperiences: [
+        workExperience({
+          id: "work_taser_upload",
+          company: "TASER International / AXON",
+          title: "Front End Developer",
+          startDate: "Apr 2009",
+          endDate: "Oct 2011",
+          achievements: [
+            "Built AXON officer dashboard features for body-camera video review, GPS/map playback, evidence annotation, case preparation, secure packaging, and video tooling.",
+          ],
+          createdAt: now,
+        }),
+        workExperience({
+          id: "work_taser_profile",
+          company: "Taser International",
+          title: "Front End Developer",
+          achievements: [
+            "Contributed to early front-end development of Axon's public safety technology platform, including wearable recording device interfaces and Evidence.com.",
+          ],
+          createdAt: new Date("2026-05-01T12:00:00Z"),
+        }),
+      ],
+    });
+
+    expect(tailored.markdownResume).toContain(
+      "### TASER International / AXON - Front End Developer | Apr 2009 - Oct 2011",
+    );
+    expect(tailored.markdownResume).toContain(
+      "Contributed to early front-end development of Axon's public safety technology platform",
+    );
+    expect(tailored.markdownResume).toContain(
+      [
+        "### TASER International / AXON - Front End Developer | Apr 2009 - Oct 2011",
+        "- Contributed to early front-end development of Axon's public safety technology platform, including wearable recording device interfaces and Evidence.com.",
+      ].join("\n"),
+    );
+    expect(tailored.markdownResume).not.toContain(
+      "### Taser International - Front End Developer",
+    );
+  });
+
+  it("merges no-date General Dynamics R&D evidence into the dated canonical role", async () => {
+    parseStructuredOutputMock.mockResolvedValue(null);
+    const now = new Date("2026-06-04T12:00:00Z");
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now),
+      job: jobPosting(now),
+      bullets: [
+        experienceBullet({
+          id: "bullet_gd_rd",
+          company: "General Dynamics Land Systems",
+          role: "Manager / Lead Developer of R&D: VR & AR Applications",
+          text: "Received over $300K in funding from General Motors Defense Systems for VR and AR R&D projects.",
+          workExperienceId: "work_gd_rd",
+          createdAt: now,
+        }),
+      ],
+      projects: [],
+      workExperiences: [
+        workExperience({
+          id: "work_gd_upload",
+          company: "General Dynamics Land Systems",
+          title: "Manager / Lead Developer",
+          startDate: "2001",
+          endDate: "2004",
+          achievements: [
+            "Directed VR/AR training and maintenance simulation programs for Stryker combat vehicle scenarios.",
+          ],
+          createdAt: now,
+        }),
+        workExperience({
+          id: "work_gd_rd",
+          company: "General Dynamics Land Systems",
+          title: "Manager / Lead Developer of R&D: VR & AR Applications",
+          achievements: [
+            "Received over $300K in funding from General Motors Defense Systems.",
+          ],
+          createdAt: new Date("2026-05-01T12:00:00Z"),
+        }),
+      ],
+    });
+
+    expect(tailored.markdownResume).toContain(
+      "### General Dynamics Land Systems - Manager / Lead Developer | 2001 - 2004",
+    );
+    expect(tailored.markdownResume).toContain(
+      "Received over $300K in funding",
+    );
+    expect(tailored.markdownResume).not.toContain(
+      "### General Dynamics Land Systems - Manager / Lead Developer of R&D: VR & AR Applications",
+    );
+  });
+
+  it("keeps distinct same-company roles when both have different date ranges", async () => {
+    parseStructuredOutputMock.mockResolvedValue(null);
+    const now = new Date("2026-06-04T12:00:00Z");
+
+    const tailored = await tailorResumeForJob({
+      userProfile: userProfile(now),
+      job: jobPosting(now),
+      bullets: [],
+      projects: [],
+      workExperiences: [
+        workExperience({
+          id: "work_acme_early",
+          company: "Acme",
+          title: "Frontend Engineer",
+          startDate: "2010",
+          endDate: "2012",
+          summary: "Built early customer-facing web applications.",
+          createdAt: new Date("2012-01-01T12:00:00Z"),
+        }),
+        workExperience({
+          id: "work_acme_later",
+          company: "Acme",
+          title: "Frontend Engineer",
+          startDate: "2018",
+          endDate: "2020",
+          summary: "Led modern React dashboard development.",
+          createdAt: now,
+        }),
+      ],
+    });
+
+    expect(tailored.markdownResume).toContain(
+      "### Acme - Frontend Engineer | 2018 - 2020",
+    );
+    expect(tailored.markdownResume).toContain(
+      "### Acme - Frontend Engineer | 2010 - 2012",
     );
   });
 
@@ -889,6 +1410,31 @@ function jobPosting(now: Date): JobPosting {
     createdAt: now,
     updatedAt: now,
   };
+}
+
+function generatedResumeWithoutRoleSkills(experienceLines: string[]) {
+  return [
+    "# Carl Welch",
+    "carl@example.com | https://github.com/carlwelchdesign",
+    "",
+    "## Summary",
+    "Senior software engineer building React, TypeScript, and product workflow systems for enterprise teams.",
+    "Experienced frontend platform engineer with strong delivery, testing, architecture, and cross-functional leadership experience.",
+    "",
+    "## Skills",
+    "React, TypeScript, Redux, Node.js, Jest, Playwright, frontend architecture",
+    "",
+    "## Professional Experience",
+    ...experienceLines,
+  ].join("\n");
+}
+
+function longResumeBullets(prefix: string) {
+  return Array.from(
+    { length: 5 },
+    (_, index) =>
+      `- ${prefix} ${index + 1} with React, TypeScript, state management, API integrations, test automation, release planning, component architecture, analytics workflows, cross-functional coordination, and measurable delivery improvements for enterprise users.`,
+  );
 }
 
 function experienceBullet(

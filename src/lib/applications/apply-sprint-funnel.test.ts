@@ -76,7 +76,7 @@ describe("Apply Sprint trust funnel", () => {
     expect(reasonLabel("profile_max_results_cap")).toBe("per-profile maxResultsPerRun cap");
   });
 
-  it("hides ready applications when cover-letter material quality is blocked", () => {
+  it("does not hide ready applications because cover-letter material quality is advisory", () => {
     const funnel = buildApplySprintTrustFunnel({
       latestSearchRun: searchRun(),
       latestAgencyRun: null,
@@ -107,14 +107,15 @@ describe("Apply Sprint trust funnel", () => {
     expect(funnel.hidden).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: "weak-letter",
-        reasons: expect.arrayContaining(["material_quality_needs_review"]),
+        reasons: expect.not.arrayContaining(["material_quality_needs_review"]),
+        detail: "hidden by canonical duplicate reconciliation",
         materialQuality: expect.objectContaining({ launchable: false }),
       }),
     ]));
     expect(reasonLabel("material_quality_needs_review")).toBe("material quality needs review");
   });
 
-  it("surfaces approved applications blocked by cover-letter regeneration failures", () => {
+  it("does not count approved material QA failures as Apply Sprint blockers", () => {
     const funnel = buildApplySprintTrustFunnel({
       latestSearchRun: searchRun(),
       latestAgencyRun: null,
@@ -157,20 +158,8 @@ describe("Apply Sprint trust funnel", () => {
     });
 
     expect(funnel.summary.visibleReady).toBe(0);
-    expect(funnel.summary.materialQualityBlocked).toBe(1);
-    expect(funnel.hidden).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        id: "approved-quota-blocked",
-        status: "approved",
-        reasons: expect.arrayContaining(["material_quality_needs_review"]),
-        detail: expect.stringContaining("OpenAI quota is exhausted"),
-        materialQuality: expect.objectContaining({
-          launchable: false,
-          reasons: expect.arrayContaining(["openai_insufficient_quota"]),
-          generationFailure: expect.objectContaining({ code: "openai_insufficient_quota" }),
-        }),
-      }),
-    ]));
+    expect(funnel.summary.materialQualityBlocked).toBe(0);
+    expect(funnel.hidden.some((item) => item.id === "approved-quota-blocked")).toBe(false);
   });
 
   it("keeps review-only broad discovery matches out of agency candidates", () => {

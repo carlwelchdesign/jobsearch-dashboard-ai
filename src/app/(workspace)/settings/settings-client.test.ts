@@ -3,8 +3,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("Settings client source contract", () => {
-  const source = readFileSync(resolve(process.cwd(), "src/app/settings/settings-client.tsx"), "utf8");
-  const contentSource = readFileSync(resolve(process.cwd(), "src/app/settings/settings-content.tsx"), "utf8");
+  const source = readFileSync(resolve(process.cwd(), "src/app/(workspace)/settings/settings-client.tsx"), "utf8");
+  const contentSource = readFileSync(resolve(process.cwd(), "src/app/(workspace)/settings/settings-content.tsx"), "utf8");
 
   it("shows and saves a dedicated LinkedIn content model setting", () => {
     expect(contentSource).toContain("DEFAULT_LINKEDIN_CONTENT_MODEL");

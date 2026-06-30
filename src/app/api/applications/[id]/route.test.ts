@@ -9,6 +9,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     application: {
       findUnique: vi.fn(),
+      findMany: vi.fn(),
       delete: vi.fn(),
     },
     jobPosting: {
@@ -45,6 +46,7 @@ vi.mock("@/lib/applications/state-transitions", () => ({
 }));
 
 const findApplicationMock = vi.mocked(prisma.application.findUnique);
+const findApplicationsMock = vi.mocked(prisma.application.findMany);
 const deleteApplicationMock = vi.mocked(prisma.application.delete);
 const updateJobPostingMock = vi.mocked(prisma.jobPosting.update);
 const createApplicationEventMock = vi.mocked(prisma.applicationEvent.create);
@@ -58,6 +60,7 @@ const transitionApplicationStateMock = vi.mocked(transitionApplicationState);
 describe("DELETE /api/applications/[id]", () => {
   beforeEach(() => {
     findApplicationMock.mockReset();
+    findApplicationsMock.mockReset();
     deleteApplicationMock.mockReset();
     updateJobPostingMock.mockReset();
     createApplicationEventMock.mockReset();
@@ -73,6 +76,7 @@ describe("DELETE /api/applications/[id]", () => {
     updateMatchMock.mockResolvedValue({ id: "match_1", status: "rejected" } as Awaited<ReturnType<typeof prisma.jobProfileMatch.update>>);
     createSkillFeedbackMock.mockResolvedValue({ id: "feedback_1" } as Awaited<ReturnType<typeof prisma.skillFeedback.create>>);
     captureJobRejectionLearningMock.mockResolvedValue({ created: 1 });
+    findApplicationsMock.mockResolvedValue([] as never);
     transitionApplicationStateMock.mockResolvedValue({
       application: { id: "app_1", status: "archived" },
       event: { id: "event_1" },
@@ -145,6 +149,80 @@ describe("DELETE /api/applications/[id]", () => {
     expect(deleteApplicationMock).not.toHaveBeenCalled();
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ deleted: false, archived: true, rejected: true });
+  });
+
+  it("archives active sibling application trackers for the same canonical job", async () => {
+    findApplicationMock.mockResolvedValue({
+      id: "app_1",
+      userId: "user_1",
+      jobPostingId: "job_1",
+      status: "approved",
+      jobProfileMatchId: "match_1",
+      jobPosting: {
+        id: "job_1",
+        company: "Linear",
+        title: "Product Engineer",
+        location: "Remote",
+        duplicateGroupId: null,
+      },
+    } as unknown as Awaited<ReturnType<typeof prisma.application.findUnique>>);
+    findApplicationsMock.mockResolvedValue([
+      {
+        id: "app_sibling",
+        jobProfileMatchId: "match_sibling",
+        notes: null,
+        jobPosting: {
+          id: "job_sibling",
+          company: "Linear",
+          title: "Product Engineer",
+          location: "Europe",
+          duplicateGroupId: null,
+        },
+      },
+      {
+        id: "app_other",
+        jobProfileMatchId: "match_other",
+        notes: null,
+        jobPosting: {
+          id: "job_other",
+          company: "Linear",
+          title: "Product Designer",
+          location: "Remote",
+          duplicateGroupId: null,
+        },
+      },
+    ] as never);
+
+    const response = await DELETE(new Request("http://localhost/api/applications/app_1", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        reasons: ["wrong_tech_stack"],
+        source: "applications_rejection_reason_prompt",
+      }),
+    }), { params: { id: "app_1" } });
+
+    expect(transitionApplicationStateMock).toHaveBeenCalledWith(expect.objectContaining({
+      applicationId: "app_1",
+      toStatus: "archived",
+      source: "applications_rejection_reason_prompt",
+    }));
+    expect(transitionApplicationStateMock).toHaveBeenCalledWith(expect.objectContaining({
+      applicationId: "app_sibling",
+      toStatus: "archived",
+      source: "applications_rejection_reason_prompt_sibling",
+      metadata: expect.objectContaining({
+        rejectedApplicationId: "app_1",
+        jobProfileMatchId: "match_sibling",
+      }),
+    }));
+    expect(transitionApplicationStateMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      applicationId: "app_other",
+    }));
+    await expect(response.json()).resolves.toMatchObject({
+      archivedSiblingCount: 1,
+      message: expect.stringContaining("duplicate tracker"),
+    });
   });
 
   it("updates the linked job posting application URL", async () => {

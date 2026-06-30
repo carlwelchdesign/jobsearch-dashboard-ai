@@ -257,10 +257,11 @@ describe("GET /api/applications/[id]/assistant-package", () => {
       params: { id: "app_1" },
     });
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      error: expect.stringContaining("Application material quality needs review"),
-      materialQuality: expect.objectContaining({ launchable: false }),
+      materials: expect.objectContaining({
+        materialQuality: expect.objectContaining({ launchable: false }),
+      }),
     });
   });
 

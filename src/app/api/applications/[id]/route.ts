@@ -7,6 +7,7 @@ import { recordRejectedJobSuppression } from "@/lib/jobs/suppression";
 import { refreshOutcomeCalibration } from "@/lib/observability/outcome-calibration";
 import { captureJobRejectionLearning, rejectionReasonCodes, type RejectionReasonCode } from "@/lib/jobs/rejection-learning";
 import { assessApplicationUrlQuality, atsProviderFromApplicationUrl } from "@/lib/applications/application-url-quality";
+import { createApplicationCanonicalJobKeys } from "@/lib/applications/reconciliation";
 import { transitionApplicationState } from "@/lib/applications/state-transitions";
 
 export const dynamic = "force-dynamic";
@@ -186,6 +187,13 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
         jobProfileMatchId: application.jobProfileMatchId,
       },
     });
+    const archivedSiblingCount = await archiveActiveSiblingApplications({
+      application,
+      source: input.source,
+      reasons: input.reasons,
+      note: input.note,
+      reasonText,
+    });
     if (application.jobProfileMatchId) {
       await captureJobRejectionLearning({
         userId: application.userId,
@@ -206,10 +214,92 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     });
     refreshOutcomeCalibration({ userId: application.userId, source: "job_rejected" });
 
-    return NextResponse.json({ deleted: false, archived: true, rejected: true, message: "Application archived and job rejection signal saved for agency learning." });
+    return NextResponse.json({
+      deleted: false,
+      archived: true,
+      rejected: true,
+      archivedSiblingCount,
+      message: archivedSiblingCount
+        ? `Application archived, ${archivedSiblingCount} duplicate tracker${archivedSiblingCount === 1 ? "" : "s"} archived, and job rejection signal saved for agency learning.`
+        : "Application archived and job rejection signal saved for agency learning.",
+    });
   } catch (error) {
     return apiError(error, 400);
   }
+}
+
+async function archiveActiveSiblingApplications(input: {
+  application: {
+    id: string;
+    userId: string;
+    jobPostingId: string;
+    jobProfileMatchId: string | null;
+    jobPosting: {
+      id: string;
+      company: string;
+      title: string;
+      location: string | null;
+      duplicateGroupId: string | null;
+    };
+  };
+  source: string;
+  reasons: RejectionReasonCode[];
+  note: string | null;
+  reasonText: string;
+}) {
+  const siblingCandidates = await prisma.application.findMany({
+    where: {
+      userId: input.application.userId,
+      id: { not: input.application.id },
+      status: { in: ["approved", "ready_to_apply", "resume_generated", "cover_letter_generated"] },
+    },
+    select: {
+      id: true,
+      jobProfileMatchId: true,
+      notes: true,
+      jobPosting: {
+        select: {
+          id: true,
+          company: true,
+          title: true,
+          location: true,
+          duplicateGroupId: true,
+        },
+      },
+    },
+    take: 2000,
+  });
+  const rejectedKeys = new Set(createApplicationCanonicalJobKeys(input.application.jobPosting));
+  const siblings = siblingCandidates.filter((candidate) => {
+    if (input.application.jobPosting.duplicateGroupId && candidate.jobPosting.duplicateGroupId === input.application.jobPosting.duplicateGroupId) return true;
+    return createApplicationCanonicalJobKeys(candidate.jobPosting).some((key) => rejectedKeys.has(key));
+  });
+
+  for (const sibling of siblings) {
+    await transitionApplicationState({
+      applicationId: sibling.id,
+      toStatus: "archived",
+      source: `${input.source}_sibling`,
+      actor: { type: "user" },
+      reason: "Archived sibling tracker because the canonical job was rejected from Applications.",
+      note: `Archived duplicate tracker because this job was rejected from Applications. Reasons: ${input.reasonText}.${input.note ? ` Note: ${input.note}` : ""}`,
+      metadata: {
+        rejectedApplicationId: input.application.id,
+        rejectedJobPostingId: input.application.jobPostingId,
+        reasons: input.reasons,
+        note: input.note,
+        jobProfileMatchId: sibling.jobProfileMatchId,
+      },
+      sideEffects: {
+        syncPacket: false,
+        reconcile: false,
+        suppressSubmitted: false,
+        refreshOutcomeCalibration: false,
+      },
+    });
+  }
+
+  return siblings.length;
 }
 
 async function parseDeleteInput(request: Request): Promise<{ reasons: RejectionReasonCode[]; note: string | null; source: string }> {

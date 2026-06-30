@@ -19,7 +19,7 @@ A plain-English, step-by-step guide to every feature. No technical experience re
 - [Part 9 — GitHub Integration (Adding Your Projects as Evidence)](#part-9--github-integration-adding-your-projects-as-evidence)
 - [Part 10 — Application Materials (Resumes and Cover Letters)](#part-10--application-materials-resumes-and-cover-letters)
 - [Part 11 — The Recruiting Agency (Hands-Off Packet Prep)](#part-11--the-recruiting-agency-hands-off-packet-prep)
-- [Part 12 — Apply Sprint (The Browser Assistant)](#part-12--apply-sprint-the-browser-assistant)
+- [Part 12 — Apply Workspace and Apply Sprint](#part-12--apply-workspace-and-apply-sprint)
 - [Part 13 — Needs Me (Your Inbox for Blockers)](#part-13--needs-me-your-inbox-for-blockers)
 - [Part 14 — Application Tracker](#part-14--application-tracker)
 - [Part 15 — Email and Outcomes](#part-15--email-and-outcomes)
@@ -375,7 +375,7 @@ Brave Search powers the **Search Query Backlog** source, which is a set of targe
 - Workday, SmartRecruiters, iCIMS, Jobvite, Bullhorn, Oracle Taleo, SAP SuccessFactors, BambooHR, Workable, Teamtailor, Jobylon, Join, Jobtrain
 - Wellfound (AngelList), YC jobs, Built In, Levels.fyi, TrueUp, Dice, ZipRecruiter, Monster, CareerBuilder, SimplyHired, Adzuna
 - Hacker News "Who's Hiring", VC portfolio boards
-- Remote-specific boards: Remote.co, Remotive, NoDesk, Himalayas, Working Nomads
+- Remote-specific boards: Remote.co, Remotive, Remote Rocketship, JS Remotely, Pyjama Jobs, NoDesk, Himalayas, Working Nomads
 - USAJOBS (federal roles)
 
 Without Brave Search, you are limited to companies you have explicitly added to your watchlist that use Greenhouse, Lever, or Ashby — which is a good start but misses a large portion of the job market.
@@ -797,7 +797,7 @@ The full **Market Analysis** brief now lives on the Command Center. Click **Run 
 
 ### The Search Query Backlog source
 
-When you enable **Search Query Backlog** (requires a `BRAVE_SEARCH_API_KEY`), the system runs targeted Brave web searches covering platforms that do not have direct ATS integrations — including Workday, SmartRecruiters, iCIMS, Jobvite, Bullhorn, Oracle Taleo, SAP SuccessFactors, BambooHR, Teamtailor, Jobylon, Join, Jobtrain, Wellfound, ZipRecruiter, Dice, Monster, CareerBuilder, SimplyHired, Adzuna, Built In, Levels.fyi, Hacker News, USAJOBS, and many others.
+When you enable **Search Query Backlog** (requires a `BRAVE_SEARCH_API_KEY`), the system runs targeted Brave web searches covering platforms that do not have direct ATS integrations — including Workday, SmartRecruiters, iCIMS, Jobvite, Bullhorn, Oracle Taleo, SAP SuccessFactors, BambooHR, Teamtailor, Jobylon, Join, Jobtrain, Wellfound, Remotive, Remote Rocketship, JS Remotely, Pyjama Jobs, ZipRecruiter, Dice, Monster, CareerBuilder, SimplyHired, Adzuna, Built In, Levels.fyi, Hacker News, USAJOBS, and many others. Kickresume, Eztrackr, FlexJobs, and Toptal remain manual/account workflows rather than scrape targets.
 
 Built In search-result URLs, such as filtered `/jobs/.../search/...` pages, are treated as listing pages. The system expands them into individual Built In job-detail pages and then looks for the real employer or ATS application link. If Built In does not expose an external application URL, the job can still be reviewed, but it will not enter Apply Sprint as if the Built In listing page were the application form.
 
@@ -1258,17 +1258,24 @@ Below the metrics is a live **event log** showing what the Agency is doing at ea
 
 > [PART_COMPLETE:11]
 >
-> **The Agency has prepared your packets. Now let's submit them with the browser assistant.** Continue to Part 12 — Apply Sprint.
+> **The Agency has prepared your packets. Now review the Apply Workspace and launch assisted form filling when ready.** Continue to Part 12 — Apply Workspace and Apply Sprint.
 
 ---
 
-## Part 12 — Apply Sprint (The Browser Assistant)
+## Part 12 — Apply Workspace and Apply Sprint
 
 ![Apply Sprint — the browser assistant console shows which application is loaded and its current step](/guide-screenshots/apply-sprint.png)
 
-**What this does:** Opens a real browser, goes to the job application page, fills in your information automatically, and then stops — waiting for you to click Submit yourself.
+**What this does:** The Apply Workspace is the main page for one application. It shows the job, packet status, match evidence, application URL, blockers, materials, answers, research, and one recommended next action. When the packet is ready, Apply Sprint can open a real browser, go to the employer application page, fill safe fields, and then stop — waiting for you to click Submit yourself.
 
 > **Important safety rule:** The assistant will NEVER click Submit for you. It always stops before the final step. You review everything and decide.
+
+### Starting from the Apply Workspace
+
+1. Open a tracked job or application. If the job already has an application tracker, the job page hands you to the application workspace.
+2. Review the top card first. It shows status, packet readiness, blockers, the direct employer form URL, and the recommended next action.
+3. Use **Materials**, **Answers**, **Fit**, **Research**, **History**, and **Job** sections only when you need more detail.
+4. Launch the assistant only after the packet and URL are ready. The assistant can fill fields, upload materials, and stop at the final review screen. You submit manually.
 
 ### Before you start
 
@@ -1284,9 +1291,9 @@ This installs the Python dependencies and Playwright browsers.
 
 ### Starting Apply Sprint
 
-1. Click **Apply Sprint** in the left sidebar (`/applications/assistant`).
-2. You will see a list of **Ready to Apply** applications — these are jobs with approved packets.
-3. Click **Launch Assistant** next to the application you want to start.
+1. Click **Apply Sprint** in the left sidebar (`/applications/assistant`) when you want the queue view.
+2. You will see **Ready to Apply** applications — these are jobs with approved packets.
+3. Click **Launch Assistant** from either the queue or the application workspace.
 4. A browser window will open automatically.
 
 ### What happens in the browser

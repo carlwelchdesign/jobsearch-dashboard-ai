@@ -1213,6 +1213,12 @@ function companyFromUrl(value: string) {
 
 function locationFromQuery(query: string) {
   if (/remote/i.test(query)) return "Remote";
+  if (/ventura county/i.test(query)) return "Ventura County, CA";
+  if (/santa barbara county/i.test(query)) return "Santa Barbara County, CA";
+  if (/san fernando valley/i.test(query)) return "San Fernando Valley, CA";
+  for (const city of ["Ventura", "Oxnard", "Santa Barbara", "Goleta", "Thousand Oaks", "Woodland Hills", "Calabasas"]) {
+    if (new RegExp(`\\b${city.replace(/\s+/g, "\\s+")}\\b`, "i").test(query)) return `${city}, CA`;
+  }
   if (/united states| usa | us/i.test(query)) return "United States";
   return undefined;
 }
@@ -1549,6 +1555,13 @@ export function detectSearchProviderFromUrl(value?: string) {
   if (/ziprecruiter/.test(normalized)) return "ziprecruiter";
   if (/dice\.com/.test(normalized)) return "dice";
   if (/wellfound|angel\.co/.test(normalized)) return "wellfound";
+  if (/remotive\.com/.test(normalized)) return "remotive";
+  if (/remoterocketship\.com/.test(normalized)) return "remote_rocketship";
+  if (/jsremotely\.com/.test(normalized)) return "js_remotely";
+  if (/kickresume\.com|pyjama/.test(normalized)) return "kickresume";
+  if (/remoteok\.com/.test(normalized)) return "remoteok";
+  if (/toptal\.com/.test(normalized)) return "toptal";
+  if (/eztrackr\.app/.test(normalized)) return "eztrackr";
   if (/glassdoor/.test(normalized)) return "glassdoor";
   if (/monster\.com/.test(normalized)) return "monster";
   if (/careerbuilder/.test(normalized)) return "careerbuilder";

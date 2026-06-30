@@ -3,8 +3,11 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("AssistantWorkbench run feedback panel", () => {
+  const assistantPagePath = "src/app/(workspace)/applications/assistant/page.tsx";
+  const assistantWorkbenchPath = "src/app/(workspace)/applications/assistant/assistant-workbench.tsx";
+
   it("renders structured diagnostics, timeline, and raw log fallback", () => {
-    const source = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/assistant-workbench.tsx"), "utf8");
+    const source = readFileSync(resolve(process.cwd(), assistantWorkbenchPath), "utf8");
 
     expect(source).toContain("AssistantRunPanel");
     expect(source).toContain("Event timeline");
@@ -20,7 +23,7 @@ describe("AssistantWorkbench run feedback panel", () => {
   });
 
   it("advances the ready application selection after marking applied", () => {
-    const source = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/assistant-workbench.tsx"), "utf8");
+    const source = readFileSync(resolve(process.cwd(), assistantWorkbenchPath), "utf8");
 
     expect(source).toContain("const [appliedIds, setAppliedIds]");
     expect(source).toContain("!appliedIds.includes(application.id)");
@@ -30,8 +33,8 @@ describe("AssistantWorkbench run feedback panel", () => {
   });
 
   it("uses smart job summaries for ready application detail text", () => {
-    const pageSource = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/page.tsx"), "utf8");
-    const workbenchSource = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/assistant-workbench.tsx"), "utf8");
+    const pageSource = readFileSync(resolve(process.cwd(), assistantPagePath), "utf8");
+    const workbenchSource = readFileSync(resolve(process.cwd(), assistantWorkbenchPath), "utf8");
 
     expect(pageSource).toContain("description: application.jobPosting.description");
     expect(workbenchSource).toContain("description: string | null");
@@ -42,8 +45,8 @@ describe("AssistantWorkbench run feedback panel", () => {
   });
 
   it("keeps the next application first and moves visibility diagnostics into details", () => {
-    const pageSource = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/page.tsx"), "utf8");
-    const workbenchSource = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/assistant-workbench.tsx"), "utf8");
+    const pageSource = readFileSync(resolve(process.cwd(), assistantPagePath), "utf8");
+    const workbenchSource = readFileSync(resolve(process.cwd(), assistantWorkbenchPath), "utf8");
 
     expect(pageSource).toContain("buildApplySprintTrustFunnel");
     expect(pageSource).toContain("trustFunnel={trustFunnel}");
@@ -73,8 +76,8 @@ describe("AssistantWorkbench run feedback panel", () => {
   });
 
   it("keeps all ready applications visible and explains non-launchable items", () => {
-    const pageSource = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/page.tsx"), "utf8");
-    const workbenchSource = readFileSync(resolve(process.cwd(), "src/app/applications/assistant/assistant-workbench.tsx"), "utf8");
+    const pageSource = readFileSync(resolve(process.cwd(), assistantPagePath), "utf8");
+    const workbenchSource = readFileSync(resolve(process.cwd(), assistantWorkbenchPath), "utf8");
 
     expect(pageSource).toContain('status: "ready_to_apply"');
     expect(pageSource).not.toContain("resumeId: { not: null }");
@@ -82,6 +85,7 @@ describe("AssistantWorkbench run feedback panel", () => {
     expect(pageSource).not.toContain('applicationUrl: { not: null }');
     expect(pageSource).not.toContain("submittedApplicationJobKeySet");
     expect(pageSource).not.toContain("!hasApplicationForJob");
+    expect(pageSource).not.toContain("applicationMaterialQualityDetail(application.coverLetter?.generationNotes).launchable");
     expect(workbenchSource).toContain("Add application URL");
     expect(workbenchSource).toContain("Review packet");
     expect(workbenchSource).toContain("Open manually");

@@ -9,39 +9,102 @@ import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
 import type { SxProps, Theme } from "@mui/material/styles";
 import TextField from "@mui/material/TextField";
-import { useState } from "react";
+import { useReducer } from "react";
 
 type BulkMoveResponse = {
+  accepted?: boolean;
+  alreadyRunning?: boolean;
   error?: string;
   message?: string;
+  archivedNoDirectUrl?: number;
   moved?: number;
   prepared?: number;
   regenerated?: number;
   failed?: number;
   materialBlocked?: number;
   quotaBlocked?: number;
+  remainingEligible?: number;
+  blockedExamples?: Array<{
+    applicationId: string;
+    company: string;
+    title: string;
+    action: string;
+    reason: string;
+  }>;
 };
 
-export function BulkMoveToSprintControl({ buttonSx }: { buttonSx?: SxProps<Theme> }) {
+type BulkMoveState = {
+  limit: number;
+  loading: boolean;
+  notice: string;
+  severity: "success" | "error" | "info" | "warning";
+  latestResult: BulkMoveResponse | null;
+};
+
+type BulkMoveAction =
+  | { type: "set_limit"; limit: number }
+  | { type: "start" }
+  | { type: "notice"; notice: string; severity: BulkMoveState["severity"] }
+  | { type: "success"; payload: BulkMoveResponse; notice: string; severity: BulkMoveState["severity"] }
+  | { type: "error"; notice: string }
+  | { type: "clear_notice" };
+
+function bulkMoveReducer(state: BulkMoveState, action: BulkMoveAction): BulkMoveState {
+  switch (action.type) {
+    case "set_limit":
+      return { ...state, limit: action.limit };
+    case "start":
+      return { ...state, loading: true };
+    case "notice":
+      return { ...state, loading: false, notice: action.notice, severity: action.severity };
+    case "success":
+      return { ...state, loading: false, latestResult: action.payload, notice: action.notice, severity: action.severity };
+    case "error":
+      return { ...state, loading: false, notice: action.notice, severity: "error" };
+    case "clear_notice":
+      return { ...state, notice: "" };
+  }
+}
+
+export function BulkMoveToSprintControl({
+  buttonSx,
+  label = "Prepare approved for Ready to apply",
+  loadingLabel = "Preparing...",
+  queue = "approved",
+  startNotice,
+  buttonColor = "success",
+}: {
+  buttonSx?: SxProps<Theme>;
+  label?: string;
+  loadingLabel?: string;
+  queue?: "approved" | "material_blocked";
+  startNotice?: string;
+  buttonColor?: "success" | "warning";
+}) {
   const { refresh } = useRouter();
-  const [limit, setLimit] = useState(25);
-  const [loading, setLoading] = useState(false);
-  const [notice, setNotice] = useState("");
-  const [severity, setSeverity] = useState<"success" | "error" | "info" | "warning">("info");
+  const [state, dispatch] = useReducer(bulkMoveReducer, {
+    limit: 25,
+    loading: false,
+    notice: "",
+    severity: "info",
+    latestResult: null,
+  });
 
   async function moveToSprint() {
-    setLoading(true);
+    dispatch({ type: "start" });
     try {
       const request = fetch("/api/applications/bulk-move-to-sprint", {
         method: "POST",
         headers: { "content-type": "application/json", "x-run-in-background": "1" },
-        body: JSON.stringify({ limit, regenerateBlockedMaterials: true }),
+        body: JSON.stringify({ limit: state.limit, regenerateBlockedMaterials: true, queue }),
         keepalive: true,
       });
 
-      setLoading(false);
-      setSeverity("info");
-      setNotice("Bulk move started. Regenerating blocked letters and preparing packets before Apply Sprint.");
+      dispatch({
+        type: "notice",
+        severity: "info",
+        notice: startNotice ?? "Preparing approved applications for Ready to apply. No-direct-URL items will be archived.",
+      });
 
       request
         .then(async (response) => {
@@ -52,18 +115,19 @@ export function BulkMoveToSprintControl({ buttonSx }: { buttonSx?: SxProps<Theme
           const failed = payload.failed ?? 0;
           const materialBlocked = payload.materialBlocked ?? 0;
           const quotaBlocked = payload.quotaBlocked ?? 0;
-          setSeverity(quotaBlocked || (failed > 0 && moved === 0) ? "warning" : failed > 0 ? "info" : moved > 0 ? "success" : "info");
-          setNotice(payload.message ?? `Moved ${moved} application(s) into Apply Sprint. ${regenerated} regenerated. ${failed} failed. ${materialBlocked} material-blocked.`);
+          dispatch({
+            type: "success",
+            payload,
+            severity: quotaBlocked || (failed > 0 && moved === 0) ? "warning" : failed > 0 ? "info" : moved > 0 ? "success" : "info",
+            notice: payload.message ?? `Prepared ${moved} application(s) for Ready to apply. ${regenerated} regenerated. ${failed} failed. ${materialBlocked} material-blocked.`,
+          });
           refresh();
         })
         .catch((error) => {
-          setSeverity("error");
-          setNotice(error instanceof Error ? error.message : "Bulk move failed.");
+          dispatch({ type: "error", notice: error instanceof Error ? error.message : "Bulk move failed." });
         });
     } catch (error) {
-      setSeverity("error");
-      setNotice(error instanceof Error ? error.message : "Bulk move failed.");
-      setLoading(false);
+      dispatch({ type: "error", notice: error instanceof Error ? error.message : "Bulk move failed." });
     }
   }
 
@@ -74,26 +138,42 @@ export function BulkMoveToSprintControl({ buttonSx }: { buttonSx?: SxProps<Theme
           select
           size="small"
           label="Move"
-          value={limit}
-          onChange={(event) => setLimit(Number(event.target.value))}
+          value={state.limit}
+          onChange={(event) => dispatch({ type: "set_limit", limit: Number(event.target.value) })}
           sx={{ minWidth: 112 }}
         >
           {[5, 10, 25, 50, 100, 250].map((count) => <MenuItem key={count} value={count}>{count}</MenuItem>)}
         </TextField>
         <Button
           variant="contained"
-          color="success"
+          color={buttonColor}
           startIcon={<BoltOutlinedIcon />}
-          disabled={loading}
+          disabled={state.loading}
           onClick={moveToSprint}
           sx={buttonSx}
         >
-          {loading ? "Moving..." : "Bulk move to sprint"}
+          {state.loading ? loadingLabel : label}
         </Button>
       </Stack>
-      <Snackbar open={Boolean(notice)} autoHideDuration={6000} onClose={() => setNotice("")}>
-        <Alert severity={severity} variant="filled" onClose={() => setNotice("")}>
-          {notice}
+      {state.latestResult ? (
+        <Alert severity={state.latestResult.accepted ? "info" : (state.latestResult.failed ?? 0) || (state.latestResult.materialBlocked ?? 0) ? "warning" : "success"} sx={{ mt: 1 }}>
+          {state.latestResult.accepted
+            ? state.latestResult.message ?? "Regeneration is running in the background."
+            : `Prepared ${(state.latestResult.moved ?? 0) + (state.latestResult.prepared ?? 0)} for Ready to apply. Archived ${state.latestResult.archivedNoDirectUrl ?? 0} without direct URLs. ${state.latestResult.materialBlocked ?? 0} material-blocked. ${state.latestResult.failed ?? 0} failed.`}
+          {state.latestResult.blockedExamples?.length ? (
+            <Stack component="span" spacing={0.5} sx={{ display: "block", mt: 1 }}>
+              {state.latestResult.blockedExamples.slice(0, 3).map((item) => (
+                <span key={`${item.applicationId}-${item.action}`}>
+                  {item.company} - {item.title}: {item.reason}
+                </span>
+              ))}
+            </Stack>
+          ) : null}
+        </Alert>
+      ) : null}
+      <Snackbar open={Boolean(state.notice)} autoHideDuration={6000} onClose={() => dispatch({ type: "clear_notice" })}>
+        <Alert severity={state.severity} variant="filled" onClose={() => dispatch({ type: "clear_notice" })}>
+          {state.notice}
         </Alert>
       </Snackbar>
     </>

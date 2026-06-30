@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 describe("AppShell navigation", () => {
   it("uses daily job-search language in primary navigation", () => {
-    const source = readFileSync(fileURLToPath(new URL("./app-shell.tsx", import.meta.url)), "utf8");
+    const source = readFileSync(fileURLToPath(new URL("./app-shell-nav.tsx", import.meta.url)), "utf8");
 
     expect(source).toContain('{ href: "/dashboard", label: "Today"');
     expect(source).toContain('{ href: "/dashboard/search", label: "Find Jobs"');

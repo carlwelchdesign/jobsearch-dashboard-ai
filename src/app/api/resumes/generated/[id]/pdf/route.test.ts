@@ -62,6 +62,15 @@ describe("GET /api/resumes/generated/[id]/pdf", () => {
     expect(modernPdfMock).not.toHaveBeenCalled();
   });
 
+  it("uses the ATS single-column renderer when selected", async () => {
+    findUniqueMock.mockResolvedValue(resume({ resumeFormat: "ats_single_column" }) as never);
+
+    await GET(new Request("http://localhost/api/resumes/generated/resume_1/pdf"), { params: { id: "resume_1" } });
+
+    expect(simplePdfMock).toHaveBeenCalledWith("Carl Welch\nSummary\nReact", "ats_single_column");
+    expect(modernPdfMock).not.toHaveBeenCalled();
+  });
+
   it("supports a query format override for export checks", async () => {
     await GET(new Request("http://localhost/api/resumes/generated/resume_1/pdf?format=atelier"), { params: { id: "resume_1" } });
 

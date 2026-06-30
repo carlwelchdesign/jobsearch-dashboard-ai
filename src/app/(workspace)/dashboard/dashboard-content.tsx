@@ -12,8 +12,8 @@ import ListItemText from "@mui/material/ListItemText";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import Link from "next/link";
+import dynamicImport from "next/dynamic";
 import { RunDailyPlanButton } from "./daily-plan-card";
-import { LinkedInAnalyticsCard } from "./linkedin-analytics-card";
 import { MarketAnalysisCard, type MarketTrendPoint } from "./market-analysis-card";
 import { MarkAppliedButton } from "../applications/mark-applied-button";
 import { ActionButton } from "@/components/action-button";
@@ -43,6 +43,10 @@ import { buildLifecycleReadiness } from "@/lib/readiness/lifecycle";
 import { getServiceFallbacks } from "@/lib/service-fallbacks";
 
 export const dynamic = "force-dynamic";
+
+const LinkedInAnalyticsCard = dynamicImport(
+  () => import("./linkedin-analytics-card").then((module) => module.LinkedInAnalyticsCard),
+);
 
 export type DashboardRouteGroup = "overview" | "search" | "email" | "social" | "market" | "pipeline";
 

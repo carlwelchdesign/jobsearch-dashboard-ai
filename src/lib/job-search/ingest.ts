@@ -10,6 +10,7 @@ import { runJobFitScoringAgent } from "@/lib/agents/job-fit-scorer";
 import { createCanonicalJobKeys, createJobContentHash, hasSameCanonicalJob } from "@/lib/job-search/dedupe";
 import { getAdapterForSource } from "@/lib/job-search/adapters";
 import { classifyJobSearchTitle, scoreJobForProfile } from "@/lib/job-search/scoring";
+import { mergeSearchQuerySourceConfig } from "@/lib/job-search/source-catalog";
 import { isListingReviewPosting, type NormalizedJobPosting } from "@/lib/job-search/source-adapter";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
 import { sendNotification } from "@/lib/notifications/send";
@@ -198,10 +199,13 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
     for (const source of sources) {
       const adapter = getAdapterForSource(source.type);
       if (!adapter) continue;
+      const effectiveSource = source.type === "search_query"
+        ? { ...source, config: mergeSearchQuerySourceConfig(source.config) }
+        : source;
 
       try {
-        if (source.type === "search_query") {
-          const coverage = searchQueryCoverage(source.config);
+        if (effectiveSource.type === "search_query") {
+          const coverage = searchQueryCoverage(effectiveSource.config);
           stats.searchQueryTemplates = coverage.queryCount;
           stats.searchQueryProviderDomains = coverage.providerDomains.length;
           if (!process.env.BRAVE_SEARCH_API_KEY) {
@@ -213,7 +217,7 @@ export async function runJobSearch(triggeredBy: "manual" | "cron" = "manual", ru
         }
         await appendProgress(run.id, `Fetching ${source.name} jobs for ${profile.name}.`, stats);
         const rawJobs = await withTimeout(
-          adapter.fetchJobs(profile, source),
+          adapter.fetchJobs(profile, effectiveSource),
           sourceFetchTimeoutMs,
           `${source.name} fetch timed out after ${Math.round(sourceFetchTimeoutMs / 60_000)} minutes.`,
         );

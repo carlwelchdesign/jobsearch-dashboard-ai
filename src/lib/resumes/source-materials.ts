@@ -16,11 +16,24 @@ export function selectResumeSourceBullets<T extends Pick<ExperienceBullet, "id" 
   return dedupeBullets(bullets);
 }
 
-export function selectResumeSourceWorkExperiences<T extends Pick<WorkExperience, "sourceResumeUploadId">>(
+export function selectResumeSourceWorkExperiences<T extends Pick<WorkExperience, "company" | "title" | "startDate" | "endDate" | "sourceResumeUploadId">>(
   workExperiences: T[],
   latestUploadId: string | null | undefined,
 ) {
-  return workExperiences.filter((work) => !latestUploadId || !work.sourceResumeUploadId || work.sourceResumeUploadId === latestUploadId);
+  if (!latestUploadId) return workExperiences;
+
+  const latestUploadWork = workExperiences.filter((work) => work.sourceResumeUploadId === latestUploadId);
+  const profileWork = workExperiences.filter((work) => !work.sourceResumeUploadId);
+
+  return [
+    ...latestUploadWork,
+    ...profileWork.filter(
+      (work) =>
+        !latestUploadWork.some((uploadWork) =>
+          resumeRolesEquivalent(work, uploadWork),
+        ),
+    ),
+  ];
 }
 
 export function summarizeResumeSourceBullets<T extends Pick<ExperienceBullet, "id" | "sourceResumeUploadId" | "metrics">>(
@@ -61,4 +74,59 @@ function isRoleDescriptionDigestBullet<T extends Pick<ExperienceBullet, "metrics
       "source" in bullet.metrics &&
       bullet.metrics.source === "role_description_digest",
   );
+}
+
+export function resumeRoleBaseKey(role: { company: string; title: string }) {
+  return `${canonicalResumeCompany(role.company)}|${canonicalResumeTitle(role.title)}`;
+}
+
+export function resumeRolesEquivalent(
+  left: { company: string; title: string; startDate?: string | null; endDate?: string | null },
+  right: { company: string; title: string; startDate?: string | null; endDate?: string | null },
+) {
+  if (resumeRoleBaseKey(left) !== resumeRoleBaseKey(right)) return false;
+  if (!hasResumeDate(left) || !hasResumeDate(right)) return true;
+  return resumeDateSignature(left) === resumeDateSignature(right);
+}
+
+function canonicalResumeCompany(company: string) {
+  const normalized = normalizeResumeRoleText(company);
+  if (/\b(?:taser|axon)\b/.test(normalized)) return "taser axon";
+  if (/\bgeneral dynamics(?: land systems)?\b/.test(normalized))
+    return "general dynamics land systems";
+  return normalized;
+}
+
+function canonicalResumeTitle(title: string) {
+  const normalized = normalizeResumeRoleText(title);
+  if (/\bfront end developer\b|\bfrontend developer\b/.test(normalized))
+    return "front end developer";
+  if (/\bmanager\b/.test(normalized) && /\blead developer\b/.test(normalized))
+    return "manager lead developer";
+  return normalized;
+}
+
+function normalizeResumeRoleText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function hasResumeDate(role: { startDate?: string | null; endDate?: string | null }) {
+  return Boolean(role.startDate?.trim() || role.endDate?.trim());
+}
+
+function resumeDateSignature(role: { startDate?: string | null; endDate?: string | null }) {
+  return `${normalizeResumeDate(role.startDate)}|${normalizeResumeDate(role.endDate)}`;
+}
+
+function normalizeResumeDate(value: string | null | undefined) {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
 }

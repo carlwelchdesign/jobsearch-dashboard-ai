@@ -1,5 +1,6 @@
 import type { CandidateEvidence, Contact, JobPosting, UserProfile } from "@prisma/client";
 import { runAgent } from "@/lib/agents/run-agent";
+import { isLinkedInRecommendationEvidence, linkedinRecommendationSignalLine } from "@/lib/evidence/linkedin-recommendation-guidance";
 import { retrieveCandidateEvidence } from "@/lib/evidence/retrieval";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
@@ -172,6 +173,9 @@ function selectOutreachEvidence(evidence: CandidateEvidence[]) {
 
 function evidenceLine(evidence?: CandidateEvidence) {
   if (!evidence) return "";
+  if (isLinkedInRecommendationEvidence(evidence)) {
+    return linkedinRecommendationSignalLine(evidence);
+  }
   const tags = jsonArray(evidence.tags).slice(0, 3);
   const content = evidence.content.length > 145 ? `${evidence.content.slice(0, 142)}...` : evidence.content;
   return `${evidence.title}: ${content}${tags.length ? ` (${tags.join(", ")})` : ""}`;

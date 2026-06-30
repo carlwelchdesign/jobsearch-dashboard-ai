@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 
 describe("LinkedInContentClient UI contract", () => {
-  const source = readFileSync("src/app/linkedin-content/linkedin-content-client.tsx", "utf8");
+  const source = readFileSync("src/app/(workspace)/linkedin-content/linkedin-content-client.tsx", "utf8");
 
   it("exposes edit, approval, publish retry, agent review, and screenshot controls", () => {
     expect(source).toContain("Copy");

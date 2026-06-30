@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+
 type ServiceCheckResult = {
   id: string;
   status: "ok" | "error" | "skipped";

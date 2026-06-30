@@ -35,7 +35,9 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { applicationAnswerEntries, packetApprovalChecklist, packetApprovalState } from "@/lib/applications/application-packets";
+import { applicationMaterialQualityFromNotes } from "@/lib/applications/material-quality";
 import { buildAshbyRiskAssessment, type AshbyRiskAssessment } from "@/lib/applications/ashby-risk";
+import { getApplyWorkspacePrimaryAction, isPacketApproved, type ApplyWorkspacePrimaryAction } from "@/lib/applications/apply-workspace";
 import { ApplicationUrlEditor } from "./application-url-editor";
 import { ApprovePacketButton } from "./approve-packet-button";
 import { AutoSubmitOverrideControl } from "./auto-submit-override-control";
@@ -74,6 +76,13 @@ type MaterialNotes = {
   } | null;
   warnings?: string[];
   unsupportedClaimsDetected?: string[];
+  materialQuality?: {
+    status?: "PASS" | "NEEDS_REVIEW" | "BLOCKED";
+    launchable?: boolean;
+    reason?: string;
+    reasons?: string[];
+    score?: number;
+  };
 };
 
 type AtsResumeReview = {
@@ -160,13 +169,24 @@ type CompensationOpportunityOutput = {
   reasoningSummary?: string;
 };
 
+const WORKSPACE_NAV_ITEMS = [
+  ["#apply", "Apply"],
+  ["#material-repair", "Material repair"],
+  ["#materials", "Materials"],
+  ["#answers", "Answers"],
+  ["#fit", "Fit"],
+  ["#research", "Research"],
+  ["#history", "History"],
+  ["#job", "Job"],
+] as const;
+
 export default async function ApplicationPacketPage({ params }: { params: { id: string } }) {
   const [application, latestPrepRun, latestPortfolioRun, latestCompanyResearchRun, latestCompensationRun] = await Promise.all([
     prisma.application.findUnique({
       where: { id: params.id },
       include: {
         coverLetter: true,
-        events: { orderBy: { createdAt: "desc" }, take: 8 },
+        events: { orderBy: { createdAt: "desc" }, take: 20 },
         interviewPrepTasks: { orderBy: [{ status: "asc" }, { priority: "asc" }, { createdAt: "asc" }] },
         thankYouDrafts: { orderBy: { createdAt: "desc" }, take: 8 },
         applicationPackets: { orderBy: { updatedAt: "desc" }, take: 1 },
@@ -235,6 +255,8 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
   const packet = application.applicationPackets[0];
   const resumeNotes = materialNotes(application.resume?.generationNotes);
   const coverLetterNotes = materialNotes(application.coverLetter?.generationNotes);
+  const materialQuality = application.coverLetter ? applicationMaterialQualityFromNotes(application.coverLetter.generationNotes) : null;
+  const latestMaterialRepair = latestMaterialRepairEvent(application.events);
   const qa = coverLetterNotes.applicationQa ?? resumeNotes.applicationQa;
   const atsResumeReview = resumeNotes.atsResumeReview;
   const strategy = resumeNotes.resumeStrategy ?? coverLetterNotes.resumeStrategy;
@@ -281,6 +303,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
     ...(qa?.warnings ?? []),
     ...(qa?.unsupportedClaims ?? []),
     ...(qa?.styleViolations ?? []),
+    ...(materialQuality && !materialQuality.launchable ? [materialQuality.reason] : []),
   ];
   const workflowProgress = applicationWorkflowProgress({
     applicationId: application.id,
@@ -299,14 +322,28 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
     }),
     hasAppliedOutcome: application.outcomes.some((outcome) => outcome.outcome === "APPLIED"),
   });
+  const primaryAction = getApplyWorkspacePrimaryAction({
+    applicationId: application.id,
+    jobPostingId: application.jobPostingId,
+    applicationStatus: application.status,
+    appliedAt: application.appliedAt,
+    packetStatus: packet?.status ?? null,
+    hasResume: Boolean(application.resume),
+    hasCoverLetter: Boolean(application.coverLetter),
+    qaIssueCount: qaIssues.length,
+    materialBlocked: Boolean(materialQuality && !materialQuality.launchable),
+    canApprovePacket: Boolean(approvalState?.canApprove),
+    assistantLaunched: workflowProgress.assistantLaunched,
+    hasAppliedOutcome: workflowProgress.submitted,
+  });
 
   return (
     <>
       <Stack spacing={3}>
         <PageHeader
-          eyebrow="Application packet"
+          eyebrow="Apply Workspace"
           title={`${application.jobPosting.company} · ${application.jobPosting.title}`}
-          description="Review the generated resume, cover letter, strategy, QA warnings, and evidence references before submitting manually."
+          description="Prepare materials, review blockers, launch assisted form filling, and record the manual submission from one place."
           actions={
             <>
               <ActionButton href={`/jobs/${application.jobPostingId}`} variant="outlined" startIcon={<OpenInNewIcon />}>Open job</ActionButton>
@@ -317,59 +354,43 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
           }
         />
 
-        <ApplicationProgressCard steps={workflowProgress.steps} nextAction={workflowProgress.nextAction} />
+        <ApplyWorkspaceHero
+          applicationId={application.id}
+          applicationStatus={application.status}
+          applicationUrl={application.jobPosting.applicationUrl}
+          primaryAction={primaryAction}
+          steps={workflowProgress.steps}
+          matchScore={application.jobProfileMatch?.overallScore ?? null}
+          matchProfile={application.jobProfileMatch?.jobSearchProfile.name ?? null}
+          opportunityScore={evaluation?.opportunityScore ?? null}
+          recommendedProfile={evaluation?.recommendedResumeProfile ?? null}
+          qa={qa}
+          qaIssueCount={qaIssues.length}
+          packetStatus={packet?.status ?? null}
+          packetUpdatedAt={packet?.updatedAt ?? null}
+          approvalReason={approvalState?.reason ?? null}
+          approvalChecklist={approvalChecklist}
+          renderPrimaryAction={<PrimaryWorkspaceAction applicationId={application.id} action={primaryAction} />}
+          renderUrlEditor={<ApplicationUrlEditor applicationId={application.id} initialUrl={application.jobPosting.applicationUrl} />}
+        />
+        <WorkspaceNav />
         {ashbyRisk?.enabled ? <AshbyRiskCard assessment={ashbyRisk} /> : null}
-
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(5, 1fr)" }, gap: 2 }}>
-          <Metric label="Status" value={<StatusChip status={application.status} />} helper="Application workflow" />
-          <Metric label="Match" value={application.jobProfileMatch ? <ScoreChip score={application.jobProfileMatch.overallScore} /> : "n/a"} helper={application.jobProfileMatch?.jobSearchProfile.name ?? "No matched profile"} />
-          <Metric label="Opportunity" value={evaluation ? <ScoreChip score={evaluation.opportunityScore} /> : "n/a"} helper={evaluation?.recommendedResumeProfile ?? "Not evaluated"} />
-          <Metric label="QA" value={qa ? <ScoreChip score={qa.score ?? 0} label={qa.status === "PASS" ? "Pass" : "Review"} /> : "pending"} helper={qaIssues.length ? `${qaIssues.length} review items` : "No issues saved"} />
-          <Metric label="Packet" value={packet ? <StatusChip status={packet.status} /> : "pending"} helper={packet ? `Updated ${packet.updatedAt.toLocaleString()}` : "Prepare package to persist"} />
-        </Box>
-
-        <Card>
-          <CardContent>
-            <Stack spacing={1.5}>
-              <Box>
-                <Typography variant="h3">Application link</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Replace intermediary or blocked job-board links with the final employer application page.
-                </Typography>
-              </Box>
-              <ApplicationUrlEditor applicationId={application.id} initialUrl={application.jobPosting.applicationUrl} />
-            </Stack>
-          </CardContent>
-        </Card>
-
-        <MaterialCard
-          title="Job description"
-          icon={<BusinessOutlinedIcon />}
-          body={application.jobPosting.description}
-          format="description"
-          emptyTitle="No job description saved"
-          emptyBody="The application tracker exists, but this job posting does not have a captured description yet."
-          actions={(
-            <>
-              <ActionButton href={`/jobs/${application.jobPostingId}`} size="small" endIcon={<OpenInNewIcon />}>Open job</ActionButton>
-              {application.jobPosting.applicationUrl ? (
-                <ActionButton href={application.jobPosting.applicationUrl} size="small" endIcon={<OpenInNewIcon />}>Employer form</ActionButton>
-              ) : null}
-              {application.jobPosting.source?.baseUrl ? (
-                <ActionButton href={application.jobPosting.source.baseUrl} size="small" endIcon={<OpenInNewIcon />}>{application.jobPosting.source.name}</ActionButton>
-              ) : null}
-            </>
-          )}
+        <MaterialRepairCard
+          applicationId={application.id}
+          materialQuality={materialQuality}
+          latestRepair={latestMaterialRepair}
+          hasResume={Boolean(application.resume)}
+          hasCoverLetter={Boolean(application.coverLetter)}
         />
 
-        <Card>
+        <Card id="apply">
           <CardContent>
             <Stack spacing={2}>
               <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
                 <Box>
-                  <Typography variant="h3">Packet controls</Typography>
+                  <Typography variant="h3">Secondary actions</Typography>
                   <Typography variant="body2" color="text.secondary">
-                    This app prepares materials and assistant data. Submission stays manual.
+                    Downloads, research helpers, regeneration, and advanced safety controls. The primary next action stays above.
                   </Typography>
                 </Box>
                 <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", justifyContent: { md: "flex-end" } }}>
@@ -381,6 +402,15 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                   <RecruiterOutreachButton applicationId={application.id} />
                   <InterviewPrepButton applicationId={application.id} />
                   <ActionButton
+                    postTo={`/api/applications/${application.id}/material-review/repair`}
+                    variant="contained"
+                    color="warning"
+                    startIcon={<PsychologyOutlinedIcon />}
+                    loadingLabel="Fixing..."
+                  >
+                    Fix material issues
+                  </ActionButton>
+                  <ActionButton
                     postTo={`/api/applications/${application.id}/regenerate-materials`}
                     variant="outlined"
                     color="warning"
@@ -389,21 +419,6 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                   >
                     Regenerate materials
                   </ActionButton>
-                  {approvalState?.canApprove ? <ApprovePacketButton applicationId={application.id} /> : null}
-                  {application.status === "ready_to_apply" && application.resume && application.coverLetter ? (
-                    <>
-                      <ActionButton
-                        postTo={`/api/applications/${application.id}/launch-assistant`}
-                        message="Local assistant launched. Review the browser window and submit manually."
-                        variant="contained"
-                        color="success"
-                        startIcon={<PlayCircleOutlineOutlinedIcon />}
-                      >
-                        Launch assistant
-                      </ActionButton>
-                      <MarkAppliedButton applicationId={application.id} size="medium" />
-                    </>
-                  ) : null}
                 </Stack>
               </Stack>
               {qaIssues.length ? (
@@ -414,7 +429,9 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
               <Alert severity={approvalState?.canApprove ? "success" : "info"}>
                 {approvalState?.canApprove ? "This packet is ready for approval." : approvalState?.reason ?? "Prepare the application package before approval."}
               </Alert>
-              <AutoSubmitOverrideControl applicationId={application.id} autoSubmitOverride={application.autoSubmitOverride} />
+              <AdvancedPanel title="Advanced safety settings">
+                <AutoSubmitOverrideControl applicationId={application.id} autoSubmitOverride={application.autoSubmitOverride} />
+              </AdvancedPanel>
               <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
                 {approvalChecklist.map((item) => (
                   <Chip
@@ -430,7 +447,31 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
           </CardContent>
         </Card>
 
-        <AtsResumeReviewCard review={atsResumeReview} />
+        <WorkspaceSection id="job" title="Job" summary="Job description, source links, and saved posting context.">
+          <MaterialCard
+            title="Job description"
+            icon={<BusinessOutlinedIcon />}
+            body={application.jobPosting.description}
+            format="description"
+            emptyTitle="No job description saved"
+            emptyBody="The application tracker exists, but this job posting does not have a captured description yet."
+            actions={(
+              <>
+                <ActionButton href={`/jobs/${application.jobPostingId}`} size="small" endIcon={<OpenInNewIcon />}>Open job</ActionButton>
+                {application.jobPosting.applicationUrl ? (
+                  <ActionButton href={application.jobPosting.applicationUrl} size="small" endIcon={<OpenInNewIcon />}>Employer form</ActionButton>
+                ) : null}
+                {application.jobPosting.source?.baseUrl ? (
+                  <ActionButton href={application.jobPosting.source.baseUrl} size="small" endIcon={<OpenInNewIcon />}>{application.jobPosting.source.name}</ActionButton>
+                ) : null}
+              </>
+            )}
+          />
+        </WorkspaceSection>
+
+        <Box id="materials" sx={{ scrollMarginTop: 96 }}>
+          <Stack spacing={2}>
+          <AtsResumeReviewCard review={atsResumeReview} />
 
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "1fr 1fr" }, gap: 2 }}>
           <Card>
@@ -477,8 +518,10 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
             ) : null}
           />
         </Box>
+          </Stack>
+        </Box>
 
-        <Card>
+        <Card id="answers" sx={{ scrollMarginTop: 96 }}>
           <CardContent>
             <Stack spacing={2}>
               <Typography variant="h3">Application answers</Typography>
@@ -544,7 +587,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
           </CardContent>
         </Card>
 
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "1fr 1fr" }, gap: 2 }}>
+        <Box id="fit" sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", xl: "1fr 1fr" }, gap: 2, scrollMarginTop: 96 }}>
           <Card>
             <CardContent>
               <Stack spacing={2}>
@@ -584,7 +627,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
           </Card>
         </Box>
 
-        <Card>
+        <Card id="research" sx={{ scrollMarginTop: 96 }}>
           <CardContent>
             <Stack spacing={2}>
               <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
@@ -608,9 +651,11 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
           </CardContent>
         </Card>
 
-        <ThankYouDraftsSection applicationId={application.id} drafts={application.thankYouDrafts} />
+        <Box id="follow-up" sx={{ scrollMarginTop: 96 }}>
+          <ThankYouDraftsSection applicationId={application.id} drafts={application.thankYouDrafts} />
+        </Box>
 
-        <Card>
+        <Card sx={{ scrollMarginTop: 96 }}>
           <CardContent>
             <Stack spacing={2}>
               <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
@@ -636,7 +681,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
           </CardContent>
         </Card>
 
-        <Card>
+        <Card sx={{ scrollMarginTop: 96 }}>
           <CardContent>
             <Stack spacing={2}>
               <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
@@ -672,7 +717,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
           </CardContent>
         </Card>
 
-        <Card>
+        <Card sx={{ scrollMarginTop: 96 }}>
           <CardContent>
             <Stack spacing={2}>
               <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
@@ -707,7 +752,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
           </CardContent>
         </Card>
 
-        <Card>
+        <Card sx={{ scrollMarginTop: 96 }}>
           <CardContent>
             <Stack spacing={2}>
               <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
@@ -765,7 +810,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="history" sx={{ scrollMarginTop: 96 }}>
           <CardContent>
             <Stack spacing={2}>
               <Typography variant="h3">Outcome log</Typography>
@@ -792,7 +837,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
           </CardContent>
         </Card>
 
-        <Card>
+        <Card sx={{ scrollMarginTop: 96 }}>
           <CardContent>
             <Stack spacing={2}>
               <Box>
@@ -835,6 +880,321 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
         </Card>
       </Stack>
     </>
+  );
+}
+
+function ApplyWorkspaceHero({
+  applicationId,
+  applicationStatus,
+  applicationUrl,
+  primaryAction,
+  steps,
+  matchScore,
+  matchProfile,
+  opportunityScore,
+  recommendedProfile,
+  qa,
+  qaIssueCount,
+  packetStatus,
+  packetUpdatedAt,
+  approvalReason,
+  approvalChecklist,
+  renderPrimaryAction,
+  renderUrlEditor,
+}: {
+  applicationId: string;
+  applicationStatus: string;
+  applicationUrl: string | null;
+  primaryAction: ApplyWorkspacePrimaryAction;
+  steps: WorkflowStep[];
+  matchScore: number | null;
+  matchProfile: string | null;
+  opportunityScore: number | null;
+  recommendedProfile: string | null;
+  qa: MaterialNotes["applicationQa"] | undefined;
+  qaIssueCount: number;
+  packetStatus: string | null;
+  packetUpdatedAt: Date | null;
+  approvalReason: string | null;
+  approvalChecklist: ReturnType<typeof packetApprovalChecklist>;
+  renderPrimaryAction: React.ReactNode;
+  renderUrlEditor: React.ReactNode;
+}) {
+  const blockers = [
+    !applicationUrl ? "Missing employer application URL" : null,
+    qaIssueCount ? `${qaIssueCount} QA review item${qaIssueCount === 1 ? "" : "s"}` : null,
+    approvalReason && primaryAction.kind !== "launch_assistant" ? approvalReason : null,
+  ].filter((item): item is string => Boolean(item));
+
+  return (
+    <Card sx={{ borderColor: primaryAction.severity === "warning" ? "warning.main" : "primary.main" }}>
+      <CardContent>
+        <Stack spacing={2.5}>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1.05fr) minmax(280px, 0.9fr) minmax(260px, 0.75fr)" },
+              gap: 2,
+              alignItems: "stretch",
+            }}
+          >
+            <Stack spacing={1.5}>
+              <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+                <StatusChip status={applicationStatus} />
+                {packetStatus ? <StatusChip status={packetStatus} /> : <Chip variant="outlined" label="Packet pending" />}
+                {applicationUrl ? <Chip color="success" variant="outlined" label="Employer URL saved" /> : <Chip color="warning" variant="outlined" label="Employer URL needed" />}
+              </Stack>
+              <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(4, 1fr)", lg: "repeat(2, 1fr)" }, gap: 1 }}>
+                <Metric label="Match" value={matchScore === null ? "n/a" : <ScoreChip score={matchScore} />} helper={matchProfile ?? "No matched profile"} />
+                <Metric label="Opportunity" value={opportunityScore === null ? "n/a" : <ScoreChip score={opportunityScore} />} helper={recommendedProfile ?? "Not evaluated"} />
+                <Metric label="QA" value={qa ? <ScoreChip score={qa.score ?? 0} label={qa.status === "PASS" ? "Pass" : "Review"} /> : "pending"} helper={qaIssueCount ? `${qaIssueCount} review items` : "No issues saved"} />
+                <Metric label="Packet" value={packetStatus ? <StatusChip status={packetStatus} /> : "pending"} helper={packetUpdatedAt ? `Updated ${packetUpdatedAt.toLocaleString()}` : "Prepare package to persist"} />
+              </Box>
+            </Stack>
+
+            <Stack spacing={1.5} sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 2, bgcolor: "background.paper" }}>
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>Recommended next step</Typography>
+                <Typography variant="h3" sx={{ mt: 0.5 }}>{primaryAction.label}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>{primaryAction.detail}</Typography>
+              </Box>
+              {renderPrimaryAction}
+              <Alert severity="info">
+                Assistant can fill fields, upload materials, and stop at the final review screen. You submit manually.
+              </Alert>
+            </Stack>
+
+            <Stack spacing={1.5} sx={{ border: 1, borderColor: blockers.length ? "warning.main" : "divider", borderRadius: 1, p: 2 }}>
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>Blockers and URL</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  Keep the final employer form link current before launching assisted form filling.
+                </Typography>
+              </Box>
+              {blockers.length ? (
+                <Stack spacing={0.75}>
+                  {blockers.map((blocker) => <Alert key={blocker} severity="warning">{blocker}</Alert>)}
+                </Stack>
+              ) : (
+                <Alert severity="success">No launch blockers are visible from saved packet data.</Alert>
+              )}
+              {renderUrlEditor}
+            </Stack>
+          </Box>
+
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", lg: "repeat(6, 1fr)" }, gap: 1 }}>
+            {steps.map((step) => (
+              <Box
+                key={step.label}
+                sx={{
+                  border: 1,
+                  borderColor: step.current ? "primary.main" : step.complete ? "success.main" : "divider",
+                  borderRadius: 1,
+                  p: 1.25,
+                  bgcolor: step.current ? "rgba(37, 99, 235, 0.06)" : "transparent",
+                  minHeight: 104,
+                }}
+              >
+                <Stack spacing={0.75}>
+                  {step.complete ? <CheckCircleOutlineIcon color="success" fontSize="small" /> : <RadioButtonUncheckedIcon color={step.current ? "primary" : "disabled"} fontSize="small" />}
+                  <Typography sx={{ fontWeight: 850 }}>{step.label}</Typography>
+                  <Typography variant="caption" color="text.secondary">{step.detail}</Typography>
+                </Stack>
+              </Box>
+            ))}
+          </Box>
+
+          <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+            {approvalChecklist.map((item) => (
+              <Chip
+                key={`${applicationId}-${item.label}`}
+                color={item.complete ? "success" : "default"}
+                variant={item.complete ? "filled" : "outlined"}
+                label={`${item.complete ? "Done" : "Needed"}: ${item.label}`}
+                title={item.detail}
+              />
+            ))}
+          </Stack>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PrimaryWorkspaceAction({ applicationId, action }: { applicationId: string; action: ApplyWorkspacePrimaryAction }) {
+  if (action.kind === "prepare_packet") {
+    return (
+      <ActionButton
+        postTo={action.postTo}
+        message="Application packet prepared. Review the generated materials before launching the assistant."
+        variant="contained"
+        color="success"
+        startIcon={<ArticleOutlinedIcon />}
+        loadingLabel="Preparing..."
+      >
+        Prepare packet
+      </ActionButton>
+    );
+  }
+  if (action.kind === "approve_packet") {
+    return <ApprovePacketButton applicationId={applicationId} />;
+  }
+  if (action.kind === "launch_assistant") {
+    return (
+      <ActionButton
+        postTo={action.postTo}
+        message="Local assistant launched. Review the browser window and submit manually."
+        variant="contained"
+        color="success"
+        startIcon={<PlayCircleOutlineOutlinedIcon />}
+      >
+        Launch Apply Assistant
+      </ActionButton>
+    );
+  }
+  if (action.kind === "mark_applied") {
+    return <MarkAppliedButton applicationId={applicationId} size="medium" />;
+  }
+  return (
+    <ActionButton href={action.href} variant="contained" color={action.severity === "warning" ? "warning" : "primary"}>
+      {action.label}
+    </ActionButton>
+  );
+}
+
+function MaterialRepairCard({
+  applicationId,
+  materialQuality,
+  latestRepair,
+  hasResume,
+  hasCoverLetter,
+}: {
+  applicationId: string;
+  materialQuality: ReturnType<typeof applicationMaterialQualityFromNotes>;
+  latestRepair: ReturnType<typeof latestMaterialRepairEvent>;
+  hasResume: boolean;
+  hasCoverLetter: boolean;
+}) {
+  const blocked = !hasResume || !hasCoverLetter || materialQuality?.launchable === false;
+  return (
+    <Card id="material-repair" sx={{ borderColor: blocked ? "warning.main" : "divider" }}>
+      <CardContent>
+        <Stack spacing={1.5}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "flex-start" } }}>
+            <Box>
+              <Typography variant="h3">Material repair</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Agents fix blocked resume and cover-letter issues before this application enters Apply Sprint.
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", justifyContent: { md: "flex-end" } }}>
+              <ActionButton
+                postTo={`/api/applications/${applicationId}/material-review/repair`}
+                variant="contained"
+                color="warning"
+                startIcon={<PsychologyOutlinedIcon />}
+                loadingLabel="Fixing..."
+              >
+                Fix material issues
+              </ActionButton>
+              <ActionButton
+                postTo={`/api/applications/${applicationId}/regenerate-materials`}
+                variant="outlined"
+                color="warning"
+                startIcon={<RefreshOutlinedIcon />}
+                loadingLabel="Regenerating..."
+              >
+                Regenerate materials
+              </ActionButton>
+            </Stack>
+          </Stack>
+          <Alert severity={materialQuality?.launchable ? "success" : "warning"}>
+            {materialQuality
+              ? materialQuality.launchable
+                ? "Materials pass quality review."
+                : materialQuality.reason
+              : hasResume && hasCoverLetter
+                ? "Material quality review has not run yet."
+                : "Generate both resume and cover letter before repair."}
+          </Alert>
+          {materialQuality?.reasons.length ? (
+            <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+              {materialQuality.reasons.map((reason) => <Chip key={reason} color="warning" variant="outlined" label={reason.replace(/_/g, " ")} />)}
+            </Stack>
+          ) : null}
+          {latestRepair ? (
+            <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+              <Typography sx={{ fontWeight: 850 }}>Last agent repair</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {latestRepair.status.replace(/_/g, " ")}: {latestRepair.reason}
+              </Typography>
+              {latestRepair.recommendation ? (
+                <Typography variant="caption" color="text.secondary">{latestRepair.recommendation}</Typography>
+              ) : null}
+            </Box>
+          ) : null}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AdvancedPanel({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <Box component="details" sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5 }}>
+      <Typography component="summary" sx={{ cursor: "pointer", fontWeight: 850 }}>
+        {title}
+      </Typography>
+      <Box sx={{ mt: 1.5 }}>
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
+function latestMaterialRepairEvent(events: Array<{ source: string; payload: unknown; createdAt: Date }>) {
+  const event = events.find((item) => item.source === "application_material_issue_repair");
+  const payload = event && event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+    ? event.payload as Record<string, unknown>
+    : null;
+  if (!payload) return null;
+  if (!event) return null;
+  return {
+    status: typeof payload.status === "string" ? payload.status : "unknown",
+    reason: typeof payload.reason === "string" ? payload.reason : "No repair reason recorded.",
+    recommendation: typeof payload.recommendation === "string" ? payload.recommendation : "",
+    createdAt: event.createdAt,
+  };
+}
+
+function WorkspaceNav() {
+  return (
+    <Card>
+      <CardContent sx={{ py: 1.5 }}>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 850, textTransform: "uppercase" }}>
+            Workspace
+          </Typography>
+          {WORKSPACE_NAV_ITEMS.map(([href, label]) => (
+            <Chip key={href} component="a" href={href} clickable variant="outlined" size="small" label={label} />
+          ))}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function WorkspaceSection({ id, title, summary, children }: { id: string; title: string; summary: string; children: React.ReactNode }) {
+  return (
+    <Box id={id} component="details" sx={{ scrollMarginTop: 96, border: 1, borderColor: "divider", borderRadius: 1, p: 2 }}>
+      <Box component="summary" sx={{ cursor: "pointer" }}>
+        <Typography variant="h3" component="span">{title}</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{summary}</Typography>
+      </Box>
+      <Box sx={{ mt: 2 }}>
+        {children}
+      </Box>
+    </Box>
   );
 }
 
@@ -1020,7 +1380,7 @@ function applicationWorkflowProgress({
   hasAppliedOutcome: boolean;
 }) {
   const packetReady = hasPacket && hasResume && hasCoverLetter;
-  const packetApproved = packetStatus === "APPROVED" || packetStatus === "SUBMITTED" || applicationStatus === "ready_to_apply" || Boolean(appliedAt);
+  const packetApproved = isPacketApproved(packetStatus, applicationStatus, appliedAt);
   const submitted = Boolean(appliedAt) || hasAppliedOutcome || packetStatus === "SUBMITTED";
   const steps: WorkflowStep[] = [
     { label: "Review fit", detail: "Job is approved and has a tracker.", complete: true, current: false },
@@ -1035,23 +1395,31 @@ function applicationWorkflowProgress({
   if (!packetReady) {
     return {
       steps,
+      assistantLaunched,
+      submitted,
       nextAction: { href: `/jobs/${jobPostingId}`, label: "Prepare packet", detail: current?.detail ?? "Prepare application materials." },
     };
   }
   if (canApprovePacket) {
     return {
       steps,
+      assistantLaunched,
+      submitted,
       nextAction: { href: `/applications/${applicationId}`, label: "Approve packet", detail: "The packet is ready for your approval." },
     };
   }
   if (packetApproved && !assistantLaunched) {
     return {
       steps,
+      assistantLaunched,
+      submitted,
       nextAction: { href: "/applications/assistant", label: "Open Apply Sprint", detail: "Launch the local assistant to fill the employer form." },
     };
   }
   return {
     steps,
+    assistantLaunched,
+    submitted,
     nextAction: { href: `/applications/${applicationId}`, label: submitted ? "Update outcome" : "Review application", detail: current?.detail ?? "Review the application workflow state." },
   };
 }

@@ -17,9 +17,9 @@ import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
+import dynamicImport from "next/dynamic";
 import { ActionButton } from "@/components/action-button";
 import { RunSearchControl } from "@/components/run-search-control";
-import { SearchRunAnalyticsCharts } from "@/components/search-run-analytics-charts";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip } from "@/components/ui/status-chip";
@@ -27,6 +27,10 @@ import { buildSearchRunAnalytics } from "@/lib/job-search/run-analytics";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
+
+const SearchRunAnalyticsCharts = dynamicImport(
+  () => import("@/components/search-run-analytics-charts").then((module) => module.SearchRunAnalyticsCharts),
+);
 
 export default async function RunsPage() {
   const runs = await prisma.jobSearchRun.findMany({

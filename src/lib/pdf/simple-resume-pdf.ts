@@ -3,6 +3,10 @@
 // Two typographic presets. All visual decisions (size, spacing, color, weight)
 // live in the preset object. Nothing is hardcoded in the rendering functions.
 //
+//   "ats_single_column" — conservative ATS-safe resume: one column, standard
+//                  fonts, body contact info, normal dash bullets, no icons,
+//                  images, chips, tables, columns, or decorative rules.
+//
 //   "atelier"    — premium editorial resume. Generous margins, serif display
 //                  type, warm ink, muted brass rules, and a quiet grid.
 //
@@ -17,10 +21,12 @@
 
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
+const CONTACT_SEPARATOR = "  |  ";
+const CONTACT_ROW_GAP = 12.5;
 
 type BulletMarker = "dash" | "square";
 type FontFace = "regular" | "bold" | "serif" | "serifBold";
-export type PdfPreset = "atelier" | "tschichold" | "swiss";
+export type PdfPreset = "ats_single_column" | "atelier" | "tschichold" | "swiss";
 
 type DesignPreset = {
   // Page grid
@@ -55,6 +61,10 @@ type DesignPreset = {
   sectionRuleWeight: number;
   sectionRuleColorCmd: string;
   sectionRuleOffset: number; // pts below text baseline
+  showSectionRules?: boolean;
+  showHeaderDivider?: boolean;
+  splitContactLine?: boolean;
+  showUrlUnderlines?: boolean;
 
   // Roles
   roleSize: number;
@@ -85,6 +95,66 @@ type DesignPreset = {
   wrapRole: number;
   wrapBullet: number;
   wrapBody: number;
+};
+
+const ATS_SINGLE_COLUMN: DesignPreset = {
+  left: 72,
+  right: 540,
+  bodyTopP1: 690,
+  bodyTopPN: 730,
+  bottom: 64,
+
+  pageColorCmd: "1 1 1 rg",
+
+  nameY: 756,
+  nameSize: 18,
+  nameTracking: 0,
+  nameFont: "bold",
+  contactY: 737,
+  contactSize: 8.8,
+  contactColorCmd: "0 0 0 rg",
+  dividerY: 724,
+  dividerWeight: 0,
+  dividerColorCmd: "0 0 0 RG",
+  urlColorCmd: "0 0 0 rg",
+
+  sectionSize: 10,
+  sectionTracking: 0,
+  sectionFont: "bold",
+  sectionGapBefore: 18,
+  sectionLeading: 15,
+  sectionRuleWeight: 0,
+  sectionRuleColorCmd: "0 0 0 RG",
+  sectionRuleOffset: 0,
+  showSectionRules: false,
+  showHeaderDivider: false,
+  splitContactLine: false,
+  showUrlUnderlines: false,
+
+  roleSize: 10,
+  roleFont: "bold",
+  roleGapBefore: 10,
+  roleLeading: 13,
+  dateSize: 9,
+  dateColorCmd: "0 0 0 rg",
+
+  bulletSize: 9.5,
+  bulletLeading: 12.8,
+  bulletGapBefore: 2,
+  bulletIndent: 12,
+  bulletMarker: "dash",
+
+  bodySize: 9.5,
+  bodyFont: "regular",
+  bodyLeading: 13.2,
+  bodyGapBefore: 3,
+
+  spaceLeading: 4,
+
+  wrapSection: 88,
+  wrapRole: 70,
+  wrapBullet: 84,
+  wrapBody: 88,
 };
 
 const ATELIER: DesignPreset = {
@@ -255,7 +325,12 @@ const SWISS: DesignPreset = {
   wrapBody: 90,
 };
 
-const PRESETS: Record<PdfPreset, DesignPreset> = { atelier: ATELIER, tschichold: TSCHICHOLD, swiss: SWISS };
+const PRESETS: Record<PdfPreset, DesignPreset> = {
+  ats_single_column: ATS_SINGLE_COLUMN,
+  atelier: ATELIER,
+  tschichold: TSCHICHOLD,
+  swiss: SWISS,
+};
 
 // ─── Line types ───────────────────────────────────────────────────────────────
 
@@ -276,6 +351,12 @@ type PdfLine = {
 type UrlAnnotation = {
   uri: string;
   rect: [number, number, number, number]; // x1 y1 x2 y2 in PDF coordinates
+};
+
+type ContactRenderPart = {
+  display: string;
+  uri: string | null;
+  width: number;
 };
 
 type StyleDef = {
@@ -388,7 +469,7 @@ function preprocess(text: string): Preprocessed {
   for (let j = nameIdx + 1; j < Math.min(nameIdx + 6, lines.length); j += 1) {
     const trimmed = lines[j].trim();
     if (!trimmed) { bodyStart = j + 1; continue; }
-    if (/@|https?:\/\/|\|/.test(trimmed)) {
+    if (isContactHeaderLine(trimmed)) {
       contactParts.push(
         ...trimmed.split(/\s*\|\s*/).map((p) => normalizeContactPart(p.trim())).filter(Boolean),
       );
@@ -417,6 +498,24 @@ function normalizeContactPart(part: string): string {
     }
   }
   return labelStripped;
+}
+
+function isContactHeaderLine(line: string): boolean {
+  const parts = line.split(/\s*\|\s*/).map((part) => part.trim()).filter(Boolean);
+  return parts.some(isContactPart) && !parts.some(isLikelyCoverLetterTargetPart);
+}
+
+function isContactPart(part: string): boolean {
+  return /^(email|phone|tel|mobile|cell|linkedin|github|location|address|website|url|portfolio)\s*:/i.test(part) ||
+    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(part) ||
+    /https?:\/\//i.test(part) ||
+    /\b(?:linkedin|github)\.com\b/i.test(part) ||
+    /\b[a-z0-9-]+\.(?:com|dev|io|net|org|ai)\b/i.test(part) ||
+    /(?:\+?\d[\d().\s-]{6,}\d)/.test(part);
+}
+
+function isLikelyCoverLetterTargetPart(part: string): boolean {
+  return /\b(senior|staff|principal|lead|client partner|engineer|developer|manager|director|designer|architect|analyst|consultant|specialist|frontend|front-end|full-stack|software|product)\b/i.test(part);
 }
 
 // ─── Line classification ──────────────────────────────────────────────────────
@@ -473,7 +572,7 @@ function toPdfLines(bodyText: string, styles: Record<LineKind, StyleDef>): PdfLi
 
 function classifyLine(line: string, currentSection: string): LineKind {
   if (!line) return "space";
-  if (/^(Summary|Skills|Professional Experience|Projects|Education|Certifications|Experience|Cover Letter)$/i.test(line)) return "section";
+  if (/^(Professional Summary|Summary|Skills|Professional Experience|Projects|Education|Certifications|Experience|Cover Letter)$/i.test(line)) return "section";
   if (currentSection === "projects" && isProjectTitleLine(line)) return "project";
   if (/^- /.test(line)) return "bullet";
   if (/^[A-Z][A-Za-z0-9 .&,/-]+ - .+/.test(line)) return "role";
@@ -545,64 +644,124 @@ function renderHeader(
   }
   cmds.push("ET");
 
-  const contactParts = contactLine ? contactLine.split("  |  ") : [];
-  const leftParts = contactParts.filter((pt) => !isWebUrl(pt));  // email, phone
-  const rightParts = contactParts.filter((pt) => isWebUrl(pt));  // LinkedIn, GitHub
-  const sep = "  |  ";
   const contactY = p.contactY;
+  const contactParts = contactLine ? contactLine.split(CONTACT_SEPARATOR).filter(Boolean) : [];
+  const maxContactWidth = p.right - p.left;
+  let lowestContactY = contactY;
 
-  function renderGroup(parts: string[], startX: number): void {
-    if (!parts.length) return;
+  function renderRow(row: ContactRenderPart[], startX: number, y: number): void {
+    if (!row.length) return;
     cmds.push("BT");
     cmds.push(p.contactColorCmd);
     cmds.push(`/F1 ${p.contactSize} Tf`);
     cmds.push("0 Tc");
     let x = startX;
-    for (let i = 0; i < parts.length; i += 1) {
+    for (let i = 0; i < row.length; i += 1) {
       if (i > 0) {
-        cmds.push(`1 0 0 1 ${x.toFixed(2)} ${contactY} Tm`);
-        cmds.push(`(${escapePdfText(sep)}) Tj`);
-        x += textWidth(sep, p.contactSize);
+        cmds.push(`1 0 0 1 ${x.toFixed(2)} ${y} Tm`);
+        cmds.push(`(${escapePdfText(CONTACT_SEPARATOR)}) Tj`);
+        x += textWidth(CONTACT_SEPARATOR, p.contactSize);
       }
-      const part = parts[i];
-      const pw = textWidth(part, p.contactSize);
-      const uri = displayTextToUri(part);
-      if (uri) cmds.push(p.urlColorCmd);
-      cmds.push(`1 0 0 1 ${x.toFixed(2)} ${contactY} Tm`);
-      cmds.push(`(${escapePdfText(part)}) Tj`);
-      if (uri) {
+      const part = row[i];
+      if (part.uri) cmds.push(p.urlColorCmd);
+      cmds.push(`1 0 0 1 ${x.toFixed(2)} ${y} Tm`);
+      cmds.push(`(${escapePdfText(part.display)}) Tj`);
+      if (part.uri) {
         cmds.push(p.contactColorCmd);
-        annotations.push({ uri, rect: [x, contactY - 2, x + pw, contactY + p.contactSize] });
+        annotations.push({ uri: part.uri, rect: [x, y - 2, x + part.width, y + p.contactSize] });
       }
-      x += pw;
+      x += part.width;
     }
     cmds.push("ET");
   }
 
-  renderGroup(leftParts, p.left);
-
-  if (rightParts.length > 0) {
-    let totalW = 0;
-    for (let i = 0; i < rightParts.length; i += 1) {
-      if (i > 0) totalW += textWidth(sep, p.contactSize);
-      totalW += textWidth(rightParts[i], p.contactSize);
+  function renderRows(rows: ContactRenderPart[][], y: number, align: "left" | "right"): number {
+    let currentY = y;
+    for (const row of rows) {
+      const rowW = contactRowWidth(row, p.contactSize);
+      renderRow(row, align === "right" ? p.right - rowW : p.left, currentY);
+      currentY -= CONTACT_ROW_GAP;
     }
-    renderGroup(rightParts, p.right - totalW);
+    return rows.length ? currentY + CONTACT_ROW_GAP : y;
+  }
+
+  if (p.splitContactLine === false) {
+    lowestContactY = renderRows(contactRows(contactParts, maxContactWidth, p.contactSize), contactY, "left");
+  } else {
+    const leftParts = contactParts.filter((pt) => !isWebUrl(pt));  // email, phone
+    const rightParts = contactParts.filter((pt) => isWebUrl(pt));  // LinkedIn, GitHub
+    const leftRows = contactRows(leftParts, maxContactWidth, p.contactSize);
+    const rightRows = contactRows(rightParts, maxContactWidth, p.contactSize);
+    const leftW = leftRows[0] ? contactRowWidth(leftRows[0], p.contactSize) : 0;
+    const rightW = rightRows[0] ? contactRowWidth(rightRows[0], p.contactSize) : 0;
+
+    if (leftRows.length <= 1 && rightRows.length <= 1 && leftW + rightW + 18 <= maxContactWidth) {
+      lowestContactY = contactY;
+      renderRows(leftRows, contactY, "left");
+      renderRows(rightRows, contactY, "right");
+    } else {
+      lowestContactY = renderRows(contactRows(contactParts, maxContactWidth, p.contactSize), contactY, "left");
+    }
   }
 
   // Thin underlines beneath URL parts as visual affordance
-  for (const ann of annotations) {
+  for (const ann of p.showUrlUnderlines === false ? [] : annotations) {
     const uly = (ann.rect[1] + 1).toFixed(2);
     cmds.push(
       `q 0.55 0.55 0.55 RG 0.3 w ${ann.rect[0].toFixed(2)} ${uly} m ${ann.rect[2].toFixed(2)} ${uly} l S Q`,
     );
   }
 
-  cmds.push(
-    `q ${p.dividerColorCmd} ${p.dividerWeight} w ${p.left} ${p.dividerY} m ${p.right} ${p.dividerY} l S Q`,
-  );
+  if (p.showHeaderDivider !== false) {
+    const dividerY = Math.min(p.dividerY, lowestContactY - 10);
+    cmds.push(
+      `q ${p.dividerColorCmd} ${p.dividerWeight} w ${p.left} ${dividerY} m ${p.right} ${dividerY} l S Q`,
+    );
+  }
 
   return { content: cmds.join("\n"), annotations };
+}
+
+function contactRows(parts: string[], maxWidth: number, size: number): ContactRenderPart[][] {
+  const rows: ContactRenderPart[][] = [];
+  let row: ContactRenderPart[] = [];
+  let rowW = 0;
+  const sepW = textWidth(CONTACT_SEPARATOR, size);
+
+  for (const part of parts) {
+    const display = fitTextToWidth(part, maxWidth, size);
+    const item: ContactRenderPart = {
+      display,
+      uri: displayTextToUri(part),
+      width: textWidth(display, size),
+    };
+    const nextW = row.length ? rowW + sepW + item.width : item.width;
+    if (row.length && nextW > maxWidth) {
+      rows.push(row);
+      row = [item];
+      rowW = item.width;
+    } else {
+      row.push(item);
+      rowW = nextW;
+    }
+  }
+
+  if (row.length) rows.push(row);
+  return rows;
+}
+
+function contactRowWidth(row: ContactRenderPart[], size = 8.5): number {
+  return row.reduce((total, part, index) => total + part.width + (index > 0 ? textWidth(CONTACT_SEPARATOR, size) : 0), 0);
+}
+
+function fitTextToWidth(value: string, maxWidth: number, size: number): string {
+  if (textWidth(value, size) <= maxWidth) return value;
+  const suffix = "...";
+  let end = value.length;
+  while (end > 8 && textWidth(`${value.slice(0, end)}${suffix}`, size) > maxWidth) {
+    end -= 1;
+  }
+  return `${value.slice(0, end).replace(/[./_-]+$/, "")}${suffix}`;
 }
 
 function renderBodyPage(lines: PdfLine[], startY: number, p: DesignPreset): string {
@@ -626,9 +785,11 @@ function renderBodyPage(lines: PdfLine[], startY: number, p: DesignPreset): stri
       cmds.push(`1 0 0 1 ${p.left} ${y} Tm`);
       cmds.push(`(${escapePdfText(line.text.toUpperCase())}) Tj`);
       endText();
-      // Thin rule below label — structural marker, not decoration
-      const ry = y - p.sectionRuleOffset;
-      cmds.push(`q ${p.sectionRuleColorCmd} ${p.sectionRuleWeight} w ${p.left} ${ry} m ${p.right} ${ry} l S Q`);
+      if (p.showSectionRules !== false) {
+        // Thin rule below label — structural marker, not decoration
+        const ry = y - p.sectionRuleOffset;
+        cmds.push(`q ${p.sectionRuleColorCmd} ${p.sectionRuleWeight} w ${p.left} ${ry} m ${p.right} ${ry} l S Q`);
+      }
       y -= line.leading;
       continue;
     }

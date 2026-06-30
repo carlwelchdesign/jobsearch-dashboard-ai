@@ -15,6 +15,8 @@ import PlayCircleOutlineOutlinedIcon from "@mui/icons-material/PlayCircleOutline
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import BoltOutlinedIcon from "@mui/icons-material/BoltOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
+import CheckCircleOutlineOutlinedIcon from "@mui/icons-material/CheckCircleOutlineOutlined";
+import ReportProblemOutlinedIcon from "@mui/icons-material/ReportProblemOutlined";
 import Link from "next/link";
 import { ActionButton } from "@/components/action-button";
 import { AgencyRunControl } from "@/components/agency-run-control";
@@ -24,6 +26,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusChip, formatStatus } from "@/components/ui/status-chip";
 import { assessApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import { applicationJobKeySet, hasApplicationForJob } from "@/lib/applications/job-filters";
+import { classifyApplicationPrepReadiness, type ApplicationPrepReadiness } from "@/lib/applications/prep-readiness";
 import { visibleCanonicalApplications } from "@/lib/applications/reconciliation";
 import { uniqueMatchesByCanonicalJob } from "@/lib/job-search/unique-matches";
 import { isJobSuppressed, loadJobSuppressionStatesByUserIds } from "@/lib/jobs/suppression";
@@ -37,7 +40,7 @@ import { MarkAppliedButton } from "./mark-applied-button";
 
 export const dynamic = "force-dynamic";
 
-const columns = ["approved", "ready_to_apply", "applied", "follow_up_due", "screening", "interviewing", "offer", "archived"];
+const columns = ["approved", "material_blocked", "ready_to_apply", "applied", "follow_up_due", "screening", "interviewing", "offer", "archived"];
 const commandButtonSx = {
   minHeight: 42,
   width: "100%",
@@ -70,7 +73,7 @@ export default async function ApplicationsPage() {
           },
         },
         resume: { select: { id: true } },
-        coverLetter: { select: { id: true } },
+        coverLetter: { select: { id: true, generationNotes: true } },
         applicationPackets: { select: { id: true }, take: 1 },
         emailMessages: {
           where: { classification: "AUTOMATED_CONFIRMATION" },
@@ -95,6 +98,16 @@ export default async function ApplicationsPage() {
     prisma.emailOAuthConnection.findFirst({ select: { id: true } }),
   ]);
   const visibleApplications = visibleCanonicalApplications(applications);
+  const approvedApplications = visibleApplications.filter((application) => application.status === "approved");
+  const approvedReadiness = approvedApplications.map((application) => classifyVisibleApplicationReadiness(application));
+  const approvedLaunchableCount = approvedReadiness.filter((readiness) => readiness.kind !== "no_direct_url").length;
+  const approvedMissingUrlCount = approvedReadiness.filter((readiness) => readiness.kind === "no_direct_url").length;
+  const approvedMissingMaterialsCount = approvedReadiness.filter((readiness) => readiness.kind === "needs_materials").length;
+  const approvedMaterialBlockedCount = approvedReadiness.filter((readiness) => readiness.kind === "material_blocked").length;
+  const readyLaunchableCount = visibleApplications.filter((application) => (
+    application.status === "ready_to_apply"
+    && assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable
+  )).length;
   const suppressionStates = await loadJobSuppressionStatesByUserIds(rawAgencyMatches.map((match) => match.jobSearchProfile.userId));
   const trackedJobKeys = applicationJobKeySet(visibleApplications);
   const agencyCandidates = uniqueMatchesByCanonicalJob(
@@ -106,11 +119,9 @@ export default async function ApplicationsPage() {
     }),
   );
   const nextAction = applicationsNextAction({
-    approvedCount: visibleApplications.filter((application) => application.status === "approved").length,
-    readyCount: visibleApplications.filter((application) => (
-      application.status === "ready_to_apply"
-      && assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable
-    )).length,
+    approvedCount: approvedApplications.length,
+    approvedLaunchableCount,
+    readyCount: readyLaunchableCount,
     agencyCandidateCount: agencyCandidates.length,
   });
 
@@ -128,6 +139,15 @@ export default async function ApplicationsPage() {
         />
         <ServiceFallbackBanners items={fallbacks} />
         <LifecycleReadinessContext stages={["apply", "follow_up", "interview", "outcome"]} title="Application lifecycle readiness" />
+        {approvedApplications.length ? (
+          <ApprovedToReadyPanel
+            approvedCount={approvedApplications.length}
+            launchableCount={approvedLaunchableCount}
+            missingUrlCount={approvedMissingUrlCount}
+            missingMaterialsCount={approvedMissingMaterialsCount}
+            materialBlockedCount={approvedMaterialBlockedCount}
+          />
+        ) : null}
         <Card sx={{ borderColor: nextAction.color === "success" ? "success.main" : "primary.main", bgcolor: nextAction.color === "success" ? "rgba(16, 185, 129, 0.08)" : "rgba(37, 99, 235, 0.08)" }}>
           <CardContent>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
@@ -207,7 +227,7 @@ export default async function ApplicationsPage() {
                     <Box sx={{ display: "grid", gridTemplateColumns: "1fr", gap: 1.25 }}>
                       <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
                         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-                          Recover approved applications into Apply Sprint
+                          Prepare approved applications for Apply
                         </Typography>
                         <BulkMoveToSprintControl buttonSx={commandButtonSx} />
                       </Box>
@@ -235,14 +255,25 @@ export default async function ApplicationsPage() {
         </Card>
         <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)", xl: "repeat(4, 1fr)" }, gap: 2 }}>
           {columns.map((status) => {
-            const items = visibleApplications.filter((application) => application.status === status);
+            const items = visibleApplications.filter((application) => applicationBoardColumn(application) === status);
             const isReadyColumn = status === "ready_to_apply";
+            const isMaterialBlockedColumn = status === "material_blocked";
             return (
-              <Card key={status} sx={{ minHeight: 220, borderColor: isReadyColumn && items.length ? "success.main" : "divider" }}>
+              <Card key={status} sx={{ minHeight: 220, borderColor: isReadyColumn && items.length ? "success.main" : isMaterialBlockedColumn && items.length ? "warning.main" : "divider" }}>
                 <CardContent>
                   <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between", alignItems: "flex-start" }}>
                     <Box>
                       <StatusChip status={status} />
+                      {status === "approved" ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
+                          These are approved and still eligible for packet prep.
+                        </Typography>
+                      ) : null}
+                      {isMaterialBlockedColumn ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
+                          These passed job review, but their generated materials failed QA or generation.
+                        </Typography>
+                      ) : null}
                       {isReadyColumn ? (
                         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75 }}>
                           These applications are already in Apply Sprint.
@@ -264,11 +295,34 @@ export default async function ApplicationsPage() {
                       Open {items.length} in Apply Sprint
                     </Button>
                   ) : null}
+                  {status === "approved" && items.length ? (
+                    <Box sx={{ mt: 1.5 }}>
+                      <BulkMoveToSprintControl
+                        buttonSx={{ width: "100%", justifyContent: "flex-start" }}
+                        label="Prepare approved for Ready to apply"
+                        loadingLabel="Preparing..."
+                      />
+                    </Box>
+                  ) : null}
+                  {isMaterialBlockedColumn && items.length ? (
+                    <Box sx={{ mt: 1.5 }}>
+                      <BulkMoveToSprintControl
+                        buttonSx={{ width: "100%", justifyContent: "flex-start" }}
+                        buttonColor="warning"
+                        queue="material_blocked"
+                        label="Fix material issues"
+                        loadingLabel="Fixing..."
+                        startNotice="Agents are repairing blocked resumes and cover letters. Passing applications will move to Ready to apply."
+                      />
+                    </Box>
+                  ) : null}
                   <Stack spacing={1.5} sx={{ mt: 2 }}>
                     {items.length === 0 ? (
                       <Typography variant="body2" color="text.secondary">
                         {isReadyColumn
                           ? "No applications are currently in Apply Sprint."
+                          : isMaterialBlockedColumn
+                            ? "No applications are waiting on material review."
                           : `No ${formatStatus(status)} applications.`}
                       </Typography>
                     ) : (
@@ -282,11 +336,40 @@ export default async function ApplicationsPage() {
                             {application.applicationPackets.length ? <Chip size="small" color="primary" variant="outlined" label="Packet" /> : null}
                             {application.emailMessages.length ? <Chip size="small" color="success" label="Received" /> : null}
                           </Stack>
+                          {application.status === "approved" ? (
+                            <ApplicationPrepChecklist
+                              hasResume={Boolean(application.resume)}
+                              hasCoverLetter={Boolean(application.coverLetter)}
+                              hasPacket={Boolean(application.applicationPackets.length)}
+                              readiness={classifyVisibleApplicationReadiness(application)}
+                            />
+                          ) : null}
                           <Box sx={{ mt: 1 }}>
+                            {isMaterialBlockedColumn ? (
+                              <ActionButton
+                                postTo={`/api/applications/${application.id}/material-review/repair`}
+                                size="small"
+                                variant="contained"
+                                color="warning"
+                                startIcon={<BoltOutlinedIcon />}
+                                runInBackground
+                                loadingLabel="Fixing..."
+                              >
+                                Fix material issue
+                              </ActionButton>
+                            ) : (
                             <ActionButton href={`/applications/${application.id}`} size="small" variant="outlined" startIcon={<FactCheckOutlinedIcon />}>
-                              Review packet
+                              {isMaterialBlockedColumn ? "Review material issue" : "Review packet"}
                             </ActionButton>
+                            )}
                           </Box>
+                          {isMaterialBlockedColumn ? (
+                            <Box sx={{ mt: 1 }}>
+                              <ActionButton href={`/applications/${application.id}#material-repair`} size="small" variant="outlined" startIcon={<FactCheckOutlinedIcon />}>
+                                View repair details
+                              </ActionButton>
+                            </Box>
+                          ) : null}
                           {application.status === "ready_to_apply" && application.resume && application.coverLetter && assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable ? (
                             <Box sx={{ mt: 1 }}>
                               <Button
@@ -362,16 +445,51 @@ export default async function ApplicationsPage() {
   );
 }
 
-function applicationsNextAction({ approvedCount, readyCount, agencyCandidateCount }: { approvedCount: number; readyCount: number; agencyCandidateCount: number }) {
+function applicationsNextAction({
+  approvedCount,
+  approvedLaunchableCount,
+  readyCount,
+  agencyCandidateCount,
+}: {
+  approvedCount: number;
+  approvedLaunchableCount: number;
+  readyCount: number;
+  agencyCandidateCount: number;
+}) {
   if (readyCount > 0) {
     return {
-      title: "Work Apply Sprint",
-      detail: "Ready applications have resume and cover letter materials. Open the sprint console to launch the assistant and track submission.",
+      title: "Work Ready to apply",
+      detail: "Ready to apply applications have a direct URL plus launchable resume and cover letter materials. Open the sprint console to launch the assistant and track submission.",
       label: "Open sprint console",
       href: "/applications/assistant",
       color: "success" as const,
       icon: <BoltOutlinedIcon />,
       count: readyCount,
+    };
+  }
+  if (approvedCount > 0) {
+    if (approvedLaunchableCount === 0) {
+      return {
+        title: "Fix approved application URLs",
+        detail: "Approved applications need a direct employer or ATS form URL before they can move into Ready to apply.",
+        label: "Review approved",
+        href: "#approved",
+        color: "primary" as const,
+        icon: <ReportProblemOutlinedIcon />,
+        count: approvedCount,
+      };
+    }
+    return {
+      title: "Prepare approved applications",
+      detail: "Generate or validate packets, regenerate blocked letters if needed, then move launchable applications into Ready to apply.",
+      label: "Prepare approved for Ready to apply",
+      postTo: "/api/applications/bulk-move-to-sprint",
+      body: { limit: Math.min(Math.max(approvedLaunchableCount, 1), 250), regenerateBlockedMaterials: true },
+      runInBackground: true,
+      loadingLabel: "Preparing...",
+      color: "primary" as const,
+      icon: <BoltOutlinedIcon />,
+      count: approvedCount,
     };
   }
   if (agencyCandidateCount > 0) {
@@ -388,20 +506,6 @@ function applicationsNextAction({ approvedCount, readyCount, agencyCandidateCoun
       count: agencyCandidateCount,
     };
   }
-  if (approvedCount > 0) {
-    return {
-      title: "Move approved applications to Apply Sprint",
-      detail: "Approved applications need packets and ready status before the assistant can work them.",
-      label: "Bulk move to sprint",
-      postTo: "/api/applications/bulk-move-to-sprint",
-      body: { limit: Math.min(Math.max(approvedCount, 1), 250) },
-      runInBackground: true,
-      loadingLabel: "Moving...",
-      color: "primary" as const,
-      icon: <BoltOutlinedIcon />,
-      count: approvedCount,
-    };
-  }
   return {
     title: "Run search",
     detail: "Search results with usable application links will be prepared for Apply Sprint automatically.",
@@ -410,4 +514,145 @@ function applicationsNextAction({ approvedCount, readyCount, agencyCandidateCoun
     color: "primary" as const,
     icon: <FactCheckOutlinedIcon />,
   };
+}
+
+function ApprovedToReadyPanel({
+  approvedCount,
+  launchableCount,
+  missingUrlCount,
+  missingMaterialsCount,
+  materialBlockedCount,
+}: {
+  approvedCount: number;
+  launchableCount: number;
+  missingUrlCount: number;
+  missingMaterialsCount: number;
+  materialBlockedCount: number;
+}) {
+  return (
+    <Card id="approved" sx={{ borderColor: "primary.main" }}>
+      <CardContent>
+        <Stack spacing={2}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "center" } }}>
+            <Box>
+              <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap", mb: 1 }}>
+                <Chip size="small" color="primary" label={`${approvedCount} approved`} />
+                <Chip size="small" color={launchableCount ? "success" : "warning"} variant="outlined" label={`${launchableCount} with direct URL`} />
+                {missingMaterialsCount ? <Chip size="small" color="warning" variant="outlined" label={`${missingMaterialsCount} need materials`} /> : null}
+                {materialBlockedCount ? <Chip size="small" color="warning" variant="outlined" label={`${materialBlockedCount} material-blocked`} /> : null}
+                {missingUrlCount ? <Chip size="small" color="warning" variant="outlined" label={`${missingUrlCount} need URL`} /> : null}
+              </Stack>
+              <Typography variant="h3">Approved to Ready</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 760 }}>
+                Approved means the job passed review. Ready to apply means it has a direct application URL plus launchable resume and cover-letter materials. This also archives approved items without direct URLs.
+              </Typography>
+            </Box>
+            {launchableCount ? (
+              <BulkMoveToSprintControl
+                label="Prepare approved for Ready to apply"
+                loadingLabel="Preparing..."
+                buttonSx={{ minHeight: 44, px: 2.25 }}
+              />
+            ) : (
+              <ActionButton href="#approved" variant="contained" color="warning" startIcon={<ReportProblemOutlinedIcon />}>
+                Add direct URLs first
+              </ActionButton>
+            )}
+          </Stack>
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" }, gap: 1 }}>
+            <ReadinessStep complete={launchableCount > 0} title="1. Direct employer URL" detail="Board, auth, paywall, or listing URLs cannot launch the assistant." />
+            <ReadinessStep complete={missingMaterialsCount === 0} title="2. Resume and cover letter" detail="The prep action generates missing materials and regenerates blocked cover letters." />
+            <ReadinessStep complete={false} title="3. Ready to apply" detail="Passing applications move to Ready to apply. No-URL items archive; material-blocked items stay approved with their reason." />
+          </Box>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ApplicationPrepChecklist({
+  hasResume,
+  hasCoverLetter,
+  hasPacket,
+  readiness,
+}: {
+  hasResume: boolean;
+  hasCoverLetter: boolean;
+  hasPacket: boolean;
+  readiness: ApplicationPrepReadiness;
+}) {
+  const launchableUrl = readiness.kind !== "no_direct_url";
+  const blockers = [
+    launchableUrl ? null : "Archives on prep: no direct employer/ATS URL",
+    hasResume ? null : "Needs resume",
+    hasCoverLetter ? null : "Needs cover letter",
+    readiness.kind === "material_blocked" ? readiness.reason : null,
+  ].filter((item): item is string => Boolean(item));
+
+  return (
+    <Box sx={{ mt: 1, border: 1, borderColor: blockers.length ? "warning.main" : "success.main", borderRadius: 1, p: 1 }}>
+      <Stack spacing={0.75}>
+        <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+          <PrepChip complete={launchableUrl} label="Direct URL" />
+          <PrepChip complete={hasResume} label="Resume" />
+          <PrepChip complete={hasCoverLetter} label="Cover letter" />
+          <PrepChip complete={hasPacket} label="Packet" />
+        </Stack>
+        <Typography variant="caption" color="text.secondary">
+          {blockers.length
+            ? blockers.join(". ")
+            : "Ready for packet validation. Prepare approved will move this when material quality passes."}
+        </Typography>
+      </Stack>
+    </Box>
+  );
+}
+
+function classifyVisibleApplicationReadiness(application: {
+  resume: { id: string } | null;
+  coverLetter: { id: string; generationNotes: unknown } | null;
+  jobPosting: { applicationUrl: string | null };
+}) {
+  return classifyApplicationPrepReadiness({
+    resumeId: application.resume?.id ?? null,
+    coverLetterId: application.coverLetter?.id ?? null,
+    coverLetter: application.coverLetter,
+    jobPosting: application.jobPosting,
+  });
+}
+
+function applicationBoardColumn(application: {
+  status: string;
+  resume: { id: string } | null;
+  coverLetter: { id: string; generationNotes: unknown } | null;
+  jobPosting: { applicationUrl: string | null };
+}) {
+  if (application.status === "approved" && classifyVisibleApplicationReadiness(application).kind === "material_blocked") {
+    return "material_blocked";
+  }
+  return application.status;
+}
+
+function PrepChip({ complete, label }: { complete: boolean; label: string }) {
+  return (
+    <Chip
+      size="small"
+      color={complete ? "success" : "warning"}
+      variant={complete ? "filled" : "outlined"}
+      icon={complete ? <CheckCircleOutlineOutlinedIcon /> : <ReportProblemOutlinedIcon />}
+      label={label}
+    />
+  );
+}
+
+function ReadinessStep({ complete, title, detail }: { complete: boolean; title: string; detail: string }) {
+  return (
+    <Box sx={{ border: 1, borderColor: complete ? "success.main" : "divider", borderRadius: 1, p: 1.5 }}>
+      <Stack spacing={0.75}>
+        {complete ? <CheckCircleOutlineOutlinedIcon color="success" fontSize="small" /> : <ReportProblemOutlinedIcon color="warning" fontSize="small" />}
+        <Typography sx={{ fontWeight: 850 }}>{title}</Typography>
+        <Typography variant="caption" color="text.secondary">{detail}</Typography>
+      </Stack>
+    </Box>
+  );
 }
