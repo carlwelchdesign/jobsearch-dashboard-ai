@@ -58,6 +58,72 @@ describe("searchQueryAdapter", () => {
     });
   });
 
+  it("labels local commute query results with the targeted city location", async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        web: {
+          results: [
+            {
+              title: "Senior Frontend Engineer",
+              url: "https://jobs.ashbyhq.com/local-role/123",
+              description: "React TypeScript product role",
+              profile: { name: "Local Co" },
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({
+      queries: ['"Senior Frontend Engineer" "Ventura, CA" jobs'],
+    }));
+
+    expect(jobs[0]).toMatchObject({
+      company: "Local Co",
+      title: "Senior Frontend Engineer",
+      location: "Ventura, CA",
+    });
+  });
+
+  it("labels local commute county queries when no specific city is present", async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        web: {
+          results: [
+            {
+              title: "Senior Software Engineer",
+              url: "https://jobs.lever.co/local-role/456",
+              description: "React TypeScript product role",
+              profile: { name: "County Co" },
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    const jobs = await searchQueryAdapter.fetchJobs(profile(), source({
+      queries: ['"Senior Software Engineer" "Santa Barbara County" jobs'],
+    }));
+
+    expect(jobs[0]).toMatchObject({
+      company: "County Co",
+      title: "Senior Software Engineer",
+      location: "Santa Barbara County, CA",
+    });
+  });
+
+  it("detects requested remote-source providers from URLs", () => {
+    expect(detectSearchProviderFromUrl("https://remotive.com/remote-jobs/software-dev/frontend-engineer")).toBe("remotive");
+    expect(detectSearchProviderFromUrl("https://www.remoterocketship.com/jobs/senior-frontend-engineer/")).toBe("remote_rocketship");
+    expect(detectSearchProviderFromUrl("https://jsremotely.com/jobs/react-engineer")).toBe("js_remotely");
+    expect(detectSearchProviderFromUrl("https://www.kickresume.com/jobs/frontend-engineer/")).toBe("kickresume");
+    expect(detectSearchProviderFromUrl("https://remoteok.com/remote-react-jobs")).toBe("remoteok");
+    expect(detectSearchProviderFromUrl("https://www.toptal.com/freelance-jobs/developers/jobs")).toBe("toptal");
+    expect(detectSearchProviderFromUrl("https://www.eztrackr.app/")).toBe("eztrackr");
+  });
+
   it("records broad provider metadata for ATS domains outside the Prisma ATS enum", async () => {
     const raw = {
       sourceJobId: "search:teamtailor:role",

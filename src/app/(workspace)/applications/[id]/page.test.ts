@@ -20,6 +20,10 @@ describe("ApplicationPacketPage", () => {
   it("offers a regenerate materials control for reviewing fresh CV and cover letter output", () => {
     const source = readFileSync(resolve(process.cwd(), pagePath), "utf8");
 
+    expect(source).toContain("Material repair");
+    expect(source).toContain("Fix material issues");
+    expect(source).toContain("/material-review/repair");
+    expect(source).toContain("Agents fix blocked resume and cover-letter issues before this application enters Apply Sprint.");
     expect(source).toContain("Regenerate materials");
     expect(source).toContain("RefreshOutlinedIcon");
     expect(source).toContain("/regenerate-materials");
@@ -48,9 +52,12 @@ describe("ApplicationPacketPage", () => {
 
     expect(source).toContain("eyebrow=\"Apply Workspace\"");
     expect(source).toContain("getApplyWorkspacePrimaryAction");
+    expect(source).toContain("postTo={action.postTo}");
+    expect(source).toContain("loadingLabel=\"Preparing...\"");
     expect(source).toContain("Recommended next step");
     expect(source).toContain("Assistant can fill fields, upload materials, and stop at the final review screen. You submit manually.");
     expect(source).toContain("WorkspaceNav");
+    expect(source).toContain('["#material-repair", "Material repair"]');
     expect(source).toContain('["#materials", "Materials"]');
     expect(source).toContain('["#history", "History"]');
   });

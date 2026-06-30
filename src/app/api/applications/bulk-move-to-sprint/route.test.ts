@@ -3,6 +3,7 @@ import { runApplicationQaAgent } from "@/lib/agents/application-qa";
 import { runHiringManagerReviewerAgent } from "@/lib/agents/hiring-manager-reviewer";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { syncApplicationPacket } from "@/lib/applications/application-packets";
+import { repairApplicationMaterialIssue } from "@/lib/applications/material-quality-repair";
 import { reconcileApplicationCanonicalState } from "@/lib/applications/reconciliation";
 import { transitionApplicationState } from "@/lib/applications/state-transitions";
 import { syncMaterialClaimsForCoverLetter } from "@/lib/trust/material-claims";
@@ -23,6 +24,10 @@ vi.mock("@/lib/applications/prepare-package", () => ({
 
 vi.mock("@/lib/applications/application-packets", () => ({
   syncApplicationPacket: vi.fn(),
+}));
+
+vi.mock("@/lib/applications/material-quality-repair", () => ({
+  repairApplicationMaterialIssue: vi.fn(),
 }));
 
 vi.mock("@/lib/applications/reconciliation", () => ({
@@ -49,6 +54,7 @@ const updateCoverLetterMock = vi.mocked(prisma.generatedCoverLetter.update);
 const runApplicationQaMock = vi.mocked(runApplicationQaAgent);
 const runHiringManagerReviewMock = vi.mocked(runHiringManagerReviewerAgent);
 const preparePackageMock = vi.mocked(prepareApplicationPackage);
+const repairMaterialMock = vi.mocked(repairApplicationMaterialIssue);
 const syncPacketMock = vi.mocked(syncApplicationPacket);
 const syncClaimsMock = vi.mocked(syncMaterialClaimsForCoverLetter);
 const reconcileMock = vi.mocked(reconcileApplicationCanonicalState);
@@ -89,6 +95,7 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
       },
     } as unknown as Awaited<ReturnType<typeof runHiringManagerReviewerAgent>>);
     preparePackageMock.mockResolvedValue(readyPackage("app_prepared"));
+    repairMaterialMock.mockResolvedValue(materialRepairResult({ status: "repaired" }));
     updateCoverLetterMock.mockResolvedValue({ id: "letter_1" } as never);
     syncClaimsMock.mockResolvedValue([]);
     transitionMock.mockResolvedValue({ application: { id: "app_moved", status: "ready_to_apply" } } as Awaited<ReturnType<typeof transitionApplicationState>>);
@@ -148,7 +155,7 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     });
   });
 
-  it("reports blocked existing cover letters instead of letting them monopolize the batch", async () => {
+  it("moves existing generated materials even when material QA is advisory", async () => {
     findApplicationsMock.mockResolvedValue([
       application({
         id: "app_blocked",
@@ -181,26 +188,32 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
 
     expect(response.status).toBe(200);
     expect(preparePackageMock).not.toHaveBeenCalled();
-    expect(transitionMock).not.toHaveBeenCalled();
+    expect(transitionMock).toHaveBeenCalledWith(expect.objectContaining({
+      applicationId: "app_blocked",
+      toStatus: "ready_to_apply",
+      metadata: expect.objectContaining({
+        materialQuality: expect.objectContaining({ launchable: false }),
+      }),
+    }));
     await expect(response.json()).resolves.toMatchObject({
-      moved: 0,
+      moved: 1,
       prepared: 0,
       regenerated: 0,
-      materialBlocked: 1,
+      materialBlocked: 0,
       failed: 0,
       results: [
         expect.objectContaining({
-          ok: false,
+          ok: true,
           applicationId: "app_blocked",
           jobId: "job_blocked",
-          action: "material_blocked",
-          reason: expect.stringContaining("deterministic fallback"),
+          action: "moved",
+          materialQuality: expect.objectContaining({ launchable: false }),
         }),
       ],
     });
   });
 
-  it("regenerates material-blocked applications when the material review queue is requested", async () => {
+  it("does not need a material-blocked repair queue after material QA becomes advisory", async () => {
     findApplicationsMock.mockResolvedValue([
       application({
         id: "app_blocked",
@@ -223,7 +236,7 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
         },
       }),
     ] as never);
-    preparePackageMock.mockResolvedValue(readyPackage("app_blocked", "resume_new", "letter_new"));
+    repairMaterialMock.mockResolvedValue(materialRepairResult({ status: "repaired", applicationId: "app_blocked" }));
 
     const response = await POST(new Request("http://localhost/api/applications/bulk-move-to-sprint", {
       method: "POST",
@@ -232,27 +245,17 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(preparePackageMock).toHaveBeenCalledWith("job_blocked", {
-      regenerateResume: true,
-      regenerateCoverLetter: true,
-    });
+    expect(repairMaterialMock).not.toHaveBeenCalled();
+    expect(preparePackageMock).not.toHaveBeenCalled();
     expect(transitionMock).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toMatchObject({
       moved: 0,
-      prepared: 1,
-      regenerated: 1,
+      prepared: 0,
+      regenerated: 0,
       materialBlocked: 0,
       failed: 0,
       requested: expect.objectContaining({ queue: "material_blocked" }),
-      results: [
-        expect.objectContaining({
-          ok: true,
-          applicationId: "app_blocked",
-          jobId: "job_blocked",
-          action: "prepared",
-          regeneratedCoverLetter: true,
-        }),
-      ],
+      results: [],
     });
   });
 
@@ -291,7 +294,7 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
         accepted: true,
         alreadyRunning: false,
         requested: expect.objectContaining({ queue: "material_blocked" }),
-        message: expect.stringContaining("Regeneration is running"),
+        message: expect.stringContaining("Agent repair is running"),
       });
       vi.clearAllTimers();
     } finally {
@@ -299,7 +302,7 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     }
   });
 
-  it("can still fail blocked existing cover letters when regeneration is explicitly disabled", async () => {
+  it("still moves advisory material QA findings when regeneration is explicitly disabled", async () => {
     findApplicationsMock.mockResolvedValue([
       application({
         id: "app_blocked",
@@ -329,16 +332,16 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     expect(response.status).toBe(200);
     expect(preparePackageMock).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toMatchObject({
-      moved: 0,
+      moved: 1,
       prepared: 0,
       regenerated: 0,
-      materialBlocked: 1,
+      materialBlocked: 0,
       failed: 0,
       results: [
         expect.objectContaining({
-          ok: false,
-          action: "material_blocked",
-          error: "material_quality_needs_review: Needs review.",
+          ok: true,
+          action: "moved",
+          materialQuality: expect.objectContaining({ launchable: false }),
         }),
       ],
     });
@@ -385,7 +388,7 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     });
   });
 
-  it("reports OpenAI quota blocks without retrying blocked material first", async () => {
+  it("moves existing materials with provider-failure QA as advisory", async () => {
     findApplicationsMock.mockResolvedValue([
       application({
         id: "app_blocked",
@@ -440,17 +443,16 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     expect(response.status).toBe(200);
     expect(preparePackageMock).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toMatchObject({
-      moved: 0,
+      moved: 1,
       prepared: 0,
       regenerated: 0,
       failed: 0,
-      materialBlocked: 1,
-      quotaBlocked: 1,
-      message: expect.stringContaining("OpenAI quota blocked cover-letter regeneration"),
+      materialBlocked: 0,
+      quotaBlocked: 0,
       results: [
         expect.objectContaining({
-          ok: false,
-          action: "material_blocked",
+          ok: true,
+          action: "moved",
           materialQuality: expect.objectContaining({
             reasons: expect.arrayContaining(["openai_insufficient_quota"]),
           }),
@@ -524,12 +526,13 @@ describe("POST /api/applications/bulk-move-to-sprint", () => {
     expect(response.status).toBe(200);
     expect(preparePackageMock).not.toHaveBeenCalled();
     expect(transitionMock).toHaveBeenCalledWith(expect.objectContaining({ applicationId: "app_no_url", toStatus: "archived" }));
+    expect(transitionMock).toHaveBeenCalledWith(expect.objectContaining({ applicationId: "app_blocked", toStatus: "ready_to_apply" }));
     expect(transitionMock).toHaveBeenCalledWith(expect.objectContaining({ applicationId: "app_pass", toStatus: "ready_to_apply" }));
     await expect(response.json()).resolves.toMatchObject({
-      moved: 1,
+      moved: 2,
       archivedNoDirectUrl: 1,
       prepared: 0,
-      materialBlocked: 1,
+      materialBlocked: 0,
       failed: 0,
     });
   });
@@ -663,6 +666,29 @@ function readyPackage(applicationId: string, resumeId = "resume_1", coverLetterI
       evidenceRefs: ["evidence_1"],
     },
   } as unknown as Awaited<ReturnType<typeof prepareApplicationPackage>>;
+}
+
+function materialRepairResult(input: { status: "repaired" | "blocked" | "failed"; applicationId?: string }) {
+  return {
+    applicationId: input.applicationId ?? "app_prepared",
+    jobPostingId: "job_1",
+    status: input.status,
+    attemptedRepair: true,
+    movedToReady: input.status === "repaired",
+    resumeId: "resume_1",
+    coverLetterId: "letter_1",
+    materialQuality: {
+      status: input.status === "repaired" ? "PASS" : "NEEDS_REVIEW",
+      launchable: input.status === "repaired",
+      reason: input.status === "repaired" ? "Cover letter passed material quality review." : "Application QA marked the generated materials as needing review.",
+      reasons: input.status === "repaired" ? [] : ["application_qa_needs_review"],
+      score: input.status === "repaired" ? 91 : 76,
+      generatedBy: "openai_structured",
+      evidenceRefs: ["evidence_1"],
+    },
+    reason: input.status === "repaired" ? "Agents repaired the application materials and moved this application to Ready to apply." : "Application QA marked the generated materials as needing review.",
+    recommendation: input.status === "repaired" ? "Open this application in Apply Sprint." : "Agents could not safely fix this yet.",
+  } as Awaited<ReturnType<typeof repairApplicationMaterialIssue>>;
 }
 
 function application(input: {

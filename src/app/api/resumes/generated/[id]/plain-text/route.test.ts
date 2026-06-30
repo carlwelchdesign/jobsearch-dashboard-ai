@@ -22,7 +22,7 @@ describe("GET /api/resumes/generated/[id]/plain-text", () => {
         "Carl Welch",
         "",
         "Skills",
-        "React, TypeScript, Model Context Protocol, MCP, Server-Sent Events, guitar, music-theory, music-tools",
+        "React, TypeScript, Model Context Protocol, MCP, Server-Sent Events, guitar, music-theory, music-tools, piano, pianochord",
         "",
         "Experience",
         "Senior Software Engineer - Acme",
@@ -50,6 +50,8 @@ describe("GET /api/resumes/generated/[id]/plain-text", () => {
     expect(text).not.toContain("guitar");
     expect(text).not.toContain("music-theory");
     expect(text).not.toContain("music-tools");
+    expect(text).not.toContain("piano");
+    expect(text).not.toContain("pianochord");
   });
 
   it("returns 404 for a missing resume", async () => {

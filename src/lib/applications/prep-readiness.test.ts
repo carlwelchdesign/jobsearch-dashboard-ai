@@ -16,7 +16,7 @@ describe("classifyApplicationPrepReadiness", () => {
     expect(classifyApplicationPrepReadiness(application({ materialQuality: { launchable: true, status: "PASS" } })).kind).toBe("ready_to_move");
   });
 
-  it("classifies blocked materials separately so they do not starve the queue", () => {
+  it("treats material quality findings as advisory when materials and a direct URL exist", () => {
     const readiness = classifyApplicationPrepReadiness(application({
       materialQuality: {
         launchable: false,
@@ -26,7 +26,7 @@ describe("classifyApplicationPrepReadiness", () => {
       },
     }));
 
-    expect(readiness.kind).toBe("material_blocked");
+    expect(readiness.kind).toBe("ready_to_move");
     expect(readiness.reason).toContain("OpenAI rate limits");
   });
 });

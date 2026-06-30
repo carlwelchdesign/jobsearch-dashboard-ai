@@ -81,11 +81,15 @@ describe("getApplyWorkspacePrimaryAction", () => {
   };
 
   it("asks the user to prepare the packet when materials are missing", () => {
-    expect(getApplyWorkspacePrimaryAction({ ...base, hasResume: false }).kind).toBe("prepare_packet");
+    const action = getApplyWorkspacePrimaryAction({ ...base, hasResume: false });
+
+    expect(action.kind).toBe("prepare_packet");
+    if (action.kind !== "prepare_packet") throw new Error("Expected prepare packet action.");
+    expect(action.postTo).toBe("/api/jobs/job_1/prepare-application");
   });
 
-  it("asks the user to review QA items before approval", () => {
-    expect(getApplyWorkspacePrimaryAction({ ...base, qaIssueCount: 2 }).kind).toBe("review_packet");
+  it("does not block approval on QA advisory items", () => {
+    expect(getApplyWorkspacePrimaryAction({ ...base, qaIssueCount: 2, canApprovePacket: true }).kind).toBe("approve_packet");
   });
 
   it("asks the user to approve a clean packet", () => {
@@ -101,6 +105,18 @@ describe("getApplyWorkspacePrimaryAction", () => {
 
     expect(action.kind).toBe("launch_assistant");
     expect(action.detail).toContain("Final submission stays manual");
+  });
+
+  it("launches the assistant with QA advisory copy after approval", () => {
+    const action = getApplyWorkspacePrimaryAction({
+      ...base,
+      applicationStatus: "ready_to_apply",
+      packetStatus: "APPROVED",
+      qaIssueCount: 2,
+    });
+
+    expect(action.kind).toBe("launch_assistant");
+    expect(action.detail).toContain("material QA advisory");
   });
 
   it("tracks outcomes after the application is submitted", () => {

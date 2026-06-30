@@ -28,7 +28,8 @@ export type SourceCatalogCategory =
   | "newsletter"
   | "search_engine_query"
   | "regional_board"
-  | "industry_niche_board";
+  | "industry_niche_board"
+  | "career_tool";
 
 const seniorEngineeringRoles = ["frontend", "fullstack", "product-engineering", "developer-tools", "security", "ai"];
 const global = ["US", "Canada", "Europe", "Global"];
@@ -57,10 +58,13 @@ export const sourceCatalog: SourceCatalogItem[] = [
   source("We Work Remotely", "remote_job_board", 1, "active", "html", global, seniorEngineeringRoles, true, false, "medium", "daily", "Adapter exists but is paused by default due board friction and lower precision."),
   source("Remote OK", "remote_job_board", 2, "active", "api", global, seniorEngineeringRoles, true, false, "low", "daily", "Adapter exists but is paused by default because listing quality has been noisy."),
   source("Remote.co", "remote_job_board", 2, "active", "search_query", global, seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for remote-first roles."),
-  source("Remotive", "remote_job_board", 2, "blocked", "manual_review", global, seniorEngineeringRoles, true, true, "blocked", "weekly", "Blocked because current listings are paywall-gated; keep out of automated query ingestion."),
+  source("Remotive", "remote_job_board", 2, "active", "search_query", global, seniorEngineeringRoles, true, true, "high", "daily", "Covered through Brave Search query templates as paywall-gated leads; friendly alternate application URLs are used when found, otherwise leads are suppressed for review."),
+  source("Remote Rocketship", "remote_job_board", 2, "active", "search_query", global, seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates; listing pages are suppressed unless they can be expanded into individual job URLs."),
   source("NoDesk", "remote_job_board", 2, "active", "search_query", global, seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for remote tech and product roles."),
   source("Himalayas", "remote_job_board", 2, "active", "search_query", global, seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for remote-friendly company and job data."),
   source("Working Nomads", "remote_job_board", 3, "active", "search_query", global, seniorEngineeringRoles, true, false, "low", "daily", "Covered through Brave Search query templates until RSS ingestion is added."),
+  source("JS Remotely", "tech_job_board", 2, "active", "search_query", global, ["frontend", "fullstack", "javascript", "react", "node"], true, false, "medium", "daily", "Covered through Brave Search query templates for JavaScript, React, Vue, Node.js, and Angular remote roles."),
+  source("Pyjama Jobs by Kickresume", "remote_job_board", 3, "active", "search_query", global, seniorEngineeringRoles, true, false, "medium", "daily", "Covered through Brave Search query templates for remote roles surfaced through Kickresume's Pyjama Jobs board."),
   source("FlexJobs", "remote_job_board", 3, "manual", "manual_review", global, seniorEngineeringRoles, true, true, "blocked", "weekly", "Paid/authenticated source, better as manual import unless account automation is added."),
 
   source("Wellfound", "startup_board", 1, "active", "search_query", global, seniorEngineeringRoles, true, true, "high", "daily", "Covered through Brave Search query templates; account workflow remains manual."),
@@ -93,6 +97,8 @@ export const sourceCatalog: SourceCatalogItem[] = [
   source("Cord", "recruiter_marketplace", 3, "manual", "marketplace", ["Europe"], seniorEngineeringRoles, true, true, "blocked", "weekly", "Europe talent marketplace."),
   source("Toptal", "freelance_marketplace", 4, "manual", "marketplace", global, ["contract", "frontend", "fullstack"], true, true, "blocked", "weekly", "Emergency/fractional income source, not core full-time search."),
   source("Braintrust", "freelance_marketplace", 4, "manual", "marketplace", global, ["contract", "frontend", "fullstack"], true, true, "blocked", "weekly", "Contract marketplace."),
+  source("Kickresume", "career_tool", 4, "manual", "manual_review", global, seniorEngineeringRoles, true, true, "blocked", "weekly", "Resume and cover-letter tool with international job-search surfaces; keep as manual/career-tool coverage, not automated scraping."),
+  source("Eztrackr", "career_tool", 4, "manual", "manual_review", global, seniorEngineeringRoles, true, true, "blocked", "weekly", "Job tracker and resume-tailoring tool; keep as manual/career-tool coverage, not automated scraping."),
 
   source("LinkedIn Jobs", "general_job_board", 3, "manual", "manual_review", global, seniorEngineeringRoles, true, true, "blocked", "daily", "Major discovery source, but not scraped directly. Optional LinkedIn OIDC imports identity basics only; user-supplied LinkedIn job URLs become lead records and open-web queries for original employer or ATS postings."),
   source("Indeed", "general_job_board", 4, "manual", "manual_review", global, seniorEngineeringRoles, true, false, "blocked", "weekly", "Large volume, high noise, blocked scraping risk."),
@@ -107,7 +113,34 @@ export const sourceCatalog: SourceCatalogItem[] = [
   source("TLDR Jobs / newsletter feeds", "newsletter", 4, "manual", "manual_review", global, seniorEngineeringRoles, true, false, "medium", "weekly", "Useful as manual/email ingestion source later."),
 ];
 
+export const localCommuteSearchQueryTemplates = [
+  '"Senior Frontend Engineer" "Ventura, CA" jobs',
+  '"Senior Software Engineer" "Ventura, CA" jobs',
+  '"Frontend Engineer" "Oxnard, CA" React TypeScript jobs',
+  '"Senior Software Engineer" "Oxnard, CA" jobs',
+  '"Senior Frontend Engineer" "Santa Barbara, CA" jobs',
+  '"React" "TypeScript" "Santa Barbara, CA" "Engineer" jobs',
+  '"Frontend Engineer" "Goleta, CA" jobs',
+  '"Senior Software Engineer" "Goleta, CA" jobs',
+  '"Senior Full Stack Engineer" "Thousand Oaks, CA" jobs',
+  '"Frontend Engineer" "Thousand Oaks, CA" React jobs',
+  '"Software Engineer" "Woodland Hills, CA" React jobs',
+  '"Frontend Engineer" "Woodland Hills, CA" TypeScript jobs',
+  '"Product Engineer" "Calabasas, CA" jobs',
+  '"Senior Software Engineer" "Calabasas, CA" jobs',
+  'site:jobs.ashbyhq.com "Ventura, CA" "React"',
+  'site:boards.greenhouse.io "Santa Barbara" "Senior Software Engineer"',
+  'site:job-boards.greenhouse.io "Goleta" "Frontend Engineer"',
+  'site:jobs.lever.co "Thousand Oaks" "Software Engineer"',
+  'site:jobs.smartrecruiters.com "Woodland Hills" "React"',
+  'site:workdayjobs.com "Calabasas" "Software Engineer"',
+  '"Senior Frontend Engineer" "Ventura County" jobs',
+  '"Senior Software Engineer" "Santa Barbara County" jobs',
+  '"React Developer" "San Fernando Valley" "Woodland Hills"',
+];
+
 export const searchQueryTemplates = [
+  ...localCommuteSearchQueryTemplates,
   'site:jobs.ashbyhq.com "Senior Frontend Engineer" "remote"',
   'site:jobs.ashbyhq.com "Frontend Engineer" "Accessibility" "remote"',
   'site:jobs.ashbyhq.com "Frontend Engineer" "Contractor" "remote"',
@@ -131,9 +164,17 @@ export const searchQueryTemplates = [
   'site:jobtrain.co.uk "Frontend Engineer" "React" "remote"',
   'site:jobs.personio.com "Frontend Engineer" "React" "remote"',
   'site:remote.co "Frontend Engineer" "React" "TypeScript"',
+  'site:remotive.com/remote-jobs "Senior Frontend Engineer" "React" "remote"',
+  'site:remotive.com/remote-jobs "Full Stack Engineer" "TypeScript" "remote"',
+  'site:remoterocketship.com/jobs "Senior Frontend Engineer" "React" "remote"',
+  'site:remoterocketship.com/jobs "Product Engineer" "AI" "remote"',
   'site:nodesk.co "Frontend Engineer" "remote"',
   'site:himalayas.app "Frontend Engineer" "React" "remote"',
   'site:workingnomads.com "Frontend Engineer" "TypeScript"',
+  'site:jsremotely.com "React" "TypeScript" "remote"',
+  'site:jsremotely.com "Node.js" "Full Stack" "remote"',
+  'site:kickresume.com/jobs "Frontend Engineer" "remote"',
+  'site:kickresume.com/jobs "Product Engineer" "AI" "remote"',
   'site:wellfound.com/jobs "Frontend Engineer" "React" "remote"',
   'site:ziprecruiter.com/jobs "Frontend Engineer" "React" "remote"',
   'site:ycombinator.com/jobs "Frontend Engineer" "React" "remote"',
@@ -189,6 +230,14 @@ export const requestedProviderCoverage = [
   "ZipRecruiter",
   "Dice",
   "Wellfound",
+  "Remotive",
+  "Remote Rocketship",
+  "JS Remotely",
+  "Pyjama Jobs by Kickresume",
+  "Kickresume",
+  "Eztrackr",
+  "Toptal",
+  "Remote OK",
   "Glassdoor",
   "Monster",
   "CareerBuilder",
@@ -198,7 +247,7 @@ export const requestedProviderCoverage = [
   "USAJOBS",
 ] as const;
 
-export const manualOrAuthGatedProviderCoverage = ["Glassdoor", "FlexJobs"] as const;
+export const manualOrAuthGatedProviderCoverage = ["Glassdoor", "FlexJobs", "Kickresume", "Eztrackr", "Toptal"] as const;
 
 export function defaultSearchQuerySourceConfig() {
   return {

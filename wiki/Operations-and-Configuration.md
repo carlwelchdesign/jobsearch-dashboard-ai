@@ -115,7 +115,7 @@ SEARCH_QUERY_MAX_RESULTS=160
 
 Without `BRAVE_SEARCH_API_KEY`, the search-query adapter returns no jobs and `/sources` reports provider-missing status.
 
-The search-query source carries roadmap coverage for high-friction sources through targeted source/site queries rather than dedicated scrapers. Direct adapters cover Greenhouse, Lever, and Ashby. Brave-backed query coverage includes Workable, SmartRecruiters, iCIMS, Jobvite, BambooHR, Teamtailor, Jobylon, Join, Jobtrain, Bullhorn, Oracle Taleo, SAP SuccessFactors, ZipRecruiter, Dice, Wellfound, Monster, CareerBuilder, SimplyHired, Adzuna, USAJOBS, remote boards, startup boards, VC portfolio boards, Hacker News, and tech boards.
+The search-query source carries roadmap coverage for high-friction sources through targeted source/site queries rather than dedicated scrapers. Direct adapters cover Greenhouse, Lever, and Ashby. Brave-backed query coverage includes Workable, SmartRecruiters, iCIMS, Jobvite, BambooHR, Teamtailor, Jobylon, Join, Jobtrain, Bullhorn, Oracle Taleo, SAP SuccessFactors, ZipRecruiter, Dice, Wellfound, Remotive, Remote Rocketship, JS Remotely, Pyjama Jobs, Monster, CareerBuilder, SimplyHired, Adzuna, USAJOBS, remote boards, startup boards, VC portfolio boards, Hacker News, and tech boards. Kickresume, Eztrackr, FlexJobs, and Toptal are visible manual/account workflows rather than scrape targets.
 
 LinkedIn is not scraped directly. Treat LinkedIn as a discovery signal and use the search-query backlog to find original employer, ATS, or career-page postings behind LinkedIn-visible roles when those postings are publicly discoverable.
 

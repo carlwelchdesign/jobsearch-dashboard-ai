@@ -16,7 +16,7 @@ export type ApplyWorkspacePrimaryAction =
       kind: "prepare_packet";
       label: "Prepare packet";
       detail: string;
-      href: string;
+      postTo: string;
       severity: "success";
     }
   | {
@@ -93,6 +93,7 @@ export function getApplyWorkspacePrimaryAction(input: {
   hasCoverLetter: boolean;
   packetStatus?: string | null;
   qaIssueCount: number;
+  materialBlocked?: boolean;
   canApprovePacket: boolean;
   assistantLaunched: boolean;
   hasAppliedOutcome: boolean;
@@ -106,18 +107,8 @@ export function getApplyWorkspacePrimaryAction(input: {
       kind: "prepare_packet",
       label: "Prepare packet",
       detail: "Generate the tailored resume and cover letter before moving into Apply Sprint.",
-      href: `/jobs/${input.jobPostingId}`,
+      postTo: `/api/jobs/${input.jobPostingId}/prepare-application`,
       severity: "success",
-    };
-  }
-
-  if (input.qaIssueCount > 0) {
-    return {
-      kind: "review_packet",
-      label: "Review packet",
-      detail: `${input.qaIssueCount} QA item${input.qaIssueCount === 1 ? "" : "s"} need review before launch-ready apply work.`,
-      href: `/applications/${input.applicationId}#materials`,
-      severity: "warning",
     };
   }
 
@@ -135,7 +126,9 @@ export function getApplyWorkspacePrimaryAction(input: {
     return {
       kind: "launch_assistant",
       label: "Launch assistant",
-      detail: "Open the local assistant to stage the employer form. Final submission stays manual.",
+      detail: input.qaIssueCount > 0
+        ? `${input.qaIssueCount} material QA advisory item${input.qaIssueCount === 1 ? "" : "s"} visible. Open the local assistant and submit manually after review.`
+        : "Open the local assistant to stage the employer form. Final submission stays manual.",
       postTo: `/api/applications/${input.applicationId}/launch-assistant`,
       severity: "success",
     };

@@ -1,6 +1,7 @@
 export type ResumeSkillTargetingContext = {
   jobText?: string | null;
   evidenceText?: string | null;
+  evidenceSkills?: string[];
 };
 
 const MUSIC_SKILL_KEYS = new Set([
@@ -9,6 +10,11 @@ const MUSIC_SKILL_KEYS = new Set([
   "guitarchords",
   "music theory",
   "music tools",
+  "piano",
+  "piano chord",
+  "piano chords",
+  "pianochord",
+  "pianochords",
 ]);
 
 export function resumeSkillJobText(job: {
@@ -35,7 +41,7 @@ export function normalizeTargetedResumeSkills(
   );
   const seen = new Set<string>();
 
-  return skills
+  const normalized = skills
     .map((skill) =>
       normalizeResumeSkillLabel(skill, { preferLongMcp, preferSse }),
     )
@@ -50,6 +56,7 @@ export function normalizeTargetedResumeSkills(
       seen.add(key);
       return true;
     });
+  return includeRestApiSkill(normalized);
 }
 
 export function cleanResumeSkillsSection(
@@ -58,7 +65,7 @@ export function cleanResumeSkillsSection(
 ) {
   const lines = text.split("\n");
   const start = lines.findIndex((line) =>
-    /^#{0,6}\s*skills\s*:?$/i.test(line.trim()),
+    /^#{0,6}\s*(?:skills|core skills|core competencies)\s*:?$/i.test(line.trim()),
   );
   if (start === -1) return text;
 
@@ -76,7 +83,10 @@ export function cleanResumeSkillsSection(
     )
     .map((skill) => skill.trim())
     .filter(Boolean);
-  const normalized = normalizeTargetedResumeSkills(skills, context);
+  const normalized = normalizeTargetedResumeSkills(
+    [...skills, ...(context.evidenceSkills ?? [])],
+    context,
+  );
   if (!normalized.length) return text;
 
   return [
@@ -111,15 +121,51 @@ function normalizeResumeSkillLabel(
   ) {
     return preferLongMcp ? "Model Context Protocol" : "MCP";
   }
+  if (
+    key === "human in the loop" ||
+    key === "human in the loop hitl" ||
+    key === "hitl"
+  ) {
+    return "HITL";
+  }
   if (key === "server sent events" || key === "sse" || key === "eventsource") {
     return preferSse ? "Server-Sent Events" : "real-time event streaming";
+  }
+  if (
+    key === "rest api" ||
+    key === "rest apis" ||
+    key === "restapi" ||
+    key === "restapis"
+  ) {
+    return "REST APIs";
   }
   if (key === "music theory") return "music-theory";
   return trimmed;
 }
 
+function includeRestApiSkill(skills: string[]) {
+  if (skills.some((skill) => isRestApiSkill(skill))) return skills;
+  const apiSkillIndex = skills.findIndex((skill) => isRestApiAdjacentSkill(skill));
+  if (apiSkillIndex === -1) return skills;
+  return [
+    ...skills.slice(0, apiSkillIndex + 1),
+    "REST APIs",
+    ...skills.slice(apiSkillIndex + 1),
+  ];
+}
+
+function isRestApiSkill(skill: string) {
+  const key = skillKey(skill);
+  return key === "rest api" || key === "rest apis" || key === "restapi" || key === "restapis";
+}
+
+function isRestApiAdjacentSkill(skill: string) {
+  const key = skillKey(skill);
+  return key === "api integrations" || key === "api design" || key === "backend for frontend";
+}
+
 function isMusicRelevant(value: string) {
-  return /\b(music|audio|sound|song|songs|chord|chords|guitar|instrument|musician|creator tool|creator tools|daw|midi)\b/i.test(
+  return /\b(music|audio|sound|song|songs|chord|chords|guitar|piano|instrument|musician|creator tool|creator tools|daw|midi)\b/i.test(
     value,
   );
 }

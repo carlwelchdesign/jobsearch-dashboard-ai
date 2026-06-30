@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { selectResumeSourceBullets, summarizeResumeSourceBullets } from "./source-materials";
+import {
+  selectResumeSourceBullets,
+  selectResumeSourceWorkExperiences,
+  summarizeResumeSourceBullets,
+} from "./source-materials";
 
 describe("resume source materials", () => {
   it("keeps approved profile bullets when the latest upload has enough bullets", () => {
@@ -36,4 +40,70 @@ describe("resume source materials", () => {
       roleDescriptionDigestBulletIds: ["digest_1"],
     });
   });
+
+  it("drops profile work experiences that are aliases of the latest upload", () => {
+    const selected = selectResumeSourceWorkExperiences(
+      [
+        workExperience({
+          id: "upload_taser",
+          company: "TASER International / AXON",
+          title: "Front End Developer",
+          startDate: "Apr 2009",
+          endDate: "Oct 2011",
+          sourceResumeUploadId: "upload_1",
+        }),
+        workExperience({
+          id: "profile_taser",
+          company: "Taser International",
+          title: "Front End Developer",
+          sourceResumeUploadId: null,
+        }),
+        workExperience({
+          id: "profile_gd_rd",
+          company: "General Dynamics Land Systems",
+          title: "Manager / Lead Developer of R&D: VR & AR Applications",
+          sourceResumeUploadId: null,
+        }),
+        workExperience({
+          id: "upload_gd",
+          company: "General Dynamics Land Systems",
+          title: "Manager / Lead Developer",
+          startDate: "2001",
+          endDate: "2004",
+          sourceResumeUploadId: "upload_1",
+        }),
+        workExperience({
+          id: "profile_distinct",
+          company: "Acme",
+          title: "Design Manager",
+          startDate: "2010",
+          endDate: "2012",
+          sourceResumeUploadId: null,
+        }),
+      ],
+      "upload_1",
+    );
+
+    expect(selected.map((work) => work.id)).toEqual([
+      "upload_taser",
+      "upload_gd",
+      "profile_distinct",
+    ]);
+  });
 });
+
+function workExperience(input: {
+  id: string;
+  company: string;
+  title: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  sourceResumeUploadId?: string | null;
+}) {
+  return {
+    startDate: null,
+    endDate: null,
+    sourceResumeUploadId: null,
+    ...input,
+  };
+}

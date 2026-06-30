@@ -25,6 +25,7 @@ import { BackfillEvidenceButton } from "./backfill-button";
 import { AddEvidenceNoteForm } from "./add-evidence-note-form";
 import { EmbedEvidenceButton } from "./embed-evidence-button";
 import { EvidenceActions } from "./evidence-actions";
+import { LinkedInRecommendationImportPanel } from "./linkedin-recommendation-import-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -98,6 +99,8 @@ export default async function EvidencePage({ searchParams }: { searchParams?: Ev
         </Card>
 
         <AddEvidenceNoteForm />
+
+        <LinkedInRecommendationImportPanel />
 
         <Card>
           <CardContent>

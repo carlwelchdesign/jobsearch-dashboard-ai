@@ -1,4 +1,4 @@
-export const RESUME_FORMATS = ["modern_two_column", "atelier", "tschichold", "swiss"] as const;
+export const RESUME_FORMATS = ["ats_single_column", "modern_two_column", "atelier", "tschichold", "swiss"] as const;
 
 export type ResumeFormat = typeof RESUME_FORMATS[number];
 export type LegacyResumeFormat = Exclude<ResumeFormat, "modern_two_column">;
@@ -17,6 +17,8 @@ export function isLegacyResumeFormat(value: ResumeFormat): value is LegacyResume
 
 export function resumeFormatLabel(value: ResumeFormat) {
   switch (value) {
+    case "ats_single_column":
+      return "ATS single-column";
     case "atelier":
       return "Atelier";
     case "tschichold":

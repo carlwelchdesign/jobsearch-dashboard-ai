@@ -20,10 +20,12 @@ describe("/applications page agency workflow", () => {
     expect(pageSource).toContain("applicationBoardColumn");
     expect(pageSource).toContain("These are approved and still eligible for packet prep.");
     expect(pageSource).toContain("These passed job review, but their generated materials failed QA or generation.");
-    expect(pageSource).toContain("Review material issue");
-    expect(pageSource).toContain("Regenerate blocked materials");
+    expect(pageSource).toContain("Fix material issue");
+    expect(pageSource).toContain("View repair details");
+    expect(pageSource).toContain("Fix material issues");
+    expect(pageSource).toContain("/material-review/repair");
     expect(pageSource).toContain('queue="material_blocked"');
-    expect(pageSource).toContain("Regenerating blocked resumes and cover letters.");
+    expect(pageSource).toContain("Agents are repairing blocked resumes and cover letters.");
     expect(pageSource).toContain("Archives on prep: no direct employer/ATS URL");
     expect(pageSource).toContain("classifyApplicationPrepReadiness");
     expect(pageSource).toContain("Add direct URLs first");

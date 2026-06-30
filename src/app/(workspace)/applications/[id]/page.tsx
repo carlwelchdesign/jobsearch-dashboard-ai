@@ -35,6 +35,7 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
 import { applicationAnswerEntries, packetApprovalChecklist, packetApprovalState } from "@/lib/applications/application-packets";
+import { applicationMaterialQualityFromNotes } from "@/lib/applications/material-quality";
 import { buildAshbyRiskAssessment, type AshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 import { getApplyWorkspacePrimaryAction, isPacketApproved, type ApplyWorkspacePrimaryAction } from "@/lib/applications/apply-workspace";
 import { ApplicationUrlEditor } from "./application-url-editor";
@@ -75,6 +76,13 @@ type MaterialNotes = {
   } | null;
   warnings?: string[];
   unsupportedClaimsDetected?: string[];
+  materialQuality?: {
+    status?: "PASS" | "NEEDS_REVIEW" | "BLOCKED";
+    launchable?: boolean;
+    reason?: string;
+    reasons?: string[];
+    score?: number;
+  };
 };
 
 type AtsResumeReview = {
@@ -163,6 +171,7 @@ type CompensationOpportunityOutput = {
 
 const WORKSPACE_NAV_ITEMS = [
   ["#apply", "Apply"],
+  ["#material-repair", "Material repair"],
   ["#materials", "Materials"],
   ["#answers", "Answers"],
   ["#fit", "Fit"],
@@ -177,7 +186,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
       where: { id: params.id },
       include: {
         coverLetter: true,
-        events: { orderBy: { createdAt: "desc" }, take: 8 },
+        events: { orderBy: { createdAt: "desc" }, take: 20 },
         interviewPrepTasks: { orderBy: [{ status: "asc" }, { priority: "asc" }, { createdAt: "asc" }] },
         thankYouDrafts: { orderBy: { createdAt: "desc" }, take: 8 },
         applicationPackets: { orderBy: { updatedAt: "desc" }, take: 1 },
@@ -246,6 +255,8 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
   const packet = application.applicationPackets[0];
   const resumeNotes = materialNotes(application.resume?.generationNotes);
   const coverLetterNotes = materialNotes(application.coverLetter?.generationNotes);
+  const materialQuality = application.coverLetter ? applicationMaterialQualityFromNotes(application.coverLetter.generationNotes) : null;
+  const latestMaterialRepair = latestMaterialRepairEvent(application.events);
   const qa = coverLetterNotes.applicationQa ?? resumeNotes.applicationQa;
   const atsResumeReview = resumeNotes.atsResumeReview;
   const strategy = resumeNotes.resumeStrategy ?? coverLetterNotes.resumeStrategy;
@@ -292,6 +303,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
     ...(qa?.warnings ?? []),
     ...(qa?.unsupportedClaims ?? []),
     ...(qa?.styleViolations ?? []),
+    ...(materialQuality && !materialQuality.launchable ? [materialQuality.reason] : []),
   ];
   const workflowProgress = applicationWorkflowProgress({
     applicationId: application.id,
@@ -319,6 +331,7 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
     hasResume: Boolean(application.resume),
     hasCoverLetter: Boolean(application.coverLetter),
     qaIssueCount: qaIssues.length,
+    materialBlocked: Boolean(materialQuality && !materialQuality.launchable),
     canApprovePacket: Boolean(approvalState?.canApprove),
     assistantLaunched: workflowProgress.assistantLaunched,
     hasAppliedOutcome: workflowProgress.submitted,
@@ -362,6 +375,13 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
         />
         <WorkspaceNav />
         {ashbyRisk?.enabled ? <AshbyRiskCard assessment={ashbyRisk} /> : null}
+        <MaterialRepairCard
+          applicationId={application.id}
+          materialQuality={materialQuality}
+          latestRepair={latestMaterialRepair}
+          hasResume={Boolean(application.resume)}
+          hasCoverLetter={Boolean(application.coverLetter)}
+        />
 
         <Card id="apply">
           <CardContent>
@@ -381,6 +401,15 @@ export default async function ApplicationPacketPage({ params }: { params: { id: 
                   <PortfolioMatchButton applicationId={application.id} />
                   <RecruiterOutreachButton applicationId={application.id} />
                   <InterviewPrepButton applicationId={application.id} />
+                  <ActionButton
+                    postTo={`/api/applications/${application.id}/material-review/repair`}
+                    variant="contained"
+                    color="warning"
+                    startIcon={<PsychologyOutlinedIcon />}
+                    loadingLabel="Fixing..."
+                  >
+                    Fix material issues
+                  </ActionButton>
                   <ActionButton
                     postTo={`/api/applications/${application.id}/regenerate-materials`}
                     variant="outlined"
@@ -993,6 +1022,20 @@ function ApplyWorkspaceHero({
 }
 
 function PrimaryWorkspaceAction({ applicationId, action }: { applicationId: string; action: ApplyWorkspacePrimaryAction }) {
+  if (action.kind === "prepare_packet") {
+    return (
+      <ActionButton
+        postTo={action.postTo}
+        message="Application packet prepared. Review the generated materials before launching the assistant."
+        variant="contained"
+        color="success"
+        startIcon={<ArticleOutlinedIcon />}
+        loadingLabel="Preparing..."
+      >
+        Prepare packet
+      </ActionButton>
+    );
+  }
   if (action.kind === "approve_packet") {
     return <ApprovePacketButton applicationId={applicationId} />;
   }
@@ -1019,6 +1062,83 @@ function PrimaryWorkspaceAction({ applicationId, action }: { applicationId: stri
   );
 }
 
+function MaterialRepairCard({
+  applicationId,
+  materialQuality,
+  latestRepair,
+  hasResume,
+  hasCoverLetter,
+}: {
+  applicationId: string;
+  materialQuality: ReturnType<typeof applicationMaterialQualityFromNotes>;
+  latestRepair: ReturnType<typeof latestMaterialRepairEvent>;
+  hasResume: boolean;
+  hasCoverLetter: boolean;
+}) {
+  const blocked = !hasResume || !hasCoverLetter || materialQuality?.launchable === false;
+  return (
+    <Card id="material-repair" sx={{ borderColor: blocked ? "warning.main" : "divider" }}>
+      <CardContent>
+        <Stack spacing={1.5}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { md: "flex-start" } }}>
+            <Box>
+              <Typography variant="h3">Material repair</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Agents fix blocked resume and cover-letter issues before this application enters Apply Sprint.
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", justifyContent: { md: "flex-end" } }}>
+              <ActionButton
+                postTo={`/api/applications/${applicationId}/material-review/repair`}
+                variant="contained"
+                color="warning"
+                startIcon={<PsychologyOutlinedIcon />}
+                loadingLabel="Fixing..."
+              >
+                Fix material issues
+              </ActionButton>
+              <ActionButton
+                postTo={`/api/applications/${applicationId}/regenerate-materials`}
+                variant="outlined"
+                color="warning"
+                startIcon={<RefreshOutlinedIcon />}
+                loadingLabel="Regenerating..."
+              >
+                Regenerate materials
+              </ActionButton>
+            </Stack>
+          </Stack>
+          <Alert severity={materialQuality?.launchable ? "success" : "warning"}>
+            {materialQuality
+              ? materialQuality.launchable
+                ? "Materials pass quality review."
+                : materialQuality.reason
+              : hasResume && hasCoverLetter
+                ? "Material quality review has not run yet."
+                : "Generate both resume and cover letter before repair."}
+          </Alert>
+          {materialQuality?.reasons.length ? (
+            <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: "wrap" }}>
+              {materialQuality.reasons.map((reason) => <Chip key={reason} color="warning" variant="outlined" label={reason.replace(/_/g, " ")} />)}
+            </Stack>
+          ) : null}
+          {latestRepair ? (
+            <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.25 }}>
+              <Typography sx={{ fontWeight: 850 }}>Last agent repair</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {latestRepair.status.replace(/_/g, " ")}: {latestRepair.reason}
+              </Typography>
+              {latestRepair.recommendation ? (
+                <Typography variant="caption" color="text.secondary">{latestRepair.recommendation}</Typography>
+              ) : null}
+            </Box>
+          ) : null}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
 function AdvancedPanel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <Box component="details" sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 1.5 }}>
@@ -1030,6 +1150,21 @@ function AdvancedPanel({ title, children }: { title: string; children: React.Rea
       </Box>
     </Box>
   );
+}
+
+function latestMaterialRepairEvent(events: Array<{ source: string; payload: unknown; createdAt: Date }>) {
+  const event = events.find((item) => item.source === "application_material_issue_repair");
+  const payload = event && event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+    ? event.payload as Record<string, unknown>
+    : null;
+  if (!payload) return null;
+  if (!event) return null;
+  return {
+    status: typeof payload.status === "string" ? payload.status : "unknown",
+    reason: typeof payload.reason === "string" ? payload.reason : "No repair reason recorded.",
+    recommendation: typeof payload.recommendation === "string" ? payload.recommendation : "",
+    createdAt: event.createdAt,
+  };
 }
 
 function WorkspaceNav() {

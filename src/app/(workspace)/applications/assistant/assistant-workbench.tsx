@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import PlayCircleOutlineOutlinedIcon from "@mui/icons-material/PlayCircleOutlineOutlined";
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
@@ -39,12 +40,16 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgencyRunControl } from "@/components/agency-run-control";
 import { RejectionReasonDialog, type RejectionReasonCode } from "@/components/job-reject-button";
-import { SearchRunAnalyticsCharts } from "@/components/search-run-analytics-charts";
 import { assessApplicationUrlQuality, type ApplicationUrlQuality } from "@/lib/applications/application-url-quality";
 import type { AshbyRiskAssessment } from "@/lib/applications/ashby-risk";
 import type { ApplicationMaterialQuality } from "@/lib/applications/material-quality";
 import { summarizeApplicationJobDescription } from "@/lib/applications/job-summary";
 import { copyTextToClipboard } from "@/lib/browser/clipboard";
+
+const SearchRunAnalyticsCharts = dynamic(
+  () => import("@/components/search-run-analytics-charts").then((module) => module.SearchRunAnalyticsCharts),
+  { ssr: false, loading: () => <Alert severity="info">Loading search analytics...</Alert> },
+);
 
 type ReadyApplication = {
   id: string;

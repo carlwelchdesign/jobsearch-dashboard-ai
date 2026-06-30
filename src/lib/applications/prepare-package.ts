@@ -21,7 +21,19 @@ import {
 } from "@/lib/resumes/source-materials";
 import { syncMaterialClaimsForCoverLetter, syncMaterialClaimsForResume } from "@/lib/trust/material-claims";
 
-export async function prepareApplicationPackage(jobId: string, options: { regenerateResume?: boolean; regenerateCoverLetter?: boolean } = {}) {
+export type PrepareApplicationRepairContext = {
+  reasons: string[];
+  previousMaterialQuality?: ApplicationMaterialQuality | null;
+  instructions?: string[];
+};
+
+export type PrepareApplicationPackageOptions = {
+  regenerateResume?: boolean;
+  regenerateCoverLetter?: boolean;
+  repairContext?: PrepareApplicationRepairContext | null;
+};
+
+export async function prepareApplicationPackage(jobId: string, options: PrepareApplicationPackageOptions = {}) {
   const job = await prisma.jobPosting.findUnique({
     where: { id: jobId },
     include: {
@@ -63,7 +75,10 @@ export async function prepareApplicationPackage(jobId: string, options: { regene
     jobSearchProfileId: match.jobSearchProfileId,
     userId: user.id,
   });
-  const writingGuidance = await activeApplicationMaterialGuidance(user.id);
+  const writingGuidance = [
+    ...await activeApplicationMaterialGuidance(user.id),
+    ...repairWritingGuidance(options.repairContext),
+  ];
 
   if (!resume) {
     const tailored = await tailorResumeForJob({
@@ -144,6 +159,7 @@ export async function prepareApplicationPackage(jobId: string, options: { regene
           materialQuality: materialQualityJson(generated.materialQuality),
           rewriteAttempted: generated.rewriteAttempted,
           writingGuidance,
+          materialRepairContext: options.repairContext ?? null,
           preparedApplicationPackage: true,
           regeneratedMaterial: Boolean(options.regenerateResume || options.regenerateCoverLetter),
         } as Prisma.InputJsonValue,
@@ -201,45 +217,27 @@ export async function prepareApplicationPackage(jobId: string, options: { regene
       });
 
   let preparedApplication = application;
-  if (materialQuality.launchable) {
-    const transitioned = await transitionApplicationState({
-      applicationId: application.id,
-      toStatus: "ready_to_apply",
-      source: "prepare_application_package",
-      actor: { type: "system" },
-      reason: "Application package prepared with generated resume and launchable cover letter.",
-      note: mergeNotes(existingApplication?.notes ?? null),
-      metadata: {
-        jobProfileMatchId: match.id,
-        resumeId: resume.id,
-        coverLetterId: coverLetter.id,
-        applicationUrl: job.applicationUrl,
-        materialQuality,
-        manualSubmissionRequired: true,
-      },
-      sideEffects: { syncPacket: false },
-    });
-    preparedApplication = transitioned.application;
-  } else {
-    const transitioned = await transitionApplicationState({
-      applicationId: application.id,
-      toStatus: "approved",
-      source: "prepare_application_package_material_quality",
-      actor: { type: "system" },
-      reason: "Application material quality needs review before Apply Sprint.",
-      note: materialReviewNote(existingApplication?.notes ?? null, materialQuality),
-      metadata: {
-        jobProfileMatchId: match.id,
-        resumeId: resume.id,
-        coverLetterId: coverLetter.id,
-        applicationUrl: job.applicationUrl,
-        materialQuality,
-        manualSubmissionRequired: true,
-      },
-      sideEffects: { syncPacket: false },
-    });
-    preparedApplication = transitioned.application;
-  }
+  const transitioned = await transitionApplicationState({
+    applicationId: application.id,
+    toStatus: "ready_to_apply",
+    source: materialQuality.launchable ? "prepare_application_package" : "prepare_application_package_material_quality_advisory",
+    actor: { type: "system" },
+    reason: materialQuality.launchable
+      ? "Application package prepared with generated resume and launchable cover letter."
+      : "Application package prepared with generated materials. Material QA findings are advisory.",
+    note: mergeNotes(existingApplication?.notes ?? null, materialQuality),
+    metadata: {
+      jobProfileMatchId: match.id,
+      resumeId: resume.id,
+      coverLetterId: coverLetter.id,
+      applicationUrl: job.applicationUrl,
+      materialQuality,
+      materialQualityAdvisory: !materialQuality.launchable,
+      manualSubmissionRequired: true,
+    },
+    sideEffects: { syncPacket: false },
+  });
+  preparedApplication = transitioned.application;
 
   const packet = await syncApplicationPacket(application.id);
 
@@ -249,12 +247,12 @@ export async function prepareApplicationPackage(jobId: string, options: { regene
     resume,
     coverLetter,
     applicationUrl: job.applicationUrl,
-    readyToApply: materialQuality.launchable,
+    readyToApply: true,
     materialQuality,
     manualSubmissionRequired: true,
     message: materialQuality.launchable
       ? "Application package is ready. Open the job URL, review the filled materials, and submit manually."
-      : `Application package saved for review, but not moved to Apply Sprint. ${materialQuality.reason}`,
+      : `Application package is ready with advisory material QA findings. ${materialQuality.reason}`,
   };
 }
 
@@ -271,18 +269,33 @@ function escapeHtml(value: string) {
   });
 }
 
-function mergeNotes(existing: string | null) {
-  const note = "Application package prepared. Review materials and submit manually.";
-  if (!existing) return note;
-  return existing.includes(note) ? existing : `${existing}\n${note}`;
-}
-
-function materialReviewNote(existing: string | null, quality: ApplicationMaterialQuality) {
-  const note = `Application package held for material review: ${quality.reason}`;
+function mergeNotes(existing: string | null, quality?: ApplicationMaterialQuality) {
+  const note = quality && !quality.launchable
+    ? `Application package prepared. Material QA advisory: ${quality.reason}`
+    : "Application package prepared. Review materials and submit manually.";
   if (!existing) return note;
   return existing.includes(note) ? existing : `${existing}\n${note}`;
 }
 
 function jsonObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function repairWritingGuidance(repairContext: PrepareApplicationRepairContext | null | undefined) {
+  if (!repairContext) return [];
+  const guidance = [
+    "Material repair mode: rewrite from verified evidence only. Remove claims that are not directly supported by supplied evidence, selected resume content, or curated proof points.",
+    "Do not use broad tenure, domain, metric, location, leadership, AI, or company-impact claims unless they are explicitly supported by supplied source material.",
+    "Prefer concrete job-relevant evidence over generic enthusiasm. If a job signal is not supported, omit it instead of paraphrasing around it.",
+  ];
+  if (repairContext.reasons.includes("unsupported_claims_detected")) {
+    guidance.push("Application QA previously found unsupported claims. Rewrite to eliminate every unsupported or weakly sourced claim before QA reruns.");
+  }
+  if (repairContext.reasons.includes("style_violations_detected")) {
+    guidance.push("Application QA previously found style issues. Use direct, concise recruiter-facing prose with no hype, filler, cliches, em dashes, or obvious AI phrasing.");
+  }
+  if (repairContext.reasons.includes("application_qa_score_below_pass") || repairContext.reasons.includes("application_qa_needs_review")) {
+    guidance.push("Application QA previously scored this below pass. Improve specificity while staying inside verified evidence.");
+  }
+  return [...guidance, ...(repairContext.instructions ?? [])];
 }

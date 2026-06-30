@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createModernTwoColumnResumePdf, wrapPdfTextByWidth } from "@/lib/pdf/modern-resume-pdf";
+import { createModernCoverLetterPdf, createModernTwoColumnResumePdf, wrapPdfTextByWidth } from "@/lib/pdf/modern-resume-pdf";
 
 describe("createModernTwoColumnResumePdf", () => {
   it("renders the modern resume with embedded Roboto fonts and without overlay branding", async () => {
@@ -54,10 +54,31 @@ describe("createModernTwoColumnResumePdf", () => {
   it("wraps text using available PDF width instead of fixed character counts", () => {
     const sentence = "Built analytics dashboards and communication workflows for customer-facing SaaS interfaces with reporting views.";
 
-    const narrow = wrapPdfTextByWidth(sentence, 120, 7.35);
-    const wide = wrapPdfTextByWidth(sentence, 330, 7.35);
+    const narrow = wrapPdfTextByWidth(sentence, 120, 9.2);
+    const wide = wrapPdfTextByWidth(sentence, 330, 9.2);
 
     expect(narrow.length).toBeGreaterThan(wide.length);
     expect(wide.join(" ")).toBe(sentence);
+  });
+
+  it("renders cover letters with the same modern header system", async () => {
+    const pdf = await createModernCoverLetterPdf([
+      "Carl Welch",
+      "carl@example.com | 1-805-403-4819 | https://www.linkedin.com/in/carlwelch | https://github.com/carlwelchdesign",
+      "Acme | Senior Frontend Engineer",
+      "",
+      "Dear Acme team,",
+      "",
+      "I am interested in the role because it maps to my React, TypeScript, and product engineering background.",
+      "",
+      "Best,",
+      "Carl",
+    ].join("\n"));
+    const raw = Buffer.from(pdf).toString("latin1");
+
+    expect(raw).toContain("%PDF-");
+    expect(raw).toContain("Roboto-Regular");
+    expect(raw).toContain("Roboto-Bold");
+    expect(raw).not.toContain("Enhancv");
   });
 });

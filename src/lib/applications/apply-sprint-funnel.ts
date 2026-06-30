@@ -343,23 +343,11 @@ function reasonsForMatch(
 
 function reasonsForApplication(application: ApplicationRecord, visibleReadyApplicationIds: Set<string>): ApplySprintReasonCode[] {
   const reasons: ApplySprintReasonCode[] = [];
-  const materialQuality = application.coverLetter ? applicationMaterialQualityDetail(application.coverLetter.generationNotes) : null;
   if (application.status === "ready_to_apply") {
     if (!application.resumeId || !application.coverLetterId) reasons.push("missing_resume_or_cover_letter");
-    else if (materialQuality && !materialQuality.launchable) reasons.push("material_quality_needs_review");
     if (!application.jobPosting.applicationUrl) reasons.push("no_application_url");
     else if (isUnsupportedApplicationUrl(application.jobPosting.applicationUrl)) reasons.push("unsupported_application_url");
     if (!visibleReadyApplicationIds.has(application.id)) reasons.push("hidden_by_canonical_duplicate_reconciliation");
-  } else if (
-    ["approved", "resume_generated", "cover_letter_generated"].includes(application.status) &&
-    application.resumeId &&
-    application.coverLetterId &&
-    materialQuality &&
-    !materialQuality.launchable
-  ) {
-    reasons.push("material_quality_needs_review");
-    if (!application.jobPosting.applicationUrl) reasons.push("no_application_url");
-    else if (isUnsupportedApplicationUrl(application.jobPosting.applicationUrl)) reasons.push("unsupported_application_url");
   }
   if (submittedApplicationStatuses.includes(application.status)) reasons.push("already_has_application");
   return uniqueReasons(reasons);

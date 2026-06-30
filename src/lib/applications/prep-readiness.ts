@@ -38,18 +38,11 @@ export function classifyApplicationPrepReadiness(application: ApplicationPrepRea
   }
 
   const materialQuality = applicationMaterialQualityDetail(application.coverLetter?.generationNotes);
-  if (!materialQuality.launchable) {
-    return {
-      kind: "material_blocked",
-      reason: materialQuality.reason,
-      applicationUrlQuality,
-      materialQuality,
-    };
-  }
-
   return {
     kind: "ready_to_move",
-    reason: "Direct URL and launchable materials are ready.",
+    reason: materialQuality.launchable
+      ? "Direct URL and generated materials are ready."
+      : `Direct URL and generated materials are ready. Material QA advisory: ${materialQuality.reason}`,
     applicationUrlQuality,
     materialQuality,
   };

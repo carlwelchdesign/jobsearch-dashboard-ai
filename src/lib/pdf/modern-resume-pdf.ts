@@ -19,15 +19,15 @@ const MUTED = "#4d5663";
 const CHIP_FILL = "#dcebff";
 const CHIP_TEXT = "#035fbf";
 const DIVIDER = "#dbdfe6";
-const BODY_SIZE = 7.35;
-const BODY_LEADING = 9.5;
-const SMALL_SIZE = 6.85;
+const BODY_SIZE = 9.2;
+const BODY_LEADING = 12;
+const SMALL_SIZE = 8.5;
 const BULLET_INDENT = 10;
-const CHIP_FONT_SIZE = 6.1;
-const CHIP_HEIGHT = 9.2;
+const CHIP_FONT_SIZE = 7.2;
+const CHIP_HEIGHT = 11;
 const CHIP_X_PADDING = 3;
 const CHIP_GAP = 3.2;
-const CONTACT_SIZE = 7.2;
+const CONTACT_SIZE = 8.7;
 const FONT_REGULAR = "Roboto";
 const FONT_BOLD = "RobotoBold";
 const FONT_ITALIC = "RobotoItalic";
@@ -79,6 +79,17 @@ type ResumePdfOptions = {
   skillTargetingContext?: ResumeSkillTargetingContext;
 };
 
+type CoverLetterPdfOptions = {
+  profileImage?: ResumePdfImage | null;
+};
+
+type CoverLetterDocument = {
+  name: string;
+  contactLine: string;
+  targetLine: string;
+  body: string;
+};
+
 type PdfMetrics = {
   widthOfString: (value: string, size: number, font: PdfFont) => number;
 };
@@ -111,6 +122,33 @@ export async function createModernTwoColumnResumePdf(text: string, options: Resu
   return output;
 }
 
+export async function createModernCoverLetterPdf(text: string, options: CoverLetterPdfOptions = {}): Promise<Uint8Array<ArrayBuffer>> {
+  const document = parseCoverLetterDocument(text);
+  const pdf = new PDFDocument({ autoFirstPage: false, compress: false, margin: 0, size: [PAGE_WIDTH, PAGE_HEIGHT] });
+  registerResumeFonts(pdf);
+  const pages = layoutCoverLetterPages(document, pdfMetrics(pdf));
+  const chunks: Buffer[] = [];
+  const done = new Promise<Buffer>((resolve, reject) => {
+    pdf.on("data", (chunk: Buffer) => chunks.push(chunk));
+    pdf.on("end", () => resolve(Buffer.concat(chunks)));
+    pdf.on("error", reject);
+  });
+
+  for (const [pageIndex, page] of pages.entries()) {
+    pdf.addPage({ margin: 0, size: [PAGE_WIDTH, PAGE_HEIGHT] });
+    pdf.rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT).fill("#ffffff");
+    if (pageIndex === 0) renderCoverLetterHeader(pdf, document, options.profileImage);
+    else renderContinuationHeader(pdf, document.name, pageIndex + 1, "cover letter");
+    renderColumn(pdf, page);
+  }
+
+  pdf.end();
+  const buffer = await done;
+  const output = new Uint8Array(buffer.byteLength);
+  output.set(buffer);
+  return output;
+}
+
 function registerResumeFonts(pdf: PDFKit.PDFDocument) {
   pdf.registerFont(FONT_REGULAR, ROBOTO_REGULAR_PATH);
   pdf.registerFont(FONT_BOLD, ROBOTO_BOLD_PATH);
@@ -130,12 +168,41 @@ function pdfMetrics(pdf: PDFKit.PDFDocument): PdfMetrics {
   };
 }
 
+function parseCoverLetterDocument(text: string): CoverLetterDocument {
+  const lines = text.replace(/\r/g, "").split("\n");
+  const firstLineIndex = lines.findIndex((line) => line.trim());
+  const name = firstLineIndex === -1 ? "Candidate" : cleanPdfText(lines[firstLineIndex]).trim();
+  let index = firstLineIndex === -1 ? 0 : firstLineIndex + 1;
+  while (index < lines.length && !lines[index].trim()) index += 1;
+
+  let contactLine = "";
+  if (index < lines.length && isContactLine(lines[index])) {
+    contactLine = lines[index].trim();
+    index += 1;
+  }
+  while (index < lines.length && !lines[index].trim()) index += 1;
+
+  let targetLine = "Cover Letter";
+  if (index < lines.length && !isCoverLetterGreeting(lines[index])) {
+    targetLine = lines[index].trim();
+    index += 1;
+  }
+  while (index < lines.length && !lines[index].trim()) index += 1;
+
+  return {
+    name,
+    contactLine,
+    targetLine,
+    body: lines.slice(index).join("\n").trim(),
+  };
+}
+
 function layoutPages(document: ResumeDocument, metrics: PdfMetrics) {
   const leftLines = [
     section("Experience"),
     ...document.experience.flatMap((item) => [
       roleLine(item.role ?? item.title),
-      ...(item.company ? [bodyLine(item.company, 7.4, "bold", BLUE)] : []),
+      ...(item.company ? [bodyLine(item.company, BODY_SIZE, "bold", BLUE)] : []),
       ...(item.dates ? [dateLine(item.dates)] : []),
       ...(item.skills.length ? wrapBody(`Skills: ${item.skills.join(", ")}`, EXPERIENCE_WIDTH, metrics, BODY_SIZE, "italic") : []),
       ...item.bullets.slice(0, 5).flatMap((bullet) => bulletLines(bullet, EXPERIENCE_WIDTH - BULLET_INDENT, metrics)),
@@ -152,7 +219,7 @@ function layoutPages(document: ResumeDocument, metrics: PdfMetrics) {
     ...skillChipRows(document.skills, metrics),
     section("Projects"),
     ...document.projects.slice(0, 4).flatMap((project) => [
-      roleLine(project.name, 8.4),
+      roleLine(project.name, 9.8),
       ...wrapBody(project.description, SIDEBAR_WIDTH, metrics, BODY_SIZE),
     ]),
   ];
@@ -167,6 +234,23 @@ function layoutPages(document: ResumeDocument, metrics: PdfMetrics) {
     leftIndex = left.nextIndex;
     rightIndex = right.nextIndex;
     pages.push({ left: left.column, right: right.column });
+  }
+  return pages;
+}
+
+function layoutCoverLetterPages(document: CoverLetterDocument, metrics: PdfMetrics) {
+  const lines = [
+    ...targetLineLines(document.targetLine, RIGHT - LEFT, metrics),
+    ...coverLetterBodyLines(document.body, RIGHT - LEFT, metrics),
+  ];
+
+  const pages: PageColumn[] = [];
+  let index = 0;
+  while (index < lines.length || pages.length === 0) {
+    const top = pages.length === 0 ? CONTENT_TOP : 72;
+    const page = nextColumn(lines, index, LEFT, top, RIGHT - LEFT);
+    index = page.nextIndex;
+    pages.push(page.column);
   }
   return pages;
 }
@@ -186,10 +270,28 @@ function nextColumn(lines: PdfLine[], startIndex: number, x: number, y: number, 
   return { nextIndex: index, column: { lines: selected, x, y, width } };
 }
 
+function renderCoverLetterHeader(pdf: PDFKit.PDFDocument, document: CoverLetterDocument, profileImage: ResumePdfImage | null | undefined) {
+  drawText(pdf, document.name.toUpperCase(), LEFT, 43, 22, "bold", "#000000");
+  drawText(pdf, "Cover Letter", LEFT, 70, 10.5, "bold", BLUE);
+  renderContactItems(pdf, contactItems(document.contactLine), LEFT, 94, SIDEBAR_X + SIDEBAR_WIDTH - 104);
+  renderBadge(pdf, {
+    name: document.name,
+    contactLine: document.contactLine,
+    headline: "Cover Letter",
+    summary: [],
+    skills: [],
+    experience: [],
+    projects: [],
+    education: [],
+    certifications: [],
+    otherSections: [],
+  }, profileImage);
+}
+
 function renderHeader(pdf: PDFKit.PDFDocument, document: ResumeDocument, profileImage: ResumePdfImage | null | undefined) {
-  drawText(pdf, document.name.toUpperCase(), LEFT, 43, 18.5, "bold", "#000000");
-  drawText(pdf, document.headline, LEFT, 67, 9.1, "bold", BLUE);
-  renderContactItems(pdf, contactItems(document.contactLine), LEFT, 94);
+  drawText(pdf, document.name.toUpperCase(), LEFT, 43, 22, "bold", "#000000");
+  drawText(pdf, document.headline, LEFT, 70, 10.5, "bold", BLUE);
+  renderContactItems(pdf, contactItems(document.contactLine), LEFT, 94, SIDEBAR_X + SIDEBAR_WIDTH - 104);
   renderBadge(pdf, document, profileImage);
 }
 
@@ -210,9 +312,9 @@ function renderBadge(pdf: PDFKit.PDFDocument, document: ResumeDocument, image: R
   drawText(pdf, initials, cx - 13, cy - 7, 15.5, "bold", "#000000");
 }
 
-function renderContinuationHeader(pdf: PDFKit.PDFDocument, name: string, page: number) {
-  drawText(pdf, `${name} - resume continued`, LEFT, 36, 8.5, "bold", MUTED);
-  drawText(pdf, `Page ${page}`, 552, 36, 8, "regular", MUTED);
+function renderContinuationHeader(pdf: PDFKit.PDFDocument, name: string, page: number, label = "resume") {
+  drawText(pdf, `${name} - ${label} continued`, LEFT, 36, 9, "bold", MUTED);
+  drawText(pdf, `Page ${page}`, 552, 36, 8.5, "regular", MUTED);
   pdf.moveTo(LEFT, 54).lineTo(RIGHT, 54).lineWidth(0.5).stroke(DIVIDER);
 }
 
@@ -228,10 +330,10 @@ function renderColumn(pdf: PDFKit.PDFDocument, column: PageColumn) {
     } else if (line.kind === "chip-row" && line.chips) {
       renderChipRow(pdf, line.chips, column.x, y);
     } else if (line.kind === "date-line") {
-      muiIcon(pdf, MUI_ICON_PATHS.calendar, column.x, y - 1.3, 7.8, MUTED);
+      muiIcon(pdf, MUI_ICON_PATHS.calendar, column.x, y - 1.5, 9, MUTED);
       drawText(pdf, line.text, column.x + 12, y, line.size, line.font, line.color ?? MUTED);
     } else if (line.bullet) {
-      pdf.circle(column.x + 3.2, y + 4.1, 1.25).fill("#000000");
+      pdf.circle(column.x + 3.2, y + 5.1, 1.35).fill("#000000");
       drawText(pdf, line.text, column.x + 10, y, line.size, line.font, INK);
     } else {
       drawText(pdf, line.text, column.x, y, line.size, line.font, line.color ?? (line.font === "bold" ? INK : MUTED));
@@ -241,11 +343,18 @@ function renderColumn(pdf: PDFKit.PDFDocument, column: PageColumn) {
 }
 
 function section(textValue: string): PdfLine {
-  return { text: textValue, size: 9.8, font: "bold", leading: 14, gapBefore: 10, kind: "section" };
+  return { text: textValue, size: 11.2, font: "bold", leading: 16, gapBefore: 10, kind: "section" };
 }
 
-function roleLine(textValue: string, size = 9.4): PdfLine {
-  return { text: textValue, size, font: "bold", leading: 11, gapBefore: 7 };
+function roleLine(textValue: string, size = 10.6): PdfLine {
+  return { text: textValue, size, font: "bold", leading: 13, gapBefore: 7 };
+}
+
+function targetLineLines(textValue: string, width: number, metrics: PdfMetrics) {
+  return wrapPdfTextByWidth(textValue, width, 10.6, "bold", metrics).map((line, index) => ({
+    ...roleLine(line),
+    gapBefore: index === 0 ? 7 : 0,
+  }));
 }
 
 function bodyLine(textValue: string, size = BODY_SIZE, font: PdfFont = "regular", color?: string): PdfLine {
@@ -253,7 +362,7 @@ function bodyLine(textValue: string, size = BODY_SIZE, font: PdfFont = "regular"
 }
 
 function dateLine(textValue: string): PdfLine {
-  return { text: normalizeDateRange(textValue), size: SMALL_SIZE, font: "regular", color: MUTED, leading: 9.5, gapBefore: 2, kind: "date-line" };
+  return { text: normalizeDateRange(textValue), size: SMALL_SIZE, font: "regular", color: MUTED, leading: 11, gapBefore: 2, kind: "date-line" };
 }
 
 function bulletLines(textValue: string, width: number, metrics: PdfMetrics) {
@@ -263,6 +372,24 @@ function bulletLines(textValue: string, width: number, metrics: PdfMetrics) {
 function wrapBody(textValue: string, width: number, metrics: PdfMetrics, size = BODY_SIZE, fontOrBold: PdfFont | boolean = false) {
   const font = fontOrBold === true ? "bold" : fontOrBold || "regular";
   return wrapPdfTextByWidth(textValue, width, size, font, metrics).map((line, index) => ({ ...bodyLine(line, size), font, gapBefore: index === 0 ? 2 : 0 }));
+}
+
+function coverLetterBodyLines(textValue: string, width: number, metrics: PdfMetrics) {
+  const blocks = textValue
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  return blocks.flatMap((block, blockIndex) => {
+    const rawLines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+    const lines = rawLines.length > 1 && rawLines.every((line) => line.length <= 80)
+      ? rawLines
+      : wrapPdfTextByWidth(rawLines.join(" "), width, 10.2, "regular", metrics);
+    return lines.map((line, lineIndex) => ({
+      ...bodyLine(line, 10.2, "regular", INK),
+      leading: 14,
+      gapBefore: lineIndex === 0 ? (blockIndex === 0 ? 10 : 8) : 0,
+    }));
+  });
 }
 
 function skillChipRows(skills: string[], metrics: PdfMetrics) {
@@ -292,7 +419,7 @@ function roleSeparator(): PdfLine {
 }
 
 function chipRow(chips: string[]): PdfLine {
-  return { text: chips.join(" "), size: CHIP_FONT_SIZE, font: "bold", leading: 11.2, gapBefore: 2, kind: "chip-row", chips };
+  return { text: chips.join(" "), size: CHIP_FONT_SIZE, font: "bold", leading: 13, gapBefore: 2, kind: "chip-row", chips };
 }
 
 function renderChipRow(pdf: PDFKit.PDFDocument, chips: string[], x: number, y: number) {
@@ -321,6 +448,18 @@ function contactItems(contactLine: string): ContactItem[] {
   }).sort((a, b) => contactPriority(a) - contactPriority(b));
 }
 
+function isContactLine(line: string) {
+  return !isLikelyCoverLetterTargetLine(line) && /@|https?:\/\/|\blinkedin\.com\b|\bgithub\.com\b|(?:\+?\d[\d().\s-]{6,}\d)/i.test(line);
+}
+
+function isCoverLetterGreeting(line: string) {
+  return /^\s*(dear|hello|hi)\b/i.test(line);
+}
+
+function isLikelyCoverLetterTargetLine(line: string) {
+  return /\|/.test(line) && /\b(senior|staff|principal|lead|client partner|engineer|developer|manager|director|designer|architect|analyst|consultant|specialist|frontend|front-end|full-stack|software|product)\b/i.test(line);
+}
+
 function contactPriority(item: ContactItem) {
   if (item.kind === "phone") return 0;
   if (item.kind === "email") return 1;
@@ -329,18 +468,25 @@ function contactPriority(item: ContactItem) {
   return 4;
 }
 
-function renderContactItems(pdf: PDFKit.PDFDocument, items: ContactItem[], x: number, y: number) {
+function renderContactItems(pdf: PDFKit.PDFDocument, items: ContactItem[], x: number, y: number, maxX = RIGHT) {
   let cursorX = x;
+  let cursorY = y;
   const metrics = pdfMetrics(pdf);
   for (const item of items) {
     const iconSize = 7.8;
-    if (item.kind === "phone") muiIcon(pdf, MUI_ICON_PATHS.phone, cursorX, y + 0.3, iconSize, BLUE);
-    else if (item.kind === "email") muiIcon(pdf, MUI_ICON_PATHS.email, cursorX, y + 0.3, iconSize, BLUE);
-    else muiIcon(pdf, MUI_ICON_PATHS.link, cursorX, y + 0.3, iconSize, BLUE);
-
     const labelX = cursorX + 11;
-    drawText(pdf, item.label, labelX, y, CONTACT_SIZE, "bold", MUTED);
-    cursorX = labelX + metrics.widthOfString(item.label, CONTACT_SIZE, "bold") + 14;
+    const itemWidth = 11 + metrics.widthOfString(item.label, CONTACT_SIZE, "bold");
+    if (cursorX > x && cursorX + itemWidth > maxX) {
+      cursorX = x;
+      cursorY += 14;
+    }
+
+    if (item.kind === "phone") muiIcon(pdf, MUI_ICON_PATHS.phone, cursorX, cursorY + 0.3, iconSize, BLUE);
+    else if (item.kind === "email") muiIcon(pdf, MUI_ICON_PATHS.email, cursorX, cursorY + 0.3, iconSize, BLUE);
+    else muiIcon(pdf, MUI_ICON_PATHS.link, cursorX, cursorY + 0.3, iconSize, BLUE);
+
+    drawText(pdf, item.label, cursorX + 11, cursorY, CONTACT_SIZE, "bold", MUTED);
+    cursorX += itemWidth + 14;
   }
 }
 

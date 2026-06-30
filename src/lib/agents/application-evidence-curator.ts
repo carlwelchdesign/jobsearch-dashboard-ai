@@ -1,6 +1,7 @@
 import type { CandidateEvidence, ExperienceBullet, GithubRepository, JobPosting, Project, WorkExperience } from "@prisma/client";
 import { runAgent } from "@/lib/agents/run-agent";
 import type { ApplicationEvidencePlan, ApplicationEvidenceProofPoint } from "@/lib/applications/material-quality";
+import { isLinkedInRecommendationEvidence, linkedinRecommendationSignalLine } from "@/lib/evidence/linkedin-recommendation-guidance";
 import { retrieveCandidateEvidence } from "@/lib/evidence/retrieval";
 import { jsonArray } from "@/lib/json";
 import { prisma } from "@/lib/prisma";
@@ -90,7 +91,7 @@ export function buildApplicationEvidencePlan({
       sourceType: "candidate_evidence",
       sourceId: item.id,
       title: item.title,
-      summary: firstSentence(item.content),
+      summary: candidateEvidenceSummary(item),
       relevance: scoreEvidence(`${item.title} ${item.content} ${jsonArray(item.tags).join(" ")}`, jobSignals, domainAllowsDefense),
       keywords: matchedSignals(`${item.title} ${item.content} ${jsonArray(item.tags).join(" ")}`, jobSignals),
     })),
@@ -152,6 +153,11 @@ export function buildApplicationEvidencePlan({
       : `No strong cover-letter evidence was found for ${job.company}'s ${job.title} role.`,
     confidence: finalProofPoints.length >= 4 ? 0.86 : finalProofPoints.length >= 2 ? 0.72 : 0.42,
   };
+}
+
+function candidateEvidenceSummary(item: CandidateEvidence) {
+  if (isLinkedInRecommendationEvidence(item)) return linkedinRecommendationSignalLine(item);
+  return firstSentence(item.content);
 }
 
 function evidenceQuery(job: Pick<JobPosting, "title" | "company" | "description" | "requirements" | "niceToHaves">) {

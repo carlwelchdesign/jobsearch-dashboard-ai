@@ -21,6 +21,11 @@ import {
   cleanResumeSkillsSection,
   normalizeTargetedResumeSkills,
 } from "@/lib/resumes/skill-targeting";
+import { buildProfileContactLine } from "@/lib/resumes/contact-line";
+import {
+  resumeRoleBaseKey,
+  resumeRolesEquivalent,
+} from "@/lib/resumes/source-materials";
 import type { ApplicationEvidencePlan } from "@/lib/applications/material-quality";
 
 type TailorResumeInput = {
@@ -84,7 +89,7 @@ export async function tailorResumeForJob({
     cleanProjects,
     githubRepositories,
   );
-  const contactLine = buildResumeContactLine(
+  const contactLine = buildProfileContactLine(
     userProfile,
     cleanGithubRepositories,
   );
@@ -190,6 +195,7 @@ export async function tailorResumeForJob({
         ),
         job,
         cleanProjects,
+        cleanGithubRepositories,
       ),
       contactLine,
     );
@@ -200,16 +206,22 @@ export async function tailorResumeForJob({
         ),
         job,
         cleanProjects,
+        cleanGithubRepositories,
       ),
       contactLine,
     );
+    tailored.markdownResume = dedupeResumeBulletsByRole(tailored.markdownResume);
     const continuity = enforceWorkHistoryContinuity(
       tailored.markdownResume,
       workExperiences,
       bullets,
     );
-    tailored.markdownResume = continuity.markdownResume;
-    tailored.plainTextResume = continuity.markdownResume.replace(/^#+\s/gm, "");
+    tailored.markdownResume = enforceRoleSkillLines(
+      continuity.markdownResume,
+      workExperiences,
+    );
+    tailored.markdownResume = dedupeResumeBulletsByRole(tailored.markdownResume);
+    tailored.plainTextResume = tailored.markdownResume.replace(/^#+\s/gm, "");
     if (continuity.addedEntries.length) {
       tailored.warnings = [
         ...tailored.warnings,
@@ -449,61 +461,6 @@ function classifyCoverLetterGenerationFailure(
   };
 }
 
-// Normalize any GitHub URL to the profile root — strips /repo and deeper paths
-function githubProfileUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  try {
-    const u = new URL(url);
-    if (!u.hostname.includes("github.com")) return url;
-    const username = u.pathname.split("/").filter(Boolean)[0];
-    return username ? `https://github.com/${username}` : null;
-  } catch {
-    return url;
-  }
-}
-
-function linkedinProfileUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  try {
-    const u = new URL(url);
-    if (!u.hostname.includes("linkedin.com")) return url;
-    const parts = u.pathname.split("/").filter(Boolean);
-    if (parts[0]?.toLowerCase() !== "in" || !parts[1]) return null;
-    return `https://www.linkedin.com/in/${parts[1].replace(/\/$/, "")}`;
-  } catch {
-    return /linkedin\.com\/in\/[^/\s]+/i.test(url) ? url : null;
-  }
-}
-
-function githubProfileUrlFromRepositories(
-  repositories: GithubRepository[],
-): string | null {
-  for (const repo of repositories) {
-    const fromUrl = githubProfileUrl(repo.htmlUrl);
-    if (fromUrl) return fromUrl;
-    const owner = repo.fullName.split("/").filter(Boolean)[0];
-    if (owner) return `https://github.com/${owner}`;
-  }
-  return null;
-}
-
-function buildResumeContactLine(
-  userProfile: UserProfile,
-  githubRepositories: GithubRepository[] = [],
-) {
-  return [
-    userProfile.email,
-    userProfile.phone,
-    userProfile.location,
-    linkedinProfileUrl(userProfile.linkedinUrl),
-    githubProfileUrl(userProfile.githubUrl) ??
-      githubProfileUrlFromRepositories(githubRepositories),
-    userProfile.portfolioUrl,
-  ]
-    .filter((value) => value && value !== "https://")
-    .join(" | ");
-}
-
 function buildFallbackTailoredResume({
   userProfile,
   job,
@@ -585,7 +542,7 @@ function buildFallbackTailoredResume({
     .filter(Boolean)
     .map((part) => part.trim())
     .join(" ");
-  const contactLine = buildResumeContactLine(userProfile, githubRepositories);
+  const contactLine = buildProfileContactLine(userProfile, githubRepositories);
   const markdownResume = [
     `# ${userProfile.fullName}`,
     contactLine,
@@ -657,13 +614,44 @@ function cleanTailoredResumeSkills(
   text: string,
   job: JobPosting,
   projects: Project[],
+  githubRepositories: GithubRepository[] = [],
 ) {
   return cleanResumeSkillsSection(text, {
     jobText: `${job.title} ${job.description}`,
     evidenceText: projects
-      .map((project) => [project.name, project.description].join(" "))
+      .map((project) =>
+        [
+          project.name,
+          project.description,
+          ...jsonStringArray(project.technologies),
+        ].join(" "),
+      )
+      .concat(
+        githubRepositories.map((repo) =>
+          [
+            repo.name,
+            repo.description,
+            repo.language,
+            ...jsonStringArray(repo.topics),
+          ].join(" "),
+        ),
+      )
       .join(" "),
+    evidenceSkills: resumeEvidenceSkills(projects, githubRepositories),
   });
+}
+
+function resumeEvidenceSkills(
+  projects: Project[],
+  githubRepositories: GithubRepository[],
+) {
+  return uniqueStrings([
+    ...projects.flatMap((project) => jsonStringArray(project.technologies)),
+    ...githubRepositories.flatMap((repo) => [
+      repo.language,
+      ...jsonStringArray(repo.topics),
+    ].filter((value): value is string => Boolean(value))),
+  ]);
 }
 
 // Strip AI metadata that occasionally leaks into the resume text fields.
@@ -783,17 +771,20 @@ function formatExperience(
   workExperiences: WorkExperience[],
 ) {
   const chronologicalWork = sortWorkExperiences(workExperiences);
-  const workByKey = new Map(
-    chronologicalWork.map((work) => [workKey(work.company, work.title), work]),
-  );
+  const workEntries = chronologicalWork.map((work) => ({
+    key: resumeWorkEntryKey(work),
+    work,
+  }));
+  const workByKey = new Map(workEntries.map(({ key, work }) => [key, work]));
   const groups = new Map<string, ExperienceBullet[]>();
   for (const bullet of bullets) {
-    const key = workKey(bullet.company, bullet.role);
+    const key =
+      matchingWorkEntryKeyForBullet(bullet, workEntries) ??
+      workKey(bullet.company, bullet.role);
     groups.set(key, [...(groups.get(key) ?? []), bullet]);
   }
 
-  for (const work of chronologicalWork) {
-    const key = workKey(work.company, work.title);
+  for (const { key } of workEntries) {
     if (!groups.has(key)) groups.set(key, []);
   }
 
@@ -836,16 +827,25 @@ function enforceWorkHistoryContinuity(
   if (!chronologicalWork.length)
     return { markdownResume, addedEntries: [] as string[] };
 
-  const existingText = normalizeWorkKey(markdownResume);
+  const existingRoles = existingResumeRoles(markdownResume);
   const missingWork = chronologicalWork.filter(
-    (work) => !existingText.includes(normalizeWorkKey(work.company)),
+    (work) =>
+      !existingRoles.some((existingRole) =>
+        resumeRolesEquivalent(existingRole, work),
+      ),
   );
   if (!missingWork.length)
     return { markdownResume, addedEntries: [] as string[] };
 
   const sourceBulletsByKey = new Map<string, ExperienceBullet[]>();
+  const workEntries = chronologicalWork.map((work) => ({
+    key: resumeWorkEntryKey(work),
+    work,
+  }));
   for (const bullet of uniqueBullets(bullets)) {
-    const key = workKey(bullet.company, bullet.role);
+    const key =
+      matchingWorkEntryKeyForBullet(bullet, workEntries) ??
+      workKey(bullet.company, bullet.role);
     sourceBulletsByKey.set(key, [
       ...(sourceBulletsByKey.get(key) ?? []),
       bullet,
@@ -858,7 +858,7 @@ function enforceWorkHistoryContinuity(
         ? ` | ${[work.startDate, work.endDate].filter(Boolean).join(" - ")}`
         : "";
     const roleBullets = roleBulletTexts(
-      sourceBulletsByKey.get(workKey(work.company, work.title)) ?? [],
+      sourceBulletsByKey.get(resumeWorkEntryKey(work)) ?? [],
       work,
     );
     return [
@@ -873,6 +873,67 @@ function enforceWorkHistoryContinuity(
     markdownResume: appendToProfessionalExperience(markdownResume, additions),
     addedEntries: missingWork.map((work) => work.company),
   };
+}
+
+function enforceRoleSkillLines(
+  markdownResume: string,
+  workExperiences: WorkExperience[],
+) {
+  const chronologicalWork = sortWorkExperiences(workExperiences);
+  if (!chronologicalWork.length) return markdownResume;
+
+  const lines = markdownResume.split("\n");
+  const start = lines.findIndex((line) =>
+    /^##\s+Professional Experience\s*$/i.test(line.trim()),
+  );
+  if (start === -1) return markdownResume;
+
+  const end = lines.findIndex(
+    (line, index) => index > start && /^##\s+\S/.test(line.trim()),
+  );
+  const stop = end === -1 ? lines.length : end;
+  const output = [...lines];
+
+  for (let index = stop - 1; index > start; index -= 1) {
+    const role = resumeRoleFromLine(output[index]);
+    if (!role) continue;
+
+    const work = chronologicalWork.find((item) =>
+      resumeRolesEquivalent(role, item),
+    );
+    const skillLine = formatRoleSkills(work)[0];
+    if (!skillLine) continue;
+
+    const nextEntry = nextResumeEntryIndex(output, index + 1, stop);
+    const hasSkillLine = output
+      .slice(index + 1, nextEntry)
+      .some((line) => /^skills\s*:/i.test(line.trim()));
+    if (!hasSkillLine) output.splice(index + 1, 0, skillLine);
+  }
+
+  return output.join("\n").trimEnd();
+}
+
+function resumeRoleFromLine(line: string) {
+  const stripped = line.trim().replace(/^#{1,6}\s+/, "");
+  const match = stripped.match(/^(.+?)\s+-\s+(.+?)(?:\s+\|\s+(.+))?$/);
+  if (!match) return null;
+  const [startDate, endDate] = splitResumeDateRange(match[3] ?? "");
+  return {
+    company: match[1].trim(),
+    title: match[2].trim(),
+    startDate,
+    endDate,
+  };
+}
+
+function nextResumeEntryIndex(lines: string[], start: number, stop: number) {
+  for (let index = start; index < stop; index += 1) {
+    const trimmed = lines[index].trim();
+    if (/^#{2,6}\s+\S/.test(trimmed) || resumeRoleFromLine(trimmed))
+      return index;
+  }
+  return stop;
 }
 
 function appendToProfessionalExperience(
@@ -928,12 +989,91 @@ function roleBulletTexts(
   const combined = uniqueStrings([...sourceTexts, ...achievementTexts]);
   if (!combined.length) return fallbackWorkBullets(work);
 
-  return combined
+  return uniqueResumeBulletTexts(combined)
     .sort(
-      (left, right) => scoreAchievementText(right) - scoreAchievementText(left),
+      (left, right) =>
+        scoreRoleBulletText(right, work) - scoreRoleBulletText(left, work),
     )
     .slice(0, 4);
 }
+
+function dedupeResumeBulletsByRole(markdownResume: string) {
+  const lines = markdownResume.split("\n");
+  const output: string[] = [];
+  let inExperience = false;
+  let roleBulletKeys = new Set<string>();
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^##\s+Professional Experience\s*$/i.test(trimmed)) {
+      inExperience = true;
+      roleBulletKeys = new Set();
+      output.push(line);
+      continue;
+    }
+    if (inExperience && /^##\s+\S/.test(trimmed)) {
+      inExperience = false;
+      output.push(line);
+      continue;
+    }
+    if (inExperience && (/^#{3,6}\s+\S/.test(trimmed) || resumeRoleFromLine(trimmed))) {
+      roleBulletKeys = new Set();
+      output.push(line);
+      continue;
+    }
+    if (inExperience && /^[-*]\s+/.test(trimmed)) {
+      const key = resumeBulletDedupeKey(trimmed.replace(/^[-*]\s+/, ""));
+      if (roleBulletKeys.has(key)) continue;
+      roleBulletKeys.add(key);
+    }
+    output.push(line);
+  }
+
+  return output.join("\n").trimEnd();
+}
+
+function uniqueResumeBulletTexts(bullets: string[]) {
+  const seen = new Set<string>();
+  return bullets.filter((bullet) => {
+    const key = resumeBulletDedupeKey(bullet);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function resumeBulletDedupeKey(text: string) {
+  const normalized = text
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/[^a-z0-9+#.]+/g, " ")
+    .trim();
+  const acronyms = Array.from(
+    new Set((text.match(/\b[A-Z][A-Z0-9]{2,}\b/g) ?? []).map((item) => item.toLowerCase())),
+  );
+  if (acronyms.length >= 2) return `acronyms:${acronyms.sort().join("|")}`;
+  const signalTerms = normalized
+    .split(/\s+/)
+    .filter((term) => term.length >= 5)
+    .filter((term) => !resumeBulletStopWords.has(term));
+  return signalTerms.slice(0, 8).join(" ") || normalized;
+}
+
+const resumeBulletStopWords = new Set([
+  "including",
+  "through",
+  "worked",
+  "served",
+  "built",
+  "created",
+  "operated",
+  "supported",
+  "including",
+  "device",
+  "tools",
+  "early",
+  "digital",
+]);
 
 function scoreBulletForResume(bullet: ExperienceBullet, jobTerms: Set<string>) {
   return scoreTerm(bullet.text, jobTerms) + scoreAchievementText(bullet.text);
@@ -953,6 +1093,23 @@ function scoreAchievementText(text: string) {
     )
   )
     score += 2;
+  return score;
+}
+
+function scoreRoleBulletText(
+  text: string,
+  work: WorkExperience | undefined,
+) {
+  let score = scoreAchievementText(text);
+  if (
+    work &&
+    /\b(?:taser|axon)\b/i.test(`${work.company} ${work.title}`) &&
+    /\bearly front[- ]end development\b/i.test(text) &&
+    /\bAxon['’]?s? public safety technology platform\b/i.test(text) &&
+    /\bEvidence\.com\b/i.test(text)
+  ) {
+    score += 20;
+  }
   return score;
 }
 
@@ -1001,7 +1158,7 @@ function roleEvidenceText(work: WorkExperience) {
 }
 
 function sortWorkExperiences(workExperiences: WorkExperience[]) {
-  const seen = new Set<string>();
+  const seen: WorkExperience[] = [];
   return [...workExperiences]
     .sort((a, b) => {
       const dateDiff = workSortValue(b) - workSortValue(a);
@@ -1010,8 +1167,15 @@ function sortWorkExperiences(workExperiences: WorkExperience[]) {
     })
     .filter((work) => {
       const key = `${workKey(work.company, work.title)}|${work.startDate ?? ""}|${work.endDate ?? ""}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
+      if (
+        seen.some(
+          (existing) =>
+            `${workKey(existing.company, existing.title)}|${existing.startDate ?? ""}|${existing.endDate ?? ""}` === key ||
+            resumeRolesEquivalent(existing, work),
+        )
+      )
+        return false;
+      seen.push(work);
       return true;
     });
 }
@@ -1052,6 +1216,52 @@ function parseResumeDate(value: string | null | undefined, isCurrent: boolean) {
 
 function workKey(company: string, title: string) {
   return `${normalizeWorkKey(company)}|${normalizeWorkKey(title)}`;
+}
+
+function resumeWorkEntryKey(work: WorkExperience) {
+  return [
+    resumeRoleBaseKey(work),
+    normalizeWorkKey(work.startDate ?? ""),
+    normalizeWorkKey(work.endDate ?? ""),
+  ].join("|");
+}
+
+function matchingWorkEntryKeyForBullet(
+  bullet: ExperienceBullet,
+  workEntries: Array<{ key: string; work: WorkExperience }>,
+) {
+  const direct = workEntries.find(
+    ({ work }) => work.id === bullet.workExperienceId,
+  );
+  if (direct) return direct.key;
+
+  const bulletBaseKey = resumeRoleBaseKey({
+    company: bullet.company,
+    title: bullet.role,
+  });
+  const candidates = workEntries.filter(
+    ({ work }) => resumeRoleBaseKey(work) === bulletBaseKey,
+  );
+  if (candidates.length === 1) return candidates[0].key;
+
+  const exactKey = workKey(bullet.company, bullet.role);
+  return workEntries.find(({ work }) => workKey(work.company, work.title) === exactKey)
+    ?.key;
+}
+
+function existingResumeRoles(markdownResume: string) {
+  return markdownResume
+    .split("\n")
+    .flatMap((line) => {
+      const role = resumeRoleFromLine(line);
+      return role ? [role] : [];
+    });
+}
+
+function splitResumeDateRange(value: string): [string | null, string | null] {
+  if (!value.trim()) return [null, null];
+  const [startDate, endDate] = value.split(/\s+-\s+/, 2);
+  return [startDate?.trim() || null, endDate?.trim() || null];
 }
 
 function normalizeWorkKey(value: string) {

@@ -310,9 +310,9 @@ export default async function ApplicationsPage() {
                         buttonSx={{ width: "100%", justifyContent: "flex-start" }}
                         buttonColor="warning"
                         queue="material_blocked"
-                        label="Regenerate blocked materials"
-                        loadingLabel="Regenerating..."
-                        startNotice="Regenerating blocked resumes and cover letters. Passing applications will move to Ready to apply."
+                        label="Fix material issues"
+                        loadingLabel="Fixing..."
+                        startNotice="Agents are repairing blocked resumes and cover letters. Passing applications will move to Ready to apply."
                       />
                     </Box>
                   ) : null}
@@ -345,10 +345,31 @@ export default async function ApplicationsPage() {
                             />
                           ) : null}
                           <Box sx={{ mt: 1 }}>
+                            {isMaterialBlockedColumn ? (
+                              <ActionButton
+                                postTo={`/api/applications/${application.id}/material-review/repair`}
+                                size="small"
+                                variant="contained"
+                                color="warning"
+                                startIcon={<BoltOutlinedIcon />}
+                                runInBackground
+                                loadingLabel="Fixing..."
+                              >
+                                Fix material issue
+                              </ActionButton>
+                            ) : (
                             <ActionButton href={`/applications/${application.id}`} size="small" variant="outlined" startIcon={<FactCheckOutlinedIcon />}>
                               {isMaterialBlockedColumn ? "Review material issue" : "Review packet"}
                             </ActionButton>
+                            )}
                           </Box>
+                          {isMaterialBlockedColumn ? (
+                            <Box sx={{ mt: 1 }}>
+                              <ActionButton href={`/applications/${application.id}#material-repair`} size="small" variant="outlined" startIcon={<FactCheckOutlinedIcon />}>
+                                View repair details
+                              </ActionButton>
+                            </Box>
+                          ) : null}
                           {application.status === "ready_to_apply" && application.resume && application.coverLetter && assessApplicationUrlQuality(application.jobPosting.applicationUrl).launchable ? (
                             <Box sx={{ mt: 1 }}>
                               <Button

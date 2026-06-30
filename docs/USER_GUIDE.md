@@ -375,7 +375,7 @@ Brave Search powers the **Search Query Backlog** source, which is a set of targe
 - Workday, SmartRecruiters, iCIMS, Jobvite, Bullhorn, Oracle Taleo, SAP SuccessFactors, BambooHR, Workable, Teamtailor, Jobylon, Join, Jobtrain
 - Wellfound (AngelList), YC jobs, Built In, Levels.fyi, TrueUp, Dice, ZipRecruiter, Monster, CareerBuilder, SimplyHired, Adzuna
 - Hacker News "Who's Hiring", VC portfolio boards
-- Remote-specific boards: Remote.co, Remotive, NoDesk, Himalayas, Working Nomads
+- Remote-specific boards: Remote.co, Remotive, Remote Rocketship, JS Remotely, Pyjama Jobs, NoDesk, Himalayas, Working Nomads
 - USAJOBS (federal roles)
 
 Without Brave Search, you are limited to companies you have explicitly added to your watchlist that use Greenhouse, Lever, or Ashby — which is a good start but misses a large portion of the job market.
@@ -797,7 +797,7 @@ The full **Market Analysis** brief now lives on the Command Center. Click **Run 
 
 ### The Search Query Backlog source
 
-When you enable **Search Query Backlog** (requires a `BRAVE_SEARCH_API_KEY`), the system runs targeted Brave web searches covering platforms that do not have direct ATS integrations — including Workday, SmartRecruiters, iCIMS, Jobvite, Bullhorn, Oracle Taleo, SAP SuccessFactors, BambooHR, Teamtailor, Jobylon, Join, Jobtrain, Wellfound, ZipRecruiter, Dice, Monster, CareerBuilder, SimplyHired, Adzuna, Built In, Levels.fyi, Hacker News, USAJOBS, and many others.
+When you enable **Search Query Backlog** (requires a `BRAVE_SEARCH_API_KEY`), the system runs targeted Brave web searches covering platforms that do not have direct ATS integrations — including Workday, SmartRecruiters, iCIMS, Jobvite, Bullhorn, Oracle Taleo, SAP SuccessFactors, BambooHR, Teamtailor, Jobylon, Join, Jobtrain, Wellfound, Remotive, Remote Rocketship, JS Remotely, Pyjama Jobs, ZipRecruiter, Dice, Monster, CareerBuilder, SimplyHired, Adzuna, Built In, Levels.fyi, Hacker News, USAJOBS, and many others. Kickresume, Eztrackr, FlexJobs, and Toptal remain manual/account workflows rather than scrape targets.
 
 Built In search-result URLs, such as filtered `/jobs/.../search/...` pages, are treated as listing pages. The system expands them into individual Built In job-detail pages and then looks for the real employer or ATS application link. If Built In does not expose an external application URL, the job can still be reviewed, but it will not enter Apply Sprint as if the Built In listing page were the application form.
 

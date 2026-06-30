@@ -6,6 +6,7 @@ import { runHiringManagerReviewerAgent } from "@/lib/agents/hiring-manager-revie
 import { apiError } from "@/lib/api";
 import { prepareApplicationPackage } from "@/lib/applications/prepare-package";
 import { syncApplicationPacket } from "@/lib/applications/application-packets";
+import { repairApplicationMaterialIssue } from "@/lib/applications/material-quality-repair";
 import { classifyApplicationPrepReadiness, type ApplicationPrepReadiness } from "@/lib/applications/prep-readiness";
 import {
   applicationMaterialQualityDetail,
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
         setTimeout(() => {
           void runBulkMove(input)
             .catch((error) => {
-              console.error("Material review regeneration failed", error);
+              console.error("Material issue repair failed", error);
             })
             .finally(() => {
               backgroundBulkMoveKeys.delete(key);
@@ -58,8 +59,8 @@ export async function POST(request: Request) {
         alreadyRunning,
         requested: input,
         message: alreadyRunning
-          ? "Material regeneration is already running."
-          : `Regeneration is running for up to ${input.limit} material-blocked application${input.limit === 1 ? "" : "s"}. Refresh this page in a few minutes to see which moved to Ready to apply.`,
+          ? "Material issue repair is already running."
+          : `Agent repair is running for up to ${input.limit} material-blocked application${input.limit === 1 ? "" : "s"}. Refresh this page in a few minutes to see which moved to Ready to apply.`,
       }, { status: 202 });
     }
     return await runBulkMove(input);
@@ -149,35 +150,32 @@ async function runBulkMove(input: BulkMoveInput) {
 
     for (const { application } of materialBlockedToRegenerate) {
       try {
-        const prepared = await prepareApplicationPackage(application.jobPostingId, {
-          regenerateResume: true,
-          regenerateCoverLetter: true,
-        });
-        if (prepared.readyToApply === false) {
+        const repaired = await repairApplicationMaterialIssue(application.id);
+        if (repaired.status !== "repaired") {
           results.push({
             ok: false,
-            applicationId: prepared.application.id,
+            applicationId: repaired.applicationId,
             jobId: application.jobPostingId,
             company: application.jobPosting.company,
             title: application.jobPosting.title,
-            action: "material_blocked",
+            action: repaired.status === "failed" ? "failed" : "material_blocked",
             readiness: "material_blocked",
-            regeneratedCoverLetter: true,
-            materialQuality: prepared.materialQuality,
-            reason: prepared.materialQuality.reason,
-            error: `material_quality_needs_review: ${prepared.materialQuality.reason}`,
+            regeneratedCoverLetter: repaired.attemptedRepair,
+            materialQuality: repaired.materialQuality ?? undefined,
+            reason: repaired.reason,
+            error: repaired.status === "failed" ? repaired.reason : `material_quality_needs_review: ${repaired.reason}`,
           });
           continue;
         }
         results.push({
           ok: true,
-          applicationId: prepared.application.id,
+          applicationId: repaired.applicationId,
           jobId: application.jobPostingId,
           company: application.jobPosting.company,
           title: application.jobPosting.title,
           action: "prepared",
-          regeneratedCoverLetter: true,
-          materialQuality: prepared.materialQuality,
+          regeneratedCoverLetter: repaired.attemptedRepair,
+          materialQuality: repaired.materialQuality ?? undefined,
         });
       } catch (error) {
         results.push({
@@ -198,68 +196,6 @@ async function runBulkMove(input: BulkMoveInput) {
       try {
         if (application.resumeId && application.coverLetterId) {
           let materialQuality = applicationMaterialQualityDetail(application.coverLetter?.generationNotes);
-          if (!materialQuality.launchable) {
-            const reassessedMaterialQuality = await reassessExistingApplicationMaterials(application, materialQuality);
-            if (reassessedMaterialQuality) {
-              materialQuality = reassessedMaterialQuality;
-              if (materialQuality.launchable) {
-                await moveApplicationToSprint(application, materialQuality);
-                results.push({
-                  ok: true,
-                  applicationId: application.id,
-                  jobId: application.jobPostingId,
-                  company: application.jobPosting.company,
-                  title: application.jobPosting.title,
-                  action: "moved",
-                  reassessedMaterialQuality: true,
-                  materialQuality,
-                });
-                continue;
-              }
-            }
-            if (!input.regenerateBlockedMaterials) {
-              results.push({
-                ok: false,
-                applicationId: application.id,
-                jobId: application.jobPostingId,
-                company: application.jobPosting.company,
-                title: application.jobPosting.title,
-                action: "material_blocked",
-                readiness: "material_blocked",
-                materialQuality,
-                reason: materialQuality.reason,
-                error: `material_quality_needs_review: ${materialQuality.reason}`,
-              });
-              continue;
-            }
-            const prepared = await prepareApplicationPackage(application.jobPostingId, { regenerateCoverLetter: true });
-            if (prepared.readyToApply === false) {
-              results.push({
-                ok: false,
-                applicationId: prepared.application.id,
-                jobId: application.jobPostingId,
-                company: application.jobPosting.company,
-                title: application.jobPosting.title,
-                action: "material_blocked",
-                readiness: "material_blocked",
-                regeneratedCoverLetter: true,
-                materialQuality: prepared.materialQuality,
-                reason: prepared.materialQuality.reason,
-                error: `material_quality_needs_review: ${prepared.materialQuality.reason}`,
-              });
-              continue;
-            }
-            results.push({
-              ok: true,
-              applicationId: prepared.application.id,
-              jobId: application.jobPostingId,
-              company: application.jobPosting.company,
-              title: application.jobPosting.title,
-              action: "prepared",
-              regeneratedCoverLetter: true,
-            });
-            continue;
-          }
           await moveApplicationToSprint(application, materialQuality);
           results.push({
             ok: true,
@@ -268,6 +204,7 @@ async function runBulkMove(input: BulkMoveInput) {
             company: application.jobPosting.company,
             title: application.jobPosting.title,
             action: "moved",
+            materialQuality,
           });
           continue;
         }
@@ -287,21 +224,6 @@ async function runBulkMove(input: BulkMoveInput) {
           continue;
         }
         const prepared = await prepareApplicationPackage(application.jobPostingId);
-        if (prepared.readyToApply === false) {
-          results.push({
-            ok: false,
-            applicationId: prepared.application.id,
-            jobId: application.jobPostingId,
-            company: application.jobPosting.company,
-            title: application.jobPosting.title,
-            action: "material_blocked",
-            readiness: "material_blocked",
-            materialQuality: prepared.materialQuality,
-            reason: prepared.materialQuality.reason,
-            error: `material_quality_needs_review: ${prepared.materialQuality.reason}`,
-          });
-          continue;
-        }
         results.push({
           ok: true,
           applicationId: prepared.application.id,
@@ -309,6 +231,7 @@ async function runBulkMove(input: BulkMoveInput) {
           company: application.jobPosting.company,
           title: application.jobPosting.title,
           action: "prepared",
+          materialQuality: prepared.materialQuality,
         });
       } catch (error) {
         results.push({
@@ -332,8 +255,8 @@ async function runBulkMove(input: BulkMoveInput) {
     const regenerated = results.filter((result) => result.regeneratedCoverLetter).length;
     const reassessed = results.filter((result) => result.ok && result.reassessedMaterialQuality).length;
     const failed = results.filter((result) => !result.ok && result.action !== "material_blocked").length;
-    const quotaBlocked = results.filter((result) => result.materialQuality?.reasons.includes("openai_insufficient_quota")).length;
-    const materialBlocked = results.filter((result) => result.action === "material_blocked" || result.materialQuality?.reasons.includes("deterministic_fallback") || result.materialQuality?.reasons.includes("material_quality_needs_review") || result.error?.startsWith("material_quality_needs_review")).length;
+    const quotaBlocked = results.filter((result) => !result.ok && result.materialQuality?.reasons.includes("openai_insufficient_quota")).length;
+    const materialBlocked = results.filter((result) => result.action === "material_blocked" || result.error?.startsWith("material_quality_needs_review")).length;
     const remainingEligible = input.queue === "material_blocked"
       ? Math.max(0, materialBlockedApplications.length - materialBlockedToRegenerate.length)
       : Math.max(0, readyToMoveApplications.length + needsMaterialsApplications.length - directApplications.length);
