@@ -1,4 +1,5 @@
 import { readFileSync } from "fs";
+import { resolve } from "path";
 import { describe, expect, it } from "vitest";
 import {
   buildRecommendationBulletDrafts,
@@ -7,7 +8,7 @@ import {
 } from "@/lib/evidence/linkedin-recommendations";
 
 const pastedRecommendations = readFileSync(
-  "/Users/carl.welch/.codex/attachments/367e6292-bb88-4119-ad81-42e745fe2bde/pasted-text.txt",
+  resolve(process.cwd(), "src/lib/evidence/fixtures/linkedin-recommendations.txt"),
   "utf8",
 );
 

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 describe("/agents quality gates surface", () => {
   it("keeps the Phase 5 quality gate board wired into the Agent Review Board", () => {
-    const pageSource = readFileSync(resolve(process.cwd(), "src/app/agents/page.tsx"), "utf8");
+    const pageSource = readFileSync(resolve(process.cwd(), "src/app/(workspace)/agents/page.tsx"), "utf8");
     const serviceSource = readFileSync(resolve(process.cwd(), "src/lib/agents/quality-gates.ts"), "utf8");
 
     expect(pageSource).toContain("AgentQualityGateSection");

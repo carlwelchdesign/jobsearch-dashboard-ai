@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 describe("Resume review page upload selection", () => {
   it("ignores stale pending uploads once a newer upload is approved", () => {
-    const source = readFileSync(resolve(process.cwd(), "src/app/resumes/review/page.tsx"), "utf8");
+    const source = readFileSync(resolve(process.cwd(), "src/app/(workspace)/resumes/review/page.tsx"), "utf8");
 
     expect(source).toContain('parsingStatus: "approved"');
     expect(source).toContain('parsingStatus: "needs_review"');

@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 
 describe("Search Profiles recruiting search team", () => {
   it("surfaces the Phase 6 recruiting search optimization panel", () => {
-    const pageSource = readFileSync(resolve(process.cwd(), "src/app/profiles/page.tsx"), "utf8");
-    const panelSource = readFileSync(resolve(process.cwd(), "src/app/profiles/search-optimization-panel.tsx"), "utf8");
+    const pageSource = readFileSync(resolve(process.cwd(), "src/app/(workspace)/profiles/page.tsx"), "utf8");
+    const panelSource = readFileSync(resolve(process.cwd(), "src/app/(workspace)/profiles/search-optimization-panel.tsx"), "utf8");
 
     expect(pageSource).toContain("SearchOptimizationPanel");
     expect(pageSource).toContain("searchOptimizationRun.findFirst");
@@ -16,7 +16,7 @@ describe("Search Profiles recruiting search team", () => {
   });
 
   it("surfaces the resume approval handoff state", () => {
-    const pageSource = readFileSync(resolve(process.cwd(), "src/app/profiles/page.tsx"), "utf8");
+    const pageSource = readFileSync(resolve(process.cwd(), "src/app/(workspace)/profiles/page.tsx"), "utf8");
 
     expect(pageSource).toContain("resumeApproved");
     expect(pageSource).toContain("Candidate profile approved.");
