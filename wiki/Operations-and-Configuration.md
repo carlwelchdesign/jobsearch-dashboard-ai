@@ -199,6 +199,16 @@ Docker worker:
 docker compose --profile worker up --build worker
 ```
 
+Worker environment knobs:
+
+```txt
+EMBEDDINGS_WORKER_INTERVAL_MS=600000
+EMBEDDINGS_WORKER_BATCH_SIZE=50
+EMBEDDINGS_WORKER_BACKFILL_EVIDENCE=false
+```
+
+The worker never generates application materials or submits applications. It only syncs evidence chunks and embeddings for retrieval.
+
 ## Evidence Maintenance
 
 Useful operations:

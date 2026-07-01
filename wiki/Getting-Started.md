@@ -8,6 +8,22 @@ Install dependencies:
 npm install
 ```
 
+Recommended one-command local startup:
+
+```bash
+npm run dev:local
+```
+
+This starts Docker Postgres, applies deployed migrations, seeds the database, and launches the Next.js app. It still uses `DATABASE_URL` from `.env`; keep that file pointed at any existing populated local database you already use.
+
+Open:
+
+```txt
+http://localhost:3000
+```
+
+Manual startup:
+
 Start the database:
 
 ```bash
@@ -25,12 +41,6 @@ Start the app:
 
 ```bash
 npm run dev
-```
-
-Open:
-
-```txt
-http://localhost:3000
 ```
 
 ## Full Docker Stack
